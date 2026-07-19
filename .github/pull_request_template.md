@@ -1,9 +1,3 @@
-## Linear
-
-<!-- Add the Linear issue identifier or link. -->
-
-## Summary
-
 <!-- Describe the behavior changed, not the implementation history. -->
 
 ## Verification
