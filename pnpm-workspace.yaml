@@ -1,2 +1,15 @@
 allowBuilds:
   esbuild: true
+  sharp: false
+
+minimumReleaseAgeExclude:
+  - "@ai-sdk/*"
+  - "@rolldown/*"
+  - "@vercel/*"
+  - "@workflow/*"
+  - ai
+  - experimental-ai-sdk-code-mode
+  - eve
+  - nitro
+  - rolldown
+  - workflow
