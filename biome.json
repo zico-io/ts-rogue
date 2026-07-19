@@ -1,0 +1,44 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.4/schema.json",
+  "files": {
+    "includes": ["src/**"]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineEnding": "lf"
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended"
+    }
+  },
+  "overrides": [
+    {
+      "includes": ["src/engine/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "react": "engine/ must stay UI-free (PROJECT_PLAN Golden rule)",
+                  "ink": "engine/ must stay UI-free (PROJECT_PLAN Golden rule)"
+                },
+                "patterns": [
+                  {
+                    "group": ["**/ui/**"],
+                    "message": "engine/ must not import from ui/ (PROJECT_PLAN Golden rule)"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}
