@@ -2,5 +2,9 @@ node_modules/
 .pnpm-store/
 coverage/
 dist/
+.eve/
+.output/
 *.log
 .DS_Store
+.vercel
+.env*
