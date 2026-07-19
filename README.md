@@ -1,13 +1,11 @@
 # ts-rogue
 
-A TypeScript terminal dungeon crawler repository in its pre-implementation stage.
-
-The repository contains the playable-loop specification and the coding harness. It does not yet ship an executable game.
+A TypeScript terminal dungeon crawler. This repository holds the playable-loop specification and the coding harness; the game binary is not part of it.
 
 ## Requirements
 
 - Node.js 24 or newer
-- pnpm 10 or newer
+- pnpm 11.7.0 (pinned via `packageManager`; run `corepack enable`)
 - Git
 
 ## Setup
