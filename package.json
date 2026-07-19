@@ -1,0 +1,34 @@
+{
+  "name": "ts-rogue",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A TypeScript terminal dungeon crawler",
+  "engines": {
+    "node": ">=24",
+    "pnpm": ">=10"
+  },
+  "packageManager": "pnpm@11.7.0",
+  "scripts": {
+    "check": "pnpm typecheck && pnpm test && pnpm docs:check && pnpm lint",
+    "prepare": "git config core.hooksPath .githooks || true",
+    "docs:check": "node scripts/check-docs.mjs",
+    "typecheck": "tsc --noEmit",
+    "test:unit": "vitest run",
+    "test": "pnpm test:unit && node --test scripts/check-docs.test.mjs",
+    "lint": "biome ci .",
+    "format": "biome format --write ."
+  },
+  "dependencies": {
+    "ink": "^7",
+    "react": "^19",
+    "rot-js": "^2"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2",
+    "@types/react": "^19",
+    "tsx": "^4",
+    "typescript": "^7",
+    "vitest": "^4"
+  }
+}
