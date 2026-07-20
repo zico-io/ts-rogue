@@ -31,6 +31,58 @@ describe("buildViewportRows", () => {
     const cell = rows[map.village.y - originY][map.village.x - originX];
     expect(cell.char).toBe("@");
   });
+
+  it("defaults to the 21x11 camera viewport when no size is given", () => {
+    const map = generateOverworldMap(1);
+    const rows = buildViewportRows(map, map.village);
+    expect(rows).toHaveLength(11);
+    for (const row of rows) expect(row).toHaveLength(21);
+  });
+});
+
+describe("buildViewportRows (responsive)", () => {
+  it("shrinks the window to the requested size", () => {
+    const map = generateOverworldMap(1);
+    const rows = buildViewportRows(map, map.village, { width: 10, height: 5 });
+    expect(rows).toHaveLength(5);
+    for (const row of rows) expect(row).toHaveLength(10);
+  });
+
+  it("grows the window up to the map size", () => {
+    const map = generateOverworldMap(1);
+    const rows = buildViewportRows(map, map.village, { width: 30, height: 15 });
+    expect(rows).toHaveLength(15);
+    for (const row of rows) expect(row).toHaveLength(30);
+  });
+
+  it("clamps a window larger than the map to the map bounds", () => {
+    const map = generateOverworldMap(1);
+    const rows = buildViewportRows(map, map.village, { width: 60, height: 30 });
+    expect(rows).toHaveLength(map.height);
+    for (const row of rows) expect(row).toHaveLength(map.width);
+  });
+
+  it("still marks the player at a custom viewport size", () => {
+    const map = generateOverworldMap(1);
+    const rows = buildViewportRows(map, map.village, { width: 30, height: 15 });
+    const originX = cameraOrigin(map.village.x, 30, map.width);
+    const originY = cameraOrigin(map.village.y, 15, map.height);
+    const cell = rows[map.village.y - originY][map.village.x - originX];
+    expect(cell.char).toBe("@");
+  });
+
+  it("never returns more rows/columns than the requested size", () => {
+    const map = generateOverworldMap(2);
+    for (const [width, height] of [
+      [8, 4],
+      [42, 21],
+      [120, 40],
+    ] as const) {
+      const rows = buildViewportRows(map, map.village, { width, height });
+      expect(rows.length).toBeLessThanOrEqual(height);
+      for (const row of rows) expect(row.length).toBeLessThanOrEqual(width);
+    }
+  });
 });
 
 describe("buildMinimapRows", () => {
@@ -41,6 +93,62 @@ describe("buildMinimapRows", () => {
       const glyphs = new Set(rows.flat().map((cell) => cell.char));
       expect(glyphs).toContain("D");
     }
+  });
+
+  it("defaults to the 3x downsampled overview when no options are given", () => {
+    const map = generateOverworldMap(1);
+    const rows = buildMinimapRows(map, map.village);
+    expect(rows).toHaveLength(Math.ceil(map.height / 3));
+    for (const row of rows) expect(row).toHaveLength(Math.ceil(map.width / 3));
+  });
+});
+
+describe("buildMinimapRows (responsive)", () => {
+  it("keeps the default size when the bounds are generous", () => {
+    const map = generateOverworldMap(1);
+    const rows = buildMinimapRows(map, map.village, {
+      maxWidth: 30,
+      maxHeight: 10,
+    });
+    expect(rows).toHaveLength(Math.ceil(map.height / 3));
+    for (const row of rows) expect(row).toHaveLength(Math.ceil(map.width / 3));
+  });
+
+  it("downsamples more so the minimap fits within tight bounds", () => {
+    const map = generateOverworldMap(1);
+    const rows = buildMinimapRows(map, map.village, {
+      maxWidth: 8,
+      maxHeight: 4,
+    });
+    expect(rows.length).toBeLessThanOrEqual(4);
+    for (const row of rows) expect(row.length).toBeLessThanOrEqual(8);
+    // scale 6: ceil(42/6)=7 wide, ceil(21/6)=4 tall
+    expect(rows).toHaveLength(4);
+    expect(rows[0]).toHaveLength(7);
+  });
+
+  it("honours an explicit scale of 1 for a full-size overview", () => {
+    const map = generateOverworldMap(1);
+    const rows = buildMinimapRows(map, map.village, { scale: 1 });
+    expect(rows).toHaveLength(map.height);
+    for (const row of rows) expect(row).toHaveLength(map.width);
+  });
+
+  it("honours an explicit scale of 2", () => {
+    const map = generateOverworldMap(1);
+    const rows = buildMinimapRows(map, map.village, { scale: 2 });
+    expect(rows).toHaveLength(Math.ceil(map.height / 2));
+    for (const row of rows) expect(row).toHaveLength(Math.ceil(map.width / 2));
+  });
+
+  it("still shows dungeon entrances at a shrunk scale", () => {
+    const map = generateOverworldMap(1);
+    const rows = buildMinimapRows(map, map.village, {
+      maxWidth: 8,
+      maxHeight: 4,
+    });
+    const glyphs = new Set(rows.flat().map((cell) => cell.char));
+    expect(glyphs).toContain("D");
   });
 });
 

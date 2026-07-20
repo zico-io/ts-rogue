@@ -7,7 +7,9 @@
  * from what the grid shows ahead of the party: for each distance 1-4 it draws
  * a corridor frame whose left/right edges reflect wall presence on that slice,
  * and fills the nearest wall ahead as a solid back wall. The nearest
- * interactable ahead is drawn as a glyph at the vanishing point.
+ * interactable ahead is drawn as a glyph at the vanishing point. When a
+ * viewport is supplied the canonical 39x13 view is nearest-neighbor scaled to
+ * fill it (capped at 2x) and centered, so the FP frame reflows to the terminal.
  * `renderMinimap` draws a windowed top-down corner map using the explored mask.
  */
 
@@ -30,6 +32,15 @@ export const FP_VIEW_HEIGHT = 13;
 
 export const MINIMAP_WIDTH = 17;
 export const MINIMAP_HEIGHT = 9;
+
+/** Integer viewport dimensions the FP view is scaled/centered into. */
+export interface Viewport {
+  width: number;
+  height: number;
+}
+
+/** Largest up-scale factor for the FP view (keeps walls from getting chunky). */
+const MAX_FP_SCALE = 2;
 
 interface Frame {
   l: number;
@@ -133,10 +144,10 @@ function nearestFeatureGlyph(
 }
 
 /**
- * Compose the first-person depth-slice view. Returns one string per render
- * row, each exactly {@link FP_VIEW_WIDTH} columns wide.
+ * Compose the canonical first-person depth-slice view. Returns one string per
+ * render row, each exactly {@link FP_VIEW_WIDTH} columns wide.
  */
-export function renderDungeonView(ds: DungeonState): string[] {
+function composeCanonicalView(ds: DungeonState): string[] {
   const grid = blankGrid();
   const facing = ds.facing;
   const left = rotateFacing(facing, "left");
@@ -170,6 +181,60 @@ export function renderDungeonView(ds: DungeonState): string[] {
   if (glyph) grid[CENTER_Y][CENTER_X] = glyph;
 
   return grid.map((row) => row.join(""));
+}
+
+/**
+ * Nearest-neighbor scale the canonical FP view to fill `viewport` (capped at
+ * {@link MAX_FP_SCALE}) and center it, padding with spaces. Returns one string
+ * per viewport row, each exactly `viewport.width` columns wide.
+ */
+function fitDungeonView(canonical: string[], viewport: Viewport): string[] {
+  const scale = Math.min(
+    MAX_FP_SCALE,
+    viewport.width / FP_VIEW_WIDTH,
+    viewport.height / FP_VIEW_HEIGHT,
+  );
+  const scaledWidth = Math.max(1, Math.floor(FP_VIEW_WIDTH * scale));
+  const scaledHeight = Math.max(1, Math.floor(FP_VIEW_HEIGHT * scale));
+  const offsetX = Math.floor((viewport.width - scaledWidth) / 2);
+  const offsetY = Math.floor((viewport.height - scaledHeight) / 2);
+
+  const rows: string[] = [];
+  for (let y = 0; y < viewport.height; y++) {
+    let row = "";
+    for (let x = 0; x < viewport.width; x++) {
+      const inside =
+        x >= offsetX &&
+        x < offsetX + scaledWidth &&
+        y >= offsetY &&
+        y < offsetY + scaledHeight;
+      if (!inside) {
+        row += " ";
+        continue;
+      }
+      const sx = Math.floor((x - offsetX) / scale);
+      const sy = Math.floor((y - offsetY) / scale);
+      row +=
+        sx >= 0 && sx < FP_VIEW_WIDTH && sy >= 0 && sy < FP_VIEW_HEIGHT
+          ? canonical[sy][sx]
+          : " ";
+    }
+    rows.push(row);
+  }
+  return rows;
+}
+
+/**
+ * Compose the first-person depth-slice view. Without a viewport this returns
+ * the canonical {@link FP_VIEW_WIDTH}x{@link FP_VIEW_HEIGHT} view; with one,
+ * that view is scaled/centered into the viewport so it reflows to the terminal.
+ */
+export function renderDungeonView(
+  ds: DungeonState,
+  viewport?: Viewport,
+): string[] {
+  const canonical = composeCanonicalView(ds);
+  return viewport ? fitDungeonView(canonical, viewport) : canonical;
 }
 
 function clamp(value: number, min: number, max: number): number {

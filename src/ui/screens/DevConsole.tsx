@@ -1,6 +1,7 @@
-import { Box, Text, useInput, useWindowSize } from "ink";
+import { Box, Text, useInput } from "ink";
 import { useState } from "react";
 import type { GameEvent, GameState, Scene } from "../../engine/state/types";
+import { useTerminalLayout } from "../components/MinSizeGuard";
 
 interface CommandResult {
   clear?: boolean;
@@ -62,7 +63,7 @@ export function DevConsole({
   setOutput,
 }: DevConsoleProps) {
   const [input, setInput] = useState("");
-  const { rows } = useWindowSize();
+  const { rows } = useTerminalLayout();
 
   useInput((character, key) => {
     if (character === "`") return;

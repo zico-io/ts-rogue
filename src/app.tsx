@@ -1,8 +1,13 @@
 import { Box, render, Text, useApp, useInput } from "ink";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { GameStore, newGame } from "./engine/state/store";
 import type { Scene } from "./engine/state/types";
 import { loadGame } from "./persistence/save";
+import {
+  MinSizeGuard,
+  TerminalLayoutProvider,
+  useTerminalLayout,
+} from "./ui/components/MinSizeGuard";
 import { useGameState } from "./ui/hooks/useGameState";
 import { BattleScreen } from "./ui/screens/BattleScreen";
 import { DevConsole } from "./ui/screens/DevConsole";
@@ -32,6 +37,7 @@ function App({
   devConsoleEnabled: boolean;
 }) {
   const { exit } = useApp();
+  const { columns, rows, tooSmall } = useTerminalLayout();
   const [started, setStarted] = useState(false);
   const [consoleOpen, setConsoleOpen] = useState(false);
   const [consoleOutput, setConsoleOutput] = useState<string[]>([]);
@@ -75,8 +81,11 @@ function App({
   const dispatch = (event: Parameters<GameStore["dispatch"]>[0]) =>
     store.dispatch(event);
 
-  if (consoleOpen) {
-    return (
+  let content: ReactNode;
+  if (tooSmall) {
+    content = <MinSizeGuard columns={columns} rows={rows} />;
+  } else if (consoleOpen) {
+    content = (
       <DevConsole
         dispatch={dispatch}
         output={consoleOutput}
@@ -84,10 +93,8 @@ function App({
         state={state}
       />
     );
-  }
-
-  if (!started) {
-    return (
+  } else if (!started) {
+    content = (
       <Box flexDirection="column">
         <TitleScreen hasSave={hasSave} />
         {devConsoleEnabled && (
@@ -95,19 +102,30 @@ function App({
         )}
       </Box>
     );
+  } else {
+    switch (state.scene) {
+      case "village":
+        content = <VillageScreen dispatch={dispatch} state={state} />;
+        break;
+      case "overworld":
+        content = <OverworldScreen dispatch={dispatch} state={state} />;
+        break;
+      case "dungeon":
+        content = <DungeonScreen dispatch={dispatch} state={state} />;
+        break;
+      case "battle":
+        content = <BattleScreen dispatch={dispatch} state={state} />;
+        break;
+    }
   }
 
-  // Each scene renders through the shared Screen frame, which owns the pane fill.
-  switch (state.scene) {
-    case "village":
-      return <VillageScreen dispatch={dispatch} state={state} />;
-    case "overworld":
-      return <OverworldScreen dispatch={dispatch} state={state} />;
-    case "dungeon":
-      return <DungeonScreen dispatch={dispatch} state={state} />;
-    case "battle":
-      return <BattleScreen dispatch={dispatch} state={state} />;
-  }
+  // Root is pinned to the live terminal size so the whole tree is bounded and
+  // any rare local overflow is clipped rather than scrambling the screen.
+  return (
+    <Box flexDirection="column" width={columns} height={rows} overflow="hidden">
+      {content}
+    </Box>
+  );
 }
 
 const savedGame = loadGame();
@@ -115,10 +133,12 @@ const hasSave = savedGame !== undefined;
 const store = new GameStore(savedGame ?? newGame(Date.now()));
 
 render(
-  <App
-    devConsoleEnabled={process.argv.includes("--dev")}
-    hasSave={hasSave}
-    store={store}
-  />,
+  <TerminalLayoutProvider>
+    <App
+      devConsoleEnabled={process.argv.includes("--dev")}
+      hasSave={hasSave}
+      store={store}
+    />
+  </TerminalLayoutProvider>,
   { alternateScreen: true },
 );

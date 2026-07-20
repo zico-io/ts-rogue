@@ -10,10 +10,11 @@ import {
   xpToNext,
 } from "../../engine/combat/resolution";
 import { SKILLS } from "../../engine/combat/skills";
-import type { BattleEnemy, BattleState } from "../../engine/combat/types";
+import type { BattleState } from "../../engine/combat/types";
 import type { GameEvent, GameState } from "../../engine/state/types";
 import { MessageLog } from "../components/MessageLog";
-import { Screen } from "../components/Screen";
+import { Screen, useScreenContent } from "../components/Screen";
+import { type PackedEnemies, packEnemyColumns } from "./battle/render";
 
 export interface BattleScreenProps {
   state: GameState;
@@ -23,6 +24,10 @@ export interface BattleScreenProps {
 type Mode = "action" | "skill" | "item" | "target";
 
 const ACTIONS = ["Attack", "Skill", "Item", "Defend", "Flee"] as const;
+const ENEMY_GAP = 4;
+const LAYOUT_GAP = 2;
+/** Max width of the right-hand battle log panel; shrinks on narrow panes. */
+const BATTLE_LOG_MAX_WIDTH = 36;
 
 /**
  * Battle scene (PROJECT_PLAN Phase 4, ROG-10). First-person framing: the
@@ -185,113 +190,153 @@ export function BattleScreen({ state, dispatch }: BattleScreenProps) {
       hint={hintFor(mode, healItems.length)}
       showLog={false}
     >
-      <Box flexDirection="row" flexGrow={1} gap={2}>
-        {/* Left column: a framed battle viewport whose size tracks only the pane
-            (the command menu floats over it, out of flow, so it never reflows). */}
-        <Box flexDirection="column" flexGrow={1}>
-          <Box
-            flexGrow={1}
-            position="relative"
-            borderStyle="single"
-            borderDimColor
-          >
-            {/* Enemies, centered both axes in the fixed viewport. */}
-            <Box flexGrow={1} alignItems="center" justifyContent="center">
-              <EnemyField
-                battle={bs}
-                aliveEnemies={aliveEnemies}
-                selectingTarget={mode === "target"}
-                targetCursor={targetCursor}
-              />
-            </Box>
-
-            {/* Floating command window, anchored bottom-left over the viewport and
-                titled with the acting member: these actions are theirs. */}
-            <Box
-              position="absolute"
-              bottom={0}
-              left={0}
-              flexDirection="column"
-              borderStyle="round"
-              borderDimColor
-              paddingX={1}
-            >
-              <Text bold color="cyan">
-                {hero.name}
-              </Text>
-              <ActionMenu
-                mode={mode}
-                actions={ACTIONS}
-                actionCursor={actionCursor}
-                skills={SKILLS}
-                skillCursor={skillCursor}
-                heroMp={hero.mp}
-                healItems={healItems}
-                itemCursor={itemCursor}
-              />
-            </Box>
-          </Box>
-
-          <Text>
-            {hero.name} Lv{hero.level} | XP {hero.xp}/{xpToNext(hero.level)} |
-            ATK {atkFrom(hero)} DEF {defFrom(hero)} SPD {spdFrom(hero)}
-          </Text>
-          <Text dimColor>
-            Turn order: {initiativeNames(bs, hero.name).join(" -> ")}
-          </Text>
-        </Box>
-
-        {/* Battle log, pinned to the right of the combat layout. */}
-        <Box flexDirection="column" width={BATTLE_LOG_WIDTH}>
-          <Text dimColor>Battle Log</Text>
-          <MessageLog messages={state.log} maxLines={BATTLE_LOG_LINES} />
-        </Box>
-      </Box>
+      <BattleBody
+        state={state}
+        bs={bs}
+        aliveEnemies={aliveEnemies}
+        healItems={healItems}
+        mode={mode}
+        actionCursor={actionCursor}
+        skillCursor={skillCursor}
+        itemCursor={itemCursor}
+        targetCursor={targetCursor}
+      />
     </Screen>
   );
 }
 
-/** Width of the right-hand battle log panel. */
-const BATTLE_LOG_WIDTH = 36;
-/** Visible lines in the battle log panel (taller than the shared footer log). */
-const BATTLE_LOG_LINES = 16;
-
-interface EnemyFieldProps {
-  battle: BattleState;
-  aliveEnemies: BattleEnemy[];
-  selectingTarget: boolean;
+interface BattleBodyProps {
+  state: GameState;
+  bs: BattleState;
+  aliveEnemies: BattleState["enemies"];
+  healItems: GameState["inventory"];
+  mode: Mode;
+  actionCursor: number;
+  skillCursor: number;
+  itemCursor: number;
   targetCursor: number;
 }
 
-function EnemyField({
-  battle,
+function BattleBody({
+  state,
+  bs,
   aliveEnemies,
-  selectingTarget,
+  healItems,
+  mode,
+  actionCursor,
+  skillCursor,
+  itemCursor,
   targetCursor,
-}: EnemyFieldProps) {
+}: BattleBodyProps) {
+  const { width, height } = useScreenContent();
+  const hero = state.party[0];
+
+  const logWidth = Math.min(BATTLE_LOG_MAX_WIDTH, Math.floor(width * 0.4));
+  const viewportWidth = Math.max(1, width - logWidth - LAYOUT_GAP);
+  // The framed viewport sits above the hero stat and turn-order lines.
+  const viewportHeight = Math.max(1, height - 2);
+
+  const packed = packEnemyColumns(
+    bs.enemies,
+    aliveEnemies,
+    mode === "target",
+    targetCursor,
+    { columns: Math.max(1, viewportWidth - 2), gap: ENEMY_GAP },
+  );
+
   return (
-    <Box flexDirection="row" gap={4} justifyContent="center">
-      {battle.enemies.map((enemy) => {
-        const aliveIndex = aliveEnemies.findIndex(
-          (entry) => entry.id === enemy.id,
-        );
-        const selected = selectingTarget && aliveIndex === targetCursor;
-        const dead = enemy.hp <= 0;
-        const color = dead ? "gray" : selected ? "green" : undefined;
-        return (
-          <Box flexDirection="column" key={enemy.id}>
-            <Text color={color}>{enemy.ascii.join("\n")}</Text>
-            <Text bold color={color}>
-              {selected ? "> " : "  "}
-              {enemy.name}
-              {dead ? " (defeated)" : ""}
-            </Text>
-            <Text color={color}>
-              HP {enemy.hp}/{enemy.maxHp}
-            </Text>
+    <Box flexDirection="row" gap={LAYOUT_GAP} height={height}>
+      {/* Left column: a framed battle viewport sized only from the pane; the
+          command menu floats over it, out of flow, so it never reflows. */}
+      <Box flexDirection="column" width={viewportWidth}>
+        <Box
+          height={viewportHeight}
+          position="relative"
+          borderStyle="single"
+          borderDimColor
+          overflow="hidden"
+        >
+          <Box flexGrow={1} alignItems="center" justifyContent="center">
+            <EnemyField packed={packed} />
           </Box>
-        );
-      })}
+
+          {/* Floating command window, anchored bottom-left over the viewport
+              and titled with the acting member: these actions are theirs. */}
+          <Box
+            position="absolute"
+            bottom={0}
+            left={0}
+            flexDirection="column"
+            borderStyle="round"
+            borderDimColor
+            paddingX={1}
+          >
+            <Text bold color="cyan">
+              {hero.name}
+            </Text>
+            <ActionMenu
+              mode={mode}
+              actions={ACTIONS}
+              actionCursor={actionCursor}
+              skills={SKILLS}
+              skillCursor={skillCursor}
+              heroMp={hero.mp}
+              healItems={healItems}
+              itemCursor={itemCursor}
+            />
+          </Box>
+        </Box>
+
+        <Text>
+          {hero.name} Lv{hero.level} | XP {hero.xp}/{xpToNext(hero.level)} | ATK{" "}
+          {atkFrom(hero)} DEF {defFrom(hero)} SPD {spdFrom(hero)}
+        </Text>
+        <Text dimColor>
+          Turn order: {initiativeNames(bs, hero.name).join(" -> ")}
+        </Text>
+      </Box>
+
+      {/* Battle log, pinned to the right of the combat layout. */}
+      <Box flexDirection="column" width={logWidth}>
+        <Text dimColor>Battle Log</Text>
+        <MessageLog
+          messages={state.log}
+          height={Math.max(3, height - 1)}
+          width={logWidth}
+        />
+      </Box>
+    </Box>
+  );
+}
+
+function EnemyField({ packed }: { packed: PackedEnemies }) {
+  return (
+    <Box flexDirection="column" gap={1}>
+      {packed.rows.map((row, rowIndex) => (
+        <Box
+          key={row[0]?.enemy.id ?? rowIndex}
+          flexDirection="row"
+          gap={ENEMY_GAP}
+          justifyContent="center"
+        >
+          {row.map((col) => {
+            const color = col.dead
+              ? "gray"
+              : col.selected
+                ? "green"
+                : undefined;
+            return (
+              <Box key={col.enemy.id} flexDirection="column">
+                <Text color={color}>{col.enemy.ascii.join("\n")}</Text>
+                <Text bold color={color}>
+                  {col.nameLine}
+                </Text>
+                <Text color={color}>{col.hpLine}</Text>
+              </Box>
+            );
+          })}
+        </Box>
+      ))}
     </Box>
   );
 }
