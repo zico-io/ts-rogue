@@ -27,6 +27,32 @@ describe("keepTokenFresh", () => {
     vi.useRealTimers();
   });
 
+  it("retries on a transient mint failure instead of stopping", async () => {
+    vi.useFakeTimers();
+    const applied: SandboxNetworkPolicy[] = [];
+    const sandbox = {
+      setNetworkPolicy: (policy: SandboxNetworkPolicy) => {
+        applied.push(policy);
+        return Promise.resolve();
+      },
+    };
+    const good = { allow: { b: [] } } as SandboxNetworkPolicy;
+    let call = 0;
+    const mintPolicy = () => {
+      call++;
+      return call === 1
+        ? Promise.reject(new Error("token service blip"))
+        : Promise.resolve(good);
+    };
+
+    keepTokenFresh(sandbox, mintPolicy, 1000);
+    await vi.advanceTimersByTimeAsync(1000); // mint rejects, reschedules, no apply
+    await vi.advanceTimersByTimeAsync(1000); // mint resolves, policy applied
+
+    expect(applied).toEqual([good]);
+    vi.useRealTimers();
+  });
+
   it("stops refreshing once the sandbox is torn down", async () => {
     vi.useFakeTimers();
     let calls = 0;

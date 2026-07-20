@@ -6,18 +6,11 @@ import {
   type LinearChannelContext,
 } from "eve/channels/linear";
 
+import { toolLabel } from "../lib/tool-label";
+
 type InputRequests = Parameters<
   NonNullable<ChannelEvents<LinearChannelContext>["input.requested"]>
 >[0]["requests"];
-
-const toolLabel = (toolName: string) => {
-  const operation = toolName.split("__").at(-1) ?? toolName;
-  const labels: Record<string, string> = {
-    save_issue: "Create or update an issue",
-  };
-  const label = labels[operation] ?? operation.replaceAll("_", " ");
-  return label.charAt(0).toUpperCase() + label.slice(1);
-};
 
 export const linearInputActivity = (requests: InputRequests) => {
   const rendered = renderLinearInputRequests(requests);
@@ -25,13 +18,18 @@ export const linearInputActivity = (requests: InputRequests) => {
   const options = requests[0]?.options;
   const sharedOptions =
     options?.length &&
-    requests.every((request) => JSON.stringify(request.options) === JSON.stringify(options))
+    requests.every(
+      (request) => JSON.stringify(request.options) === JSON.stringify(options),
+    )
       ? options
       : undefined;
 
   const prompt = requests.every(({ action }) => action.kind === "tool-call")
     ? `${requests.length === 1 ? "Approve this Linear change?" : "Approve these Linear changes?"}\n\n${requests
-        .map(({ action }) => `- ${action.kind === "tool-call" ? toolLabel(action.toolName) : "Continue"}`)
+        .map(
+          ({ action }) =>
+            `- ${action.kind === "tool-call" ? toolLabel(action.toolName) : "Continue"}`,
+        )
         .join("\n")}`
     : requests.length === 1
       ? requests[0]?.prompt
@@ -43,7 +41,10 @@ export const linearInputActivity = (requests: InputRequests) => {
       ? {
           signal: "select" as const,
           signalMetadata: {
-            options: sharedOptions.map(({ id, label }) => ({ label, value: id })),
+            options: sharedOptions.map(({ id, label }) => ({
+              label,
+              value: id,
+            })),
           },
         }
       : {}),
@@ -60,7 +61,10 @@ const events: ChannelEvents<LinearChannelContext> = {
             : action.kind === "load-skill"
               ? "Load skill"
               : `Delegate to ${action.name}`,
-        parameter: "description" in action ? action.description : JSON.stringify(action.input),
+        parameter:
+          "description" in action
+            ? action.description
+            : JSON.stringify(action.input),
         type: "action",
       });
     }
@@ -70,7 +74,8 @@ const events: ChannelEvents<LinearChannelContext> = {
     await channel.linear.createActivity({ body, type: "elicitation" }, options);
   },
   async "reasoning.completed"({ reasoning }, channel) {
-    if (reasoning) await channel.linear.createActivity({ body: reasoning, type: "thought" });
+    if (reasoning)
+      await channel.linear.createActivity({ body: reasoning, type: "thought" });
   },
 };
 
