@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { linearInputActivity } from "../agent/channels/linear.js";
 import { approveLinearTool } from "../agent/connections/linear.js";
+import { delegateProgressActivity } from "../agent/tools/delegate_progress.js";
 
 describe("Linear agent interaction", () => {
   it("uses one native selection for batched read approvals", () => {
@@ -71,5 +72,14 @@ describe("Linear agent interaction", () => {
     expect(linearInputActivity(requests).body).toContain(
       "Approve these Linear changes?\n\n- Create or update an issue\n- Post or update a comment",
     );
+  });
+
+  it("formats delegated progress for the parent Agent Session", () => {
+    expect(
+      delegateProgressActivity({
+        message: "Tests pass",
+        status: "progress",
+      }),
+    ).toEqual({ body: "Delegate progress: Tests pass", type: "thought" });
   });
 });
