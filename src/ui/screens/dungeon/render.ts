@@ -15,8 +15,12 @@
  * `renderMinimap` draws a windowed top-down corner map using the explored mask.
  */
 
-import { isDungeonWall } from "../../../engine/world/dungeon";
-import type { DungeonFacing, DungeonState } from "../../../engine/world/types";
+import { isDungeonWall, tileFeature } from "../../../engine/world/dungeon";
+import type {
+  DungeonFacing,
+  DungeonFeature,
+  DungeonState,
+} from "../../../engine/world/types";
 import { createDotCanvas, packBraille, plotLine } from "./braille";
 
 export const MINIMAP_WIDTH = 17;
@@ -96,6 +100,7 @@ interface Edge {
 
 /** A projected wall face queued for the painter pass. */
 interface FaceItem {
+  kind: "face";
   distSq: number;
   e0: Edge;
   e1: Edge;
@@ -103,6 +108,151 @@ interface FaceItem {
   jamb1: boolean;
   density: number;
 }
+
+/** A feature prop's projected wireframe segments, painter-sorted with faces. */
+interface PropItem {
+  kind: "prop";
+  distSq: number;
+  lines: Array<{ x0: number; y0: number; x1: number; y1: number }>;
+}
+
+type DrawItem = FaceItem | PropItem;
+
+/**
+ * A prop model segment in cell-local 3D coordinates: `[east offset, height
+ * above eye, south offset]` from the cell center; the floor is at height -0.5.
+ */
+type Seg3 = readonly [
+  readonly [number, number, number],
+  readonly [number, number, number],
+];
+
+/** The 12 wireframe edges of an axis-aligned box. */
+function boxEdges(
+  x0: number,
+  x1: number,
+  h0: number,
+  h1: number,
+  z0: number,
+  z1: number,
+): Seg3[] {
+  const edges: Seg3[] = [];
+  for (const h of [h0, h1]) {
+    edges.push(
+      [
+        [x0, h, z0],
+        [x1, h, z0],
+      ],
+      [
+        [x0, h, z1],
+        [x1, h, z1],
+      ],
+      [
+        [x0, h, z0],
+        [x0, h, z1],
+      ],
+      [
+        [x1, h, z0],
+        [x1, h, z1],
+      ],
+    );
+  }
+  for (const [x, z] of [
+    [x0, z0],
+    [x1, z0],
+    [x0, z1],
+    [x1, z1],
+  ]) {
+    edges.push([
+      [x, h0, z],
+      [x, h1, z],
+    ]);
+  }
+  return edges;
+}
+
+/** Chest: a wireframe box with a lid seam ring. */
+const CHEST_MODEL: readonly Seg3[] = [
+  ...boxEdges(-0.22, 0.22, -0.5, -0.18, -0.16, 0.16),
+  [
+    [-0.22, -0.28, -0.16],
+    [0.22, -0.28, -0.16],
+  ],
+  [
+    [-0.22, -0.28, 0.16],
+    [0.22, -0.28, 0.16],
+  ],
+  [
+    [-0.22, -0.28, -0.16],
+    [-0.22, -0.28, 0.16],
+  ],
+  [
+    [0.22, -0.28, -0.16],
+    [0.22, -0.28, 0.16],
+  ],
+];
+
+/** Stairs down: three receding, shrinking, sinking steps - a descending well. */
+const STAIRS_MODEL: readonly Seg3[] = [
+  [
+    [-0.2, -0.5, -0.15],
+    [0.2, -0.5, -0.15],
+  ],
+  [
+    [-0.15, -0.58, 0],
+    [0.15, -0.58, 0],
+  ],
+  [
+    [-0.1, -0.66, 0.15],
+    [0.1, -0.66, 0.15],
+  ],
+  [
+    [-0.2, -0.5, -0.15],
+    [-0.15, -0.58, 0],
+  ],
+  [
+    [0.2, -0.5, -0.15],
+    [0.15, -0.58, 0],
+  ],
+  [
+    [-0.15, -0.58, 0],
+    [-0.1, -0.66, 0.15],
+  ],
+  [
+    [0.15, -0.58, 0],
+    [0.1, -0.66, 0.15],
+  ],
+];
+
+/** Boss marker: an upright horned triangle. */
+const BOSS_MODEL: readonly Seg3[] = [
+  [
+    [-0.25, -0.5, 0],
+    [0.25, -0.5, 0],
+  ],
+  [
+    [-0.25, -0.5, 0],
+    [0, 0.15, 0],
+  ],
+  [
+    [0.25, -0.5, 0],
+    [0, 0.15, 0],
+  ],
+  [
+    [0, 0.15, 0],
+    [-0.12, 0.3, 0],
+  ],
+  [
+    [0, 0.15, 0],
+    [0.12, 0.3, 0],
+  ],
+];
+
+const PROP_MODELS: Record<Exclude<DungeonFeature, "none">, readonly Seg3[]> = {
+  chest: CHEST_MODEL,
+  stairsDown: STAIRS_MODEL,
+  bossMarker: BOSS_MODEL,
+};
 
 /** Densest allowed dither fill (fraction of dots lit) at MAX_DEPTH. */
 const MAX_FILL = 0.55;
@@ -168,12 +318,35 @@ export function renderDungeonView(
 
   const wall = (x: number, y: number) => isDungeonWall(ds.layout, { x, y });
 
-  const items: FaceItem[] = [];
+  const items: DrawItem[] = [];
   const cellX = Math.round(camera.x);
   const cellY = Math.round(camera.y);
   for (let cy = cellY - RANGE; cy <= cellY + RANGE; cy++) {
     for (let cx = cellX - RANGE; cx <= cellX + RANGE; cx++) {
-      if (!wall(cx, cy)) continue;
+      if (!wall(cx, cy)) {
+        const feature = tileFeature(ds.layout, { x: cx, y: cy });
+        if (feature === "none") continue;
+        const depth = toCam(cx, cy).z;
+        if (depth <= Z_NEAR || depth > MAX_DEPTH) continue;
+        const lines: PropItem["lines"] = [];
+        for (const [pa, pb] of PROP_MODELS[feature]) {
+          const ga = toCam(cx + pa[0], cy + pa[2]);
+          const gb = toCam(cx + pb[0], cy + pb[2]);
+          // Props sit in cells ahead; drop rather than clip grazing segments.
+          if (ga.z <= Z_NEAR || gb.z <= Z_NEAR) continue;
+          lines.push({
+            x0: clamp(cxDot + (focal * ga.x) / ga.z, -dotW, 2 * dotW),
+            y0: clamp(cyDot - (focal * pa[1]) / ga.z, -dotH, 2 * dotH),
+            x1: clamp(cxDot + (focal * gb.x) / gb.z, -dotW, 2 * dotW),
+            y1: clamp(cyDot - (focal * pb[1]) / gb.z, -dotH, 2 * dotH),
+          });
+        }
+        if (lines.length > 0) {
+          const distSq = (camera.x - cx) ** 2 + (camera.y - cy) ** 2;
+          items.push({ kind: "prop", distSq, lines });
+        }
+        continue;
+      }
       for (const f of FACE_DIRS) {
         if (wall(cx + f.nx, cy + f.ny)) continue; // interior face
         const fcx = cx + f.nx * 0.5;
@@ -206,6 +379,7 @@ export function renderDungeonView(
         }
         const distSq = (camera.x - fcx) ** 2 + (camera.y - fcy) ** 2;
         items.push({
+          kind: "face",
           distSq,
           e0,
           e1,
@@ -217,10 +391,19 @@ export function renderDungeonView(
     }
   }
 
-  // Painter's algorithm: farthest first, nearer faces overwrite.
+  // Painter's algorithm: farthest first, nearer faces overwrite. Props are
+  // transparent wireframes; a nearer wall still paints over them.
   items.sort((p, q) => q.distSq - p.distSq);
   const buf = createDotCanvas(dotW, dotH);
-  for (const item of items) drawFace(buf, dotW, dotH, item);
+  for (const item of items) {
+    if (item.kind === "face") {
+      drawFace(buf, dotW, dotH, item);
+    } else {
+      for (const l of item.lines) {
+        plotLine(buf, dotW, dotH, l.x0, l.y0, l.x1, l.y1);
+      }
+    }
+  }
   return packBraille(buf, dotW, dotH);
 }
 

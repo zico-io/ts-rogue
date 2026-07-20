@@ -154,6 +154,41 @@ describe("renderDungeonView", () => {
     expect(rows.join("").split("").some(isBraille)).toBe(true);
   });
 
+  it("draws feature props as Braille wireframes at their cell", () => {
+    const room = (center: string) => [
+      "#####",
+      "#...#",
+      `#.${center}.#`,
+      "#...#",
+      "#...#",
+      "#####",
+    ];
+    const at = (center: string) =>
+      renderDungeonView(
+        buildState(buildLayout(room(center)), { x: 2, y: 4 }, "north"),
+        VP,
+      );
+    const empty = at(".");
+    for (const feature of ["C", ">", "B"] as const) {
+      const rows = at(feature);
+      expect(rows).not.toEqual(empty); // prop visible two tiles ahead
+      for (const ch of rows.join("")) {
+        expect(ch === " " || isBraille(ch)).toBe(true); // drawn, not lettered
+      }
+    }
+  });
+
+  it("occludes a prop behind a facing wall", () => {
+    const chest = ["#####", "#.C.#", "#####", "#...#", "#####"];
+    const bare = ["#####", "#...#", "#####", "#...#", "#####"];
+    const at = (ascii: string[]) =>
+      renderDungeonView(
+        buildState(buildLayout(ascii), { x: 2, y: 3 }, "north"),
+        VP,
+      );
+    expect(at(chest)).toEqual(at(bare));
+  });
+
   it("renders fractional mid-step and mid-turn camera poses", () => {
     const ds = createInitialDungeonState(1234, "dungeon-0", 1);
     const base = poseFromState(ds);
