@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { atkFrom } from "../combat/resolution";
 import type { PartyMember } from "../entities/party";
+import { describeItem, itemSellPrice } from "../loot/items";
+import type { ItemInstance } from "../loot/types";
 import { isDungeonWall } from "../world/dungeon";
 import { generateOverworldMap, isPassable, tileAt } from "../world/overworld";
 import type {
@@ -637,3 +640,185 @@ function walkTo(state: GameState, target: Point): GameState {
   }
   return s;
 }
+
+describe("Phase 5 loot, equip, and sell", () => {
+  function makeItem(overrides: Partial<ItemInstance> = {}): ItemInstance {
+    return {
+      instanceId: "itm-test",
+      baseId: "war-blade",
+      rarity: "rare",
+      ilvl: 10,
+      prefixes: [],
+      suffixes: [],
+      implicit: null,
+      ...overrides,
+    };
+  }
+
+  function equipmentSlots(): Array<
+    "weapon" | "armor" | "accessory1" | "accessory2"
+  > {
+    return ["weapon", "armor", "accessory1", "accessory2"];
+  }
+
+  describe("EquipItem", () => {
+    it("moves a backpack weapon into its slot and raises effective ATK", () => {
+      const before = {
+        ...newGame(1),
+        items: [makeItem({ instanceId: "itm-1", baseId: "war-blade" })],
+      };
+      const atkBefore = atkFrom(before.party[0]);
+      const after = reduce(before, { type: "EquipItem", instanceId: "itm-1" });
+      expect(after.items).toHaveLength(0);
+      expect(after.party[0].equipment.weapon?.instanceId).toBe("itm-1");
+      expect(atkFrom(after.party[0])).toBeGreaterThan(atkBefore);
+      expect(after.log.some((m) => m.startsWith("Equipped"))).toBe(true);
+    });
+
+    it("swaps the previously equipped item back to the backpack", () => {
+      const base = newGame(1);
+      const equipped = makeItem({ instanceId: "itm-old", baseId: "war-blade" });
+      const before = {
+        ...base,
+        party: [
+          {
+            ...base.party[0],
+            equipment: { ...base.party[0].equipment, weapon: equipped },
+          },
+        ],
+        items: [makeItem({ instanceId: "itm-new", baseId: "war-blade" })],
+      };
+      const after = reduce(before, {
+        type: "EquipItem",
+        instanceId: "itm-new",
+      });
+      expect(after.party[0].equipment.weapon?.instanceId).toBe("itm-new");
+      expect(after.items.map((i) => i.instanceId)).toContain("itm-old");
+    });
+
+    it("no-ops on an unknown instance id", () => {
+      const before = newGame(1);
+      const after = reduce(before, { type: "EquipItem", instanceId: "nope" });
+      expect(after.party[0].equipment.weapon).toBeNull();
+      expect(after.log.at(-1)).toBe("There is nothing to equip");
+    });
+  });
+
+  describe("UnequipItem", () => {
+    it("moves an equipped item back to the backpack", () => {
+      const base = newGame(1);
+      const item = makeItem({ instanceId: "itm-w", baseId: "war-blade" });
+      const before = {
+        ...base,
+        party: [
+          {
+            ...base.party[0],
+            equipment: { ...base.party[0].equipment, weapon: item },
+          },
+        ],
+      };
+      const after = reduce(before, { type: "UnequipItem", slot: "weapon" });
+      expect(after.party[0].equipment.weapon).toBeNull();
+      expect(after.items.map((i) => i.instanceId)).toContain("itm-w");
+    });
+
+    it("no-ops on an empty slot", () => {
+      const after = reduce(newGame(1), { type: "UnequipItem", slot: "weapon" });
+      expect(after.log.at(-1)).toBe("Nothing is equipped there");
+    });
+  });
+
+  describe("SellItem", () => {
+    it("removes the item and adds the sell price to gold", () => {
+      const item = makeItem({
+        instanceId: "itm-s",
+        baseId: "war-blade",
+        rarity: "unique",
+      });
+      const before = { ...newGame(1), items: [item] };
+      const goldBefore = before.gold;
+      const after = reduce(before, { type: "SellItem", instanceId: "itm-s" });
+      expect(after.items).toHaveLength(0);
+      expect(after.gold).toBe(goldBefore + itemSellPrice(item));
+      expect(after.log.at(-1)).toBe(
+        `Sold ${describeItem(item)} for ${itemSellPrice(item)} gold.`,
+      );
+    });
+
+    it("no-ops on an unknown instance id", () => {
+      const before = newGame(1);
+      const after = reduce(before, { type: "SellItem", instanceId: "nope" });
+      expect(after.gold).toBe(before.gold);
+      expect(after.log.at(-1)).toBe("There is nothing to sell");
+    });
+  });
+
+  describe("OpenChest (Phase 5 generated loot)", () => {
+    it("adds a generated item to state.items and advances nextItemId", () => {
+      let state = withToughHero(enterDungeon(1234));
+      const chest = findDungeonTile(state, "chest");
+      expect(chest).toBeDefined();
+      state = walkTo(state, chest ?? { x: 0, y: 0 });
+      const nextBefore = state.nextItemId;
+      const itemsBefore = state.items.length;
+      state = reduce(state, { type: "OpenChest" });
+      expect(state.items.length).toBe(itemsBefore + 1);
+      expect(state.nextItemId).toBe(nextBefore + 1);
+      expect(state.log.at(-1)).toMatch(/You open the chest and find/);
+    });
+  });
+
+  describe("end-to-end: kill boss -> implicit drop -> equip -> sell dupe", () => {
+    it("reproduces the playable slice deterministically", () => {
+      const runOnce = () => {
+        let state = withToughHero(enterDungeon(1234));
+        // Descend to floor 3, fighting through wandering encounters.
+        for (let floor = 1; floor < 3; floor++) {
+          const stairs = findDungeonTile(state, "stairsDown");
+          state = walkTo(state, stairs ?? { x: 0, y: 0 });
+          state = reduce(state, { type: "DescendStairs" });
+        }
+        const boss = findDungeonTile(state, "bossMarker");
+        state = walkTo(state, boss ?? { x: 0, y: 0 });
+        expect(state.scene).toBe("battle");
+        return fightToResolution(state);
+      };
+
+      const state = runOnce();
+      // Victory returns to the dungeon and clears the battle.
+      expect(state.scene).toBe("dungeon");
+      expect(state.battleState).toBeNull();
+      // The boss kill yielded loot, including a unique signature (implicit) drop
+      // rolled from the dungeon guardian's monster-implicit pool.
+      expect(state.items.length).toBeGreaterThanOrEqual(1);
+      const signature = state.items.find(
+        (item) => item.baseId.startsWith("guardian-") && item.implicit !== null,
+      );
+      expect(signature).toBeDefined();
+      expect(signature?.rarity).toBe("unique");
+
+      // Equip the signature drop -> it leaves the backpack and fills a slot.
+      const sigId = signature?.instanceId ?? "";
+      let after = reduce(state, { type: "EquipItem", instanceId: sigId });
+      const inSlot = equipmentSlots().some(
+        (slot) => after.party[0].equipment[slot]?.instanceId === sigId,
+      );
+      expect(inSlot).toBe(true);
+      expect(after.items.map((i) => i.instanceId)).not.toContain(sigId);
+
+      // Sell a dupe (the generic boss drop) in town -> gold rises, backpack shrinks.
+      const dupe =
+        after.items.find((i) => i.instanceId !== sigId) ?? after.items[0];
+      expect(dupe).toBeDefined();
+      const goldBefore = after.gold;
+      after = reduce(after, { type: "SellItem", instanceId: dupe.instanceId });
+      expect(after.gold).toBe(goldBefore + itemSellPrice(dupe));
+      expect(after.items.map((i) => i.instanceId)).not.toContain(
+        dupe.instanceId,
+      );
+
+      // The whole descend + boss fight path (loot included) is deterministic.
+      expect(runOnce()).toEqual(runOnce());
+    });
+  });
+});

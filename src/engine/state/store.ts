@@ -3,6 +3,9 @@ import { findShopItem, sellPriceFor } from "../../data/shops";
 import { resolveBattleEvent, startBattle } from "../combat/resolution";
 import type { InventoryItem } from "../entities/party";
 import { createStartingHero } from "../entities/party";
+import { type EquipmentSlotName, equipTargetSlot } from "../loot/equipment";
+import { describeItem, itemSellPrice } from "../loot/items";
+import { rollChestLoot } from "../loot/resolution";
 import { Rng } from "../rng/rng";
 import {
   createInitialDungeonState,
@@ -48,6 +51,8 @@ export function newGame(seed: number): GameState {
     party: [createStartingHero()],
     gold: 50,
     inventory: [],
+    items: [],
+    nextItemId: 1,
     worldState: createInitialWorldState(map),
     dungeonState: null,
     battleState: null,
@@ -347,12 +352,26 @@ function openChest(state: GameState): GameState {
   const inventory = loot.itemId
     ? addItem(state.inventory, loot.itemId, loot.quantity)
     : state.inventory;
+  // Phase 5 (ROG-11): chests also roll a generated, affix-bearing item from the
+  // floor's chest loot table, routed through the seeded RNG so saves agree.
+  const rng = new Rng(state.seed, state.rngState);
+  const chest = rollChestLoot(rng, ds.floor, state.nextItemId);
+  const items = chest.items.length
+    ? [...state.items, ...chest.items]
+    : state.items;
+  let message = chestLootMessage(loot);
+  if (chest.items.length > 0) {
+    message = `${message.replace(/!$/, "")}, plus ${describeItem(chest.items[0])}!`;
+  }
   return {
     ...state,
+    rngState: rng.getState(),
     gold: state.gold + loot.gold,
     inventory,
+    items,
+    nextItemId: chest.nextId,
     dungeonState: { ...ds, layout },
-    log: [...state.log, chestLootMessage(loot)],
+    log: [...state.log, message],
   };
 }
 
@@ -382,6 +401,75 @@ function descendStairs(state: GameState): GameState {
   };
 }
 
+/* -------------------------------------------------------------------------- */
+/* Phase 5 (ROG-11): equip / unequip / sell generated loot                    */
+/* -------------------------------------------------------------------------- */
+
+function equipItem(state: GameState, instanceId: string): GameState {
+  const item = state.items.find((entry) => entry.instanceId === instanceId);
+  if (!item) {
+    return { ...state, log: [...state.log, "There is nothing to equip"] };
+  }
+  const hero = state.party[0];
+  const target = equipTargetSlot(hero, item);
+  if (!target) {
+    return {
+      ...state,
+      log: [...state.log, `${describeItem(item)} cannot be equipped`],
+    };
+  }
+  const swapped = hero.equipment[target];
+  const items = swapped
+    ? [
+        ...state.items.filter((entry) => entry.instanceId !== instanceId),
+        swapped,
+      ]
+    : state.items.filter((entry) => entry.instanceId !== instanceId);
+  const party = state.party.map((member, index) =>
+    index === 0
+      ? { ...member, equipment: { ...member.equipment, [target]: item } }
+      : member,
+  );
+  const logs = [`Equipped ${describeItem(item)}.`];
+  if (swapped) logs.push(`${describeItem(swapped)} moved to the backpack.`);
+  return { ...state, party, items, log: [...state.log, ...logs] };
+}
+
+function unequipItem(state: GameState, slot: EquipmentSlotName): GameState {
+  const hero = state.party[0];
+  const item = hero.equipment[slot];
+  if (!item) {
+    return { ...state, log: [...state.log, "Nothing is equipped there"] };
+  }
+  const party = state.party.map((member, index) =>
+    index === 0
+      ? { ...member, equipment: { ...member.equipment, [slot]: null } }
+      : member,
+  );
+  const items = [...state.items, item];
+  return {
+    ...state,
+    party,
+    items,
+    log: [...state.log, `Unequipped ${describeItem(item)}.`],
+  };
+}
+
+function sellItem(state: GameState, instanceId: string): GameState {
+  const item = state.items.find((entry) => entry.instanceId === instanceId);
+  if (!item) {
+    return { ...state, log: [...state.log, "There is nothing to sell"] };
+  }
+  const proceeds = itemSellPrice(item);
+  const items = state.items.filter((entry) => entry.instanceId !== instanceId);
+  return {
+    ...state,
+    gold: state.gold + proceeds,
+    items,
+    log: [...state.log, `Sold ${describeItem(item)} for ${proceeds} gold.`],
+  };
+}
+
 /** Pure reducer: never mutates `state`. All state transitions route through here. */
 export function reduce(state: GameState, event: GameEvent): GameState {
   switch (event.type) {
@@ -397,6 +485,12 @@ export function reduce(state: GameState, event: GameEvent): GameState {
       return storeBuy(state, event.itemId, event.quantity);
     case "StoreSell":
       return storeSell(state, event.itemId, event.quantity);
+    case "EquipItem":
+      return equipItem(state, event.instanceId);
+    case "UnequipItem":
+      return unequipItem(state, event.slot);
+    case "SellItem":
+      return sellItem(state, event.instanceId);
     case "MoveOverworld":
       return moveOverworld(state, event.dx, event.dy);
     case "TurnDungeon":
