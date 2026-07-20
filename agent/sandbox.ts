@@ -135,6 +135,7 @@ const mintFreshPolicy = () =>
 
 export default defineSandbox({
   backend: vercel(),
+  revalidationKey: () => process.env.VERCEL_GIT_COMMIT_SHA ?? "local",
   async bootstrap({ use }) {
     const { policy } = await resolveStartupNetworkPolicy();
     const sandbox = await use({ networkPolicy: policy });
@@ -148,6 +149,12 @@ export default defineSandbox({
   async onSession({ use }) {
     const { policy, authed } = await resolveStartupNetworkPolicy();
     const sandbox = await use({ networkPolicy: policy });
+    const sync = await sandbox.run({
+      command:
+        "git fetch --depth 1 origin main && git checkout -B main FETCH_HEAD",
+    });
+    if (sync.exitCode !== 0)
+      throw new Error(sync.stderr || "Sandbox repository sync failed");
     // If startup couldn't mint the token, retry soon so push recovers fast;
     // otherwise refresh on the normal cadence.
     keepTokenFresh(sandbox, mintFreshPolicy, {
