@@ -1,10 +1,11 @@
 /**
  * Static dungeon content (PROJECT_PLAN Phase 3, ROG-9).
  *
- * Chest loot and the enemy roster live here as data stubs so the engine stays
- * free of hardcoded content and Phase 4 (turn-based battle) can expand them.
- * Chest loot is a pure function of the chest's floor + position so it never
- * consumes engine RNG and a save/reload always agrees.
+ * Chest loot lives here as deterministic data so the engine stays free of
+ * hardcoded content. Chest loot is a pure function of the chest's floor +
+ * position so it never consumes engine RNG and a save/reload always agrees.
+ * Monster definitions (stats, ASCII art, XP/gold) moved to `./monsters.ts`
+ * in Phase 4 (ROG-10), where the combat resolver reads them.
  */
 
 import { findShopItem } from "./shops";
@@ -39,19 +40,3 @@ export function chestLootMessage(loot: ChestLoot): string {
   const itemPart = item ? ` and ${loot.quantity} ${item.name}` : "";
   return `You open the chest and find ${loot.gold} gold${itemPart}!`;
 }
-
-/**
- * Stub enemy roster for dungeon encounters. Phase 4 resolves these into real
- * battles; for now the engine only flags that an encounter occurred.
- */
-export interface DungeonEnemy {
-  id: string;
-  name: string;
-  minFloor: number;
-}
-
-export const DUNGEON_ENEMIES: readonly DungeonEnemy[] = [
-  { id: "slime", name: "Slime", minFloor: 1 },
-  { id: "goblin", name: "Goblin", minFloor: 2 },
-  { id: "dungeon-guardian", name: "Dungeon Guardian", minFloor: 3 },
-];

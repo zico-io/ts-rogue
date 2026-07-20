@@ -1,5 +1,6 @@
 import { chestLootFor, chestLootMessage } from "../../data/dungeons";
 import { findShopItem, sellPriceFor } from "../../data/shops";
+import { resolveBattleEvent, startBattle } from "../combat/resolution";
 import type { InventoryItem } from "../entities/party";
 import { createStartingHero } from "../entities/party";
 import { Rng } from "../rng/rng";
@@ -49,6 +50,7 @@ export function newGame(seed: number): GameState {
     inventory: [],
     worldState: createInitialWorldState(map),
     dungeonState: null,
+    battleState: null,
   };
 }
 
@@ -150,8 +152,8 @@ function storeSell(
  * rather than stored on state. Movement onto an impassable tile or off the
  * map edge is a no-op. Movement onto the village or a dungeon entrance
  * changes scene directly; movement onto any other passable tile accumulates
- * encounter danger (with RNG jitter) and triggers a battle at the threshold.
- * Only successful moves consume RNG, keeping blocked moves fully
+ * encounter danger (with RNG jitter) and starts a real battle at the
+ * threshold. Only successful moves consume RNG, keeping blocked moves fully
  * side-effect-free. Stepping onto a dungeon entrance (PROJECT_PLAN Phase 3)
  * also seeds `dungeonState` for floor 1 of that entrance's dungeon.
  */
@@ -203,10 +205,19 @@ function moveOverworld(
   const meter = state.worldState.encounterMeter + biomeDanger(tile) * jitter;
 
   if (meter >= ENCOUNTER_THRESHOLD) {
+    // Overworld battles use the floor-1 (weak) monster pool and return here.
+    const battle = startBattle(
+      rng,
+      state.party[0],
+      "wandering",
+      1,
+      "overworld",
+    );
     return {
       ...state,
       scene: "battle",
       rngState: rng.getState(),
+      battleState: battle,
       worldState: { player: target, encounterMeter: 0 },
       log: [...state.log, "A monster ambushes the party!"],
     };
@@ -237,11 +248,12 @@ function turnDungeon(state: GameState, direction: TurnDirection): GameState {
  * `StepDungeon` reducer (PROJECT_PLAN Phase 3). Steps one tile forward or
  * backward along the party's facing. Walls (and out-of-bounds) block the
  * step without consuming RNG. A successful step reveals the area around the
- * new tile. Stepping onto the boss marker flags a fixed encounter and marks
- * the boss room reached; stepping onto plain floor rolls a wandering
- * encounter against the seeded RNG; chest/stairs tiles are entered but not
- * auto-interacted with. Encounter triggers switch `scene` to `battle` as a
- * stub transition (the real battle is PROJECT_PLAN Phase 4).
+ * new tile. Stepping onto the boss marker starts a fixed boss battle and
+ * marks the boss room reached; stepping onto plain floor rolls a wandering
+ * encounter against the seeded RNG and starts a real battle; chest/stairs
+ * tiles are entered but not auto-interacted with. Both encounter kinds call
+ * `startBattle`, which consumes RNG to pick enemies and roll initiative and
+ * sets `scene` to `battle` with a fresh `battleState`.
  */
 function stepDungeon(state: GameState, direction: StepDirection): GameState {
   const ds = state.dungeonState;
@@ -259,9 +271,19 @@ function stepDungeon(state: GameState, direction: StepDirection): GameState {
   const feature = tileFeature(ds.layout, target);
 
   if (feature === "bossMarker") {
+    const rng = new Rng(state.seed, state.rngState);
+    const battle = startBattle(
+      rng,
+      state.party[0],
+      "boss",
+      ds.floor,
+      "dungeon",
+    );
     return {
       ...state,
       scene: "battle",
+      rngState: rng.getState(),
+      battleState: battle,
       dungeonState: {
         ...moved,
         reachedBoss: true,
@@ -275,10 +297,18 @@ function stepDungeon(state: GameState, direction: StepDirection): GameState {
     const rng = new Rng(state.seed, state.rngState);
     const roll = rng.next();
     if (roll < DUNGEON_ENCOUNTER_CHANCE) {
+      const battle = startBattle(
+        rng,
+        state.party[0],
+        "wandering",
+        ds.floor,
+        "dungeon",
+      );
       return {
         ...state,
         scene: "battle",
         rngState: rng.getState(),
+        battleState: battle,
         dungeonState: {
           ...moved,
           encounter: { kind: "wandering", floor: ds.floor },
@@ -352,24 +382,6 @@ function descendStairs(state: GameState): GameState {
   };
 }
 
-/**
- * `BattleFlee` reducer (PROJECT_PLAN Phase 3 stub). Resolves a flagged
- * dungeon encounter by slipping back into the dungeon scene and clearing the
- * encounter marker. The real win/lose resolution arrives in Phase 4; for now
- * this keeps the playable slice flowing past wandering encounters.
- */
-function battleFlee(state: GameState): GameState {
-  if (state.dungeonState?.encounter) {
-    return {
-      ...state,
-      scene: "dungeon",
-      dungeonState: { ...state.dungeonState, encounter: null },
-      log: [...state.log, "You slip away into the shadows"],
-    };
-  }
-  return { ...state, log: [...state.log, "You cannot flee this fight"] };
-}
-
 /** Pure reducer: never mutates `state`. All state transitions route through here. */
 export function reduce(state: GameState, event: GameEvent): GameState {
   switch (event.type) {
@@ -395,8 +407,12 @@ export function reduce(state: GameState, event: GameEvent): GameState {
       return openChest(state);
     case "DescendStairs":
       return descendStairs(state);
+    case "BattleAttack":
+    case "BattleSkill":
+    case "BattleItem":
+    case "BattleDefend":
     case "BattleFlee":
-      return battleFlee(state);
+      return resolveBattleEvent(state, event);
   }
 }
 
