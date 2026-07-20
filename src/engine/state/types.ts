@@ -12,9 +12,11 @@ export interface GameState {
   seed: number;
   rngState: RngState;
   scene: Scene;
+  log: readonly string[];
 }
 
 /** Events the pure reducer understands. Seeded minimally to lock its signature. */
 export type GameEvent =
   | { type: "NewGame"; seed: number }
-  | { type: "ChangeScene"; scene: Scene };
+  | { type: "ChangeScene"; scene: Scene }
+  | { type: "Log"; message: string };

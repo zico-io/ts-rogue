@@ -1,10 +1,15 @@
 import { Rng } from "../rng/rng.js";
 import type { GameEvent, GameState } from "./types.js";
 
-/** Build a fresh state tree for a new run from a seed. */
+/** Build a fresh state tree for a new run from a seed, logging the seed. */
 export function newGame(seed: number): GameState {
   const rng = new Rng(seed);
-  return { seed, rngState: rng.getState(), scene: "village" };
+  return {
+    seed,
+    rngState: rng.getState(),
+    scene: "village",
+    log: [`Started new game with seed ${seed}`],
+  };
 }
 
 /** Pure reducer: never mutates `state`. All state transitions route through here. */
@@ -14,6 +19,8 @@ export function reduce(state: GameState, event: GameEvent): GameState {
       return newGame(event.seed);
     case "ChangeScene":
       return { ...state, scene: event.scene };
+    case "Log":
+      return { ...state, log: [...state.log, event.message] };
   }
 }
 
