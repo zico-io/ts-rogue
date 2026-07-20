@@ -1,7 +1,16 @@
 import { findShopItem, sellPriceFor } from "../../data/shops";
 import { createStartingHero } from "../entities/party";
 import { Rng } from "../rng/rng";
-import type { GameEvent, GameState } from "./types";
+import {
+  biomeDanger,
+  createInitialWorldState,
+  ENCOUNTER_THRESHOLD,
+  generateOverworldMap,
+  inBounds,
+  isPassable,
+  tileAt,
+} from "../world/overworld";
+import type { GameEvent, GameState, MoveDelta } from "./types";
 
 /** Gold cost per party member to fully heal at the inn. */
 export const INN_COST_PER_MEMBER = 10;
@@ -9,6 +18,7 @@ export const INN_COST_PER_MEMBER = 10;
 /** Build a fresh state tree for a new run from a seed, logging the seed. */
 export function newGame(seed: number): GameState {
   const rng = new Rng(seed);
+  const map = generateOverworldMap(seed);
   return {
     seed,
     rngState: rng.getState(),
@@ -17,6 +27,7 @@ export function newGame(seed: number): GameState {
     party: [createStartingHero()],
     gold: 50,
     inventory: [],
+    worldState: createInitialWorldState(map),
   };
 }
 
@@ -104,6 +115,75 @@ function storeSell(
   };
 }
 
+/**
+ * `MoveOverworld` reducer (PROJECT_PLAN Phase 2, §4.3). The map is
+ * regenerated from `state.seed` (a pure function, see `world/overworld.ts`)
+ * rather than stored on state. Movement onto an impassable tile or off the
+ * map edge is a no-op. Movement onto the village or a dungeon entrance
+ * changes scene directly; movement onto any other passable tile accumulates
+ * encounter danger (with RNG jitter) and triggers a battle at the threshold.
+ * Only successful moves consume RNG, keeping blocked moves fully
+ * side-effect-free.
+ */
+function moveOverworld(
+  state: GameState,
+  dx: MoveDelta,
+  dy: MoveDelta,
+): GameState {
+  const map = generateOverworldMap(state.seed);
+  const target = {
+    x: state.worldState.player.x + dx,
+    y: state.worldState.player.y + dy,
+  };
+
+  if (!inBounds(map, target) || !isPassable(tileAt(map, target))) {
+    return {
+      ...state,
+      log: [...state.log, "The way is blocked"],
+    };
+  }
+
+  const tile = tileAt(map, target);
+
+  if (tile === "village") {
+    return {
+      ...state,
+      scene: "village",
+      worldState: { ...state.worldState, player: target },
+      log: [...state.log, "You return to the village"],
+    };
+  }
+
+  if (tile === "dungeonEntrance") {
+    return {
+      ...state,
+      scene: "dungeon",
+      worldState: { ...state.worldState, player: target },
+      log: [...state.log, "You step into a dungeon entrance"],
+    };
+  }
+
+  const rng = new Rng(state.seed, state.rngState);
+  const jitter = 0.7 + rng.next() * 0.6;
+  const meter = state.worldState.encounterMeter + biomeDanger(tile) * jitter;
+
+  if (meter >= ENCOUNTER_THRESHOLD) {
+    return {
+      ...state,
+      scene: "battle",
+      rngState: rng.getState(),
+      worldState: { player: target, encounterMeter: 0 },
+      log: [...state.log, "A monster ambushes the party!"],
+    };
+  }
+
+  return {
+    ...state,
+    rngState: rng.getState(),
+    worldState: { player: target, encounterMeter: meter },
+  };
+}
+
 /** Pure reducer: never mutates `state`. All state transitions route through here. */
 export function reduce(state: GameState, event: GameEvent): GameState {
   switch (event.type) {
@@ -119,6 +199,8 @@ export function reduce(state: GameState, event: GameEvent): GameState {
       return storeBuy(state, event.itemId, event.quantity);
     case "StoreSell":
       return storeSell(state, event.itemId, event.quantity);
+    case "MoveOverworld":
+      return moveOverworld(state, event.dx, event.dy);
   }
 }
 

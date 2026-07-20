@@ -56,16 +56,14 @@ function App({ store, hasSave }: { store: GameStore; hasSave: boolean }) {
 
   if (!started) return <TitleScreen hasSave={hasSave} />;
 
+  const dispatch = (event: Parameters<GameStore["dispatch"]>[0]) =>
+    store.dispatch(event);
+
   switch (state.scene) {
     case "village":
-      return (
-        <VillageScreen
-          dispatch={(event) => store.dispatch(event)}
-          state={state}
-        />
-      );
+      return <VillageScreen dispatch={dispatch} state={state} />;
     case "overworld":
-      return <OverworldScreen state={state} />;
+      return <OverworldScreen dispatch={dispatch} state={state} />;
     case "dungeon":
       return <DungeonScreen state={state} />;
     case "battle":
