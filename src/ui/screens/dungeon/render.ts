@@ -3,13 +3,14 @@
  * Phase 3, Approach A). No Ink/React import so this stays trivially
  * unit-testable; `DungeonScreen.tsx` is the thin Ink wrapper.
  *
- * `renderDungeonView` composes a fixed set of nested ASCII depth-slice frames
- * from what the grid shows ahead of the party: for each distance 1-4 it draws
- * a corridor frame whose left/right edges reflect wall presence on that slice,
- * and fills the nearest wall ahead as a solid back wall. The nearest
- * interactable ahead is drawn as a glyph at the vanishing point. When a
- * viewport is supplied the canonical 39x13 view is nearest-neighbor scaled to
- * fill it (capped at 2x) and centered, so the FP frame reflows to the terminal.
+ * `renderDungeonView` composes a classic Wizardry-style wireframe from what the
+ * grid shows ahead of the party: perspective rails converge on the center,
+ * vertical posts show the side walls at each depth, and the nearest wall ahead
+ * is an outlined plane. The nearest interactable ahead is drawn as a glyph at
+ * the vanishing point. The wireframe geometry is composed as line segments in a
+ * canonical 39x13 space, then rasterized onto a Braille dot canvas
+ * ({@link ./braille}) for smooth diagonals; the dot resolution scales with the
+ * viewport so the frame stays crisp as it reflows to the terminal.
  * `renderMinimap` draws a windowed top-down corner map using the explored mask.
  */
 
@@ -26,6 +27,7 @@ import type {
   DungeonState,
   Point,
 } from "../../../engine/world/types";
+import { createDotCanvas, packBraille, plotLine } from "./braille";
 
 export const FP_VIEW_WIDTH = 39;
 export const FP_VIEW_HEIGHT = 13;
@@ -39,23 +41,23 @@ export interface Viewport {
   height: number;
 }
 
-/** Largest up-scale factor for the FP view (keeps walls from getting chunky). */
-const MAX_FP_SCALE = 2;
-
-interface Frame {
+interface Portal {
   l: number;
   r: number;
   t: number;
   b: number;
 }
 
-// d=1 (nearest, largest) .. d=4 (farthest, smallest), concentric about (19,6).
-const FRAMES: readonly Frame[] = [
+// The near edge, four visible depths, and the vanishing point.
+const PORTALS: readonly Portal[] = [
+  { l: 1, r: 37, t: 0, b: 12 },
   { l: 8, r: 30, t: 1, b: 11 },
-  { l: 11, r: 27, t: 2, b: 10 },
-  { l: 14, r: 24, t: 3, b: 9 },
+  { l: 12, r: 26, t: 2, b: 10 },
+  { l: 15, r: 23, t: 3, b: 9 },
   { l: 17, r: 21, t: 4, b: 8 },
+  { l: 18, r: 20, t: 5, b: 7 },
 ];
+const VISIBLE_DEPTH = PORTALS.length - 2;
 
 const CENTER_X = 19;
 const CENTER_Y = 6;
@@ -73,38 +75,87 @@ export const FACING_GLYPH: Record<DungeonFacing, string> = {
   west: "<",
 };
 
-function blankGrid(): string[][] {
-  return Array.from({ length: FP_VIEW_HEIGHT }, () =>
-    Array.from({ length: FP_VIEW_WIDTH }, () => " "),
+/** A wireframe line in canonical 39x13 coordinates. */
+interface Segment {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+/** A feature glyph placed at a canonical cell. */
+interface GlyphAt {
+  x: number;
+  y: number;
+  char: string;
+}
+
+function post(x: number, top: number, bottom: number): Segment {
+  return { x0: x, y0: top, x1: x, y1: bottom };
+}
+
+/**
+ * Project a lateral offset (in tiles, left negative / right positive from the
+ * party's column) onto canonical screen-x at depth `plane`. Every portal is
+ * centered on {@link CENTER_X}, and its full width `r - l` is exactly one tile
+ * of lateral span at that depth, so a wall `L` tiles to the side lands at
+ * `CENTER_X + L * (r - l)` - off-screen up close, sweeping into view with depth.
+ */
+function proj(lateral: number, plane: number): number {
+  const p = PORTALS[plane];
+  return CENTER_X + lateral * (p.r - p.l);
+}
+
+/**
+ * One continuous side wall at constant lateral offset `lat`, running from depth
+ * plane `dFrom` to plane `dTo + 1`: the ceiling and floor rails receding through
+ * every portal it spans (so it stays smooth through the hand-tuned perspective)
+ * plus the two end jambs. Drawn as one surface, not per-cell, so a straight wall
+ * reads as a single receding plane rather than a stack of crossing panels.
+ */
+function sideWallPlane(lat: number, dFrom: number, dTo: number): Segment[] {
+  const segments: Segment[] = [];
+  for (let d = dFrom; d <= dTo; d++) {
+    const nearX = proj(lat, d);
+    const farX = proj(lat, d + 1);
+    const n = PORTALS[d];
+    const f = PORTALS[d + 1];
+    segments.push(
+      { x0: nearX, y0: n.t, x1: farX, y1: f.t },
+      { x0: nearX, y0: n.b, x1: farX, y1: f.b },
+    );
+  }
+  const near = PORTALS[dFrom];
+  const far = PORTALS[dTo + 1];
+  segments.push(
+    post(proj(lat, dFrom), near.t, near.b),
+    post(proj(lat, dTo + 1), far.t, far.b),
   );
+  return segments;
 }
 
-function drawFrame(
-  grid: string[][],
-  frame: Frame,
-  leftWall: boolean,
-  rightWall: boolean,
-): void {
-  grid[frame.t][frame.l] = "+";
-  grid[frame.t][frame.r] = "+";
-  grid[frame.b][frame.l] = "+";
-  grid[frame.b][frame.r] = "+";
-  for (let x = frame.l + 1; x < frame.r; x++) {
-    grid[frame.t][x] = "-";
-    grid[frame.b][x] = "-";
-  }
-  for (let y = frame.t + 1; y < frame.b; y++) {
-    grid[y][frame.l] = leftWall ? "|" : " ";
-    grid[y][frame.r] = rightWall ? "|" : " ";
-  }
+/** The wall closing the far end of the room, framed to its width at plane `d`. */
+function backWall(leftLat: number, rightLat: number, d: number): Segment[] {
+  const xl = proj(leftLat, d);
+  const xr = proj(rightLat, d);
+  const p = PORTALS[d];
+  return [
+    { x0: xl, y0: p.t, x1: xr, y1: p.t },
+    { x0: xl, y0: p.b, x1: xr, y1: p.b },
+    post(xl, p.t, p.b),
+    post(xr, p.t, p.b),
+  ];
 }
 
-function fillRect(grid: string[][], frame: Frame, ch: string): void {
-  for (let y = frame.t; y <= frame.b; y++) {
-    for (let x = frame.l; x <= frame.r; x++) {
-      grid[y][x] = ch;
-    }
-  }
+/**
+ * The far floor edge: one horizontal line where the floor meets the far end of
+ * the visible space (plane `d`), spanning lateral `latL`..`latR`. A minimal
+ * ground cue so an open room reads as a floored space receding to a back edge
+ * rather than a void, without a full (illegible) grid.
+ */
+function floorLine(latL: number, latR: number, d: number): Segment {
+  const b = PORTALS[d].b;
+  return { x0: proj(latL, d), y0: b, x1: proj(latR, d), y1: b };
 }
 
 function aheadCell(
@@ -120,13 +171,23 @@ function wallAhead(ds: DungeonState, cell: Point): boolean {
   return !inDungeonBounds(ds.layout, cell) || isDungeonWall(ds.layout, cell);
 }
 
-function sideWall(
-  ds: DungeonState,
-  ahead: Point,
-  side: DungeonFacing,
-): boolean {
+/** Furthest lateral scan (tiles) before a side wall is treated as out of view. */
+const LATERAL_LIMIT = 8;
+
+/**
+ * Open floor tiles between `cell` and the first wall in perpendicular direction
+ * `side` (0 = wall is immediately adjacent). Capped at {@link LATERAL_LIMIT} so
+ * a wide-open flank projects off-screen rather than scanning the whole map.
+ */
+function openRun(ds: DungeonState, cell: Point, side: DungeonFacing): number {
   const delta = forwardDelta(side);
-  return wallAhead(ds, { x: ahead.x + delta.x, y: ahead.y + delta.y });
+  let n = 0;
+  let p = { x: cell.x + delta.x, y: cell.y + delta.y };
+  while (n < LATERAL_LIMIT && !wallAhead(ds, p)) {
+    n++;
+    p = { x: p.x + delta.x, y: p.y + delta.y };
+  }
+  return n;
 }
 
 /** Nearest interactable glyph directly ahead within the visible corridor. */
@@ -135,7 +196,7 @@ function nearestFeatureGlyph(
   facing: DungeonFacing,
   dBack: number,
 ): string | null {
-  const limit = Math.min(dBack - 1, FRAMES.length);
+  const limit = Math.min(dBack - 1, VISIBLE_DEPTH);
   for (let d = 1; d <= limit; d++) {
     const feature = tileFeature(ds.layout, aheadCell(ds.player, facing, d));
     if (feature !== "none") return FEATURE_GLYPH[feature];
@@ -144,97 +205,171 @@ function nearestFeatureGlyph(
 }
 
 /**
- * Compose the canonical first-person depth-slice view. Returns one string per
- * render row, each exactly {@link FP_VIEW_WIDTH} columns wide.
+ * Compose the first-person wireframe as line segments in canonical 39x13
+ * coordinates plus an optional feature glyph. Geometry only - the rasterizer
+ * turns this into Braille at whatever resolution the viewport calls for.
  */
-function composeCanonicalView(ds: DungeonState): string[] {
-  const grid = blankGrid();
+function composeGeometry(ds: DungeonState): {
+  segments: Segment[];
+  glyph: GlyphAt | null;
+} {
   const facing = ds.facing;
   const left = rotateFacing(facing, "left");
   const right = rotateFacing(facing, "right");
 
-  // Distance to the nearest wall ahead (1..4), or 5 if the way is open past view.
-  let dBack = FRAMES.length + 1;
-  for (let d = 1; d <= FRAMES.length; d++) {
+  // Distance to the nearest wall ahead, or one past the visible range.
+  let dBack = VISIBLE_DEPTH + 1;
+  for (let d = 1; d <= VISIBLE_DEPTH; d++) {
     if (wallAhead(ds, aheadCell(ds.player, facing, d))) {
       dBack = d;
       break;
     }
   }
 
-  const lastCorridor = Math.min(dBack - 1, FRAMES.length);
-  for (let d = 1; d <= lastCorridor; d++) {
-    const ahead = aheadCell(ds.player, facing, d);
-    drawFrame(
-      grid,
-      FRAMES[d - 1],
-      sideWall(ds, ahead, left),
-      sideWall(ds, ahead, right),
+  // Each side wall is measured once at the party (how many open tiles to the
+  // nearest wall) and drawn as one straight plane, extended back only while the
+  // wall stays that same distance away. This keeps rooms coherent: a rectangular
+  // room reads as a box, and a wall that opens up ends the plane there (a side
+  // passage) instead of spraying a fresh panel at every depth.
+  const lastCell = Math.min(dBack - 1, VISIBLE_DEPTH);
+  const segments: Segment[] = [
+    floorLine(
+      -(openRun(ds, ds.player, left) + 0.5),
+      openRun(ds, ds.player, right) + 0.5,
+      Math.min(dBack, VISIBLE_DEPTH + 1),
+    ),
+  ];
+
+  for (const [side, sign] of [
+    [left, -1],
+    [right, 1],
+  ] as const) {
+    const run = openRun(ds, ds.player, side);
+    if (run >= LATERAL_LIMIT) continue; // no wall in view on this flank
+    let dTo = 0;
+    while (
+      dTo < lastCell &&
+      openRun(ds, aheadCell(ds.player, facing, dTo + 1), side) === run
+    ) {
+      dTo++;
+    }
+    segments.push(...sideWallPlane(sign * (run + 0.5), 0, dTo));
+  }
+
+  if (dBack <= VISIBLE_DEPTH) {
+    // Frame the far wall to the room's width one cell short of it.
+    const lastOpen = aheadCell(ds.player, facing, lastCell);
+    segments.push(
+      ...backWall(
+        -(openRun(ds, lastOpen, left) + 0.5),
+        openRun(ds, lastOpen, right) + 0.5,
+        dBack,
+      ),
     );
   }
 
-  if (dBack <= FRAMES.length) {
-    fillRect(grid, FRAMES[dBack - 1], "#");
-  }
-
-  const glyph = nearestFeatureGlyph(ds, facing, dBack);
-  if (glyph) grid[CENTER_Y][CENTER_X] = glyph;
-
-  return grid.map((row) => row.join(""));
+  const feature = nearestFeatureGlyph(ds, facing, dBack);
+  const glyph = feature ? { x: CENTER_X, y: CENTER_Y, char: feature } : null;
+  return { segments, glyph };
 }
 
 /**
- * Nearest-neighbor scale the canonical FP view to fill `viewport` (capped at
- * {@link MAX_FP_SCALE}) and center it, padding with spaces. Returns one string
- * per viewport row, each exactly `viewport.width` columns wide.
+ * Rasterize canonical wireframe segments onto a Braille dot canvas sized for a
+ * `cols` x `rows` character grid (2x4 dots per cell), overlaying the feature
+ * glyph as a plain char. Returns `rows` strings of exactly `cols` columns.
  */
-function fitDungeonView(canonical: string[], viewport: Viewport): string[] {
-  const scale = Math.min(
-    MAX_FP_SCALE,
-    viewport.width / FP_VIEW_WIDTH,
-    viewport.height / FP_VIEW_HEIGHT,
-  );
-  const scaledWidth = Math.max(1, Math.floor(FP_VIEW_WIDTH * scale));
-  const scaledHeight = Math.max(1, Math.floor(FP_VIEW_HEIGHT * scale));
-  const offsetX = Math.floor((viewport.width - scaledWidth) / 2);
-  const offsetY = Math.floor((viewport.height - scaledHeight) / 2);
-
-  const rows: string[] = [];
-  for (let y = 0; y < viewport.height; y++) {
-    let row = "";
-    for (let x = 0; x < viewport.width; x++) {
-      const inside =
-        x >= offsetX &&
-        x < offsetX + scaledWidth &&
-        y >= offsetY &&
-        y < offsetY + scaledHeight;
-      if (!inside) {
-        row += " ";
-        continue;
-      }
-      const sx = Math.floor((x - offsetX) / scale);
-      const sy = Math.floor((y - offsetY) / scale);
-      row +=
-        sx >= 0 && sx < FP_VIEW_WIDTH && sy >= 0 && sy < FP_VIEW_HEIGHT
-          ? canonical[sy][sx]
-          : " ";
-    }
-    rows.push(row);
+function rasterize(
+  segments: Segment[],
+  glyph: GlyphAt | null,
+  cols: number,
+  rows: number,
+): string[] {
+  const dotW = cols * 2;
+  const dotH = rows * 4;
+  // Map canonical corner indices (0..W-1) exactly onto the dot-canvas edges so
+  // the wireframe stays centered at every scale.
+  const scaleX = (dotW - 1) / (FP_VIEW_WIDTH - 1);
+  const scaleY = (dotH - 1) / (FP_VIEW_HEIGHT - 1);
+  const buf = createDotCanvas(dotW, dotH);
+  for (const s of segments) {
+    plotLine(
+      buf,
+      dotW,
+      dotH,
+      s.x0 * scaleX,
+      s.y0 * scaleY,
+      s.x1 * scaleX,
+      s.y1 * scaleY,
+    );
   }
-  return rows;
+
+  const grid = packBraille(buf, dotW, dotH);
+  if (glyph) {
+    const gc = clamp(
+      Math.round((glyph.x * (cols - 1)) / (FP_VIEW_WIDTH - 1)),
+      0,
+      cols - 1,
+    );
+    const gr = clamp(
+      Math.round((glyph.y * (rows - 1)) / (FP_VIEW_HEIGHT - 1)),
+      0,
+      rows - 1,
+    );
+    grid[gr] = grid[gr].slice(0, gc) + glyph.char + grid[gr].slice(gc + 1);
+  }
+  return grid;
+}
+
+/** Center a `cols`x`rows` grid inside `viewport`, padding with spaces. */
+function centerInViewport(
+  grid: string[],
+  cols: number,
+  rows: number,
+  viewport: Viewport,
+): string[] {
+  const offsetX = Math.floor((viewport.width - cols) / 2);
+  const offsetY = Math.floor((viewport.height - rows) / 2);
+  const blank = " ".repeat(viewport.width);
+  const out: string[] = [];
+  for (let y = 0; y < viewport.height; y++) {
+    const line = grid[y - offsetY];
+    if (line === undefined) {
+      out.push(blank);
+      continue;
+    }
+    out.push(
+      " ".repeat(offsetX) + line + " ".repeat(viewport.width - offsetX - cols),
+    );
+  }
+  return out;
 }
 
 /**
- * Compose the first-person depth-slice view. Without a viewport this returns
- * the canonical {@link FP_VIEW_WIDTH}x{@link FP_VIEW_HEIGHT} view; with one,
- * that view is scaled/centered into the viewport so it reflows to the terminal.
+ * Compose the first-person depth-slice view as Braille. Without a viewport this
+ * returns the canonical {@link FP_VIEW_WIDTH}x{@link FP_VIEW_HEIGHT} view; with
+ * one, the wireframe is rasterized at a proportionally larger dot resolution
+ * and centered so it reflows to the terminal while staying crisp.
  */
 export function renderDungeonView(
   ds: DungeonState,
   viewport?: Viewport,
 ): string[] {
-  const canonical = composeCanonicalView(ds);
-  return viewport ? fitDungeonView(canonical, viewport) : canonical;
+  const { segments, glyph } = composeGeometry(ds);
+  if (!viewport) {
+    return rasterize(segments, glyph, FP_VIEW_WIDTH, FP_VIEW_HEIGHT);
+  }
+  const scale = Math.min(
+    viewport.width / FP_VIEW_WIDTH,
+    viewport.height / FP_VIEW_HEIGHT,
+  );
+  const cols = Math.max(1, Math.floor(FP_VIEW_WIDTH * scale));
+  const rows = Math.max(1, Math.floor(FP_VIEW_HEIGHT * scale));
+  return centerInViewport(
+    rasterize(segments, glyph, cols, rows),
+    cols,
+    rows,
+    viewport,
+  );
 }
 
 function clamp(value: number, min: number, max: number): number {

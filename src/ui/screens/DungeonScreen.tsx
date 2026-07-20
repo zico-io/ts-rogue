@@ -72,8 +72,12 @@ function DungeonBody({ state }: { state: GameState }) {
   // inner text clips rather than pushing the layout.
   const minimapBoxHeight = Math.min(MINIMAP_BOX_HEIGHT, mainHeight);
 
-  const fpWidth = Math.max(1, width - MINIMAP_BOX_WIDTH - MINIMAP_GAP);
-  const fpRows = renderDungeonView(ds, { width: fpWidth, height: mainHeight });
+  const fpWidth = Math.max(3, width - MINIMAP_BOX_WIDTH - MINIMAP_GAP);
+  // The FP box has a single-cell border, so render into the interior.
+  const fpRows = renderDungeonView(ds, {
+    width: Math.max(1, fpWidth - 2),
+    height: Math.max(1, mainHeight - 2),
+  });
   const minimapRows = renderMinimap(ds);
 
   return (
@@ -84,8 +88,13 @@ function DungeonBody({ state }: { state: GameState }) {
         justifyContent="center"
         height={mainHeight}
       >
-        <Box width={fpWidth} height={mainHeight} overflow="hidden">
-          <Text>{fpRows.join("\n")}</Text>
+        <Box
+          borderStyle="single"
+          width={fpWidth}
+          height={mainHeight}
+          overflow="hidden"
+        >
+          <Text color="magenta">{fpRows.join("\n")}</Text>
         </Box>
         <Box
           borderStyle="single"

@@ -18,6 +18,15 @@ import {
   renderMinimap,
 } from "./render";
 
+/** A cell is a Braille glyph (U+2800–U+28FF), i.e. drawn wireframe. */
+function isBraille(ch: string): boolean {
+  const code = ch.charCodeAt(0);
+  return code >= 0x2800 && code <= 0x28ff;
+}
+
+/** The old ASCII wireframe glyphs must never appear in Braille output. */
+const ASCII_WIREFRAME = ["\\", "/", "+", "|", "-", "#"];
+
 describe("renderDungeonView", () => {
   it("returns FP_VIEW_HEIGHT rows of exactly FP_VIEW_WIDTH columns", () => {
     const ds = createInitialDungeonState(1234, "dungeon-0", 1);
@@ -31,7 +40,14 @@ describe("renderDungeonView", () => {
     expect(renderDungeonView(ds)).toEqual(renderDungeonView(ds));
   });
 
-  it("fills the nearest frame with a solid back wall when a wall is directly ahead", () => {
+  it("draws the wireframe as Braille and never as ASCII line glyphs", () => {
+    const ds = createInitialDungeonState(1234, "dungeon-0", 1);
+    const all = renderDungeonView(ds).join("");
+    expect([...all].some(isBraille)).toBe(true); // wireframe present
+    for (const ch of ASCII_WIREFRAME) expect(all).not.toContain(ch);
+  });
+
+  it("outlines the nearest wall as a dense Braille plane when a wall is directly ahead", () => {
     // player at (3,3) facing north; tile (3,2) is a wall one step ahead.
     const layout = buildLayout([
       "#######",
@@ -42,11 +58,14 @@ describe("renderDungeonView", () => {
     ]);
     const ds = buildState(layout, { x: 3, y: 3 }, "north");
     const rows = renderDungeonView(ds);
-    expect(rows[0]).toBe(" ".repeat(FP_VIEW_WIDTH));
-    expect(rows[6]).toBe(" ".repeat(8) + "#".repeat(23) + " ".repeat(8));
+    // The front-wall rectangle draws long horizontal Braille runs (top/bottom
+    // edges) that an open corridor never produces.
+    const maxRun = Math.max(...rows.map(brailleRun));
+    expect(maxRun).toBeGreaterThanOrEqual(15);
+    for (const ch of ASCII_WIREFRAME) expect(rows.join("")).not.toContain(ch);
   });
 
-  it("draws nested corridor frames with side walls when the way is open past view", () => {
+  it("keeps the vanishing point open when the way is clear past view", () => {
     // 3-wide, 9-tall corridor; player at the bottom facing up a long hall.
     const layout = buildLayout([
       "###",
@@ -62,8 +81,28 @@ describe("renderDungeonView", () => {
     const ds = buildState(layout, { x: 1, y: 7 }, "north");
     const rows = renderDungeonView(ds);
     expect(rows[6][19]).toBe(" "); // vanishing point stays open
-    expect(rows[6][8]).toBe("|"); // nearest left wall edge
-    expect(rows.every((row) => !row.includes("#"))).toBe(true); // no back wall
+    expect(isBraille(rows[6][1])).toBe(true); // nearest left wall post drawn
+    // No solid front wall: eye level has no long horizontal run spanning it.
+    expect(brailleRun(rows[6])).toBeLessThan(15);
+  });
+
+  it("marks the far floor edge in an open room", () => {
+    // Wide-open room, way clear ahead: a single floor line spans the room's
+    // width at the far end of the visible space - just below eye level, never
+    // above it - so the room reads as a floored space, not a void.
+    const layout = buildLayout([
+      "#######",
+      "#.....#",
+      "#.....#",
+      "#.....#",
+      "#.....#",
+      "#.....#",
+      "#.....#",
+    ]);
+    const rows = renderDungeonView(buildState(layout, { x: 3, y: 6 }, "north"));
+    const maxRun = (slice: string[]) => Math.max(...slice.map(brailleRun));
+    // The floor line is the longest horizontal run, and it sits below eye level.
+    expect(maxRun(rows.slice(7))).toBeGreaterThan(maxRun(rows.slice(0, 6)));
   });
 
   it("renders the nearest interactable ahead as a glyph at the vanishing point", () => {
@@ -80,14 +119,34 @@ describe("renderDungeonView", () => {
     }
   });
 
-  it("reflects left/right wall presence on the nearest corridor slice", () => {
-    // player (1,3) facing north: d=1 (1,2) is floor, d=2 (1,1) is a wall.
-    // Left of the d=1 cell (0,2) is floor -> opening; right (2,2) is wall.
-    const layout = buildLayout(["###", "###", "..#", "#.#"]);
+  it("reflects left/right wall presence on the player's own cell", () => {
+    // player (1,3) facing north. Immediately left (west) (0,3) is floor -> a
+    // passage the player can see into; immediately right (east) (2,3) is wall.
+    const layout = buildLayout(["###", "#.#", "#.#", "..#"]);
     const ds = buildState(layout, { x: 1, y: 3 }, "north");
     const rows = renderDungeonView(ds);
-    expect(rows[6][8]).toBe(" "); // nearest left edge open (no left wall)
-    expect(rows[6][30]).toBe("|"); // nearest right edge closed (right wall)
+    expect(rows[6][1]).toBe(" "); // nearest left post open (no left wall)
+    expect(isBraille(rows[6][37])).toBe(true); // nearest right post closed
+  });
+
+  it("projects the back wall at the room's true width, so wider rooms read wider", () => {
+    // Same wall two steps ahead, but a 1-wide corridor vs a 5-wide room. Side
+    // walls are projected at their actual distance, so the room's back wall
+    // spans far more of the frame than the corridor's narrow one.
+    const brailleInBand = (rows: string[]) =>
+      Math.max(...rows.slice(1, 5).map((r) => [...r].filter(isBraille).length));
+
+    const corridor = renderDungeonView(
+      buildState(buildLayout(["###", "#.#", "#.#"]), { x: 1, y: 2 }, "north"),
+    );
+    const room = renderDungeonView(
+      buildState(
+        buildLayout(["#####", "#...#", "#...#"]),
+        { x: 2, y: 2 },
+        "north",
+      ),
+    );
+    expect(brailleInBand(room)).toBeGreaterThan(brailleInBand(corridor));
   });
 });
 
@@ -213,6 +272,17 @@ describe("renderMinimap", () => {
     expect(all).toContain("B");
   });
 });
+
+/** Longest contiguous run of Braille chars in a row (front-wall detector). */
+function brailleRun(row: string): number {
+  let best = 0;
+  let run = 0;
+  for (const ch of row) {
+    run = isBraille(ch) ? run + 1 : 0;
+    if (run > best) best = run;
+  }
+  return best;
+}
 
 /** Bounding box of non-space characters in a string-grid. */
 function contentBox(rows: string[]): {
