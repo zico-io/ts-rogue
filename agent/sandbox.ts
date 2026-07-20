@@ -25,14 +25,25 @@ async function githubNetworkPolicy(): Promise<SandboxNetworkPolicy> {
 // static token expires mid-session. Re-mint it on an interval via
 // setNetworkPolicy. There is no session-end hook, so the chain self-terminates
 // when setNetworkPolicy throws (sandbox torn down) rather than leaking a timer.
+// A transient mint failure must NOT end refresh: distinguish the two sources so a
+// token-service blip retries next interval while a torn-down sandbox stops.
 export function keepTokenFresh(
   sandbox: Pick<SandboxSession, "setNetworkPolicy">,
   mintPolicy: () => Promise<SandboxNetworkPolicy> = githubNetworkPolicy,
   intervalMs: number = TOKEN_REFRESH_MS,
 ) {
   return setTimeout(async () => {
+    let policy: SandboxNetworkPolicy;
     try {
-      await sandbox.setNetworkPolicy(await mintPolicy());
+      policy = await mintPolicy();
+    } catch {
+      // ponytail: unbounded retry; teardown surfaces through setNetworkPolicy, and
+      // getToken self-heals once the token service recovers.
+      keepTokenFresh(sandbox, mintPolicy, intervalMs);
+      return;
+    }
+    try {
+      await sandbox.setNetworkPolicy(policy);
     } catch {
       return;
     }

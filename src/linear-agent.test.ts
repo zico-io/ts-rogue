@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { codingWorkerModel } from "../agent/agent";
 import { linearInputActivity } from "../agent/channels/linear";
 import linearConnection from "../agent/connections/linear";
+import { parseAgentSessionId } from "../agent/hooks/child-relay";
 import { sessionUpdateActivity } from "../agent/tools/session_update";
 
 describe("Linear agent interaction", () => {
@@ -14,6 +15,16 @@ describe("Linear agent interaction", () => {
       model: "deepseek/deepseek-v4-flash",
       modelContextWindowTokens: 1_000_000,
     });
+  });
+
+  it("captures the agent session id the child relay hook needs", () => {
+    expect(
+      parseAgentSessionId(
+        "<linear_context>\nagent_session_id: abc-123-def\n</linear_context>",
+      ),
+    ).toBe("abc-123-def");
+    expect(parseAgentSessionId("agent_session_id: `sess-9`")).toBe("sess-9");
+    expect(parseAgentSessionId("no session id here")).toBeNull();
   });
 
   it("uses one native selection for batched input requests", () => {
