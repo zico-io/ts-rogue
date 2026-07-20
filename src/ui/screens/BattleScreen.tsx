@@ -186,33 +186,35 @@ export function BattleScreen({ state, dispatch }: BattleScreenProps) {
       showLog={false}
     >
       <Box flexDirection="row" flexGrow={1} gap={2}>
-        {/* Battle viewport: enemies centered both axes, command block below. */}
+        {/* Left column: a framed battle viewport whose size tracks only the pane
+            (the command menu floats over it, out of flow, so it never reflows). */}
         <Box flexDirection="column" flexGrow={1}>
-          <Box flexGrow={1} alignItems="center" justifyContent="center">
-            <EnemyField
-              battle={bs}
-              aliveEnemies={aliveEnemies}
-              selectingTarget={mode === "target"}
-              targetCursor={targetCursor}
-            />
-          </Box>
+          <Box
+            flexGrow={1}
+            position="relative"
+            borderStyle="single"
+            borderDimColor
+          >
+            {/* Enemies, centered both axes in the fixed viewport. */}
+            <Box flexGrow={1} alignItems="center" justifyContent="center">
+              <EnemyField
+                battle={bs}
+                aliveEnemies={aliveEnemies}
+                selectingTarget={mode === "target"}
+                targetCursor={targetCursor}
+              />
+            </Box>
 
-          <Box flexDirection="column" gap={1}>
-            <Text>
-              {hero.name} Lv{hero.level} | XP {hero.xp}/{xpToNext(hero.level)} |
-              ATK {atkFrom(hero)} DEF {defFrom(hero)} SPD {spdFrom(hero)}
-            </Text>
-            <Text dimColor>
-              Turn order: {initiativeNames(bs, hero.name).join(" -> ")}
-            </Text>
-
-            {/* Command window titled with the acting member: these actions are theirs. */}
+            {/* Floating command window, anchored bottom-left over the viewport and
+                titled with the acting member: these actions are theirs. */}
             <Box
+              position="absolute"
+              bottom={0}
+              left={0}
               flexDirection="column"
               borderStyle="round"
               borderDimColor
               paddingX={1}
-              alignSelf="flex-start"
             >
               <Text bold color="cyan">
                 {hero.name}
@@ -229,6 +231,14 @@ export function BattleScreen({ state, dispatch }: BattleScreenProps) {
               />
             </Box>
           </Box>
+
+          <Text>
+            {hero.name} Lv{hero.level} | XP {hero.xp}/{xpToNext(hero.level)} |
+            ATK {atkFrom(hero)} DEF {defFrom(hero)} SPD {spdFrom(hero)}
+          </Text>
+          <Text dimColor>
+            Turn order: {initiativeNames(bs, hero.name).join(" -> ")}
+          </Text>
         </Box>
 
         {/* Battle log, pinned to the right of the combat layout. */}
