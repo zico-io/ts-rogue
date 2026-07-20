@@ -1,13 +1,20 @@
 /**
- * Party & economy data model (PROJECT_PLAN §4.2, §10).
+ * Party & economy data model (PROJECT_PLAN §4.2, §10; Phase 5, ROG-11).
  *
  * PROJECT_PLAN §10 defers multi-member parties until the loop is proven, so
  * `newGame` only ever creates one hero. `party` is still modeled as an array
  * so battle/UI code written against it does not need to change shape later.
+ *
+ * Phase 5 equipment slots hold the full generated `ItemInstance` (not just an
+ * id) so a save is self-contained: equipping moves an instance from the
+ * backpack (`GameState.items`) into a slot, unequipping moves it back. Combat
+ * reads effective stats via `src/engine/loot/equipment.ts`.
  */
 
-/** Nullable reference to an owned item by id, occupying an equipment slot. */
-export type EquipmentSlot = string | null;
+import type { ItemInstance } from "../loot/types";
+
+/** An equipped item instance occupying a slot, or `null` when the slot is empty. */
+export type EquipmentSlot = ItemInstance | null;
 
 export interface PartyMemberEquipment {
   weapon: EquipmentSlot;
@@ -36,7 +43,7 @@ export interface PartyMember {
   equipment: PartyMemberEquipment;
 }
 
-/** An owned, unequipped stack of items (equipped items live on `PartyMember.equipment`). */
+/** An owned, unequipped stack of consumable items (potions, antidotes). */
 export interface InventoryItem {
   itemId: string;
   quantity: number;

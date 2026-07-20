@@ -1,0 +1,212 @@
+/**
+ * Affix definitions (PROJECT_PLAN Phase 5, ROG-11; data table named in section
+ * 7). Prefixes and suffixes with value ranges and item-level gates. The combat
+ * resolver never reads these directly; the loot resolution helper rolls them
+ * onto generated items. `ilvl` gates rolling (an affix only rolls onto an item
+ * whose ilvl is >= the affix's ilvl) so deeper content unlocks stronger
+ * affixes and supports endless powerscaling. Signature affixes (id prefix
+ * `sig-`) are never rolled from the pool - they are attached explicitly as a
+ * monster-implicit item's fixed implicit, so their `weight` is irrelevant.
+ */
+
+import type { AffixDef } from "../engine/loot/types";
+
+export const AFFIXES: readonly AffixDef[] = [
+  // Prefixes (prepend to the base name)
+  {
+    id: "brute",
+    kind: "prefix",
+    name: "Brutal",
+    stat: "str",
+    min: 1,
+    max: 3,
+    ilvl: 1,
+    weight: 10,
+  },
+  {
+    id: "vicious",
+    kind: "prefix",
+    name: "Vicious",
+    stat: "str",
+    min: 4,
+    max: 6,
+    ilvl: 8,
+    weight: 5,
+  },
+  {
+    id: "nimble",
+    kind: "prefix",
+    name: "Nimble",
+    stat: "agi",
+    min: 1,
+    max: 3,
+    ilvl: 1,
+    weight: 10,
+  },
+  {
+    id: "swift",
+    kind: "prefix",
+    name: "Swift",
+    stat: "agi",
+    min: 4,
+    max: 6,
+    ilvl: 8,
+    weight: 5,
+  },
+  {
+    id: "sturdy",
+    kind: "prefix",
+    name: "Sturdy",
+    stat: "vit",
+    min: 1,
+    max: 3,
+    ilvl: 1,
+    weight: 10,
+  },
+  {
+    id: "tough",
+    kind: "prefix",
+    name: "Tough",
+    stat: "vit",
+    min: 4,
+    max: 6,
+    ilvl: 8,
+    weight: 5,
+  },
+  {
+    id: "clever",
+    kind: "prefix",
+    name: "Clever",
+    stat: "int",
+    min: 1,
+    max: 3,
+    ilvl: 1,
+    weight: 10,
+  },
+  {
+    id: "sage",
+    kind: "prefix",
+    name: "Sage",
+    stat: "int",
+    min: 4,
+    max: 6,
+    ilvl: 8,
+    weight: 5,
+  },
+  // Suffixes (append to the base name)
+  {
+    id: "of-might",
+    kind: "suffix",
+    name: "of Might",
+    stat: "str",
+    min: 1,
+    max: 4,
+    ilvl: 1,
+    weight: 10,
+  },
+  {
+    id: "of-the-titan",
+    kind: "suffix",
+    name: "of the Titan",
+    stat: "str",
+    min: 5,
+    max: 8,
+    ilvl: 8,
+    weight: 4,
+  },
+  {
+    id: "of-evasion",
+    kind: "suffix",
+    name: "of Evasion",
+    stat: "agi",
+    min: 1,
+    max: 4,
+    ilvl: 1,
+    weight: 10,
+  },
+  {
+    id: "of-vitality",
+    kind: "suffix",
+    name: "of Vitality",
+    stat: "vit",
+    min: 1,
+    max: 4,
+    ilvl: 1,
+    weight: 10,
+  },
+  {
+    id: "of-warding",
+    kind: "suffix",
+    name: "of Warding",
+    stat: "vit",
+    min: 5,
+    max: 8,
+    ilvl: 8,
+    weight: 4,
+  },
+  {
+    id: "of-sorcery",
+    kind: "suffix",
+    name: "of Sorcery",
+    stat: "int",
+    min: 1,
+    max: 4,
+    ilvl: 1,
+    weight: 10,
+  },
+  {
+    id: "of-foresight",
+    kind: "suffix",
+    name: "of Foresight",
+    stat: "int",
+    min: 5,
+    max: 8,
+    ilvl: 8,
+    weight: 4,
+  },
+  // Signature affixes (attached explicitly as a monster-implicit item's implicit)
+  {
+    id: "sig-might",
+    kind: "prefix",
+    name: "Guardian's",
+    stat: "str",
+    min: 6,
+    max: 10,
+    ilvl: 1,
+    weight: 1,
+  },
+  {
+    id: "sig-warding",
+    kind: "suffix",
+    name: "of the Guardian",
+    stat: "vit",
+    min: 6,
+    max: 10,
+    ilvl: 1,
+    weight: 1,
+  },
+  {
+    id: "sig-foresight",
+    kind: "suffix",
+    name: "of Foresight",
+    stat: "int",
+    min: 6,
+    max: 10,
+    ilvl: 1,
+    weight: 1,
+  },
+  {
+    id: "sig-ooze",
+    kind: "suffix",
+    name: "of Ooze",
+    stat: "vit",
+    min: 3,
+    max: 5,
+    ilvl: 1,
+    weight: 1,
+  },
+];
+
+export function findAffix(id: string): AffixDef | undefined {
+  return AFFIXES.find((affix) => affix.id === id);
+}
