@@ -6,5 +6,6 @@ export default defineMcpClientConnection({
   url: "https://mcp.linear.app/mcp",
   description: "Linear workspace for ts-rogue issues, projects, priorities, assignments, and status.",
   auth: connect("mcp.linear.app/ts-rogue-eve-mcp"),
+  tools: { block: ["save_comment"] },
   approval: never(),
 });
