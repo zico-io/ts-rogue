@@ -1,14 +1,14 @@
 import { render, useApp, useInput } from "ink";
 import { useState } from "react";
-import { GameStore, newGame } from "./engine/state/store.js";
-import type { Scene } from "./engine/state/types.js";
-import { loadGame } from "./persistence/save.js";
-import { useGameState } from "./ui/hooks/useGameState.js";
-import { BattleScreen } from "./ui/screens/BattleScreen.js";
-import { DungeonScreen } from "./ui/screens/DungeonScreen.js";
-import { OverworldScreen } from "./ui/screens/OverworldScreen.js";
-import { TitleScreen } from "./ui/screens/TitleScreen.js";
-import { VillageScreen } from "./ui/screens/VillageScreen.js";
+import { GameStore, newGame } from "./engine/state/store";
+import type { Scene } from "./engine/state/types";
+import { loadGame } from "./persistence/save";
+import { useGameState } from "./ui/hooks/useGameState";
+import { BattleScreen } from "./ui/screens/BattleScreen";
+import { DungeonScreen } from "./ui/screens/DungeonScreen";
+import { OverworldScreen } from "./ui/screens/OverworldScreen";
+import { TitleScreen } from "./ui/screens/TitleScreen";
+import { VillageScreen } from "./ui/screens/VillageScreen";
 
 const sceneKeys: Record<string, Scene> = {
   "1": "village",

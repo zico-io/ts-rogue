@@ -1,5 +1,14 @@
-import { defineAgent } from "eve";
+import { defineAgent, defineDynamic } from "eve";
+
+export const codingWorkerModel = (event: unknown) =>
+  (event as { data?: { invocation?: unknown } }).data?.invocation
+    ? { model: "deepseek/deepseek-v4-flash", modelContextWindowTokens: 1_000_000 }
+    : null;
 
 export default defineAgent({
-  model: "anthropic/claude-sonnet-5",
+  model: defineDynamic({
+    fallback: "zai/glm-5.2",
+    events: { "session.started": codingWorkerModel },
+  }),
+  modelContextWindowTokens: 1_040_000,
 });

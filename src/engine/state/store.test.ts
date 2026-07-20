@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { GameStore, INN_COST_PER_MEMBER, newGame, reduce } from "./store.js";
+import { GameStore, INN_COST_PER_MEMBER, newGame, reduce } from "./store";
 
 describe("game store", () => {
   it("seeds the log with the seed on new game", () => {

@@ -1,7 +1,7 @@
-import { findShopItem, sellPriceFor } from "../../data/shops.js";
-import { createStartingHero } from "../entities/party.js";
-import { Rng } from "../rng/rng.js";
-import type { GameEvent, GameState } from "./types.js";
+import { findShopItem, sellPriceFor } from "../../data/shops";
+import { createStartingHero } from "../entities/party";
+import { Rng } from "../rng/rng";
+import type { GameEvent, GameState } from "./types";
 
 /** Gold cost per party member to fully heal at the inn. */
 export const INN_COST_PER_MEMBER = 10;

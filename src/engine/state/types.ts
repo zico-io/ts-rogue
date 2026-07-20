@@ -1,5 +1,5 @@
-import type { InventoryItem, PartyMember } from "../entities/party.js";
-import type { RngState } from "../rng/rng.js";
+import type { InventoryItem, PartyMember } from "../entities/party";
+import type { RngState } from "../rng/rng";
 
 /** The scene the router is currently showing. */
 export type Scene = "village" | "overworld" | "dungeon" | "battle";
