@@ -1,5 +1,6 @@
 import type { BattleEvent, BattleState } from "../combat/types";
 import type { InventoryItem, PartyMember } from "../entities/party";
+import type { EquipmentSlotName, ItemInstance } from "../loot/types";
 import type { RngState } from "../rng/rng";
 import type { DungeonState, WorldState } from "../world/types";
 
@@ -9,7 +10,9 @@ export type Scene = "village" | "overworld" | "dungeon" | "battle";
 /**
  * The single serializable state tree. Only the fields the current milestone
  * needs exist today; dungeon/battle are added as their PROJECT_PLAN phases
- * land.
+ * land. Phase 5 (ROG-11) adds `items` (generated, affix-bearing equipment in
+ * the backpack) and `nextItemId` (the monotonically increasing source of unique
+ * item instance ids, so loot ids are deterministic from the event history).
  */
 export interface GameState {
   seed: number;
@@ -18,7 +21,12 @@ export interface GameState {
   log: readonly string[];
   party: PartyMember[];
   gold: number;
+  /** Owned, unequipped stacks of consumable items (potions, antidotes). */
   inventory: InventoryItem[];
+  /** Owned, unequipped generated equipment instances (affix-bearing loot). */
+  items: ItemInstance[];
+  /** Next unique item instance id; stamped onto rolled loot deterministically. */
+  nextItemId: number;
   worldState: WorldState;
   /** `null` until the party enters a dungeon entrance on the overworld. */
   dungeonState: DungeonState | null;
@@ -38,7 +46,8 @@ export type StepDirection = "forward" | "back";
 /**
  * Events the pure reducer understands. Dungeon events (PROJECT_PLAN Phase 3)
  * flag encounters and move the party; battle events (PROJECT_PLAN Phase 4)
- * resolve turn-based combat.
+ * resolve turn-based combat; loot/equip/sell events (Phase 5, ROG-11) flow
+ * generated equipment between the backpack, equipment slots, and the store.
  */
 export type GameEvent =
   | { type: "NewGame"; seed: number }
@@ -47,6 +56,9 @@ export type GameEvent =
   | { type: "InnHeal" }
   | { type: "StoreBuy"; itemId: string; quantity: number }
   | { type: "StoreSell"; itemId: string; quantity: number }
+  | { type: "EquipItem"; instanceId: string }
+  | { type: "UnequipItem"; slot: EquipmentSlotName }
+  | { type: "SellItem"; instanceId: string }
   | { type: "MoveOverworld"; dx: MoveDelta; dy: MoveDelta }
   | { type: "TurnDungeon"; direction: TurnDirection }
   | { type: "StepDungeon"; direction: StepDirection }

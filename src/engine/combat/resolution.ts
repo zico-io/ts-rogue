@@ -22,6 +22,10 @@
 import { findMonster, MONSTERS, type MonsterDef } from "../../data/monsters";
 import { findShopItem } from "../../data/shops";
 import type { InventoryItem, PartyMember } from "../entities/party";
+import { effectiveStats } from "../loot/equipment";
+import { describeItem } from "../loot/items";
+import { rollVictoryLoot } from "../loot/resolution";
+import type { ItemInstance } from "../loot/types";
 import { Rng, type RngState } from "../rng/rng";
 import type { GameState, Scene } from "../state/types";
 import {
@@ -103,15 +107,15 @@ export function deriveSpd(stats: CoreStats): number {
 }
 
 export function atkFrom(member: PartyMember): number {
-  return deriveAtk(member.stats);
+  return deriveAtk(effectiveStats(member));
 }
 
 export function defFrom(member: PartyMember): number {
-  return deriveDef(member.stats);
+  return deriveDef(effectiveStats(member));
 }
 
 export function spdFrom(member: PartyMember): number {
-  return deriveSpd(member.stats);
+  return deriveSpd(effectiveStats(member));
 }
 
 /* -------------------------------------------------------------------------- */
@@ -446,6 +450,7 @@ function applyHeroCommand(
   let defending = false;
   let itemUsed: string | null = null;
   let fled = false;
+  const heroStats = effectiveStats(hero);
 
   switch (command.kind) {
     case "attack": {
@@ -453,7 +458,7 @@ function applyHeroCommand(
         enemies.find((e) => e.id === command.targetId && e.hp > 0) ??
         firstAlive(enemies);
       if (target) {
-        const result = resolveAttack(rng, hero.stats, target.stats, false);
+        const result = resolveAttack(rng, heroStats, target.stats, false);
         if (!result.hit) {
           logs.push(`Hero attacks ${target.name} but misses!`);
         } else {
@@ -482,7 +487,7 @@ function applyHeroCommand(
           const damage = Math.max(
             1,
             Math.floor(
-              (skill.power + hero.stats.int) *
+              (skill.power + heroStats.int) *
                 (DAMAGE_VARIANCE_MIN +
                   variance * (DAMAGE_VARIANCE_MAX - DAMAGE_VARIANCE_MIN)),
             ),
@@ -494,7 +499,7 @@ function applyHeroCommand(
           if (target.hp === 0) logs.push(`${target.name} is defeated!`);
         }
       } else {
-        const heal = skill.power + hero.stats.int;
+        const heal = skill.power + heroStats.int;
         hp = Math.min(hero.maxHp, hp + heal);
         logs.push(`Hero casts ${skill.name} and recovers ${heal} HP.`);
       }
@@ -549,6 +554,8 @@ function finalizeWon(
   logs: string[],
   rngState: RngState,
   itemUsed: string | null,
+  loot: readonly ItemInstance[],
+  nextItemId: number,
 ): GameState {
   const xpGain = enemies.reduce((sum, e) => sum + e.xp, 0);
   const goldGain = enemies.reduce((sum, e) => sum + e.gold, 0);
@@ -563,9 +570,11 @@ function finalizeWon(
       `${granted.member.name} reached level ${granted.member.level}!`,
     );
   }
+  const lootLogs = loot.map((item) => `Looted ${describeItem(item)}!`);
   const inventory = itemUsed
     ? consumeItem(state.inventory, itemUsed)
     : state.inventory;
+  const items = loot.length ? [...state.items, ...loot] : state.items;
   return {
     ...state,
     rngState,
@@ -575,9 +584,11 @@ function finalizeWon(
     ),
     gold: state.gold + goldGain,
     inventory,
+    items,
+    nextItemId,
     dungeonState: clearEncounter(state.dungeonState),
     battleState: null,
-    log: [...state.log, ...finalLogs],
+    log: [...state.log, ...finalLogs, ...lootLogs],
   };
 }
 
@@ -671,6 +682,7 @@ export function resolveBattleEvent(
   })();
 
   const hero = state.party[0];
+  const heroEffective = effectiveStats(hero);
   if (hero.hp <= 0) return state;
   if (!validateCommand(command, hero, state.inventory, bs.enemies))
     return state;
@@ -687,6 +699,8 @@ export function resolveBattleEvent(
       [],
       state.rngState,
       null,
+      [],
+      state.nextItemId,
     );
   }
 
@@ -728,7 +742,7 @@ export function resolveBattleEvent(
       if (heroHp <= 0) break;
       const enemy = enemies.find((e) => e.id === combatantId && e.hp > 0);
       if (!enemy) continue;
-      const attack = resolveAttack(rng, enemy.stats, hero.stats, defending);
+      const attack = resolveAttack(rng, enemy.stats, heroEffective, defending);
       if (!attack.hit) {
         logs.push(`${enemy.name} attacks Hero but misses!`);
       } else {
@@ -744,6 +758,13 @@ export function resolveBattleEvent(
     }
   }
 
+  let loot: ItemInstance[] = [];
+  let nextItemId = state.nextItemId;
+  if (status === "won") {
+    const result = rollVictoryLoot(rng, enemies, state.nextItemId);
+    loot = result.items;
+    nextItemId = result.nextId;
+  }
   const rngState = rng.getState();
 
   if (status === "won") {
@@ -756,6 +777,8 @@ export function resolveBattleEvent(
       logs,
       rngState,
       itemUsed,
+      loot,
+      nextItemId,
     );
   }
   if (status === "lost") {

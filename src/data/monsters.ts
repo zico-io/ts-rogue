@@ -1,12 +1,14 @@
 /**
- * Monster definitions (PROJECT_PLAN Phase 4, ROG-10; data table named in §7).
+ * Monster definitions (PROJECT_PLAN Phase 4, ROG-10; Phase 5, ROG-11; data
+ * table named in section 7).
  *
  * Each monster is plain serializable data: base stats, HP/MP, XP/gold reward,
- * a difficulty tier, and first-person ASCII art drawn facing the viewer
+ * a difficulty tier, first-person ASCII art drawn facing the viewer
  * (Wizardry/Dragon Quest style - the party sees the monster looking back at
- * them). Loot tables and monster-implicit item pools are Phase 5 (ROG-11) and
- * are intentionally absent here; Phase 4 battles only need stats, art, and
- * rewards.
+ * them), and Phase 5 loot hooks: a `lootTableRef` selecting the weighted loot
+ * table rolled on victory, and an optional `implicitPoolRef` for the
+ * monster-implicit pool (bosses and certain enemy types). Phase 5 battles read
+ * these via the loot resolution helper in `src/engine/loot/resolution.ts`.
  */
 
 export interface MonsterStats {
@@ -26,8 +28,12 @@ export interface MonsterDef {
   gold: number;
   /** Lowest dungeon floor this monster appears on (wandering or boss). */
   minFloor: number;
-  /** Difficulty tier; Phase 5 loot/implicit pools key off this. */
+  /** Difficulty tier; Phase 5 loot tables and implicit pools key off this. */
   tier: number;
+  /** Weighted loot table rolled on victory (see `src/data/lootTables.ts`). */
+  lootTableRef: string;
+  /** Optional monster-implicit pool (see `src/data/implicitPools.ts`). */
+  implicitPoolRef?: string;
   /** First-person ASCII art, line by line, facing the viewer. */
   ascii: readonly string[];
 }
@@ -43,6 +49,8 @@ export const MONSTERS: readonly MonsterDef[] = [
     gold: 3,
     minFloor: 1,
     tier: 1,
+    lootTableRef: "tier-1",
+    implicitPoolRef: "type_slime",
     ascii: ["   ___   ", "  /   \\  ", " | ~o~ | ", "  \\___/  "],
   },
   {
@@ -55,6 +63,7 @@ export const MONSTERS: readonly MonsterDef[] = [
     gold: 8,
     minFloor: 2,
     tier: 2,
+    lootTableRef: "tier-2",
     ascii: [
       "   /\\    ",
       "  /oo\\   ",
@@ -73,6 +82,8 @@ export const MONSTERS: readonly MonsterDef[] = [
     gold: 120,
     minFloor: 3,
     tier: 3,
+    lootTableRef: "tier-3",
+    implicitPoolRef: "boss_dungeon_guardian",
     ascii: [
       "  /===\\  ",
       "  |O O|  ",

@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import type { ItemInstance } from "../engine/loot/types";
 import { newGame, reduce } from "../engine/state/store";
 import type { GameState } from "../engine/state/types";
 import { createInitialDungeonState } from "../engine/world/dungeon";
@@ -82,5 +83,66 @@ describe("save round-trip (sqlite)", () => {
     saveGame(second, dbPath);
 
     expect(loadGame(dbPath)).toEqual(second);
+  });
+});
+
+describe("save round-trip with loot and equipment", () => {
+  const item: ItemInstance = {
+    instanceId: "itm-1",
+    baseId: "guardian-bulwark",
+    rarity: "unique",
+    ilvl: 12,
+    prefixes: [{ affixId: "vicious", value: 5 }],
+    suffixes: [{ affixId: "of-might", value: 2 }],
+    implicit: { affixId: "sig-warding", value: 9 },
+  };
+
+  it("JSON round-trips a state with backpack items and an equipped item", () => {
+    const base = newGame(42);
+    const state: GameState = {
+      ...base,
+      items: [item],
+      nextItemId: 2,
+      party: [
+        {
+          ...base.party[0],
+          equipment: { ...base.party[0].equipment, armor: item },
+        },
+      ],
+    };
+    expect(deserialize(serialize(state))).toEqual(state);
+  });
+
+  it("sqlite round-trips a state with backpack items and an equipped item", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ts-rogue-loot-"));
+    const dbPath = join(dir, "save.db");
+    try {
+      const base = newGame(7);
+      const weapon: ItemInstance = {
+        ...item,
+        instanceId: "itm-2",
+        baseId: "guardian-greatsword",
+      };
+      const state: GameState = {
+        ...base,
+        items: [item],
+        nextItemId: 3,
+        party: [
+          {
+            ...base.party[0],
+            equipment: { ...base.party[0].equipment, weapon },
+          },
+        ],
+      };
+      saveGame(state, dbPath);
+      const loaded = loadGame(dbPath);
+      expect(loaded).toEqual(state);
+      expect(loaded?.items[0].implicit?.affixId).toBe("sig-warding");
+      expect(loaded?.party[0].equipment.weapon?.baseId).toBe(
+        "guardian-greatsword",
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
