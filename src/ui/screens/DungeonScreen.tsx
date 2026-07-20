@@ -1,6 +1,6 @@
 import { Box, Text, useInput } from "ink";
 import type { GameEvent, GameState } from "../../engine/state/types";
-import { MessageLog } from "../components/MessageLog";
+import { Screen } from "../components/Screen";
 import { renderDungeonView, renderMinimap } from "./dungeon/render";
 
 export interface DungeonScreenProps {
@@ -35,11 +35,9 @@ export function DungeonScreen({ state, dispatch }: DungeonScreenProps) {
   const ds = state.dungeonState;
   if (!ds) {
     return (
-      <Box flexDirection="column" gap={1}>
-        <Text bold>Dungeon</Text>
+      <Screen state={state} title="Dungeon">
         <Text dimColor>(no active dungeon - press 2 for the overworld)</Text>
-        <MessageLog messages={state.log} />
-      </Box>
+      </Screen>
     );
   }
 
@@ -47,28 +45,26 @@ export function DungeonScreen({ state, dispatch }: DungeonScreenProps) {
   const minimapRows = renderMinimap(ds);
 
   return (
-    <Box flexDirection="column" gap={1}>
-      <Text bold>
-        Dungeon - Floor {ds.floor} ({ds.dungeonId})
-      </Text>
-      <Box gap={2}>
-        <Box flexDirection="column">
-          <Text>{fpRows.join("\n")}</Text>
+    <Screen
+      state={state}
+      title={`Dungeon - Floor ${ds.floor} (${ds.dungeonId})`}
+      hint="Up/W/k: forward | Down/s/j: back | Left/a/h or Right/d/l: turn | o: open chest | > or Enter: descend | q: quit"
+    >
+      <Box flexDirection="column" gap={1}>
+        <Box gap={2} justifyContent="center">
+          <Box flexDirection="column">
+            <Text>{fpRows.join("\n")}</Text>
+          </Box>
+          <Box borderStyle="single" flexDirection="column" paddingX={1}>
+            <Text dimColor>Map</Text>
+            <Text dimColor>{minimapRows.join("\n")}</Text>
+          </Box>
         </Box>
-        <Box borderStyle="single" flexDirection="column" paddingX={1}>
-          <Text dimColor>Map</Text>
-          <Text dimColor>{minimapRows.join("\n")}</Text>
-        </Box>
+        <Text>
+          Facing {ds.facing}
+          {ds.reachedBoss ? " | boss room reached" : ""}
+        </Text>
       </Box>
-      <Text>
-        Facing {ds.facing}
-        {ds.reachedBoss ? " | boss room reached" : ""}
-      </Text>
-      <Text dimColor>
-        Up/W/k: forward | Down/s/j: back | Left/a/h or Right/d/l: turn | o: open
-        chest | &gt; or Enter: descend | q: quit
-      </Text>
-      <MessageLog messages={state.log} />
-    </Box>
+    </Screen>
   );
 }

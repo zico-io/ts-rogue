@@ -1,7 +1,7 @@
-import { Box, Text, useInput } from "ink";
+import { Text, useInput } from "ink";
 import { INN_COST_PER_MEMBER } from "../../../engine/state/store";
 import type { GameEvent, GameState } from "../../../engine/state/types";
-import { MessageLog } from "../../components/MessageLog";
+import { Screen } from "../../components/Screen";
 
 export interface InnViewProps {
   state: GameState;
@@ -22,15 +22,15 @@ export function InnView({ state, dispatch, onBack }: InnViewProps) {
   const cost = state.party.length * INN_COST_PER_MEMBER;
 
   return (
-    <Box flexDirection="column" gap={1}>
-      <Text bold>Inn</Text>
+    <Screen
+      state={state}
+      title="Inn"
+      hint="Press Enter to rest, Esc to go back."
+    >
       <Text>
         Resting fully restores the party's HP and MP for {cost} gold (
         {INN_COST_PER_MEMBER} per member).
       </Text>
-      <Text>Gold: {state.gold}</Text>
-      <Text dimColor>Press Enter to rest, Esc to go back.</Text>
-      <MessageLog messages={state.log} />
-    </Box>
+    </Screen>
   );
 }

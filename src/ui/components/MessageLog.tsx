@@ -12,14 +12,18 @@ export function MessageLog({
   messages,
   maxLines = DEFAULT_MAX_LINES,
 }: MessageLogProps) {
-  const visible = messages.slice(-maxLines);
+  const start = Math.max(0, messages.length - maxLines);
+  const visible = messages.slice(start);
   return (
     <Box borderStyle="single" flexDirection="column" paddingX={1}>
       {visible.length === 0 ? (
         <Text dimColor>(no messages yet)</Text>
       ) : (
-        visible.map((message) => (
-          <Text dimColor key={message}>
+        visible.map((message, index) => (
+          // Key by absolute log position: unique even when lines repeat, and
+          // stable per occurrence as new lines append.
+          // biome-ignore lint/suspicious/noArrayIndexKey: append-only tail, position is identity
+          <Text dimColor key={start + index}>
             {message}
           </Text>
         ))

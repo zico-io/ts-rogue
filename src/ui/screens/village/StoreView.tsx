@@ -14,7 +14,7 @@ import {
 } from "../../../engine/loot/items";
 import type { ItemInstance } from "../../../engine/loot/types";
 import type { GameEvent, GameState } from "../../../engine/state/types";
-import { MessageLog } from "../../components/MessageLog";
+import { Screen } from "../../components/Screen";
 
 export interface StoreViewProps {
   state: GameState;
@@ -151,31 +151,32 @@ export function StoreView({ state, dispatch, onBack }: StoreViewProps) {
   });
 
   return (
-    <Box flexDirection="column" gap={1}>
-      <Text bold>Store - {mode === "shop" ? "Shop" : "Backpack"}</Text>
-      <Text>
-        Gold: {state.gold} | Hero ATK {atkFrom(hero)} DEF {defFrom(hero)} SPD{" "}
-        {spdFrom(hero)}
-      </Text>
-
-      {mode === "shop" ? (
-        <ShopCatalog cursor={shopCursor} state={state} />
-      ) : (
-        <BackpackPanel
-          entries={packEntries}
-          cursor={packIndex}
-          hero={hero}
-          selected={selectedPack}
-        />
-      )}
-
-      <Text dimColor>
-        {mode === "shop"
+    <Screen
+      state={state}
+      title={`Store - ${mode === "shop" ? "Shop" : "Backpack"}`}
+      hint={
+        mode === "shop"
           ? "Up/down to select, b to buy 1, s to sell 1, Tab for backpack, Esc to go back."
-          : "Up/down to select, e to equip, u to unequip, s to sell, Tab for shop, Esc to go back."}
-      </Text>
-      <MessageLog messages={state.log} />
-    </Box>
+          : "Up/down to select, e to equip, u to unequip, s to sell, Tab for shop, Esc to go back."
+      }
+    >
+      <Box flexDirection="column" gap={1}>
+        <Text>
+          Hero ATK {atkFrom(hero)} DEF {defFrom(hero)} SPD {spdFrom(hero)}
+        </Text>
+
+        {mode === "shop" ? (
+          <ShopCatalog cursor={shopCursor} state={state} />
+        ) : (
+          <BackpackPanel
+            entries={packEntries}
+            cursor={packIndex}
+            hero={hero}
+            selected={selectedPack}
+          />
+        )}
+      </Box>
+    </Screen>
   );
 }
 
