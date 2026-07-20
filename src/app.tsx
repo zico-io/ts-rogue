@@ -2,6 +2,7 @@ import { render, useApp, useInput } from "ink";
 import { useState } from "react";
 import { GameStore, newGame } from "./engine/state/store.js";
 import type { Scene } from "./engine/state/types.js";
+import { loadGame } from "./persistence/save.js";
 import { useGameState } from "./ui/hooks/useGameState.js";
 import { BattleScreen } from "./ui/screens/BattleScreen.js";
 import { DungeonScreen } from "./ui/screens/DungeonScreen.js";
@@ -20,7 +21,7 @@ function isQuit(input: string, key: { ctrl: boolean }): boolean {
   return input === "q" || (key.ctrl && input === "c");
 }
 
-function App({ store }: { store: GameStore }) {
+function App({ store, hasSave }: { store: GameStore; hasSave: boolean }) {
   const { exit } = useApp();
   const [started, setStarted] = useState(false);
   const state = useGameState(store);
@@ -31,7 +32,11 @@ function App({ store }: { store: GameStore }) {
         exit();
         return;
       }
-      store.dispatch({ type: "NewGame", seed: Date.now() });
+      // A loaded save is already the store's initial state; only a fresh
+      // boot with no save needs a new run seeded here.
+      if (!hasSave) {
+        store.dispatch({ type: "NewGame", seed: Date.now() });
+      }
       setStarted(true);
     },
     { isActive: !started },
@@ -49,11 +54,16 @@ function App({ store }: { store: GameStore }) {
     { isActive: started },
   );
 
-  if (!started) return <TitleScreen />;
+  if (!started) return <TitleScreen hasSave={hasSave} />;
 
   switch (state.scene) {
     case "village":
-      return <VillageScreen state={state} />;
+      return (
+        <VillageScreen
+          dispatch={(event) => store.dispatch(event)}
+          state={state}
+        />
+      );
     case "overworld":
       return <OverworldScreen state={state} />;
     case "dungeon":
@@ -63,6 +73,8 @@ function App({ store }: { store: GameStore }) {
   }
 }
 
-const store = new GameStore(newGame(Date.now()));
+const savedGame = loadGame();
+const hasSave = savedGame !== undefined;
+const store = new GameStore(savedGame ?? newGame(Date.now()));
 
-render(<App store={store} />);
+render(<App hasSave={hasSave} store={store} />);
