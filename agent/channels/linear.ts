@@ -10,6 +10,16 @@ type InputRequests = Parameters<
   NonNullable<ChannelEvents<LinearChannelContext>["input.requested"]>
 >[0]["requests"];
 
+const toolLabel = (toolName: string) => {
+  const operation = toolName.split("__").at(-1) ?? toolName;
+  const labels: Record<string, string> = {
+    save_comment: "Post or update a comment",
+    save_issue: "Create or update an issue",
+  };
+  const label = labels[operation] ?? operation.replaceAll("_", " ");
+  return label.charAt(0).toUpperCase() + label.slice(1);
+};
+
 export const linearInputActivity = (requests: InputRequests) => {
   const rendered = renderLinearInputRequests(requests);
   const marker = rendered.slice(rendered.lastIndexOf("<!-- eve-input:"));
@@ -20,12 +30,13 @@ export const linearInputActivity = (requests: InputRequests) => {
       ? options
       : undefined;
 
-  const prompt =
-    requests.length === 1
+  const prompt = requests.every(({ action }) => action.kind === "tool-call")
+    ? `${requests.length === 1 ? "Approve this Linear change?" : "Approve these Linear changes?"}\n\n${requests
+        .map(({ action }) => `- ${action.kind === "tool-call" ? toolLabel(action.toolName) : "Continue"}`)
+        .join("\n")}`
+    : requests.length === 1
       ? requests[0]?.prompt
-      : `Approve these tool calls?\n\n${requests
-          .map(({ prompt }) => `- ${prompt.replace("Approve tool call: ", "")}`)
-          .join("\n")}`;
+      : rendered;
 
   return {
     body: sharedOptions ? `${prompt}\n\n${marker}` : rendered,
@@ -46,7 +57,7 @@ const events: ChannelEvents<LinearChannelContext> = {
       await channel.linear.createActivity({
         action:
           action.kind === "tool-call"
-            ? action.toolName
+            ? toolLabel(action.toolName)
             : action.kind === "load-skill"
               ? "Load skill"
               : `Delegate to ${action.name}`,
