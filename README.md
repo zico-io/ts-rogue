@@ -15,6 +15,14 @@ pnpm install
 pnpm check
 ```
 
+## Running the app
+
+```bash
+pnpm start
+```
+
+Boots the Ink shell (`src/app.tsx`): a title screen, then placeholder village/overworld/dungeon/battle scenes. Press `1`-`4` to switch scenes, `t` to return to the title screen, and `q` (or Ctrl+C) to quit.
+
 ## Repository map
 
 | Path | Purpose |
@@ -32,6 +40,7 @@ Work is tracked in Linear. GitHub pull requests are used for review and merge. E
 | Task | Command |
 | --- | --- |
 | Run all repository checks | `pnpm check` |
+| Run the app | `pnpm start` |
 | Run the Eve agent locally | `pnpm eve:dev` |
 | Type-check | `pnpm typecheck` |
 | Run tests | `pnpm test` |

@@ -11,6 +11,7 @@
   "packageManager": "pnpm@11.7.0",
   "scripts": {
     "check": "pnpm typecheck && pnpm test && pnpm docs:check && pnpm lint",
+    "start": "tsx src/app.tsx",
     "eve:dev": "eve dev --no-ui",
     "prepare": "git config core.hooksPath .githooks || true",
     "docs:check": "node scripts/check-docs.mjs",
