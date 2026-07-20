@@ -12,7 +12,7 @@ import {
 import { SKILLS } from "../../engine/combat/skills";
 import type { BattleEnemy, BattleState } from "../../engine/combat/types";
 import type { GameEvent, GameState } from "../../engine/state/types";
-import { MessageLog } from "../components/MessageLog";
+import { Screen } from "../components/Screen";
 
 export interface BattleScreenProps {
   state: GameState;
@@ -171,48 +171,42 @@ export function BattleScreen({ state, dispatch }: BattleScreenProps) {
 
   if (!bs) {
     return (
-      <Box flexDirection="column" gap={1}>
-        <Text bold>Battle</Text>
+      <Screen state={state} title="Battle">
         <Text dimColor>(no active battle - press 2 for the overworld)</Text>
-        <MessageLog messages={state.log} />
-      </Box>
+      </Screen>
     );
   }
 
   return (
-    <Box flexDirection="column" gap={1}>
-      <Text bold>Battle</Text>
+    <Screen state={state} title="Battle" hint={hintFor(mode, healItems.length)}>
+      <Box flexDirection="column" gap={1}>
+        <EnemyField
+          battle={bs}
+          aliveEnemies={aliveEnemies}
+          selectingTarget={mode === "target"}
+          targetCursor={targetCursor}
+        />
 
-      <EnemyField
-        battle={bs}
-        aliveEnemies={aliveEnemies}
-        selectingTarget={mode === "target"}
-        targetCursor={targetCursor}
-      />
+        <Text>
+          {hero.name} Lv{hero.level} | XP {hero.xp}/{xpToNext(hero.level)} | ATK{" "}
+          {atkFrom(hero)} DEF {defFrom(hero)} SPD {spdFrom(hero)}
+        </Text>
+        <Text dimColor>
+          Turn order: {initiativeNames(bs, hero.name).join(" -> ")}
+        </Text>
 
-      <Text>
-        {hero.name} Lv{hero.level} | HP {hero.hp}/{hero.maxHp} | MP {hero.mp}/
-        {hero.maxMp} | XP {hero.xp}/{xpToNext(hero.level)} | ATK {atkFrom(hero)}{" "}
-        DEF {defFrom(hero)} SPD {spdFrom(hero)}
-      </Text>
-      <Text dimColor>
-        Turn order: {initiativeNames(bs, hero.name).join(" -> ")}
-      </Text>
-
-      <ActionMenu
-        mode={mode}
-        actions={ACTIONS}
-        actionCursor={actionCursor}
-        skills={SKILLS}
-        skillCursor={skillCursor}
-        heroMp={hero.mp}
-        healItems={healItems}
-        itemCursor={itemCursor}
-      />
-
-      <Text dimColor>{hintFor(mode, healItems.length)}</Text>
-      <MessageLog messages={state.log} />
-    </Box>
+        <ActionMenu
+          mode={mode}
+          actions={ACTIONS}
+          actionCursor={actionCursor}
+          skills={SKILLS}
+          skillCursor={skillCursor}
+          heroMp={hero.mp}
+          healItems={healItems}
+          itemCursor={itemCursor}
+        />
+      </Box>
+    </Screen>
   );
 }
 

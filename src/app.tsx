@@ -97,6 +97,7 @@ function App({
     );
   }
 
+  // Each scene renders through the shared Screen frame, which owns the pane fill.
   switch (state.scene) {
     case "village":
       return <VillageScreen dispatch={dispatch} state={state} />;

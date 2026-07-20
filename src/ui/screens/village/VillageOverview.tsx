@@ -1,7 +1,7 @@
-import { Box, Text, useInput } from "ink";
+import { Text, useInput } from "ink";
 import { useState } from "react";
 import type { GameState } from "../../../engine/state/types";
-import { MessageLog } from "../../components/MessageLog";
+import { Screen } from "../../components/Screen";
 import type { VillageBuilding } from "./types";
 
 /** A selectable row on the overview: a building sub-view, or leaving to the overworld. */
@@ -59,29 +59,16 @@ export function VillageOverview({
   });
 
   return (
-    <Box flexDirection="column" gap={1}>
-      <Text bold>Village</Text>
-      <Box flexDirection="column">
-        {state.party.map((member) => (
-          <Text key={member.id}>
-            {member.name} - HP {member.hp}/{member.maxHp} MP {member.mp}/
-            {member.maxMp}
-          </Text>
-        ))}
-        <Text>Gold: {state.gold}</Text>
-      </Box>
-      <Box flexDirection="column">
-        {OPTIONS.map((option, index) => (
-          <Text color={index === cursor ? "green" : undefined} key={option.key}>
-            {index === cursor ? "> " : "  "}[{option.shortcut}] {option.label}
-          </Text>
-        ))}
-      </Box>
-      <Text dimColor>
-        Controls: up/down + Enter, or i/c/s/o to act directly; 1-4 switch
-        scenes; q to quit.
-      </Text>
-      <MessageLog messages={state.log} />
-    </Box>
+    <Screen
+      state={state}
+      title="Village"
+      hint="Controls: up/down + Enter, or i/c/s/o to act directly; 1-4 switch scenes; q to quit."
+    >
+      {OPTIONS.map((option, index) => (
+        <Text color={index === cursor ? "green" : undefined} key={option.key}>
+          {index === cursor ? "> " : "  "}[{option.shortcut}] {option.label}
+        </Text>
+      ))}
+    </Screen>
   );
 }

@@ -5,7 +5,7 @@ import {
   ENCOUNTER_THRESHOLD,
   generateOverworldMap,
 } from "../../engine/world/overworld";
-import { MessageLog } from "../components/MessageLog";
+import { Screen } from "../components/Screen";
 import {
   buildMinimapRows,
   buildViewportRows,
@@ -72,27 +72,27 @@ export function OverworldScreen({ state, dispatch }: OverworldScreenProps) {
   const minimapRows = buildMinimapRows(map, state.worldState.player);
 
   return (
-    <Box flexDirection="column" gap={1}>
-      <Text bold>Overworld</Text>
-      <Box gap={2}>
-        <TileGrid rows={viewportRows} />
-        <Box borderStyle="single" flexDirection="column" paddingX={1}>
-          <Text dimColor>Map</Text>
-          <TileGrid rows={minimapRows} />
+    <Screen
+      state={state}
+      title="Overworld"
+      hint="Arrow keys or h/j/k/l to move; walk onto H to return to the village or D to enter a dungeon; Esc returns to the village directly."
+    >
+      <Box flexDirection="column" gap={1}>
+        <Box gap={2} justifyContent="center">
+          <TileGrid rows={viewportRows} />
+          <Box borderStyle="single" flexDirection="column" paddingX={1}>
+            <Text dimColor>Map</Text>
+            <TileGrid rows={minimapRows} />
+          </Box>
         </Box>
+        <Text>
+          Danger:{" "}
+          {formatEncounterMeter(
+            state.worldState.encounterMeter,
+            ENCOUNTER_THRESHOLD,
+          )}
+        </Text>
       </Box>
-      <Text>
-        Danger:{" "}
-        {formatEncounterMeter(
-          state.worldState.encounterMeter,
-          ENCOUNTER_THRESHOLD,
-        )}
-      </Text>
-      <Text dimColor>
-        Arrow keys or h/j/k/l to move; walk onto H to return to the village or D
-        to enter a dungeon; Esc returns to the village directly.
-      </Text>
-      <MessageLog messages={state.log} />
-    </Box>
+    </Screen>
   );
 }

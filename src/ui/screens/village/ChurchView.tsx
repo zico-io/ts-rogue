@@ -1,7 +1,7 @@
-import { Box, Text, useInput } from "ink";
+import { Text, useInput } from "ink";
 import type { GameEvent, GameState } from "../../../engine/state/types";
 import { saveGame } from "../../../persistence/save";
-import { MessageLog } from "../../components/MessageLog";
+import { Screen } from "../../components/Screen";
 
 export interface ChurchViewProps {
   state: GameState;
@@ -32,11 +32,12 @@ export function ChurchView({ state, dispatch, onBack }: ChurchViewProps) {
   });
 
   return (
-    <Box flexDirection="column" gap={1}>
-      <Text bold>Church</Text>
+    <Screen
+      state={state}
+      title="Church"
+      hint="Press Enter to save, Esc to go back."
+    >
       <Text>Save your progress here. Saves load automatically on boot.</Text>
-      <Text dimColor>Press Enter to save, Esc to go back.</Text>
-      <MessageLog messages={state.log} />
-    </Box>
+    </Screen>
   );
 }
