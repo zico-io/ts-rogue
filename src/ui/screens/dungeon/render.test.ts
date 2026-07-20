@@ -126,6 +126,27 @@ describe("renderDungeonView", () => {
     ).toEqual(renderDungeonView(buildState(behindOpen, player, "north"), VP));
   });
 
+  it("dithers far wall faces denser than near ones (depth shading)", () => {
+    // One isolated pillar in a big open room; the same screen-center region
+    // is strictly inside the pillar's face both near and far.
+    const floor = Array.from({ length: 17 }, () => ".".repeat(17));
+    const withPillar = floor.map((row, y) =>
+      y === 7 ? `${row.slice(0, 8)}#${row.slice(9)}` : row,
+    );
+    const layout = buildLayout(withPillar);
+    const centerFill = (playerY: number) => {
+      const rows = renderDungeonView(
+        buildState(layout, { x: 8, y: playerY }, "north"),
+        VP,
+      );
+      return dotCount(rows.slice(9, 11).map((r) => r.slice(28, 32)));
+    };
+    const near = centerFill(9); // pillar 2 tiles ahead
+    const far = centerFill(12); // pillar 5 tiles ahead
+    expect(near).toBeGreaterThan(0); // some fill even up close
+    expect(far).toBeGreaterThan(near * 2); // distance darkens the surface
+  });
+
   it("renders at the map edge facing out-of-bounds without throwing", () => {
     const ds = buildState(buildLayout(["..", ".."]), { x: 0, y: 0 }, "north");
     const rows = renderDungeonView(ds, VP);

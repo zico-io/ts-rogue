@@ -101,6 +101,27 @@ interface FaceItem {
   e1: Edge;
   jamb0: boolean;
   jamb1: boolean;
+  density: number;
+}
+
+/** Densest allowed dither fill (fraction of dots lit) at MAX_DEPTH. */
+const MAX_FILL = 0.55;
+
+/** 4x4 ordered-dither thresholds; screen-anchored so coplanar faces mesh. */
+const BAYER4 = [
+  [0, 8, 2, 10],
+  [12, 4, 14, 6],
+  [3, 11, 1, 9],
+  [15, 7, 13, 5],
+] as const;
+
+/**
+ * Fill density for a face whose center sits `depth` tiles ahead: near walls
+ * clean, far walls dim. Keyed on view depth (not Euclidean distance) so the
+ * coplanar faces of one flat wall shade uniformly instead of banding.
+ */
+function fillDensity(depth: number): number {
+  return clamp((depth - 1) / MAX_DEPTH, 0, 1) * MAX_FILL;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -184,7 +205,14 @@ export function renderDungeonView(
           continue;
         }
         const distSq = (camera.x - fcx) ** 2 + (camera.y - fcy) ** 2;
-        items.push({ distSq, e0, e1, jamb0, jamb1 });
+        items.push({
+          distSq,
+          e0,
+          e1,
+          jamb0,
+          jamb1,
+          density: fillDensity(toCam(fcx, fcy).z),
+        });
       }
     }
   }
@@ -206,8 +234,9 @@ function clipNear(
 }
 
 /**
- * Rasterize one face: clear its interior column by column (erasing anything
- * farther already painted), then draw its solid edges on top.
+ * Rasterize one face: overwrite its interior column by column with its own
+ * dither fill (erasing anything farther already painted), then draw its
+ * solid edges on top.
  */
 function drawFace(
   buf: Uint8Array,
@@ -239,7 +268,9 @@ function drawFace(
         0,
         dotH - 1,
       );
-      for (let y = yT; y <= yB; y++) buf[y * dotW + x] = 0;
+      for (let y = yT; y <= yB; y++) {
+        buf[y * dotW + x] = BAYER4[y & 3][x & 3] / 16 < face.density ? 1 : 0;
+      }
     }
   }
   plotLine(buf, dotW, dotH, left.sx, left.syT, right.sx, right.syT);
