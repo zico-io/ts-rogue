@@ -1,10 +1,10 @@
 import { useState } from "react";
-import type { GameEvent, GameState } from "../../engine/state/types.js";
-import { ChurchView } from "./village/ChurchView.js";
-import { InnView } from "./village/InnView.js";
-import { StoreView } from "./village/StoreView.js";
-import type { VillageBuilding } from "./village/types.js";
-import { VillageOverview } from "./village/VillageOverview.js";
+import type { GameEvent, GameState } from "../../engine/state/types";
+import { ChurchView } from "./village/ChurchView";
+import { InnView } from "./village/InnView";
+import { StoreView } from "./village/StoreView";
+import type { VillageBuilding } from "./village/types";
+import { VillageOverview } from "./village/VillageOverview";
 
 export interface VillageScreenProps {
   state: GameState;

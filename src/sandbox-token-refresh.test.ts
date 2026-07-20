@@ -1,7 +1,7 @@
 import type { SandboxNetworkPolicy } from "eve/sandbox";
 import { describe, expect, it, vi } from "vitest";
 
-import { keepTokenFresh } from "../agent/sandbox.js";
+import { keepTokenFresh } from "../agent/sandbox";
 
 describe("keepTokenFresh", () => {
   it("re-mints and re-applies the policy on each interval", async () => {

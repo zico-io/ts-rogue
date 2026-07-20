@@ -1,21 +1,17 @@
 import { Box, Text, useInput } from "ink";
 import { useMemo } from "react";
-import type {
-  GameEvent,
-  GameState,
-  MoveDelta,
-} from "../../engine/state/types.js";
+import type { GameEvent, GameState, MoveDelta } from "../../engine/state/types";
 import {
   ENCOUNTER_THRESHOLD,
   generateOverworldMap,
-} from "../../engine/world/overworld.js";
-import { MessageLog } from "../components/MessageLog.js";
+} from "../../engine/world/overworld";
+import { MessageLog } from "../components/MessageLog";
 import {
   buildMinimapRows,
   buildViewportRows,
   formatEncounterMeter,
-} from "./overworld/render.js";
-import { TileGrid } from "./overworld/TileGrid.js";
+} from "./overworld/render";
+import { TileGrid } from "./overworld/TileGrid";
 
 export interface OverworldScreenProps {
   state: GameState;

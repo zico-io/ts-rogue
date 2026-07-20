@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-  generateOverworldMap,
-  isPassable,
-  tileAt,
-} from "../world/overworld.js";
-import { GameStore, INN_COST_PER_MEMBER, newGame, reduce } from "./store.js";
+import { generateOverworldMap, isPassable, tileAt } from "../world/overworld";
+import { GameStore, INN_COST_PER_MEMBER, newGame, reduce } from "./store";
 
 describe("game store", () => {
   it("seeds the log with the seed on new game", () => {

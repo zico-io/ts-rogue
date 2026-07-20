@@ -2,8 +2,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { newGame, reduce } from "../engine/state/store.js";
-import { deserialize, loadGame, saveGame, serialize } from "./save.js";
+import { newGame, reduce } from "../engine/state/store";
+import { deserialize, loadGame, saveGame, serialize } from "./save";
 
 describe("save round-trip (JSON)", () => {
   it("restores an equivalent state", () => {

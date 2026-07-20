@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { generateOverworldMap } from "../../../engine/world/overworld.js";
+import { generateOverworldMap } from "../../../engine/world/overworld";
 import {
   buildMinimapRows,
   buildViewportRows,
   cameraOrigin,
   formatEncounterMeter,
-} from "./render.js";
+} from "./render";
 
 describe("cameraOrigin", () => {
   it("centers the viewport on the focus point away from the edges", () => {

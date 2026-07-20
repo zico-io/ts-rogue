@@ -1,7 +1,7 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.5.4/schema.json",
   "files": {
-    "includes": ["src/**"]
+    "includes": ["src/**", "agent/**"]
   },
   "formatter": {
     "enabled": true,
@@ -12,7 +12,20 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "preset": "recommended"
+      "preset": "recommended",
+      "style": {
+        "noRestrictedImports": {
+          "level": "error",
+          "options": {
+            "patterns": [
+              {
+                "group": ["**/*.js"],
+                "message": "Use extensionless imports in TypeScript"
+              }
+            ]
+          }
+        }
+      }
     }
   },
   "overrides": [
@@ -32,6 +45,10 @@
                   {
                     "group": ["**/ui/**"],
                     "message": "engine/ must not import from ui/ (PROJECT_PLAN Golden rule)"
+                  },
+                  {
+                    "group": ["**/*.js"],
+                    "message": "Use extensionless imports in TypeScript"
                   }
                 ]
               }

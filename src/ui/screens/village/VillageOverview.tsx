@@ -1,8 +1,8 @@
 import { Box, Text, useInput } from "ink";
 import { useState } from "react";
-import type { GameState } from "../../../engine/state/types.js";
-import { MessageLog } from "../../components/MessageLog.js";
-import type { VillageBuilding } from "./types.js";
+import type { GameState } from "../../../engine/state/types";
+import { MessageLog } from "../../components/MessageLog";
+import type { VillageBuilding } from "./types";
 
 /** A selectable row on the overview: a building sub-view, or leaving to the overworld. */
 interface MenuOption {

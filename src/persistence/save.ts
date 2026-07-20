@@ -1,5 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
-import type { GameState } from "../engine/state/types.js";
+import type { GameState } from "../engine/state/types";
 
 /**
  * Whole-state JSON serialization (PROJECT_PLAN §8). This is the save format

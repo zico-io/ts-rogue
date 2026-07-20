@@ -4,7 +4,7 @@ import {
   generateOverworldMap,
   isPassable,
   tileAt,
-} from "./overworld.js";
+} from "./overworld";
 
 describe("generateOverworldMap", () => {
   it("is a pure function of the seed: identical seed -> identical map", () => {

@@ -1,7 +1,7 @@
 import { Box, Text, useInput } from "ink";
-import type { GameEvent, GameState } from "../../../engine/state/types.js";
-import { saveGame } from "../../../persistence/save.js";
-import { MessageLog } from "../../components/MessageLog.js";
+import type { GameEvent, GameState } from "../../../engine/state/types";
+import { saveGame } from "../../../persistence/save";
+import { MessageLog } from "../../components/MessageLog";
 
 export interface ChurchViewProps {
   state: GameState;

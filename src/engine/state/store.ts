@@ -1,6 +1,6 @@
-import { findShopItem, sellPriceFor } from "../../data/shops.js";
-import { createStartingHero } from "../entities/party.js";
-import { Rng } from "../rng/rng.js";
+import { findShopItem, sellPriceFor } from "../../data/shops";
+import { createStartingHero } from "../entities/party";
+import { Rng } from "../rng/rng";
 import {
   biomeDanger,
   createInitialWorldState,
@@ -9,8 +9,8 @@ import {
   inBounds,
   isPassable,
   tileAt,
-} from "../world/overworld.js";
-import type { GameEvent, GameState, MoveDelta } from "./types.js";
+} from "../world/overworld";
+import type { GameEvent, GameState, MoveDelta } from "./types";
 
 /** Gold cost per party member to fully heal at the inn. */
 export const INN_COST_PER_MEMBER = 10;

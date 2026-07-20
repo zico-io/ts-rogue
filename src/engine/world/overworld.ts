@@ -8,8 +8,8 @@
  * an identical map (same tiles, same village, same dungeon entrances).
  */
 
-import { Rng } from "../rng/rng.js";
-import type { OverworldMap, Point, Tile, WorldState } from "./types.js";
+import { Rng } from "../rng/rng";
+import type { OverworldMap, Point, Tile, WorldState } from "./types";
 
 export const OVERWORLD_WIDTH = 42;
 export const OVERWORLD_HEIGHT = 21;

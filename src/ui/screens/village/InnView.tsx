@@ -1,7 +1,7 @@
 import { Box, Text, useInput } from "ink";
-import { INN_COST_PER_MEMBER } from "../../../engine/state/store.js";
-import type { GameEvent, GameState } from "../../../engine/state/types.js";
-import { MessageLog } from "../../components/MessageLog.js";
+import { INN_COST_PER_MEMBER } from "../../../engine/state/store";
+import type { GameEvent, GameState } from "../../../engine/state/types";
+import { MessageLog } from "../../components/MessageLog";
 
 export interface InnViewProps {
   state: GameState;

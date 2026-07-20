@@ -9,8 +9,8 @@ import {
   MINIMAP_SCALE,
   VIEWPORT_HEIGHT,
   VIEWPORT_WIDTH,
-} from "../../../engine/world/overworld.js";
-import type { OverworldMap, Point, Tile } from "../../../engine/world/types.js";
+} from "../../../engine/world/overworld";
+import type { OverworldMap, Point, Tile } from "../../../engine/world/types";
 
 export interface TileGlyph {
   char: string;

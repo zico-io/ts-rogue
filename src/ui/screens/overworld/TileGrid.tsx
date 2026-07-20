@@ -1,5 +1,5 @@
 import { Box, Text } from "ink";
-import type { Cell } from "./render.js";
+import type { Cell } from "./render";
 
 /** Renders pre-built rows of {@link Cell}s as a monospace grid. Presentational only. */
 export function TileGrid({ rows }: { rows: Cell[][] }) {
