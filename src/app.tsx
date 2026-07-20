@@ -65,9 +65,9 @@ function App({ store, hasSave }: { store: GameStore; hasSave: boolean }) {
     case "overworld":
       return <OverworldScreen dispatch={dispatch} state={state} />;
     case "dungeon":
-      return <DungeonScreen state={state} />;
+      return <DungeonScreen dispatch={dispatch} state={state} />;
     case "battle":
-      return <BattleScreen state={state} />;
+      return <BattleScreen dispatch={dispatch} state={state} />;
   }
 }
 
