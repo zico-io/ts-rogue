@@ -1,4 +1,9 @@
 import { describe, expect, it } from "vitest";
+import {
+  generateOverworldMap,
+  isPassable,
+  tileAt,
+} from "../world/overworld.js";
 import { GameStore, INN_COST_PER_MEMBER, newGame, reduce } from "./store.js";
 
 describe("game store", () => {
@@ -19,6 +24,15 @@ describe("game store", () => {
     });
     expect(state.gold).toBe(50);
     expect(state.inventory).toEqual([]);
+  });
+
+  it("starts the player on the village tile with an empty encounter meter", () => {
+    const state = newGame(1234);
+    const map = generateOverworldMap(1234);
+    expect(state.worldState).toEqual({
+      player: map.village,
+      encounterMeter: 0,
+    });
   });
 
   it("changes scene without mutating the previous state", () => {
@@ -164,4 +178,175 @@ describe("game store", () => {
       expect(after.inventory).toEqual([]);
     });
   });
+
+  describe("MoveOverworld", () => {
+    it("moves onto a passable tile without mutating the previous state", () => {
+      const before = newGame(1);
+      const after = reduce(before, { type: "MoveOverworld", dx: 1, dy: 0 });
+      expect(after.worldState.player).toEqual({
+        x: before.worldState.player.x + 1,
+        y: before.worldState.player.y,
+      });
+      expect(before.worldState.player.x).toBe(3);
+      expect(after).not.toBe(before);
+    });
+
+    it("blocks movement onto an impassable tile and leaves state untouched", () => {
+      const seed = 7;
+      const map = generateOverworldMap(seed);
+      const blocked = findBlockedStep(map);
+      const before = {
+        ...newGame(seed),
+        scene: "overworld" as const,
+        worldState: { player: blocked.from, encounterMeter: 0 },
+      };
+      const after = reduce(before, {
+        type: "MoveOverworld",
+        dx: blocked.dx,
+        dy: blocked.dy,
+      });
+      expect(after.worldState.player).toEqual(blocked.from);
+      expect(after.rngState).toEqual(before.rngState);
+      expect(after.party).toBe(before.party);
+      expect(after.log.at(-1)).toBe("The way is blocked");
+    });
+
+    it("blocks movement off the edge of the map", () => {
+      const before = {
+        ...newGame(1),
+        worldState: { player: { x: 0, y: 5 }, encounterMeter: 0 },
+      };
+      const after = reduce(before, { type: "MoveOverworld", dx: -1, dy: 0 });
+      expect(after.worldState.player).toEqual({ x: 0, y: 5 });
+      expect(after.log.at(-1)).toBe("The way is blocked");
+    });
+
+    it("stepping onto the village tile changes scene to village", () => {
+      const seed = 1;
+      const map = generateOverworldMap(seed);
+      const before = {
+        ...newGame(seed),
+        scene: "overworld" as const,
+        worldState: {
+          player: { x: map.village.x - 1, y: map.village.y },
+          encounterMeter: 0,
+        },
+      };
+      const after = reduce(before, { type: "MoveOverworld", dx: 1, dy: 0 });
+      expect(after.scene).toBe("village");
+      expect(after.worldState.player).toEqual(map.village);
+      expect(after.log.at(-1)).toBe("You return to the village");
+    });
+
+    it("stepping onto a dungeon entrance changes scene to dungeon", () => {
+      const seed = 1;
+      const map = generateOverworldMap(seed);
+      const entrance = map.dungeonEntrances[0];
+      const approach = findPassableNeighbor(map, entrance);
+      const before = {
+        ...newGame(seed),
+        scene: "overworld" as const,
+        worldState: { player: approach.from, encounterMeter: 0 },
+      };
+      const after = reduce(before, {
+        type: "MoveOverworld",
+        dx: approach.dx,
+        dy: approach.dy,
+      });
+      expect(after.scene).toBe("dungeon");
+      expect(after.worldState.player).toEqual(entrance);
+      expect(after.log.at(-1)).toBe("You step into a dungeon entrance");
+    });
+
+    it("accumulates encounter danger on wild tiles below the threshold", () => {
+      const before = {
+        ...newGame(1),
+        scene: "overworld" as const,
+        worldState: { player: { x: 1, y: 10 }, encounterMeter: 0 },
+      };
+      const after = reduce(before, { type: "MoveOverworld", dx: 1, dy: 0 });
+      expect(after.scene).toBe("overworld");
+      expect(after.worldState.encounterMeter).toBeGreaterThan(0);
+      expect(after.worldState.encounterMeter).toBeLessThan(100);
+      expect(after.rngState).not.toEqual(before.rngState);
+    });
+
+    it("triggers a battle once the encounter meter crosses the threshold, then resets it", () => {
+      const before = {
+        ...newGame(1),
+        worldState: { player: { x: 1, y: 10 }, encounterMeter: 99 },
+      };
+      const after = reduce(before, { type: "MoveOverworld", dx: 1, dy: 0 });
+      expect(after.scene).toBe("battle");
+      expect(after.worldState.encounterMeter).toBe(0);
+      expect(after.log.at(-1)).toBe("A monster ambushes the party!");
+    });
+
+    it("is deterministic: the same seed and move sequence produce identical states", () => {
+      const moves: ReadonlyArray<{ dx: -1 | 0 | 1; dy: -1 | 0 | 1 }> = [
+        { dx: 1, dy: 0 },
+        { dx: 0, dy: 1 },
+        { dx: -1, dy: 0 },
+        { dx: 0, dy: -1 },
+      ];
+      const runOnce = () =>
+        moves.reduce<ReturnType<typeof newGame>>(
+          (state, move) =>
+            reduce(state, { type: "MoveOverworld", dx: move.dx, dy: move.dy }),
+          newGame(2024),
+        );
+      expect(runOnce()).toEqual(runOnce());
+    });
+  });
 });
+
+/** Finds a passable tile adjacent to an impassable one, for blocked-move tests. */
+function findBlockedStep(map: ReturnType<typeof generateOverworldMap>): {
+  from: { x: number; y: number };
+  dx: -1 | 0 | 1;
+  dy: -1 | 0 | 1;
+} {
+  for (let y = 0; y < map.height; y++) {
+    for (let x = 0; x < map.width; x++) {
+      if (isPassable(tileAt(map, { x, y }))) continue;
+      const neighbors: Array<{ dx: -1 | 0 | 1; dy: -1 | 0 | 1 }> = [
+        { dx: 1, dy: 0 },
+        { dx: -1, dy: 0 },
+        { dx: 0, dy: 1 },
+        { dx: 0, dy: -1 },
+      ];
+      for (const { dx, dy } of neighbors) {
+        const from = { x: x - dx, y: y - dy };
+        if (
+          from.x < 0 ||
+          from.x >= map.width ||
+          from.y < 0 ||
+          from.y >= map.height
+        )
+          continue;
+        if (isPassable(tileAt(map, from))) return { from, dx, dy };
+      }
+    }
+  }
+  throw new Error("no blocked step found for this map");
+}
+
+/** Finds a passable tile adjacent to `target`, for entrance/village approach tests. */
+function findPassableNeighbor(
+  map: ReturnType<typeof generateOverworldMap>,
+  target: { x: number; y: number },
+): { from: { x: number; y: number }; dx: -1 | 0 | 1; dy: -1 | 0 | 1 } {
+  const neighbors: Array<{ dx: -1 | 0 | 1; dy: -1 | 0 | 1 }> = [
+    { dx: 1, dy: 0 },
+    { dx: -1, dy: 0 },
+    { dx: 0, dy: 1 },
+    { dx: 0, dy: -1 },
+  ];
+  for (const { dx, dy } of neighbors) {
+    const from = { x: target.x - dx, y: target.y - dy };
+    if (from.x < 0 || from.x >= map.width || from.y < 0 || from.y >= map.height)
+      continue;
+    if (isPassable(tileAt(map, from))) return { from, dx, dy };
+  }
+  throw new Error("no passable approach found for this target");
+}

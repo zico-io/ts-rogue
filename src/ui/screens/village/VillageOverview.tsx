@@ -4,44 +4,58 @@ import type { GameState } from "../../../engine/state/types.js";
 import { MessageLog } from "../../components/MessageLog.js";
 import type { VillageBuilding } from "./types.js";
 
-interface BuildingOption {
-  key: VillageBuilding;
+/** A selectable row on the overview: a building sub-view, or leaving to the overworld. */
+interface MenuOption {
+  key: VillageBuilding | "overworld";
   label: string;
   shortcut: string;
 }
 
-const BUILDINGS: readonly BuildingOption[] = [
+const OPTIONS: readonly MenuOption[] = [
   { key: "inn", label: "Inn - rest and heal the party", shortcut: "i" },
   { key: "church", label: "Church - save your progress", shortcut: "c" },
   { key: "store", label: "Store - buy and sell items", shortcut: "s" },
+  {
+    key: "overworld",
+    label: "Leave town - venture into the overworld",
+    shortcut: "o",
+  },
 ];
 
 export interface VillageOverviewProps {
   state: GameState;
   onEnter: (building: VillageBuilding) => void;
+  onLeave: () => void;
 }
 
-/** Village hub landing view: party/gold summary plus a building picker. */
-export function VillageOverview({ state, onEnter }: VillageOverviewProps) {
+/** Village hub landing view: party/gold summary plus a building/overworld picker. */
+export function VillageOverview({
+  state,
+  onEnter,
+  onLeave,
+}: VillageOverviewProps) {
   const [cursor, setCursor] = useState(0);
+
+  const choose = (option: MenuOption) => {
+    if (option.key === "overworld") onLeave();
+    else onEnter(option.key);
+  };
 
   useInput((input, key) => {
     if (key.upArrow) {
-      setCursor(
-        (current) => (current + BUILDINGS.length - 1) % BUILDINGS.length,
-      );
+      setCursor((current) => (current + OPTIONS.length - 1) % OPTIONS.length);
       return;
     }
     if (key.downArrow) {
-      setCursor((current) => (current + 1) % BUILDINGS.length);
+      setCursor((current) => (current + 1) % OPTIONS.length);
       return;
     }
     if (key.return) {
-      onEnter(BUILDINGS[cursor].key);
+      choose(OPTIONS[cursor]);
       return;
     }
-    const shortcut = BUILDINGS.find((building) => building.shortcut === input);
-    if (shortcut) onEnter(shortcut.key);
+    const shortcut = OPTIONS.find((option) => option.shortcut === input);
+    if (shortcut) choose(shortcut);
   });
 
   return (
@@ -57,19 +71,15 @@ export function VillageOverview({ state, onEnter }: VillageOverviewProps) {
         <Text>Gold: {state.gold}</Text>
       </Box>
       <Box flexDirection="column">
-        {BUILDINGS.map((building, index) => (
-          <Text
-            color={index === cursor ? "green" : undefined}
-            key={building.key}
-          >
-            {index === cursor ? "> " : "  "}[{building.shortcut}]{" "}
-            {building.label}
+        {OPTIONS.map((option, index) => (
+          <Text color={index === cursor ? "green" : undefined} key={option.key}>
+            {index === cursor ? "> " : "  "}[{option.shortcut}] {option.label}
           </Text>
         ))}
       </Box>
       <Text dimColor>
-        Controls: up/down + Enter, or i/c/s to enter a building directly; 1-4
-        switch scenes; q to quit.
+        Controls: up/down + Enter, or i/c/s/o to act directly; 1-4 switch
+        scenes; q to quit.
       </Text>
       <MessageLog messages={state.log} />
     </Box>
