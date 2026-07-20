@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { codingWorkerModel } from "../agent/agent.js";
-import { linearInputActivity } from "../agent/channels/linear.js";
-import linearConnection from "../agent/connections/linear.js";
-import { sessionUpdateActivity } from "../agent/tools/session_update.js";
+import { codingWorkerModel } from "../agent/agent";
+import { linearInputActivity } from "../agent/channels/linear";
+import linearConnection from "../agent/connections/linear";
+import { sessionUpdateActivity } from "../agent/tools/session_update";
 
 describe("Linear agent interaction", () => {
   it("routes only delegated sessions to the coding worker model", () => {

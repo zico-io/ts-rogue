@@ -1,8 +1,8 @@
 import { Box, Text, useInput } from "ink";
 import { useState } from "react";
-import { SHOP_ITEMS, sellPriceFor } from "../../../data/shops.js";
-import type { GameEvent, GameState } from "../../../engine/state/types.js";
-import { MessageLog } from "../../components/MessageLog.js";
+import { SHOP_ITEMS, sellPriceFor } from "../../../data/shops";
+import type { GameEvent, GameState } from "../../../engine/state/types";
+import { MessageLog } from "../../components/MessageLog";
 
 export interface StoreViewProps {
   state: GameState;

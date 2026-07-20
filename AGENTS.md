@@ -19,6 +19,7 @@
 - **No em dashes.** Use a plain hyphen.
 - **No agent co-authors.** Never add an agent name to commits or pull requests.
 - **Generated files are generated.** Change their source or generator, then regenerate them.
+- **TypeScript imports stay TypeScript-native.** Use extensionless relative imports, never `.js` specifiers.
 - **Quality over cost.** Prefer simple, robust code over fast scaffolding.
 - **Verify, don't assume.** Exercise the real user path first.
 - **Pixel perfect.** Inspect terminal UI output closely at supported sizes.

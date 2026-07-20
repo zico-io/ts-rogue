@@ -1,6 +1,6 @@
 import { Box, Text } from "ink";
-import type { GameState } from "../../engine/state/types.js";
-import { MessageLog } from "../components/MessageLog.js";
+import type { GameState } from "../../engine/state/types";
+import { MessageLog } from "../components/MessageLog";
 
 export interface PlaceholderSceneProps {
   label: string;
