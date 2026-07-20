@@ -19,4 +19,22 @@ describe("runDevCommand", () => {
       "Unknown command: nope. Run help.",
     ]);
   });
+
+  it("signals a Linear issue with the right label, and needs a title", () => {
+    expect(
+      runDevCommand("bug battle crash on flee", state).createIssue,
+    ).toEqual({ title: "battle crash on flee", label: "bug" });
+    expect(runDevCommand("issue add a rest button", state).createIssue).toEqual(
+      {
+        title: "add a rest button",
+        label: "feature",
+      },
+    );
+    expect(runDevCommand("bug", state).createIssue).toBeUndefined();
+    expect(runDevCommand("bug", state).output).toEqual(["Usage: bug <title>"]);
+  });
+
+  it("signals a flush of the local issue outbox", () => {
+    expect(runDevCommand("flush", state).flushIssues).toBe(true);
+  });
 });
