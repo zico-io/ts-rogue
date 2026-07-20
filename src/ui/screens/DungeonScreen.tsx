@@ -18,9 +18,9 @@ const MINIMAP_GAP = 2;
 
 /**
  * First-person dungeon screen (PROJECT_PLAN Phase 3, ROG-9). Renders the
- * depth-slice FP view (scaled/centered to its pane) and a corner minimap from
- * the pure helpers in `dungeon/render`, and turns key presses into the pure
- * dungeon reducer events. Entering / descending / encounters are all handled
+ * perspective-projected FP view (at its pane's native resolution) and a corner
+ * minimap from the pure helpers in `dungeon/render`, and turns key presses
+ * into the pure dungeon reducer events. Entering / descending / encounters are all handled
  * by the reducer; this component only reads `state.dungeonState` and
  * dispatches. The FP view reflows to the content region the frame provides.
  */
