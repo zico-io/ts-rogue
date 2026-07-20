@@ -1,3 +1,4 @@
+import type { BattleEvent, BattleState } from "../combat/types";
 import type { InventoryItem, PartyMember } from "../entities/party";
 import type { RngState } from "../rng/rng";
 import type { DungeonState, WorldState } from "../world/types";
@@ -21,6 +22,8 @@ export interface GameState {
   worldState: WorldState;
   /** `null` until the party enters a dungeon entrance on the overworld. */
   dungeonState: DungeonState | null;
+  /** `null` outside battle; set by the encounter trigger points in the store. */
+  battleState: BattleState | null;
 }
 
 /** A single-tile movement delta on the overworld grid. */
@@ -34,7 +37,8 @@ export type StepDirection = "forward" | "back";
 
 /**
  * Events the pure reducer understands. Dungeon events (PROJECT_PLAN Phase 3)
- * flag encounters and move the party; the real battle scene is Phase 4.
+ * flag encounters and move the party; battle events (PROJECT_PLAN Phase 4)
+ * resolve turn-based combat.
  */
 export type GameEvent =
   | { type: "NewGame"; seed: number }
@@ -48,4 +52,4 @@ export type GameEvent =
   | { type: "StepDungeon"; direction: StepDirection }
   | { type: "OpenChest" }
   | { type: "DescendStairs" }
-  | { type: "BattleFlee" };
+  | BattleEvent;

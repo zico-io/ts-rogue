@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { PartyMember } from "../entities/party";
 import { isDungeonWall } from "../world/dungeon";
 import { generateOverworldMap, isPassable, tileAt } from "../world/overworld";
 import type {
@@ -288,6 +289,7 @@ describe("game store", () => {
       };
       const after = reduce(before, { type: "MoveOverworld", dx: 1, dy: 0 });
       expect(after.scene).toBe("battle");
+      expect(after.battleState).not.toBeNull();
       expect(after.worldState.encounterMeter).toBe(0);
       expect(after.log.at(-1)).toBe("A monster ambushes the party!");
     });
@@ -397,7 +399,7 @@ describe("Dungeon", () => {
   });
 
   it("blocks a step into a wall without consuming RNG", () => {
-    let state = enterDungeon(7);
+    let state = withToughHero(enterDungeon(7));
     let blocked: { before: GameState; after: GameState } | null = null;
     for (let i = 0; i < 40 && !blocked; i++) {
       const before = state;
@@ -411,10 +413,7 @@ describe("Dungeon", () => {
       ) {
         blocked = { before, after };
       } else {
-        state =
-          after.scene === "battle"
-            ? reduce(after, { type: "BattleFlee" })
-            : after;
+        state = after.scene === "battle" ? fightToResolution(after) : after;
       }
     }
     expect(blocked).not.toBeNull();
@@ -422,21 +421,22 @@ describe("Dungeon", () => {
     expect(blocked?.after.log.at(-1)).toBe("The way is blocked");
   });
 
-  it("flags a wandering encounter on a plain-floor step (stub transition to battle)", () => {
+  it("starts a real battle on a wandering encounter and returns to the dungeon on victory", () => {
     for (let seed = 1; seed <= 400; seed++) {
-      const after = reduce(enterDungeon(seed), {
+      const after = reduce(withToughHero(enterDungeon(seed)), {
         type: "StepDungeon",
         direction: "forward",
       });
       if (
         after.scene === "battle" &&
-        after.dungeonState?.encounter?.kind === "wandering"
+        after.dungeonState?.encounter?.kind === "wandering" &&
+        after.battleState
       ) {
         expect(after.log.at(-1)).toBe("An enemy appears!");
-        const fled = reduce(after, { type: "BattleFlee" });
-        expect(fled.scene).toBe("dungeon");
-        expect(fled.dungeonState?.encounter).toBeNull();
-        expect(fled.log.at(-1)).toBe("You slip away into the shadows");
+        const won = fightToResolution(after);
+        expect(won.scene).toBe("dungeon");
+        expect(won.battleState).toBeNull();
+        expect(won.dungeonState?.encounter).toBeNull();
         return;
       }
     }
@@ -461,7 +461,7 @@ describe("Dungeon", () => {
   });
 
   it("end-to-end: descend, open a chest, and reach the boss room", () => {
-    let state = enterDungeon(1234);
+    let state = withToughHero(enterDungeon(1234));
     expect(state.dungeonState?.floor).toBe(1);
 
     const goldBefore = state.gold;
@@ -593,6 +593,32 @@ function bfsPath(
  * Drive the real reducer to walk the party to `target`, fleeing any wandering
  * encounters triggered en route. Returns when the party stands on `target`.
  */
+/** Overpower the hero so traversal tests can fight through wandering encounters. */
+function withToughHero(state: GameState): GameState {
+  const tough: PartyMember = {
+    ...state.party[0],
+    hp: 999,
+    maxHp: 999,
+    mp: 999,
+    maxMp: 999,
+    stats: { str: 50, agi: 50, vit: 50, int: 50 },
+  };
+  return { ...state, party: [tough] };
+}
+
+/** Drive an active battle to resolution by attacking the first living enemy. */
+function fightToResolution(state: GameState): GameState {
+  let s = state;
+  for (let i = 0; i < 200 && s.scene === "battle"; i++) {
+    const bs = s.battleState;
+    if (!bs) break;
+    const target = bs.enemies.find((enemy) => enemy.hp > 0);
+    if (!target) break;
+    s = reduce(s, { type: "BattleAttack", targetId: target.id });
+  }
+  return s;
+}
+
 function walkTo(state: GameState, target: Point): GameState {
   let s = state;
   for (let i = 0; i < 400; i++) {
@@ -600,7 +626,7 @@ function walkTo(state: GameState, target: Point): GameState {
     if (!ds) break;
     if (ds.player.x === target.x && ds.player.y === target.y) return s;
     if (s.scene === "battle") {
-      s = reduce(s, { type: "BattleFlee" });
+      s = fightToResolution(s);
       continue;
     }
     const path = bfsPath(ds.layout, ds.player, target);
