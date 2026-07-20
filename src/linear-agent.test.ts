@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { linearInputActivity } from "../agent/channels/linear.js";
 import linearConnection from "../agent/connections/linear.js";
-import { delegateProgressActivity } from "../agent/tools/delegate_progress.js";
+import { sessionUpdateActivity } from "../agent/tools/session_update.js";
 
 describe("Linear agent interaction", () => {
   it("uses one native selection for batched input requests", () => {
@@ -41,12 +41,16 @@ describe("Linear agent interaction", () => {
     expect(linearConnection.tools).toEqual({ block: ["save_comment"] });
   });
 
-  it("formats delegated progress for the parent Agent Session", () => {
+  it("preserves rich Markdown in Agent Session updates", () => {
     expect(
-      delegateProgressActivity({
-        message: "Tests pass",
+      sessionUpdateActivity({
+        message:
+          "## Changes\n\n- Added village state\n\n## Evidence\n\n`pnpm check` passes.",
         status: "progress",
       }),
-    ).toEqual({ body: "Delegate progress: Tests pass", type: "thought" });
+    ).toEqual({
+      body: "**Progress**\n\n## Changes\n\n- Added village state\n\n## Evidence\n\n`pnpm check` passes.",
+      type: "thought",
+    });
   });
 });
