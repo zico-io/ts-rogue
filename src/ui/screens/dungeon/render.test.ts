@@ -91,6 +91,80 @@ describe("renderDungeonView", () => {
   });
 });
 
+describe("renderDungeonView (responsive)", () => {
+  // A wall directly ahead fills the nearest frame with a solid back wall, so
+  // the scaled output has a clear non-space bounding box to measure.
+  const wallAheadLayout = buildLayout([
+    "#######",
+    "#.....#",
+    "#..#..#",
+    "#.....#",
+    "#######",
+  ]);
+  const wallAheadDs = buildState(wallAheadLayout, { x: 3, y: 3 }, "north");
+
+  it("returns exactly the requested viewport dimensions", () => {
+    for (const [width, height] of [
+      [60, 20],
+      [120, 40],
+      [24, 10],
+    ] as const) {
+      const rows = renderDungeonView(wallAheadDs, { width, height });
+      expect(rows).toHaveLength(height);
+      for (const row of rows) expect(row).toHaveLength(width);
+    }
+  });
+
+  it("centers the scaled view within the viewport", () => {
+    for (const [width, height] of [
+      [60, 20],
+      [120, 40],
+      [24, 10],
+    ] as const) {
+      const rows = renderDungeonView(wallAheadDs, { width, height });
+      const box = contentBox(rows);
+      const leftMargin = box.minCol;
+      const rightMargin = width - 1 - box.maxCol;
+      const topMargin = box.minRow;
+      const bottomMargin = height - 1 - box.maxRow;
+      // Nearest-neighbor rounding can shift by one cell, so allow +/- 1.
+      expect(Math.abs(leftMargin - rightMargin)).toBeLessThanOrEqual(1);
+      expect(Math.abs(topMargin - bottomMargin)).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it("scales the frame up with a larger viewport", () => {
+    const small = contentBox(
+      renderDungeonView(wallAheadDs, { width: 24, height: 10 }),
+    );
+    const medium = contentBox(
+      renderDungeonView(wallAheadDs, { width: 60, height: 20 }),
+    );
+    const large = contentBox(
+      renderDungeonView(wallAheadDs, { width: 120, height: 40 }),
+    );
+    const smallWidth = small.maxCol - small.minCol + 1;
+    const mediumWidth = medium.maxCol - medium.minCol + 1;
+    const largeWidth = large.maxCol - large.minCol + 1;
+    expect(smallWidth).toBeGreaterThan(0);
+    expect(mediumWidth).toBeGreaterThan(smallWidth);
+    expect(largeWidth).toBeGreaterThan(mediumWidth);
+  });
+
+  it("preserves the feature glyph through scaling", () => {
+    const layout = buildLayout(["#####", "#.C.#", "#...#", "#####"]);
+    const ds = buildState(layout, { x: 2, y: 2 }, "north");
+    const rows = renderDungeonView(ds, { width: 80, height: 24 });
+    expect(rows.some((row) => row.includes("C"))).toBe(true);
+  });
+
+  it("defaults to the canonical view when no viewport is given", () => {
+    const rows = renderDungeonView(wallAheadDs);
+    expect(rows).toHaveLength(FP_VIEW_HEIGHT);
+    for (const row of rows) expect(row).toHaveLength(FP_VIEW_WIDTH);
+  });
+});
+
 describe("renderMinimap", () => {
   it("returns MINIMAP_HEIGHT rows of exactly MINIMAP_WIDTH columns", () => {
     const ds = createInitialDungeonState(1234, "dungeon-0", 1);
@@ -139,6 +213,30 @@ describe("renderMinimap", () => {
     expect(all).toContain("B");
   });
 });
+
+/** Bounding box of non-space characters in a string-grid. */
+function contentBox(rows: string[]): {
+  minRow: number;
+  maxRow: number;
+  minCol: number;
+  maxCol: number;
+} {
+  let minRow = -1;
+  let maxRow = -1;
+  let minCol = Number.POSITIVE_INFINITY;
+  let maxCol = -1;
+  for (let y = 0; y < rows.length; y++) {
+    for (let x = 0; x < rows[y].length; x++) {
+      if (rows[y][x] !== " ") {
+        if (minRow === -1) minRow = y;
+        maxRow = y;
+        minCol = Math.min(minCol, x);
+        maxCol = Math.max(maxCol, x);
+      }
+    }
+  }
+  return { minRow, maxRow, minCol, maxCol };
+}
 
 /** Build a DungeonLayout from ASCII rows: `#` wall, `.` floor, `C`/`>`/`B` features. */
 function buildLayout(rows: string[]): DungeonLayout {

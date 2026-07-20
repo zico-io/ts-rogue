@@ -1,6 +1,6 @@
 import { Box, Text, useInput } from "ink";
 import type { GameEvent, GameState } from "../../engine/state/types";
-import { Screen } from "../components/Screen";
+import { Screen, useScreenContent } from "../components/Screen";
 import { renderDungeonView, renderMinimap } from "./dungeon/render";
 
 export interface DungeonScreenProps {
@@ -8,12 +8,21 @@ export interface DungeonScreenProps {
   dispatch: (event: GameEvent) => void;
 }
 
+const HINT =
+  "Up/W/k: forward | Down/s/j: back | Left/a/h or Right/d/l: turn | o: open chest | > or Enter: descend | q: quit";
+
+/** Fixed minimap box chrome: 17 cols + 2 padding + 2 border; 9 rows + 1 label + 2 border. */
+const MINIMAP_BOX_WIDTH = 21;
+const MINIMAP_BOX_HEIGHT = 12;
+const MINIMAP_GAP = 2;
+
 /**
  * First-person dungeon screen (PROJECT_PLAN Phase 3, ROG-9). Renders the
- * depth-slice FP view and a corner minimap from the pure helpers in
- * `dungeon/render`, and turns key presses into the pure dungeon reducer
- * events. Entering / descending / encounters are all handled by the reducer;
- * this component only reads `state.dungeonState` and dispatches.
+ * depth-slice FP view (scaled/centered to its pane) and a corner minimap from
+ * the pure helpers in `dungeon/render`, and turns key presses into the pure
+ * dungeon reducer events. Entering / descending / encounters are all handled
+ * by the reducer; this component only reads `state.dungeonState` and
+ * dispatches. The FP view reflows to the content region the frame provides.
  */
 export function DungeonScreen({ state, dispatch }: DungeonScreenProps) {
   useInput((input, key) => {
@@ -41,30 +50,59 @@ export function DungeonScreen({ state, dispatch }: DungeonScreenProps) {
     );
   }
 
-  const fpRows = renderDungeonView(ds);
-  const minimapRows = renderMinimap(ds);
-
   return (
     <Screen
       state={state}
       title={`Dungeon - Floor ${ds.floor} (${ds.dungeonId})`}
-      hint="Up/W/k: forward | Down/s/j: back | Left/a/h or Right/d/l: turn | o: open chest | > or Enter: descend | q: quit"
+      hint={HINT}
     >
-      <Box flexDirection="column" gap={1}>
-        <Box gap={2} justifyContent="center">
-          <Box flexDirection="column">
-            <Text>{fpRows.join("\n")}</Text>
-          </Box>
-          <Box borderStyle="single" flexDirection="column" paddingX={1}>
-            <Text dimColor>Map</Text>
-            <Text dimColor>{minimapRows.join("\n")}</Text>
-          </Box>
-        </Box>
-        <Text>
-          Facing {ds.facing}
-          {ds.reachedBoss ? " | boss room reached" : ""}
-        </Text>
-      </Box>
+      <DungeonBody state={state} />
     </Screen>
+  );
+}
+
+function DungeonBody({ state }: { state: GameState }) {
+  const { width, height } = useScreenContent();
+  const ds = state.dungeonState;
+  if (!ds) return null;
+
+  // Content stacks the FP/minimap row above the facing line (with a gap row).
+  const mainHeight = Math.max(1, height - 2);
+  // Shrink the minimap box on short panes so it never outgrows the row; its
+  // inner text clips rather than pushing the layout.
+  const minimapBoxHeight = Math.min(MINIMAP_BOX_HEIGHT, mainHeight);
+
+  const fpWidth = Math.max(1, width - MINIMAP_BOX_WIDTH - MINIMAP_GAP);
+  const fpRows = renderDungeonView(ds, { width: fpWidth, height: mainHeight });
+  const minimapRows = renderMinimap(ds);
+
+  return (
+    <Box flexDirection="column" gap={1}>
+      <Box
+        flexDirection="row"
+        gap={MINIMAP_GAP}
+        justifyContent="center"
+        height={mainHeight}
+      >
+        <Box width={fpWidth} height={mainHeight} overflow="hidden">
+          <Text>{fpRows.join("\n")}</Text>
+        </Box>
+        <Box
+          borderStyle="single"
+          flexDirection="column"
+          paddingX={1}
+          width={MINIMAP_BOX_WIDTH}
+          height={minimapBoxHeight}
+          overflow="hidden"
+        >
+          <Text dimColor>Map</Text>
+          <Text dimColor>{minimapRows.join("\n")}</Text>
+        </Box>
+      </Box>
+      <Text>
+        Facing {ds.facing}
+        {ds.reachedBoss ? " | boss room reached" : ""}
+      </Text>
+    </Box>
   );
 }
