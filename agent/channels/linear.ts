@@ -13,7 +13,6 @@ type InputRequests = Parameters<
 const toolLabel = (toolName: string) => {
   const operation = toolName.split("__").at(-1) ?? toolName;
   const labels: Record<string, string> = {
-    save_comment: "Post or update a comment",
     save_issue: "Create or update an issue",
   };
   const label = labels[operation] ?? operation.replaceAll("_", " ");
