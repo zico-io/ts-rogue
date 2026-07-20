@@ -1,6 +1,6 @@
 # ts-rogue
 
-A TypeScript terminal dungeon crawler. This repository holds the playable-loop specification and the coding harness, plus a placeholder Ink shell (`pnpm game`) with no gameplay yet.
+A TypeScript terminal dungeon crawler. This repository holds the playable-loop specification, the coding harness, and a playable Ink application.
 
 ## Requirements
 
@@ -33,6 +33,7 @@ Work is tracked in Linear. GitHub pull requests are used for review and merge. E
 | --- | --- |
 | Run all repository checks | `pnpm check` |
 | Run the game (Ink shell) | `pnpm game` |
+| Run the game with the switchable dev console | `pnpm game:dev` |
 | Run the Eve agent locally | `pnpm eve:dev` |
 | Type-check | `pnpm typecheck` |
 | Run tests | `pnpm test` |

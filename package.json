@@ -13,6 +13,7 @@
     "check": "pnpm typecheck && pnpm test && pnpm docs:check && pnpm lint",
     "eve:dev": "eve dev --no-ui",
     "game": "tsx src/app.tsx",
+    "game:dev": "tsx src/app.tsx --dev",
     "prepare": "git config core.hooksPath .githooks || true",
     "docs:check": "node scripts/check-docs.mjs",
     "typecheck": "tsc --noEmit",
