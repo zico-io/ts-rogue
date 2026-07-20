@@ -3,12 +3,25 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { newGame, reduce } from "../engine/state/store";
+import type { GameState } from "../engine/state/types";
+import { createInitialDungeonState } from "../engine/world/dungeon";
 import { deserialize, loadGame, saveGame, serialize } from "./save";
 
 describe("save round-trip (JSON)", () => {
   it("restores an equivalent state", () => {
     const state = newGame(9001);
     expect(deserialize(serialize(state))).toEqual(state);
+  });
+
+  it("round-trips a GameState with an active dungeonState (layout, explored, facing)", () => {
+    const entered: GameState = {
+      ...newGame(42),
+      scene: "dungeon",
+      dungeonState: createInitialDungeonState(42, "dungeon-0", 1),
+    };
+    const moved = reduce(entered, { type: "TurnDungeon", direction: "right" });
+    expect(deserialize(serialize(moved))).toEqual(moved);
+    expect(deserialize(serialize(moved)).dungeonState?.facing).toBe("east");
   });
 });
 
@@ -40,6 +53,24 @@ describe("save round-trip (sqlite)", () => {
     const loaded = loadGame(dbPath);
 
     expect(loaded).toEqual(state);
+  });
+
+  it("round-trips a full GameState including an active dungeonState", () => {
+    const dbPath = tempDbPath();
+    const entered: GameState = {
+      ...newGame(42),
+      scene: "dungeon",
+      dungeonState: createInitialDungeonState(42, "dungeon-0", 2),
+    };
+    const state = reduce(
+      reduce(entered, { type: "StepDungeon", direction: "forward" }),
+      { type: "TurnDungeon", direction: "left" },
+    );
+    saveGame(state, dbPath);
+    const loaded = loadGame(dbPath);
+    expect(loaded).toEqual(state);
+    expect(loaded?.dungeonState).not.toBeNull();
+    expect(loaded?.dungeonState?.floor).toBe(2);
   });
 
   it("upserts on repeated saves so the second save's state wins", () => {
