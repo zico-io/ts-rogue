@@ -7,6 +7,8 @@ export interface ScreenProps {
   state: GameState;
   title: string;
   hint?: string;
+  /** Show the message log in the footer. Off for scenes that place it elsewhere (Battle). */
+  showLog?: boolean;
   children: ReactNode;
 }
 
@@ -17,7 +19,13 @@ export interface ScreenProps {
  * log). Every gameplay/village screen renders through this so status placement,
  * height fill, and chrome are identical scene to scene.
  */
-export function Screen({ state, title, hint, children }: ScreenProps) {
+export function Screen({
+  state,
+  title,
+  hint,
+  showLog = true,
+  children,
+}: ScreenProps) {
   const { columns, rows } = useWindowSize();
 
   return (
@@ -36,7 +44,7 @@ export function Screen({ state, title, hint, children }: ScreenProps) {
         </Box>
         <PartyBar state={state} />
         {hint ? <Text dimColor>{hint}</Text> : null}
-        <MessageLog messages={state.log} />
+        {showLog ? <MessageLog messages={state.log} /> : null}
       </Box>
     </Box>
   );

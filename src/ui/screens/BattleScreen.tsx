@@ -12,6 +12,7 @@ import {
 import { SKILLS } from "../../engine/combat/skills";
 import type { BattleEnemy, BattleState } from "../../engine/combat/types";
 import type { GameEvent, GameState } from "../../engine/state/types";
+import { MessageLog } from "../components/MessageLog";
 import { Screen } from "../components/Screen";
 
 export interface BattleScreenProps {
@@ -178,37 +179,72 @@ export function BattleScreen({ state, dispatch }: BattleScreenProps) {
   }
 
   return (
-    <Screen state={state} title="Battle" hint={hintFor(mode, healItems.length)}>
-      <Box flexDirection="column" gap={1}>
-        <EnemyField
-          battle={bs}
-          aliveEnemies={aliveEnemies}
-          selectingTarget={mode === "target"}
-          targetCursor={targetCursor}
-        />
+    <Screen
+      state={state}
+      title="Battle"
+      hint={hintFor(mode, healItems.length)}
+      showLog={false}
+    >
+      <Box flexDirection="row" flexGrow={1} gap={2}>
+        {/* Battle viewport: enemies centered both axes, command block below. */}
+        <Box flexDirection="column" flexGrow={1}>
+          <Box flexGrow={1} alignItems="center" justifyContent="center">
+            <EnemyField
+              battle={bs}
+              aliveEnemies={aliveEnemies}
+              selectingTarget={mode === "target"}
+              targetCursor={targetCursor}
+            />
+          </Box>
 
-        <Text>
-          {hero.name} Lv{hero.level} | XP {hero.xp}/{xpToNext(hero.level)} | ATK{" "}
-          {atkFrom(hero)} DEF {defFrom(hero)} SPD {spdFrom(hero)}
-        </Text>
-        <Text dimColor>
-          Turn order: {initiativeNames(bs, hero.name).join(" -> ")}
-        </Text>
+          <Box flexDirection="column" gap={1}>
+            <Text>
+              {hero.name} Lv{hero.level} | XP {hero.xp}/{xpToNext(hero.level)} |
+              ATK {atkFrom(hero)} DEF {defFrom(hero)} SPD {spdFrom(hero)}
+            </Text>
+            <Text dimColor>
+              Turn order: {initiativeNames(bs, hero.name).join(" -> ")}
+            </Text>
 
-        <ActionMenu
-          mode={mode}
-          actions={ACTIONS}
-          actionCursor={actionCursor}
-          skills={SKILLS}
-          skillCursor={skillCursor}
-          heroMp={hero.mp}
-          healItems={healItems}
-          itemCursor={itemCursor}
-        />
+            {/* Command window titled with the acting member: these actions are theirs. */}
+            <Box
+              flexDirection="column"
+              borderStyle="round"
+              borderDimColor
+              paddingX={1}
+              alignSelf="flex-start"
+            >
+              <Text bold color="cyan">
+                {hero.name}
+              </Text>
+              <ActionMenu
+                mode={mode}
+                actions={ACTIONS}
+                actionCursor={actionCursor}
+                skills={SKILLS}
+                skillCursor={skillCursor}
+                heroMp={hero.mp}
+                healItems={healItems}
+                itemCursor={itemCursor}
+              />
+            </Box>
+          </Box>
+        </Box>
+
+        {/* Battle log, pinned to the right of the combat layout. */}
+        <Box flexDirection="column" width={BATTLE_LOG_WIDTH}>
+          <Text dimColor>Battle Log</Text>
+          <MessageLog messages={state.log} maxLines={BATTLE_LOG_LINES} />
+        </Box>
       </Box>
     </Screen>
   );
 }
+
+/** Width of the right-hand battle log panel. */
+const BATTLE_LOG_WIDTH = 36;
+/** Visible lines in the battle log panel (taller than the shared footer log). */
+const BATTLE_LOG_LINES = 16;
 
 interface EnemyFieldProps {
   battle: BattleState;
