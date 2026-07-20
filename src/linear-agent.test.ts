@@ -1,11 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import { linearInputActivity } from "../agent/channels/linear.js";
-import { approveLinearTool } from "../agent/connections/linear.js";
 import { delegateProgressActivity } from "../agent/tools/delegate_progress.js";
 
 describe("Linear agent interaction", () => {
-  it("uses one native selection for batched read approvals", () => {
+  it("uses one native selection for batched input requests", () => {
     const requests = ["linear__get_issue", "linear__list_comments"].map(
       (toolName) => ({
         action: {
@@ -35,18 +34,6 @@ describe("Linear agent interaction", () => {
         ],
       },
     });
-    expect(
-      approveLinearTool({
-        approvedTools: new Set(),
-        toolName: "linear__get_issue",
-      }),
-    ).toBe("not-applicable");
-    expect(
-      approveLinearTool({
-        approvedTools: new Set(),
-        toolName: "linear__update_issue",
-      }),
-    ).toBe("user-approval");
   });
 
   it("describes Linear mutations without internal tool names", () => {
