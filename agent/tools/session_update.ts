@@ -13,7 +13,10 @@ export const sessionUpdateActivity = ({
   status: "started" | "progress" | "blocked" | "review" | "completed";
 }) => ({
   body: `**${status[0]?.toUpperCase()}${status.slice(1)}**\n\n${message}`,
-  type: "thought" as const,
+  // `response` is the only durable, top-level activity type; `thought`/`action`
+  // nest under the turn's open tool-call block. Session updates are deliberate
+  // messages to the user, so they belong at the top level of the Linear chat.
+  type: "response" as const,
 });
 
 export default defineTool({

@@ -13,7 +13,8 @@ pre-warmed Vercel Sandboxes.
 | [`connections/`](connections/) | Linear MCP connection and approval policy |
 | [`hooks/`](hooks/) | Delegated-child activity relay |
 | [`tools/`](tools/) | Native Linear Agent Session progress updates |
-| [`sandbox.ts`](sandbox.ts) | Vercel Sandbox bootstrap, sync, network policy, and token refresh |
+| [`sandbox.ts`](sandbox.ts) | Vercel Sandbox bootstrap, sync, and the credential-broker network policy |
+| [`proxy.ts`](proxy.ts) | `forwardURL` broker: dispatches on host, mints a fresh credential per request, and injects it at the firewall |
 
 Linear owns issue status, priority, and progress. GitHub pull requests remain the
 review and merge boundary. GitHub credentials are injected through the sandbox
