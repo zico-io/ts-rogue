@@ -3,11 +3,12 @@ import { useEffect, useRef, useState } from "react";
 import type { GameEvent, GameState } from "../../engine/state/types";
 import type { DungeonState } from "../../engine/world/types";
 import { Screen, useScreenContent } from "../components/Screen";
+import { dungeonRamp, theme } from "../theme";
 import {
   type CameraPose,
   lerpPose,
   poseFromState,
-  renderDungeonView,
+  renderDungeonViewRuns,
   renderMinimap,
 } from "./dungeon/render";
 
@@ -105,7 +106,9 @@ export function DungeonScreen({ state, dispatch }: DungeonScreenProps) {
   if (!ds) {
     return (
       <Screen state={state} title="Dungeon">
-        <Text dimColor>(no active dungeon - press 2 for the overworld)</Text>
+        <Text color={theme.textMuted}>
+          (no active dungeon - press 2 for the overworld)
+        </Text>
       </Screen>
     );
   }
@@ -133,7 +136,7 @@ function DungeonBody({ ds }: { ds: DungeonState }) {
 
   const fpWidth = Math.max(3, width - MINIMAP_BOX_WIDTH - MINIMAP_GAP);
   // The FP box has a single-cell border, so render into the interior.
-  const fpRows = renderDungeonView(
+  const fpRows = renderDungeonViewRuns(
     ds,
     {
       width: Math.max(1, fpWidth - 2),
@@ -142,6 +145,8 @@ function DungeonBody({ ds }: { ds: DungeonState }) {
     camera,
   );
   const minimapRows = renderMinimap(ds);
+  // Per-dungeon accent ramp, band 1 (far, dim) .. 4 (near, bright).
+  const ramp = dungeonRamp(ds.dungeonId);
 
   const statusParts = [`Facing ${ds.facing}`];
   if (ds.reachedBoss) statusParts.push("boss room reached");
@@ -157,22 +162,38 @@ function DungeonBody({ ds }: { ds: DungeonState }) {
       >
         <Box
           borderStyle="single"
+          borderColor={theme.border}
+          flexDirection="column"
           width={fpWidth}
           height={mainHeight}
           overflow="hidden"
         >
-          <Text color="magenta">{fpRows.join("\n")}</Text>
+          {fpRows.map((runs, rowIndex) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: fixed-size viewport, row position is identity
+            <Text key={rowIndex}>
+              {runs.map((run, runIndex) => (
+                <Text
+                  color={ramp[Math.max(0, run.band - 1)]}
+                  // biome-ignore lint/suspicious/noArrayIndexKey: runs re-derive every render
+                  key={runIndex}
+                >
+                  {run.text}
+                </Text>
+              ))}
+            </Text>
+          ))}
         </Box>
         <Box
           borderStyle="single"
+          borderColor={theme.border}
           flexDirection="column"
           paddingX={1}
           width={MINIMAP_BOX_WIDTH}
           height={minimapBoxHeight}
           overflow="hidden"
         >
-          <Text dimColor>Map</Text>
-          <Text dimColor>{minimapRows.join("\n")}</Text>
+          <Text color={theme.textMuted}>Map</Text>
+          <Text color={ramp[1]}>{minimapRows.join("\n")}</Text>
         </Box>
       </Box>
       <Text>{statusParts.join(" | ")}</Text>
