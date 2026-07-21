@@ -72,7 +72,7 @@ describe("Linear agent interaction", () => {
       }),
     ).toEqual({
       body: "**Progress**\n\n## Changes\n\n- Added village state\n\n## Evidence\n\n`pnpm check` passes.",
-      type: "thought",
+      type: "response",
     });
   });
 });
