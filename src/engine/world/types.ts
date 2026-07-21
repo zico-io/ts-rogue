@@ -86,8 +86,10 @@ export interface DungeonEncounter {
 /**
  * The mutable slice of `GameState` that tracks a dungeon run. A single
  * serializable tree: layout + explored mask + player position/facing +
- * encounter flag + boss-reached flag. `null` until the party enters a
- * dungeon entrance on the overworld.
+ * encounter flag + boss-reached flag + a cleared flag (Phase 6, ROG-12) that
+ * is set when the floor-3 boss is defeated so the UI can show the dungeon is
+ * complete and the player knows it is safe to leave. `null` until the party
+ * enters a dungeon entrance on the overworld.
  */
 export interface DungeonState {
   dungeonId: string;
@@ -98,4 +100,5 @@ export interface DungeonState {
   explored: readonly (readonly boolean[])[];
   encounter: DungeonEncounter | null;
   reachedBoss: boolean;
+  cleared: boolean;
 }
