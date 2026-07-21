@@ -52,12 +52,12 @@ export function MessageLog({
           // Key by absolute log position: unique even when lines repeat, and
           // stable per occurrence as new lines append. The newest damage line
           // is emphasized - the ROG-31 "hit flash" without animation state.
-          // biome-ignore lint/suspicious/noArrayIndexKey: append-only tail, position is identity
           <Text
             bold={
               start + index === messages.length - 1 && message.kind === "damage"
             }
             color={theme.msg[message.kind]}
+            // biome-ignore lint/suspicious/noArrayIndexKey: append-only tail, position is identity
             key={start + index}
           >
             {message.text}
