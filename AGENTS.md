@@ -6,9 +6,10 @@
 
 1. Read `.botfile/memory/index.md` and only the referenced topic files needed for the task.
 2. Read `PROJECT_PLAN.md` for product scope and phase ordering.
-3. Use Linear as the work tracker and Git/GitHub for branches, commits, reviews, and releases.
-4. Reproduce bugs in an end-to-end user environment before changing code.
-5. Run `pnpm check` before handing work off.
+3. Read the nearest contextual `README.md` and `AGENTS.md` before changing a subsystem.
+4. Use Linear as the work tracker and Git/GitHub for branches, commits, reviews, and releases.
+5. Reproduce bugs in an end-to-end user environment before changing code.
+6. Run `pnpm check` before handing work off.
 
 ## Operating principles
 
@@ -26,11 +27,11 @@
 
 ## Product boundaries
 
-- Keep `src/engine` independent from `src/ui`.
-- Route randomness through seeded RNG state so bugs are reproducible.
-- Keep `GameState` serializable and reducers pure.
+- Engine-specific rules live in `src/engine/AGENTS.md`.
+- Terminal UI rules live in `src/ui/AGENTS.md`.
+- Eve project-agent rules live in `agent/AGENTS.md`.
 - Complete phases in `PROJECT_PLAN.md` in order. Do not build later-phase depth early.
-- Update `docs/product.md` in the same pull request when shipped behavior changes.
+- Update each affected subsystem README in the same pull request when shipped behavior changes.
 
 ## Memory discipline
 
@@ -48,7 +49,8 @@ Canonical entities live in `.botfile/entities/entities.jsonl`, one JSON object p
 - Keep one issue per branch. Put the Linear issue identifier in the pull request.
 - Use focused commits. Do not rewrite or discard work you did not create.
 - GitHub pull requests are the review and merge boundary; Linear is the source of truth for status and priority.
-- Treat stale product documentation as a bug. `pnpm docs:check` enforces links and documentation coupling.
+- Treat stale product documentation as a bug.
+- Add a Changeset for release-facing behavior. Documentation, tests, and internal refactors do not require one.
 
 ## Orchestration protocol
 

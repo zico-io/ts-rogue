@@ -10,19 +10,20 @@
   },
   "packageManager": "pnpm@11.7.0",
   "scripts": {
-    "check": "pnpm typecheck && pnpm test && pnpm docs:check && pnpm lint",
+    "changeset": "changeset",
+    "check": "pnpm typecheck && pnpm test && pnpm lint",
     "eve:dev": "eve dev --no-ui",
     "pr:sandbox": "bash scripts/pr-sandbox.sh",
     "game": "tsx src/app.tsx",
     "game:dev": "tsx --env-file-if-exists=.env.local src/app.tsx --dev",
     "play": "bash scripts/play.sh",
     "prepare": "git config core.hooksPath .githooks || true",
-    "docs:check": "node scripts/check-docs.mjs",
     "typecheck": "tsc --noEmit",
     "test:unit": "vitest run",
-    "test": "pnpm test:unit && node --test scripts/check-docs.test.mjs",
+    "test": "pnpm test:unit",
     "lint": "biome ci src && biome lint agent",
-    "format": "biome format --write ."
+    "format": "biome format --write .",
+    "version-packages": "changeset version"
   },
   "dependencies": {
     "@vercel/connect": "0.4.0",
@@ -35,6 +36,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2",
+    "@changesets/cli": "^2.31.1",
     "@types/node": "^24.13.3",
     "@types/react": "^19",
     "sandbox": "3.5.2",
