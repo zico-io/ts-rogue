@@ -9,6 +9,11 @@
  * table rolled on victory, and an optional `implicitPoolRef` for the
  * monster-implicit pool (bosses and certain enemy types). Phase 5 battles read
  * these via the loot resolution helper in `src/engine/loot/resolution.ts`.
+ *
+ * Phase 6 (ROG-12) balance pass: trash mob gold was raised slightly so the
+ * early game is less grindy. Slime gold 3 -> 5; Goblin gold 8 -> 12. The boss
+ * gold (120) and all XP values are unchanged; the XP curve already produces a
+ * satisfying few levels over a 20-30 min session.
  */
 
 export interface MonsterStats {
@@ -46,7 +51,7 @@ export const MONSTERS: readonly MonsterDef[] = [
     maxHp: 12,
     maxMp: 0,
     xp: 5,
-    gold: 3,
+    gold: 5,
     minFloor: 1,
     tier: 1,
     lootTableRef: "tier-1",
@@ -60,7 +65,7 @@ export const MONSTERS: readonly MonsterDef[] = [
     maxHp: 22,
     maxMp: 0,
     xp: 12,
-    gold: 8,
+    gold: 12,
     minFloor: 2,
     tier: 2,
     lootTableRef: "tier-2",

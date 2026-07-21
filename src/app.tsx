@@ -1,8 +1,8 @@
 import { Box, render, Text, useApp, useInput } from "ink";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { GameStore, newGame } from "./engine/state/store";
 import type { Scene } from "./engine/state/types";
-import { loadGame } from "./persistence/save";
+import { clearSave, loadGame } from "./persistence/save";
 import {
   MinSizeGuard,
   TerminalLayoutProvider,
@@ -12,6 +12,7 @@ import { useGameState } from "./ui/hooks/useGameState";
 import { BattleScreen } from "./ui/screens/BattleScreen";
 import { DevConsole } from "./ui/screens/DevConsole";
 import { DungeonScreen } from "./ui/screens/DungeonScreen";
+import { GameOverScreen } from "./ui/screens/GameOverScreen";
 import { OverworldScreen } from "./ui/screens/OverworldScreen";
 import { TitleScreen } from "./ui/screens/TitleScreen";
 import { VillageScreen } from "./ui/screens/VillageScreen";
@@ -39,9 +40,11 @@ function App({
   const { exit } = useApp();
   const { columns, rows, tooSmall } = useTerminalLayout();
   const [started, setStarted] = useState(false);
+  const [modeCursor, setModeCursor] = useState(0);
   const [consoleOpen, setConsoleOpen] = useState(false);
   const [consoleOutput, setConsoleOutput] = useState<string[]>([]);
   const state = useGameState(store);
+  const gameOver = state.flags?.gameOver ?? false;
 
   useInput((input) => {
     if (devConsoleEnabled && input === "`") {
@@ -49,6 +52,8 @@ function App({
     }
   });
 
+  // Title screen phase: mode selection on a fresh boot (no save), or any key
+  // to continue an existing save (Phase 6, ROG-12 permadeath choice).
   useInput(
     (input, key) => {
       if (devConsoleEnabled && input === "`") return;
@@ -56,16 +61,27 @@ function App({
         exit();
         return;
       }
-      // A loaded save is already the store's initial state; only a fresh
-      // boot with no save needs a new run seeded here.
-      if (!hasSave) {
-        store.dispatch({ type: "NewGame", seed: Date.now() });
+      if (hasSave) {
+        setStarted(true);
+        return;
       }
-      setStarted(true);
+      if (key.upArrow) {
+        setModeCursor((c) => (c === 0 ? 1 : 0));
+      } else if (key.downArrow) {
+        setModeCursor((c) => (c === 0 ? 1 : 0));
+      } else if (key.return) {
+        store.dispatch({
+          type: "NewGame",
+          seed: Date.now(),
+          permadeath: modeCursor === 1,
+        });
+        setStarted(true);
+      }
     },
     { isActive: !started && !consoleOpen },
   );
 
+  // In-game scene switching (blocked while the game is over).
   useInput(
     (input, key) => {
       if (isQuit(input, key)) {
@@ -75,8 +91,29 @@ function App({
       const scene = sceneKeys[input];
       if (scene) store.dispatch({ type: "ChangeScene", scene });
     },
-    { isActive: started && !consoleOpen },
+    { isActive: started && !consoleOpen && !gameOver },
   );
+
+  // Game-over phase: Enter starts a new run (same permadeath mode), q quits.
+  useInput(
+    (input, key) => {
+      if (isQuit(input, key)) {
+        exit();
+        return;
+      }
+      if (key.return) {
+        const permadeath = state.flags?.permadeath ?? false;
+        store.dispatch({ type: "NewGame", seed: Date.now(), permadeath });
+      }
+    },
+    { isActive: started && !consoleOpen && gameOver },
+  );
+
+  // Clear the persisted save once the game is over so the next boot starts a
+  // fresh run. I/O lives in the persistence layer, not the engine.
+  useEffect(() => {
+    if (gameOver) clearSave();
+  }, [gameOver]);
 
   const dispatch = (event: Parameters<GameStore["dispatch"]>[0]) =>
     store.dispatch(event);
@@ -96,12 +133,14 @@ function App({
   } else if (!started) {
     content = (
       <Box flexDirection="column">
-        <TitleScreen hasSave={hasSave} />
+        <TitleScreen hasSave={hasSave} modeCursor={modeCursor} />
         {devConsoleEnabled && (
           <Text dimColor>Dev console: press ` to switch.</Text>
         )}
       </Box>
     );
+  } else if (gameOver) {
+    content = <GameOverScreen />;
   } else {
     switch (state.scene) {
       case "village":

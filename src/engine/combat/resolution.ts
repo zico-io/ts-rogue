@@ -17,6 +17,11 @@
  * Blocked actions (insufficient MP, no usable item, no living target) are
  * fully side-effect-free: they return the state untouched and consume no RNG,
  * so replays stay deterministic even if the UI hands in a disallowed command.
+ *
+ * Phase 6 (ROG-12) adds death handling: a `lost` battle either revives the
+ * party at the village with a gold penalty (default) or ends the run with a
+ * terminal game-over flag (permadeath). A boss victory also marks the dungeon
+ * cleared so the player knows it is safe to leave.
  */
 
 import { findMonster, MONSTERS, type MonsterDef } from "../../data/monsters";
@@ -543,7 +548,9 @@ function applyHeroCommand(
 
 /**
  * Apply victory: award XP/gold, level up, clear the battle and the dungeon
- * encounter flag, and return to the battle's prior scene.
+ * encounter flag, and return to the battle's prior scene. A boss victory also
+ * marks the dungeon cleared (Phase 6, ROG-12) so the player can leave knowing
+ * the dungeon is done.
  */
 function finalizeWon(
   state: GameState,
@@ -561,6 +568,9 @@ function finalizeWon(
   const goldGain = enemies.reduce((sum, e) => sum + e.gold, 0);
   const heroAfterBattle = { ...state.party[0], hp: heroHp, mp: heroMp };
   const granted = grantXp(heroAfterBattle, xpGain);
+  // Check for a boss victory before clearing the encounter flag so the
+  // dungeon can be marked cleared.
+  const wasBossVictory = state.dungeonState?.encounter?.kind === "boss";
   const finalLogs = [
     ...logs,
     `Victory! Gained ${xpGain} XP and ${goldGain} gold.`,
@@ -570,11 +580,19 @@ function finalizeWon(
       `${granted.member.name} reached level ${granted.member.level}!`,
     );
   }
+  if (wasBossVictory) {
+    finalLogs.push("The dungeon guardian falls. The dungeon is cleared!");
+  }
   const lootLogs = loot.map((item) => `Looted ${describeItem(item)}!`);
   const inventory = itemUsed
     ? consumeItem(state.inventory, itemUsed)
     : state.inventory;
   const items = loot.length ? [...state.items, ...loot] : state.items;
+  const clearedDungeon = clearEncounter(state.dungeonState);
+  const dungeonState =
+    clearedDungeon && wasBossVictory
+      ? { ...clearedDungeon, cleared: true }
+      : clearedDungeon;
   return {
     ...state,
     rngState,
@@ -586,35 +604,58 @@ function finalizeWon(
     inventory,
     items,
     nextItemId,
-    dungeonState: clearEncounter(state.dungeonState),
+    dungeonState,
     battleState: null,
     log: [...state.log, ...finalLogs, ...lootLogs],
   };
 }
 
-/** Apply defeat: revive the party at the village and clear the dungeon run. */
+/**
+ * Apply defeat (Phase 6, ROG-12 death handling). In permadeath mode the run
+ * ends: the terminal `gameOver` flag is set so the UI shows a game-over screen
+ * and clears the save. In the default mode the party is revived at the village
+ * with 1 HP and loses half their gold (floored); the dungeon run is discarded
+ * and the run continues. The penalty math is deterministic (no RNG) so the
+ * run stays reproducible from the seed. The scene is left unchanged in
+ * permadeath mode because the UI checks `gameOver` before routing by scene.
+ */
 function finalizeLost(
   state: GameState,
   logs: string[],
   rngState: RngState,
   itemUsed: string | null,
 ): GameState {
-  const finalLogs = [
-    ...logs,
-    "The party was defeated...",
-    "The party awakens, revived at the village.",
-  ];
   const inventory = itemUsed
     ? consumeItem(state.inventory, itemUsed)
     : state.inventory;
+
+  if (state.flags.permadeath) {
+    const finalLogs = [...logs, "The party has perished. The run is over."];
+    return {
+      ...state,
+      rngState,
+      battleState: null,
+      dungeonState: null,
+      inventory,
+      flags: { ...state.flags, gameOver: true },
+      log: [...state.log, ...finalLogs],
+    };
+  }
+
+  const goldLoss = Math.floor(state.gold / 2);
+  const finalLogs = [
+    ...logs,
+    "The party falls... revived at the village, losing half your gold.",
+  ];
   return {
     ...state,
     rngState,
     scene: "village",
+    gold: state.gold - goldLoss,
     party: state.party.map((member) => ({
       ...member,
-      hp: member.maxHp,
-      mp: member.maxMp,
+      hp: 1,
+      mp: 0,
     })),
     inventory,
     dungeonState: null,

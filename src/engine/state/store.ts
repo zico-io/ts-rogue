@@ -39,8 +39,14 @@ import type {
 /** Gold cost per party member to fully heal at the inn. */
 export const INN_COST_PER_MEMBER = 10;
 
+/** Options for starting a new run (Phase 6, ROG-12). */
+export interface NewGameOptions {
+  /** When true, a defeat ends the run instead of reviving at the village. */
+  permadeath?: boolean;
+}
+
 /** Build a fresh state tree for a new run from a seed, logging the seed. */
-export function newGame(seed: number): GameState {
+export function newGame(seed: number, options?: NewGameOptions): GameState {
   const rng = new Rng(seed);
   const map = generateOverworldMap(seed);
   return {
@@ -56,6 +62,7 @@ export function newGame(seed: number): GameState {
     worldState: createInitialWorldState(map),
     dungeonState: null,
     battleState: null,
+    flags: { permadeath: options?.permadeath ?? false, gameOver: false },
   };
 }
 
@@ -401,6 +408,28 @@ function descendStairs(state: GameState): GameState {
   };
 }
 
+/**
+ * `ExitDungeon` reducer (Phase 6, ROG-12). Leaves the active dungeon and
+ * returns the party to the overworld at the dungeon entrance tile (which is
+ * where `worldState.player` was left when the party entered). Clears
+ * `dungeonState` and any lingering `battleState`, and resets the overworld
+ * encounter meter so re-entering the overworld does not ambush the party
+ * immediately. This is the dedicated exit path that prevents the dungeon
+ * from being a dead-end after clearing a floor or defeating the boss.
+ */
+function exitDungeon(state: GameState): GameState {
+  const ds = state.dungeonState;
+  if (!ds) return state;
+  return {
+    ...state,
+    scene: "overworld",
+    worldState: { ...state.worldState, encounterMeter: 0 },
+    dungeonState: null,
+    battleState: null,
+    log: [...state.log, "You emerge from the dungeon"],
+  };
+}
+
 /* -------------------------------------------------------------------------- */
 /* Phase 5 (ROG-11): equip / unequip / sell generated loot                    */
 /* -------------------------------------------------------------------------- */
@@ -474,7 +503,7 @@ function sellItem(state: GameState, instanceId: string): GameState {
 export function reduce(state: GameState, event: GameEvent): GameState {
   switch (event.type) {
     case "NewGame":
-      return newGame(event.seed);
+      return newGame(event.seed, { permadeath: event.permadeath });
     case "ChangeScene":
       return { ...state, scene: event.scene };
     case "Log":
@@ -501,6 +530,8 @@ export function reduce(state: GameState, event: GameEvent): GameState {
       return openChest(state);
     case "DescendStairs":
       return descendStairs(state);
+    case "ExitDungeon":
+      return exitDungeon(state);
     case "BattleAttack":
     case "BattleSkill":
     case "BattleItem":

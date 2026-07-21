@@ -34,8 +34,12 @@ export const DUNGEON_FLOORS = 3;
 /** Chebyshev radius (in tiles) revealed around the player on each move. */
 export const FOV_RADIUS = 3;
 
-/** Per-step chance of a wandering encounter on a plain floor tile. */
-export const DUNGEON_ENCOUNTER_CHANCE = 0.15;
+/**
+ * Per-step chance of a wandering encounter on a plain floor tile. Tuned in
+ * the Phase 6 balance pass (ROG-12) to 0.12 so a floor yields a few encounters
+ * across its ~20-40 walkable tiles without spamming the crawl.
+ */
+export const DUNGEON_ENCOUNTER_CHANCE = 0.12;
 
 /** Facing the party starts with on every freshly entered floor. */
 export const DUNGEON_INITIAL_FACING: DungeonFacing = "north";
@@ -305,5 +309,6 @@ export function createInitialDungeonState(
     explored,
     encounter: null,
     reachedBoss: false,
+    cleared: false,
   };
 }
