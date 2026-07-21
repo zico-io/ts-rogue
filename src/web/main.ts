@@ -1,12 +1,15 @@
-import { Application, Container, Text } from "pixi.js";
+import { Application, Container, Sprite, Text } from "pixi.js";
 import { GameStore, newGame } from "../engine/state/store";
 import type { GameState, Scene } from "../engine/state/types";
 import { theme, toPixiColor } from "../ui/theme";
+import { loadAtlas } from "./atlas";
 import { parseBootFlags } from "./boot";
 import { SCENE_ORDER, SceneSwitcher, type SceneView } from "./scenes";
 
 const MIN_WIDTH = 480;
 const MIN_HEIGHT = 320;
+/** Native atlas tiles are 12x12; scale up so pixel art reads clearly on a modern display. */
+const PREVIEW_SCALE = 6;
 
 const appMount = document.getElementById("app");
 const overlayEl = document.getElementById("min-size-overlay");
@@ -54,8 +57,14 @@ await app.init({
 });
 mount.appendChild(app.canvas);
 
+/** One scene's container plus the label-driven view `SceneSwitcher` uses. */
+interface SceneEntry {
+  container: Container;
+  view: SceneView;
+}
+
 /** Builds one scene's container plus the label-driven view `SceneSwitcher` uses. */
-function buildSceneView(scene: Scene): SceneView {
+function buildSceneEntry(scene: Scene): SceneEntry {
   const container = new Container();
   container.visible = false;
   const label = new Text({
@@ -70,17 +79,23 @@ function buildSceneView(scene: Scene): SceneView {
   container.addChild(label);
   app.stage.addChild(container);
   return {
-    setVisible(visible: boolean) {
-      container.visible = visible;
-    },
-    setLabel(text: string) {
-      label.text = text;
+    container,
+    view: {
+      setVisible(visible: boolean) {
+        container.visible = visible;
+      },
+      setLabel(text: string) {
+        label.text = text;
+      },
     },
   };
 }
 
+const entries = Object.fromEntries(
+  SCENE_ORDER.map((scene) => [scene, buildSceneEntry(scene)]),
+) as Record<Scene, SceneEntry>;
 const views = Object.fromEntries(
-  SCENE_ORDER.map((scene) => [scene, buildSceneView(scene)]),
+  SCENE_ORDER.map((scene) => [scene, entries[scene].view]),
 ) as Record<Scene, SceneView>;
 const switcher = new SceneSwitcher(views);
 
@@ -90,6 +105,44 @@ function renderState(state: GameState): void {
 
 store.subscribe(renderState);
 renderState(store.getState());
+
+/**
+ * Atlas smoke test (ROG-44): draws one tile sprite and one monster sprite
+ * into the village scene (the scene a fresh boot lands on), proving the
+ * atlas built by `scripts/build-atlas.ts` loads through Pixi's `Assets` and
+ * renders. Real per-scene sprite content lands in ROG-49 through ROG-52.
+ */
+async function showAtlasPreview(): Promise<void> {
+  const sheet = await loadAtlas();
+  const villageContainer = entries.village.container;
+  const previewLabel = new Text({
+    text: "atlas preview: grass tile + slime sprite",
+    style: {
+      fill: toPixiColor(theme.textMuted),
+      fontSize: 12,
+      fontFamily: "monospace",
+    },
+  });
+  previewLabel.position.set(24, 72);
+  villageContainer.addChild(previewLabel);
+
+  const grass = new Sprite(sheet.textures.grass);
+  grass.texture.source.scaleMode = "nearest";
+  grass.scale.set(PREVIEW_SCALE);
+  grass.position.set(24, 96);
+  villageContainer.addChild(grass);
+
+  const slime = new Sprite(sheet.textures.slime);
+  slime.texture.source.scaleMode = "nearest";
+  slime.scale.set(PREVIEW_SCALE);
+  slime.position.set(24 + 12 * PREVIEW_SCALE + 16, 96);
+  villageContainer.addChild(slime);
+}
+try {
+  await showAtlasPreview();
+} catch (error) {
+  showCrash("atlas", error);
+}
 
 function updateMinSizeOverlay(): void {
   const tooSmall =

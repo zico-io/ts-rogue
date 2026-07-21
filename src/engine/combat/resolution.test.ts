@@ -243,6 +243,11 @@ describe("pickEnemyGroup", () => {
     expect(group[0].hp).toBe(group[0].maxHp);
   });
 
+  it("copies the monster def's browser sprite id onto the spawned enemy (ROG-44)", () => {
+    const group = pickEnemyGroup(new Rng(1234), "boss", 3);
+    expect(group[0].sprite).toBe("dungeon-guardian");
+  });
+
   it("wandering on floor 1 spawns 1-2 slimes", () => {
     for (let seed = 1; seed <= 20; seed++) {
       const group = pickEnemyGroup(new Rng(seed), "wandering", 1);
