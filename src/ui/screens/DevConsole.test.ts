@@ -37,4 +37,17 @@ describe("runDevCommand", () => {
   it("signals a flush of the local issue outbox", () => {
     expect(runDevCommand("flush", state).flushIssues).toBe(true);
   });
+
+  it("prints the debug journal and signals a deliberate crash", () => {
+    const journal = [{ at: "T0", kind: "dispatch" as const, event: "Log" }];
+    expect(runDevCommand("debug", state, journal).output.join("\n")).toContain(
+      '"event": "Log"',
+    );
+    expect(runDevCommand("crash synthetic failure", state).crash).toBe(
+      "synthetic failure",
+    );
+    expect(runDevCommand("crash", state).output).toEqual([
+      "Usage: crash <message>",
+    ]);
+  });
 });

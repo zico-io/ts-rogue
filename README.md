@@ -50,15 +50,21 @@ agent (or you) can play it like a user; `pnpm play key <tokens>`, `pnpm play
 frame`, and `pnpm play stop` send input and capture the coloured screen. Requires
 `tmux` (`brew install tmux`); the `.claude/skills/play-game` skill documents the loop.
 
-The dev console (`pnpm game:dev`, backtick) can file a Linear issue live with
-`issue <title>` / `bug <title>`, pre-filled with a reproducible session packet
-(seed, key sequence, state, log). Credentials are brokered by Vercel Connect -
+The dev console (`pnpm game:dev`, backtick) can inspect its bounded event journal
+with `debug`, deliberately test failure capture with `crash <message>`, and file
+a Linear issue live with `issue <title>` / `bug <title>`. Reports include the
+seed, key sequence, last valid state, journal, error, stack, and fingerprint.
+Unexpected failures are filed automatically with a `bug` label in dev mode and
+show a crash screen that permits a clean quit. Credentials are brokered by Vercel Connect -
 the same `linear/ts-rogue-eve` connector the Eve agent uses - so no Linear key
 is stored; it only needs `VERCEL_OIDC_TOKEN` in `.env.local` (which `game:dev`
 loads). Override the team with `LINEAR_TEAM_KEY` (default `ROG`). If that
 identity is missing or the call fails, the issue is saved to a local
 `dev-issues.jsonl` outbox and retried on the next filing or the console's
 `flush` command, so nothing is lost.
+
+`pnpm game` never contacts Linear. Unexpected failures are appended to the
+ignored `game-incidents.jsonl` file instead.
 
 `pnpm pr:sandbox <PR#>` spins up (or resumes) a persistent Vercel Sandbox on
 that PR's head, installs deps, and drops you into an interactive shell in the

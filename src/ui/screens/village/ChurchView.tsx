@@ -1,5 +1,6 @@
 import { Text, useInput } from "ink";
 import type { GameEvent, GameState } from "../../../engine/state/types";
+import type { FailureBoundary } from "../../../lib/incidents";
 import { saveGame } from "../../../persistence/save";
 import { Screen } from "../../components/Screen";
 
@@ -7,6 +8,7 @@ export interface ChurchViewProps {
   state: GameState;
   dispatch: (event: GameEvent) => void;
   onBack: () => void;
+  failures: FailureBoundary;
 }
 
 /**
@@ -15,19 +17,23 @@ export interface ChurchViewProps {
  * in the UI layer, not the engine; a successful save logs through the normal
  * `Log` event so it shows up in the shared `MessageLog` like any other action.
  */
-export function ChurchView({ state, dispatch, onBack }: ChurchViewProps) {
+export function ChurchView({
+  state,
+  dispatch,
+  onBack,
+  failures,
+}: ChurchViewProps) {
   useInput((_input, key) => {
     if (key.escape) {
       onBack();
       return;
     }
     if (key.return) {
-      try {
-        saveGame(state);
-        dispatch({ type: "Log", message: "Game saved" });
-      } catch {
-        dispatch({ type: "Log", message: "Failed to save game" });
-      }
+      const saved = failures.run("save", false, () => saveGame(state));
+      dispatch({
+        type: "Log",
+        message: saved.ok ? "Game saved" : "Failed to save game",
+      });
     }
   });
 
