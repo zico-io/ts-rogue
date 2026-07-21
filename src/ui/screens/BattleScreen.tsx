@@ -14,6 +14,7 @@ import type { BattleState } from "../../engine/combat/types";
 import type { GameEvent, GameState } from "../../engine/state/types";
 import { MessageLog } from "../components/MessageLog";
 import { Screen, useScreenContent } from "../components/Screen";
+import { normalizeInkKey } from "../hooks/normalizeInkKey";
 import { theme } from "../theme";
 import {
   hasTile,
@@ -21,6 +22,13 @@ import {
   spriteRows,
   tilesSupported,
 } from "../tiles/kitty";
+import {
+  type BattleMode,
+  type BattleUiState,
+  INITIAL_BATTLE_UI_STATE,
+  reduceBattleUi,
+  resolveBattleIntent,
+} from "./battle/interaction";
 import { type PackedEnemies, packEnemyColumns } from "./battle/render";
 
 export interface BattleScreenProps {
@@ -28,9 +36,7 @@ export interface BattleScreenProps {
   dispatch: (event: GameEvent) => void;
 }
 
-type Mode = "action" | "skill" | "item" | "target";
-
-const ACTIONS = ["Attack", "Skill", "Item", "Defend", "Flee"] as const;
+export const ACTIONS = ["Attack", "Skill", "Item", "Defend", "Flee"] as const;
 const ENEMY_GAP = 4;
 const LAYOUT_GAP = 2;
 /** Max width of the right-hand battle log panel; shrinks on narrow panes. */
@@ -43,148 +49,71 @@ const BATTLE_LOG_MAX_WIDTH = 36;
  * `state.battleState` plus `state.party`/`state.inventory`; key presses only
  * dispatch the pure battle events. A player command resolves a whole round in
  * the reducer, so after each dispatch the battle either continues (back to the
- * action menu) or the scene changes and this screen unmounts.
+ * action menu) or the scene changes and this screen unmounts. The mode/cursor
+ * state machine and its transitions live in the pure `reduceBattleUi`
+ * (ROG-45); this component only normalizes Ink's input, resolves an intent,
+ * applies the result, and dispatches whatever engine event the effect maps to.
  */
 export function BattleScreen({ state, dispatch }: BattleScreenProps) {
-  const [mode, setMode] = useState<Mode>("action");
-  const [actionCursor, setActionCursor] = useState(0);
-  const [skillCursor, setSkillCursor] = useState(0);
-  const [itemCursor, setItemCursor] = useState(0);
-  const [targetCursor, setTargetCursor] = useState(0);
-  const [pendingSkill, setPendingSkill] = useState<string | null>(null);
+  const [battleUi, setBattleUi] = useState<BattleUiState>(
+    INITIAL_BATTLE_UI_STATE,
+  );
 
   const bs = state.battleState;
   const actor =
     state.party.find((m) => m.id === bs?.activeMemberId) ?? state.party[0];
   const knownSkills = classSkills(actor.classId);
 
-  const reset = () => {
-    setMode("action");
-    setActionCursor(0);
-    setSkillCursor(0);
-    setItemCursor(0);
-    setTargetCursor(0);
-    setPendingSkill(null);
-  };
-
   const aliveEnemies = bs ? bs.enemies.filter((enemy) => enemy.hp > 0) : [];
   const healItems = state.inventory.filter((entry) =>
     isBattleHealItem(entry.itemId),
   );
 
-  useInput((_input, key) => {
+  useInput((input, key) => {
     if (bs?.status !== "ongoing" || !bs?.awaitingCommand) return;
 
-    const up = key.upArrow;
-    const down = key.downArrow;
+    const keyName = normalizeInkKey(input, key);
+    if (!keyName) return;
+    const intent = resolveBattleIntent(keyName);
+    if (!intent) return;
 
-    if (key.escape && mode !== "action") {
-      setMode("action");
-      setPendingSkill(null);
-      return;
-    }
+    const result = reduceBattleUi(battleUi, intent, {
+      actorId: actor.id,
+      actorMp: actor.mp,
+      knownSkills,
+      aliveEnemyIds: aliveEnemies.map((enemy) => enemy.id),
+      healItemIds: healItems.map((entry) => entry.itemId),
+    });
 
-    if (mode === "action") {
-      if (up) setActionCursor((c) => (c + ACTIONS.length - 1) % ACTIONS.length);
-      else if (down) setActionCursor((c) => (c + 1) % ACTIONS.length);
-      else if (key.return) {
-        switch (ACTIONS[actionCursor]) {
-          case "Attack":
-            setMode("target");
-            setTargetCursor(0);
-            setPendingSkill(null);
-            break;
-          case "Skill":
-            setMode("skill");
-            setSkillCursor(0);
-            break;
-          case "Item":
-            setMode("item");
-            setItemCursor(0);
-            break;
-          case "Defend":
-            dispatch({ type: "BattleDefend" });
-            reset();
-            break;
-          case "Flee":
-            dispatch({ type: "BattleFlee" });
-            reset();
-            break;
-        }
-      }
-      return;
-    }
-
-    if (mode === "skill") {
-      if (up)
-        setSkillCursor(
-          (c) => (c + knownSkills.length - 1) % knownSkills.length,
-        );
-      else if (down) setSkillCursor((c) => (c + 1) % knownSkills.length);
-      else if (key.return) {
-        const skill = knownSkills[skillCursor];
-        if (actor.mp >= skill.mpCost) {
-          if (skill.target === "enemy") {
-            setMode("target");
-            setTargetCursor(0);
-            setPendingSkill(skill.id);
-          } else {
-            dispatch({
-              type: "BattleSkill",
-              skillId: skill.id,
-              targetId: actor.id,
-            });
-            reset();
-          }
-        }
-      }
-      return;
+    switch (result.effect?.type) {
+      case "defend":
+        dispatch({ type: "BattleDefend" });
+        break;
+      case "flee":
+        dispatch({ type: "BattleFlee" });
+        break;
+      case "attack":
+        dispatch({ type: "BattleAttack", targetId: result.effect.targetId });
+        break;
+      case "skill":
+        dispatch({
+          type: "BattleSkill",
+          skillId: result.effect.skillId,
+          targetId: result.effect.targetId,
+        });
+        break;
+      case "item":
+        dispatch({
+          type: "BattleItem",
+          itemId: result.effect.itemId,
+          targetId: result.effect.targetId,
+        });
+        break;
+      default:
+        break;
     }
 
-    if (mode === "item") {
-      if (healItems.length === 0) return;
-      if (up)
-        setItemCursor((c) => (c + healItems.length - 1) % healItems.length);
-      else if (down) setItemCursor((c) => (c + 1) % healItems.length);
-      else if (key.return) {
-        const item = healItems[itemCursor];
-        if (item) {
-          dispatch({
-            type: "BattleItem",
-            itemId: item.itemId,
-            targetId: actor.id,
-          });
-          reset();
-        }
-      }
-      return;
-    }
-
-    // mode === "target"
-    if (aliveEnemies.length === 0) {
-      setMode("action");
-      return;
-    }
-    if (up)
-      setTargetCursor(
-        (c) => (c + aliveEnemies.length - 1) % aliveEnemies.length,
-      );
-    else if (down) setTargetCursor((c) => (c + 1) % aliveEnemies.length);
-    else if (key.return) {
-      const target = aliveEnemies[targetCursor];
-      if (target) {
-        if (pendingSkill) {
-          dispatch({
-            type: "BattleSkill",
-            skillId: pendingSkill,
-            targetId: target.id,
-          });
-        } else {
-          dispatch({ type: "BattleAttack", targetId: target.id });
-        }
-        reset();
-      }
-    }
+    setBattleUi(result.state);
   });
 
   if (!bs) {
@@ -201,7 +130,7 @@ export function BattleScreen({ state, dispatch }: BattleScreenProps) {
     <Screen
       state={state}
       title="Battle"
-      hint={hintFor(mode, healItems.length)}
+      hint={hintFor(battleUi.mode, healItems.length)}
       showLog={false}
     >
       <BattleBody
@@ -210,11 +139,11 @@ export function BattleScreen({ state, dispatch }: BattleScreenProps) {
         actor={actor}
         aliveEnemies={aliveEnemies}
         healItems={healItems}
-        mode={mode}
-        actionCursor={actionCursor}
-        skillCursor={skillCursor}
-        itemCursor={itemCursor}
-        targetCursor={targetCursor}
+        mode={battleUi.mode}
+        actionCursor={battleUi.actionCursor}
+        skillCursor={battleUi.skillCursor}
+        itemCursor={battleUi.itemCursor}
+        targetCursor={battleUi.targetCursor}
         skills={knownSkills}
       />
     </Screen>
@@ -227,7 +156,7 @@ interface BattleBodyProps {
   actor: GameState["party"][number];
   aliveEnemies: BattleState["enemies"];
   healItems: GameState["inventory"];
-  mode: Mode;
+  mode: BattleMode;
   actionCursor: number;
   skillCursor: number;
   itemCursor: number;
@@ -385,7 +314,7 @@ function EnemyField({
 }
 
 interface ActionMenuProps {
-  mode: Mode;
+  mode: BattleMode;
   actions: readonly string[];
   actionCursor: number;
   skills: readonly SkillDef[];
@@ -490,7 +419,7 @@ function initiativeNames(
   });
 }
 
-function hintFor(mode: Mode, healItemCount: number): string {
+function hintFor(mode: BattleMode, healItemCount: number): string {
   switch (mode) {
     case "action":
       return "Up/Down to choose, Enter to confirm.";

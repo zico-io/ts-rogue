@@ -1,4 +1,4 @@
-import { Box, type Key, render, Text, useApp, useInput } from "ink";
+import { Box, render, Text, useApp, useInput } from "ink";
 import {
   Component,
   type ErrorInfo,
@@ -8,7 +8,6 @@ import {
 } from "react";
 import { attempt } from "./engine/state/incidents";
 import { GameStore, newGame } from "./engine/state/store";
-import type { Scene } from "./engine/state/types";
 import {
   FailureBoundary,
   type IncidentDisplay,
@@ -26,8 +25,9 @@ import {
   TerminalLayoutProvider,
   useTerminalLayout,
 } from "./ui/components/MinSizeGuard";
+import { normalizeInkKey } from "./ui/hooks/normalizeInkKey";
 import { useGameState } from "./ui/hooks/useGameState";
-import type { KeyName } from "./ui/scene/input";
+import { resolveGlobalIntent } from "./ui/scene/globalInput";
 import { BattleScreen } from "./ui/screens/BattleScreen";
 import { CrashScreen } from "./ui/screens/CrashScreen";
 import { DevConsole } from "./ui/screens/DevConsole";
@@ -44,43 +44,6 @@ import {
 import { VillageScreen } from "./ui/screens/VillageScreen";
 import { theme } from "./ui/theme";
 import { initTiles } from "./ui/tiles/kitty";
-
-const sceneKeys: Record<string, Scene> = {
-  "1": "village",
-  "2": "overworld",
-  "3": "dungeon",
-  "4": "battle",
-};
-
-function isQuit(input: string, key: { ctrl: boolean }): boolean {
-  return input === "q" || (key.ctrl && input === "c");
-}
-
-// Normalizes Ink's (input, key) pair to the renderer-agnostic KeyName
-// alphabet the title flow's Keymaps are written against. Ctrl/meta-modified
-// keys other than Ctrl-C are dropped (undefined) so they can't be typed into
-// the hero-name buffer, matching the previous inline `!key.ctrl && !key.meta`
-// guard.
-function normalizeInkKey(input: string, key: Key): KeyName | undefined {
-  if (key.ctrl && input === "c") return "ctrl+c";
-  if (key.ctrl || key.meta) return undefined;
-  if (key.upArrow) return "up";
-  if (key.downArrow) return "down";
-  if (key.leftArrow) return "left";
-  if (key.rightArrow) return "right";
-  if (key.return) return "enter";
-  if (key.escape) return "escape";
-  if (key.backspace || key.delete) return "backspace";
-  if (key.tab) return "tab";
-  if (input === "`") return "`";
-  if (input === "q") return "q";
-  if (input === "h" || input === "j" || input === "k" || input === "l") {
-    return input;
-  }
-  if (!input) return undefined;
-  if (/^[0-9]$/.test(input)) return `digit:${input}`;
-  return `char:${input}`;
-}
 
 function App({
   store,
@@ -121,8 +84,13 @@ function App({
 
   useEffect(() => pipeline.subscribe(setFatal), [pipeline]);
 
-  useInput((input) => {
-    if (!fatal && devConsoleEnabled && input === "`") {
+  // Global dev-console toggle (ROG-45's `globalInput`): active whenever the
+  // dev console is enabled at all, regardless of which scene/screen owns
+  // focus, so it works from the title screen too.
+  useInput((input, key) => {
+    if (fatal || !devConsoleEnabled) return;
+    const keyName = normalizeInkKey(input, key);
+    if (keyName && resolveGlobalIntent(keyName)?.kind === "toggleConsole") {
       setConsoleOpen((open) => !open);
     }
   });
@@ -183,15 +151,22 @@ function App({
     },
   );
 
-  // In-game scene switching (blocked while the game is over).
+  // In-game scene switching (blocked while the game is over). Digit hotkeys
+  // and quit both come from the shared `globalInput` keymap (ROG-45), so the
+  // browser keyboard manager resolves the exact same bindings.
   useInput(
     (input, key) => {
-      if (isQuit(input, key)) {
+      const keyName = normalizeInkKey(input, key);
+      if (!keyName) return;
+      const intent = resolveGlobalIntent(keyName);
+      if (!intent) return;
+      if (intent.kind === "quit") {
         exit();
         return;
       }
-      const scene = sceneKeys[input];
-      if (scene) store.dispatch({ type: "ChangeScene", scene });
+      if (intent.kind === "changeScene") {
+        store.dispatch({ type: "ChangeScene", scene: intent.scene });
+      }
     },
     { isActive: !fatal && started && !consoleOpen && !gameOver },
   );
@@ -201,7 +176,8 @@ function App({
   // same class the player chose (ROG-17).
   useInput(
     (input, key) => {
-      if (isQuit(input, key)) {
+      const keyName = normalizeInkKey(input, key);
+      if (keyName && resolveGlobalIntent(keyName)?.kind === "quit") {
         exit();
         return;
       }

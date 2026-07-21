@@ -1,13 +1,19 @@
 import { Box, Text, useInput } from "ink";
-import { useMemo } from "react";
-import type { GameEvent, GameState, MoveDelta } from "../../engine/state/types";
+import { useMemo, useState } from "react";
+import type { GameEvent, GameState } from "../../engine/state/types";
 import {
   ENCOUNTER_THRESHOLD,
   generateOverworldMap,
 } from "../../engine/world/overworld";
 import { Screen, useScreenContent } from "../components/Screen";
+import { normalizeInkKey } from "../hooks/normalizeInkKey";
 import { theme } from "../theme";
 import { tilesSupported } from "../tiles/kitty";
+import {
+  type OverworldUiState,
+  reduceOverworldUi,
+  resolveOverworldIntent,
+} from "./overworld/interaction";
 import {
   buildMinimapRows,
   buildViewportRows,
@@ -20,18 +26,6 @@ export interface OverworldScreenProps {
   dispatch: (event: GameEvent) => void;
 }
 
-interface Direction {
-  dx: MoveDelta;
-  dy: MoveDelta;
-}
-
-const KEY_MOVES: Record<string, Direction> = {
-  h: { dx: -1, dy: 0 },
-  j: { dx: 0, dy: 1 },
-  k: { dx: 0, dy: -1 },
-  l: { dx: 1, dy: 0 },
-};
-
 const HINT =
   "Arrow keys or h/j/k/l to move; walk onto H to return to the village or D to enter a dungeon; Esc returns to the village directly.";
 
@@ -39,23 +33,6 @@ const HINT =
 const MINIMAP_BOX_OVERHEAD_ROWS = 3;
 const MINIMAP_BOX_OVERHEAD_COLS = 4;
 const MINIMAP_GAP = 2;
-
-/** Arrow keys take priority over hjkl; both move the player one tile. */
-function directionFor(
-  input: string,
-  key: {
-    upArrow: boolean;
-    downArrow: boolean;
-    leftArrow: boolean;
-    rightArrow: boolean;
-  },
-): Direction | undefined {
-  if (key.upArrow) return { dx: 0, dy: -1 };
-  if (key.downArrow) return { dx: 0, dy: 1 };
-  if (key.leftArrow) return { dx: -1, dy: 0 };
-  if (key.rightArrow) return { dx: 1, dy: 0 };
-  return KEY_MOVES[input];
-}
 
 /**
  * Overworld traversal (PROJECT_PLAN Phase 2, ROG-8). The map is a pure
@@ -66,15 +43,30 @@ function directionFor(
  * viewport and minimap scale to the content region the frame provides.
  */
 export function OverworldScreen({ state, dispatch }: OverworldScreenProps) {
+  const [overworldUi, setOverworldUi] = useState<OverworldUiState>({});
+
   useInput((input, key) => {
-    if (key.escape) {
-      dispatch({ type: "ChangeScene", scene: "village" });
-      return;
+    const keyName = normalizeInkKey(input, key);
+    if (!keyName) return;
+    const intent = resolveOverworldIntent(keyName);
+    if (!intent) return;
+
+    const result = reduceOverworldUi(overworldUi, intent);
+    switch (result.effect?.type) {
+      case "move":
+        dispatch({
+          type: "MoveOverworld",
+          dx: result.effect.dx,
+          dy: result.effect.dy,
+        });
+        break;
+      case "leaveToVillage":
+        dispatch({ type: "ChangeScene", scene: "village" });
+        break;
+      default:
+        break;
     }
-    const direction = directionFor(input, key);
-    if (direction) {
-      dispatch({ type: "MoveOverworld", dx: direction.dx, dy: direction.dy });
-    }
+    setOverworldUi(result.state);
   });
 
   return (
