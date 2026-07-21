@@ -9,7 +9,7 @@ import {
   spdFrom,
   xpToNext,
 } from "../../engine/combat/resolution";
-import { SKILLS } from "../../engine/combat/skills";
+import { classSkills, type SkillDef } from "../../engine/combat/skills";
 import type { BattleState } from "../../engine/combat/types";
 import type { GameEvent, GameState } from "../../engine/state/types";
 import { MessageLog } from "../components/MessageLog";
@@ -48,6 +48,7 @@ export function BattleScreen({ state, dispatch }: BattleScreenProps) {
 
   const bs = state.battleState;
   const hero = state.party[0];
+  const knownSkills = classSkills(hero.classId);
 
   const reset = () => {
     setMode("action");
@@ -107,10 +108,13 @@ export function BattleScreen({ state, dispatch }: BattleScreenProps) {
     }
 
     if (mode === "skill") {
-      if (up) setSkillCursor((c) => (c + SKILLS.length - 1) % SKILLS.length);
-      else if (down) setSkillCursor((c) => (c + 1) % SKILLS.length);
+      if (up)
+        setSkillCursor(
+          (c) => (c + knownSkills.length - 1) % knownSkills.length,
+        );
+      else if (down) setSkillCursor((c) => (c + 1) % knownSkills.length);
       else if (key.return) {
-        const skill = SKILLS[skillCursor];
+        const skill = knownSkills[skillCursor];
         if (hero.mp >= skill.mpCost) {
           if (skill.target === "enemy") {
             setMode("target");
@@ -200,6 +204,7 @@ export function BattleScreen({ state, dispatch }: BattleScreenProps) {
         skillCursor={skillCursor}
         itemCursor={itemCursor}
         targetCursor={targetCursor}
+        skills={knownSkills}
       />
     </Screen>
   );
@@ -215,6 +220,7 @@ interface BattleBodyProps {
   skillCursor: number;
   itemCursor: number;
   targetCursor: number;
+  skills: readonly SkillDef[];
 }
 
 function BattleBody({
@@ -227,6 +233,7 @@ function BattleBody({
   skillCursor,
   itemCursor,
   targetCursor,
+  skills,
 }: BattleBodyProps) {
   const { width, height } = useScreenContent();
   const hero = state.party[0];
@@ -278,7 +285,7 @@ function BattleBody({
               mode={mode}
               actions={ACTIONS}
               actionCursor={actionCursor}
-              skills={SKILLS}
+              skills={skills}
               skillCursor={skillCursor}
               heroMp={hero.mp}
               healItems={healItems}
@@ -345,7 +352,7 @@ interface ActionMenuProps {
   mode: Mode;
   actions: readonly string[];
   actionCursor: number;
-  skills: typeof SKILLS;
+  skills: readonly SkillDef[];
   skillCursor: number;
   heroMp: number;
   healItems: GameState["inventory"];
