@@ -406,7 +406,10 @@ const tavernCommonKeymap: Keymap = {
 
 const tavernRecruitKeymap: Keymap = {
   ...tavernCommonKeymap,
-  "char:h": { kind: "hire" },
+  // "h" is a literal KeyName (shared with the hjkl movement keys), not
+  // "char:h" - normalizeInkKey/normalizeBrowserKey special-case h/j/k/l
+  // before falling through to the char: bucket.
+  h: { kind: "hire" },
 };
 
 const tavernPartyKeymap: Keymap = {

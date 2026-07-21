@@ -4,6 +4,7 @@ import type { GameState, Scene } from "../engine/state/types";
 import { theme, toPixiColor } from "../ui/theme";
 import { loadAtlas } from "./atlas";
 import { parseBootFlags } from "./boot";
+import { BrowserKeyboardManager } from "./input/keyboard";
 import { SCENE_ORDER, SceneSwitcher, type SceneView } from "./scenes";
 
 const MIN_WIDTH = 480;
@@ -159,3 +160,18 @@ if (flags.dev) {
   // Stashed for ROG-48's browser dev console; no console UI in this issue.
   console.info("ts-rogue: dev flag set (no browser dev console yet)");
 }
+
+/**
+ * Keyboard input manager with scene focus routing (ROG-45). Scene hotkeys
+ * (1-4), the dev-console toggle, and quit go through the same
+ * `globalInput` keymap `app.tsx` uses; everything else routes to whichever
+ * scene - and, inside the village, whichever sub-view - currently has
+ * focus, via the exact same `interaction.ts` modules the Ink screens use.
+ * No visual focus indicator exists yet (real per-scene rendering is ROG-49
+ * through ROG-52), but the routed state is real and drives subsequent key
+ * presses correctly.
+ */
+const keyboardManager = new BrowserKeyboardManager(store);
+window.addEventListener("keydown", (event) => {
+  keyboardManager.handleKeyDown(event);
+});

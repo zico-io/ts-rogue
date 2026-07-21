@@ -330,10 +330,11 @@ function tavernState(overrides: Partial<TavernUiState> = {}): TavernUiState {
 }
 
 describe("resolveTavernIntent", () => {
-  it("recruit mode binds h to hire", () => {
-    expect(resolveTavernIntent("recruit", false, "char:h")).toEqual({
+  it("recruit mode binds the literal h key to hire (not char:h)", () => {
+    expect(resolveTavernIntent("recruit", false, "h")).toEqual({
       kind: "hire",
     });
+    expect(resolveTavernIntent("recruit", false, "char:h")).toBeUndefined();
   });
 
   it("party mode binds d to dismiss", () => {

@@ -32,7 +32,19 @@ serves that build locally.
   (ROG-44); see "Art pipeline" below.
 - `main.ts` - the entry point: builds the initial `GameState`, wires a
   `GameStore`, initializes the Pixi `Application`, builds one `Container` per
-  scene, loads the atlas, and subscribes to store updates.
+  scene, loads the atlas, wires the keyboard manager, and subscribes to store
+  updates.
+- `input/normalizeBrowserKey.ts` - normalizes a DOM `KeyboardEvent` (or the
+  minimal `{ key, ctrlKey, metaKey }` shape tests construct) to the same
+  `KeyName` alphabet `normalizeInkKey` produces for the terminal. Pure,
+  unit-tested in `input/normalizeBrowserKey.test.ts`.
+- `input/keyboard.ts` - `BrowserKeyboardManager` (ROG-45): a `keydown`
+  listener wired in `main.ts` that resolves the global scene-hotkey/
+  dev-console/quit keymap first, then routes to whichever scene - and,
+  inside the village, whichever sub-view (overview/inn/church/store/tavern)
+  - currently has focus, via the exact same `interaction.ts` modules under
+  `src/ui/screens/**` the Ink renderer uses. No keymap or reducer logic is
+  duplicated here. Unit-tested in `input/keyboard.test.ts`.
 - `index.html` - the Vite HTML entry, a full-viewport canvas mount plus a
   hidden minimum-size overlay.
 - `public/atlas/` - the built atlas (`atlas.png` + `atlas.json`), served
@@ -84,13 +96,15 @@ This issue (ROG-43) only wires the build and boot sequence. ROG-44 adds the
 texture atlas and an atlas-loading smoke test (see above), but real per-scene
 sprite content is still out of scope. Also intentionally missing:
 
-- Persistence - every load starts a fresh game; ROG-46 adds IndexedDB
-  save/load.
-- Keyboard input - nothing dispatches events yet; ROG-45 adds a keyboard input
-  manager with scene focus routing.
+- Persistence - every load starts a fresh game; the Church's save and the
+  dev-console/quit global bindings are stashed (logged, not implemented)
+  until ROG-46 adds IndexedDB save/load.
 - Real scene content - each scene is a placeholder label (plus, since
   ROG-44, a static atlas preview in the village scene); ROG-49 through
-  ROG-52 add real sprites and per-scene rendering.
+  ROG-52 add real sprites and per-scene rendering, including a visible focus
+  indicator for the keyboard manager's routing (ROG-45).
+- The title flow - the browser has no title scene yet, so `quit` is stashed
+  and boots straight past it; ROG-52 wires the title flow in.
 - A dev console or rich crash screen - failures show a minimal plain-text
   overlay; ROG-48 owns a proper browser dev console and crash screen.
 

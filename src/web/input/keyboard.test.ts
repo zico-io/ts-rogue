@@ -1,0 +1,203 @@
+import { describe, expect, it } from "vitest";
+import { startBattle } from "../../engine/combat/resolution";
+import { Rng } from "../../engine/rng/rng";
+import { GameStore, newGame } from "../../engine/state/store";
+import type { GameState } from "../../engine/state/types";
+import { BrowserKeyboardManager } from "./keyboard";
+
+function key(k: string) {
+  return { key: k, ctrlKey: false, metaKey: false };
+}
+
+function storeAt(
+  scene: GameState["scene"],
+  overrides: Partial<GameState> = {},
+) {
+  const base = newGame(1);
+  return new GameStore({ ...base, scene, ...overrides });
+}
+
+describe("BrowserKeyboardManager - global bindings", () => {
+  it("digit keys change the scene from anywhere", () => {
+    const store = storeAt("village");
+    const manager = new BrowserKeyboardManager(store);
+
+    manager.handleKeyDown(key("2"));
+    expect(store.getState().scene).toBe("overworld");
+
+    manager.handleKeyDown(key("3"));
+    expect(store.getState().scene).toBe("dungeon");
+  });
+
+  it("the dev-console toggle and quit keys are stashed, not dispatched", () => {
+    const store = storeAt("village");
+    const manager = new BrowserKeyboardManager(store);
+    const before = store.getState();
+
+    manager.handleKeyDown(key("`"));
+    manager.handleKeyDown(key("q"));
+
+    expect(store.getState()).toBe(before);
+  });
+});
+
+describe("BrowserKeyboardManager - overworld", () => {
+  it("arrow keys dispatch MoveOverworld", () => {
+    const store = storeAt("overworld");
+    const manager = new BrowserKeyboardManager(store);
+    const before = store.getState().worldState.player;
+
+    manager.handleKeyDown(key("ArrowRight"));
+
+    const after = store.getState().worldState.player;
+    expect(after).not.toEqual(before);
+  });
+
+  it("Escape returns to the village", () => {
+    const store = storeAt("overworld");
+    const manager = new BrowserKeyboardManager(store);
+
+    manager.handleKeyDown(key("Escape"));
+
+    expect(store.getState().scene).toBe("village");
+  });
+});
+
+describe("BrowserKeyboardManager - dungeon", () => {
+  it("is a no-op with no active dungeon (reducer guards missing dungeonState)", () => {
+    const store = storeAt("dungeon");
+    const manager = new BrowserKeyboardManager(store);
+    const before = store.getState();
+
+    manager.handleKeyDown(key("ArrowUp"));
+
+    expect(store.getState()).toBe(before);
+  });
+});
+
+describe("BrowserKeyboardManager - battle", () => {
+  function battleStore() {
+    const base = newGame(1);
+    const rng = new Rng(base.seed, base.rngState);
+    const battle = startBattle(rng, base.party, "wandering", 1, "overworld");
+    const state: GameState = {
+      ...base,
+      scene: "battle",
+      rngState: rng.getState(),
+      battleState: battle,
+    };
+    return new GameStore(state);
+  }
+
+  it("Down cycles the action cursor without dispatching an engine event", () => {
+    const store = battleStore();
+    const manager = new BrowserKeyboardManager(store);
+    const before = store.getState();
+
+    manager.handleKeyDown(key("ArrowDown"));
+
+    expect(store.getState()).toBe(before);
+    expect(manager.getState().battle.actionCursor).toBe(1);
+  });
+
+  it("Enter on Attack (cursor 0) moves to target mode; Enter again dispatches BattleAttack", () => {
+    const store = battleStore();
+    const manager = new BrowserKeyboardManager(store);
+
+    manager.handleKeyDown(key("Enter"));
+    expect(manager.getState().battle.mode).toBe("target");
+
+    manager.handleKeyDown(key("Enter"));
+    // The round resolved: either the battle continues (back to action mode)
+    // or it ended and the scene changed away from battle.
+    const state = store.getState();
+    if (state.scene === "battle") {
+      expect(manager.getState().battle.mode).toBe("action");
+    } else {
+      expect(state.scene).not.toBe("battle");
+    }
+  });
+
+  it("is a no-op when there is no battleState", () => {
+    const store = storeAt("battle");
+    const manager = new BrowserKeyboardManager(store);
+    const before = store.getState();
+
+    manager.handleKeyDown(key("Enter"));
+
+    expect(store.getState()).toBe(before);
+  });
+});
+
+describe("BrowserKeyboardManager - village focus stack", () => {
+  it("i opens the Inn from the overview, Enter rests, Escape returns", () => {
+    const store = storeAt("village");
+    const manager = new BrowserKeyboardManager(store);
+
+    manager.handleKeyDown(key("i"));
+    expect(manager.getState().village.building).toBe("inn");
+
+    const goldBefore = store.getState().gold;
+    manager.handleKeyDown(key("Enter"));
+    expect(store.getState().gold).not.toBe(goldBefore);
+
+    manager.handleKeyDown(key("Escape"));
+    expect(manager.getState().village.building).toBeNull();
+  });
+
+  it("o from the overview leaves to the overworld", () => {
+    const store = storeAt("village");
+    const manager = new BrowserKeyboardManager(store);
+
+    manager.handleKeyDown(key("o"));
+
+    expect(store.getState().scene).toBe("overworld");
+  });
+
+  it("Store: Tab flips shop/pack, and pack-mode keys change based on the flipped mode", () => {
+    const store = storeAt("village");
+    const manager = new BrowserKeyboardManager(store);
+
+    manager.handleKeyDown(key("s"));
+    expect(manager.getState().village.building).toBe("store");
+    expect(manager.getState().village.store.mode).toBe("shop");
+
+    manager.handleKeyDown(key("Tab"));
+    expect(manager.getState().village.store.mode).toBe("pack");
+
+    // "b" (buy) only means something in shop mode; in pack mode it's unbound.
+    const before = store.getState();
+    manager.handleKeyDown(key("b"));
+    expect(store.getState()).toBe(before);
+
+    manager.handleKeyDown(key("Escape"));
+    expect(manager.getState().village.building).toBeNull();
+    // Leaving resets the store's local state for the next visit.
+    expect(manager.getState().village.store.mode).toBe("shop");
+  });
+
+  it("Tavern: h hires the selected recruit (literal h, not char:h)", () => {
+    const store = storeAt("village");
+    const manager = new BrowserKeyboardManager(store);
+
+    manager.handleKeyDown(key("t"));
+    expect(manager.getState().village.building).toBe("tavern");
+    expect(store.getState().recruits.length).toBeGreaterThan(0);
+
+    const partyBefore = store.getState().party.length;
+    manager.handleKeyDown(key("h"));
+    expect(store.getState().party.length).toBe(partyBefore + 1);
+  });
+
+  it("Tavern: d on the hero (index 0) never opens a dismiss confirmation", () => {
+    const store = storeAt("village");
+    const manager = new BrowserKeyboardManager(store);
+
+    manager.handleKeyDown(key("t"));
+    manager.handleKeyDown(key("Tab"));
+    expect(manager.getState().village.tavern.mode).toBe("party");
+
+    manager.handleKeyDown(key("d"));
+    expect(manager.getState().village.tavern.confirmId).toBeNull();
+  });
+});
