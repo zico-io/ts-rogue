@@ -78,6 +78,11 @@ export default defineHook({
         });
       }
     },
+    async "reasoning.completed"(event, ctx) {
+      if (!ctx.session.parent) return;
+      const reasoning = event.data.reasoning?.trim();
+      if (reasoning) await post({ type: "thought", body: reasoning });
+    },
     async "message.completed"(event, ctx) {
       if (!ctx.session.parent) return;
       const text = event.data.message?.trim();
