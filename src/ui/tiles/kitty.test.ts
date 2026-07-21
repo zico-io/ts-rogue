@@ -36,15 +36,19 @@ describe("spriteRows", () => {
 describe("initSequence", () => {
   it("transmits the sheet by file path and creates gutter-aware placements", () => {
     const sequence = initSequence("/tmp/sheet.png", false);
-    expect(sequence.startsWith(
-      `${ESC}_Ga=t,f=100,t=f,i=1,q=2;${Buffer.from("/tmp/sheet.png").toString("base64")}${ESC}\\`,
-    )).toBe(true);
+    expect(
+      sequence.startsWith(
+        `${ESC}_Ga=t,f=100,t=f,i=1,q=2;${Buffer.from("/tmp/sheet.png").toString("base64")}${ESC}\\`,
+      ),
+    ).toBe(true);
     // grass at sheet (col 4, row 9) -> x = 1 + 13*4, y = 1 + 13*9
     expect(sequence).toContain(
       `${ESC}_Ga=p,U=1,q=2,i=1,p=1,x=53,y=118,w=12,h=12,c=2,r=1${ESC}\\`,
     );
     // monster sprites use the battle cell footprint
-    expect(sequence).toContain(`c=${SPRITE_CELLS.width},r=${SPRITE_CELLS.height}${ESC}\\`);
+    expect(sequence).toContain(
+      `c=${SPRITE_CELLS.width},r=${SPRITE_CELLS.height}${ESC}\\`,
+    );
   });
 
   it("wraps every command for tmux passthrough when inside tmux", () => {

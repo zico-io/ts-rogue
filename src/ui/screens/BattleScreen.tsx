@@ -361,7 +361,7 @@ function EnemyField({
                 ? theme.accent
                 : (col.enemy.color ?? theme.text);
             const spriteId =
-              tiles && hasTile(col.enemy.id) ? col.enemy.id : null;
+              tiles && hasTile(col.enemy.defId) ? col.enemy.defId : null;
             return (
               <Box key={col.enemy.id} flexDirection="column">
                 {spriteId ? (

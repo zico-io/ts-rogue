@@ -19,16 +19,7 @@ const PITCH = 13;
 
 const PLACEHOLDER = "\u{10EEEE}";
 /** First 8 entries of kitty's row/column-diacritics table (indices 0..7). */
-const DIACRITICS = [
-  "̅",
-  "̍",
-  "̎",
-  "̐",
-  "̒",
-  "̽",
-  "̾",
-  "̿",
-];
+const DIACRITICS = ["̅", "̍", "̎", "̐", "̒", "̽", "̾", "̿"];
 
 /** Cell footprint of battle monster sprites, exported for battle layout math. */
 export const SPRITE_CELLS = { width: 8, height: 4 };
@@ -107,7 +98,9 @@ function apc(payload: string): string {
 /** Transmit-plus-placements sequence for the sheet at `pngPath` (absolute). */
 export function initSequence(pngPath: string, inTmux?: boolean): string {
   const commands = [
-    apc(`a=t,f=100,t=f,i=${IMAGE_ID},q=2;${Buffer.from(pngPath).toString("base64")}`),
+    apc(
+      `a=t,f=100,t=f,i=${IMAGE_ID},q=2;${Buffer.from(pngPath).toString("base64")}`,
+    ),
   ];
   for (const name of NAMES) {
     const source: TileSource = TILE_SOURCES[name];

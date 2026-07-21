@@ -519,24 +519,28 @@ function drawFace(
  * as `#`, floor as `.`, and features by glyph; unexplored tiles are blank.
  * The party is drawn as its facing arrow. Returns one string per render row.
  */
-export function renderMinimap(ds: DungeonState): string[] {
+export function renderMinimap(
+  ds: DungeonState,
+  width = MINIMAP_WIDTH,
+  height = MINIMAP_HEIGHT,
+): string[] {
   const layout = ds.layout;
-  const halfWidth = Math.floor(MINIMAP_WIDTH / 2);
-  const halfHeight = Math.floor(MINIMAP_HEIGHT / 2);
+  const halfWidth = Math.floor(width / 2);
+  const halfHeight = Math.floor(height / 2);
   const ox = clamp(
     ds.player.x - halfWidth,
     0,
-    Math.max(0, layout.width - MINIMAP_WIDTH),
+    Math.max(0, layout.width - width),
   );
   const oy = clamp(
     ds.player.y - halfHeight,
     0,
-    Math.max(0, layout.height - MINIMAP_HEIGHT),
+    Math.max(0, layout.height - height),
   );
   const rows: string[] = [];
-  for (let my = 0; my < MINIMAP_HEIGHT; my++) {
+  for (let my = 0; my < height; my++) {
     let row = "";
-    for (let mx = 0; mx < MINIMAP_WIDTH; mx++) {
+    for (let mx = 0; mx < width; mx++) {
       const x = ox + mx;
       const y = oy + my;
       if (x === ds.player.x && y === ds.player.y) {

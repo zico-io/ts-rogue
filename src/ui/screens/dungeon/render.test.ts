@@ -279,6 +279,14 @@ describe("renderMinimap", () => {
     for (const row of rows) expect(row).toHaveLength(MINIMAP_WIDTH);
   });
 
+  it("honors a custom window size and still centers the party", () => {
+    const ds = createInitialDungeonState(1234, "dungeon-0", 1);
+    const rows = renderMinimap(ds, 8, 9);
+    expect(rows).toHaveLength(9);
+    for (const row of rows) expect(row).toHaveLength(8);
+    expect(rows.join("")).toContain(FACING_GLYPH[ds.facing]);
+  });
+
   it("centers the party facing glyph and shows revealed walls/floor around it", () => {
     const ds = createInitialDungeonState(1234, "dungeon-0", 1);
     const rows = renderMinimap(ds);

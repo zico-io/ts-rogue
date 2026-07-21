@@ -39,8 +39,13 @@ start)
   rows="${3:-40}"
   tmux kill-session -t "$SESSION" 2>/dev/null || true
   : >"$KEYLOG"
+  # Kitty-graphics tiles are off by default so capture-pane keeps seeing the
+  # ASCII glyphs; opt in with TSROGUE_TILES=1 (needs tmux allow-passthrough).
+  tiles_env="TSROGUE_NO_TILES=1"
+  [ "${TSROGUE_TILES:-}" = "1" ] && tiles_env=""
   tmux new-session -d -s "$SESSION" -x "$cols" -y "$rows" \
-    "TS_ROGUE_PLAY=1 pnpm game:dev --seed=$seed --fresh"
+    "TS_ROGUE_PLAY=1 $tiles_env pnpm game:dev --seed=$seed --fresh"
+  tmux set -t "$SESSION" allow-passthrough on
   echo "started session '$SESSION' (seed=$seed ${cols}x${rows}); give it a moment, then: scripts/play.sh frame"
   ;;
 key)
