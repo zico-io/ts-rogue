@@ -302,7 +302,9 @@ describe("BattleDefend", () => {
     const state = stateInBattle(1234, slime);
     const after = reduce(state, { type: "BattleDefend" });
     expect(after).not.toBe(state);
-    expect(after.log.some((m) => m.includes("defensive stance"))).toBe(true);
+    expect(after.log.some((m) => m.text.includes("defensive stance"))).toBe(
+      true,
+    );
     expect(after.battleState?.status).toBe("ongoing");
   });
 });
@@ -349,8 +351,10 @@ describe("full win scenario", () => {
     expect(after.party[0].mp).toBe(12);
     expect(after.party[0].stats).toEqual({ str: 13, agi: 7, vit: 13, int: 2 });
     expect(after.gold).toBe(70);
-    expect(after.log.some((m) => m.includes("Victory!"))).toBe(true);
-    expect(after.log.some((m) => m.includes("reached level 4"))).toBe(true);
+    expect(after.log.some((m) => m.text.includes("Victory!"))).toBe(true);
+    expect(after.log.some((m) => m.text.includes("reached level 4"))).toBe(
+      true,
+    );
   });
 });
 
@@ -381,10 +385,10 @@ describe("full lose scenario", () => {
     const map = generateOverworldMap(1234);
     expect(after.worldState.player).toEqual(map.village);
     expect(after.worldState.encounterMeter).toBe(0);
-    expect(after.log.some((m) => m.includes("falls"))).toBe(true);
-    expect(after.log.some((m) => m.includes("revived at the village"))).toBe(
-      true,
-    );
+    expect(after.log.some((m) => m.text.includes("falls"))).toBe(true);
+    expect(
+      after.log.some((m) => m.text.includes("revived at the village")),
+    ).toBe(true);
   });
 });
 

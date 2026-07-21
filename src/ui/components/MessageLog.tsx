@@ -1,7 +1,8 @@
 import { Box, Text } from "ink";
+import type { LogEntry } from "../../engine/state/types";
 
 export interface MessageLogProps {
-  messages: readonly string[];
+  messages: readonly LogEntry[];
   /**
    * Fixed box width in terminal columns (border included). When provided,
    * message lines wrap within the box so the log never spills horizontally.
@@ -45,7 +46,7 @@ export function MessageLog({
           // stable per occurrence as new lines append.
           // biome-ignore lint/suspicious/noArrayIndexKey: append-only tail, position is identity
           <Text dimColor key={start + index}>
-            {message}
+            {message.text}
           </Text>
         ))
       )}

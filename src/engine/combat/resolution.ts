@@ -33,7 +33,12 @@ import { describeItem } from "../loot/items";
 import { rollVictoryLoot } from "../loot/resolution";
 import type { ItemInstance } from "../loot/types";
 import { Rng, type RngState } from "../rng/rng";
-import type { GameState, Scene } from "../state/types";
+import {
+  entry,
+  type GameState,
+  type LogEntry,
+  type Scene,
+} from "../state/types";
 import {
   createInitialWorldState,
   generateOverworldMap,
@@ -458,7 +463,7 @@ function applyHeroCommand(
   heroMp: number,
   enemies: BattleEnemy[],
   rng: Rng,
-  logs: string[],
+  logs: LogEntry[],
 ): HeroActionResult {
   let hp = heroHp;
   let mp = heroMp;
@@ -475,13 +480,17 @@ function applyHeroCommand(
       if (target) {
         const result = resolveAttack(rng, heroStats, target.stats, false);
         if (!result.hit) {
-          logs.push(`Hero attacks ${target.name} but misses!`);
+          logs.push(entry(`Hero attacks ${target.name} but misses!`, "damage"));
         } else {
           target.hp = Math.max(0, target.hp - result.damage);
           logs.push(
-            `Hero hits ${target.name} for ${result.damage}${result.crit ? " - crit!" : ""}`,
+            entry(
+              `Hero hits ${target.name} for ${result.damage}${result.crit ? " - crit!" : ""}`,
+              "damage",
+            ),
           );
-          if (target.hp === 0) logs.push(`${target.name} is defeated!`);
+          if (target.hp === 0)
+            logs.push(entry(`${target.name} is defeated!`, "damage"));
         }
       }
       break;
@@ -489,7 +498,7 @@ function applyHeroCommand(
     case "skill": {
       const skill = findSkill(command.skillId);
       if (!skill || mp < skill.mpCost) {
-        logs.push("Not enough MP!");
+        logs.push(entry("Not enough MP!"));
         break;
       }
       mp -= skill.mpCost;
@@ -509,14 +518,18 @@ function applyHeroCommand(
           );
           target.hp = Math.max(0, target.hp - damage);
           logs.push(
-            `Hero casts ${skill.name} on ${target.name} for ${damage}!`,
+            entry(
+              `Hero casts ${skill.name} on ${target.name} for ${damage}!`,
+              "damage",
+            ),
           );
-          if (target.hp === 0) logs.push(`${target.name} is defeated!`);
+          if (target.hp === 0)
+            logs.push(entry(`${target.name} is defeated!`, "damage"));
         }
       } else {
         const heal = skill.power + skillStatValue(skill, heroStats);
         hp = Math.min(hero.maxHp, hp + heal);
-        logs.push(`Hero casts ${skill.name} and recovers ${heal} HP.`);
+        logs.push(entry(`Hero casts ${skill.name} and recovers ${heal} HP.`));
       }
       break;
     }
@@ -526,15 +539,15 @@ function applyHeroCommand(
         hp = Math.min(hero.maxHp, hp + heal);
         itemUsed = command.itemId;
         const name = findShopItem(command.itemId)?.name ?? command.itemId;
-        logs.push(`Hero uses ${name} and recovers ${heal} HP.`);
+        logs.push(entry(`Hero uses ${name} and recovers ${heal} HP.`));
       } else {
-        logs.push(`Hero uses ${command.itemId}... nothing happens.`);
+        logs.push(entry(`Hero uses ${command.itemId}... nothing happens.`));
       }
       break;
     }
     case "defend": {
       defending = true;
-      logs.push("Hero takes a defensive stance.");
+      logs.push(entry("Hero takes a defensive stance."));
       break;
     }
     case "flee": {
@@ -545,9 +558,9 @@ function applyHeroCommand(
       const roll = rng.next();
       if (roll < fleeChance(spdFrom(hero), fastestEnemySpd)) {
         fled = true;
-        logs.push("You flee the battle!");
+        logs.push(entry("You flee the battle!"));
       } else {
-        logs.push("You fail to flee!");
+        logs.push(entry("You fail to flee!"));
       }
       break;
     }
@@ -568,7 +581,7 @@ function finalizeWon(
   enemies: BattleEnemy[],
   heroHp: number,
   heroMp: number,
-  logs: string[],
+  logs: LogEntry[],
   rngState: RngState,
   itemUsed: string | null,
   loot: readonly ItemInstance[],
@@ -583,17 +596,24 @@ function finalizeWon(
   const wasBossVictory = state.dungeonState?.encounter?.kind === "boss";
   const finalLogs = [
     ...logs,
-    `Victory! Gained ${xpGain} XP and ${goldGain} gold.`,
+    entry(`Victory! Gained ${xpGain} XP and ${goldGain} gold.`, "loot"),
   ];
   if (granted.leveledUp) {
     finalLogs.push(
-      `${granted.member.name} reached level ${granted.member.level}!`,
+      entry(
+        `${granted.member.name} reached level ${granted.member.level}!`,
+        "quest",
+      ),
     );
   }
   if (wasBossVictory) {
-    finalLogs.push("The dungeon guardian falls. The dungeon is cleared!");
+    finalLogs.push(
+      entry("The dungeon guardian falls. The dungeon is cleared!", "quest"),
+    );
   }
-  const lootLogs = loot.map((item) => `Looted ${describeItem(item)}!`);
+  const lootLogs = loot.map((item) =>
+    entry(`Looted ${describeItem(item)}!`, "loot"),
+  );
   const inventory = itemUsed
     ? consumeItem(state.inventory, itemUsed)
     : state.inventory;
@@ -631,7 +651,7 @@ function finalizeWon(
  */
 function finalizeLost(
   state: GameState,
-  logs: string[],
+  logs: LogEntry[],
   rngState: RngState,
   itemUsed: string | null,
 ): GameState {
@@ -640,7 +660,10 @@ function finalizeLost(
     : state.inventory;
 
   if (state.flags.permadeath) {
-    const finalLogs = [...logs, "The party has perished. The run is over."];
+    const finalLogs = [
+      ...logs,
+      entry("The party has perished. The run is over.", "damage"),
+    ];
     return {
       ...state,
       rngState,
@@ -655,7 +678,10 @@ function finalizeLost(
   const goldLoss = Math.floor(state.gold / 2);
   const finalLogs = [
     ...logs,
-    "The party falls... revived at the village, losing half your gold.",
+    entry(
+      "The party falls... revived at the village, losing half your gold.",
+      "damage",
+    ),
   ];
   return {
     ...state,
@@ -681,7 +707,7 @@ function finalizeFled(
   bs: BattleState,
   heroHp: number,
   heroMp: number,
-  logs: string[],
+  logs: LogEntry[],
   rngState: RngState,
   itemUsed: string | null,
 ): GameState {
@@ -762,7 +788,7 @@ export function resolveBattleEvent(
   let defending = false;
   let itemUsed: string | null = null;
   let status: BattleStatus = "ongoing";
-  const logs: string[] = [];
+  const logs: LogEntry[] = [];
 
   for (const combatantId of bs.initiative) {
     if (status !== "ongoing") break;
@@ -795,11 +821,14 @@ export function resolveBattleEvent(
       if (!enemy) continue;
       const attack = resolveAttack(rng, enemy.stats, heroEffective, defending);
       if (!attack.hit) {
-        logs.push(`${enemy.name} attacks Hero but misses!`);
+        logs.push(entry(`${enemy.name} attacks Hero but misses!`, "damage"));
       } else {
         heroHp = Math.max(0, heroHp - attack.damage);
         logs.push(
-          `${enemy.name} hits Hero for ${attack.damage}${attack.crit ? " - crit!" : ""}`,
+          entry(
+            `${enemy.name} hits Hero for ${attack.damage}${attack.crit ? " - crit!" : ""}`,
+            "damage",
+          ),
         );
         if (heroHp <= 0) {
           status = "lost";

@@ -188,9 +188,10 @@ export function DevConsole({
     }
   });
 
-  const lines = [...state.log.map((line) => `[game] ${line}`), ...output].slice(
-    -Math.max(1, rows - 4),
-  );
+  const lines = [
+    ...state.log.map((line) => `[game] ${line.text}`),
+    ...output,
+  ].slice(-Math.max(1, rows - 4));
 
   return (
     <Box flexDirection="column" height={rows}>
