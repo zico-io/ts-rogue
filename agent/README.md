@@ -54,9 +54,9 @@ RALPH_EVAL_GROUP="ROG-200 ROG-202 ROG-203" eve eval ralph --url https://<deploym
 ```
 
 CI runs this weekly and on demand via
-[`.github/workflows/ralph-eval.yml`](../.github/workflows/ralph-eval.yml). It
-stays off until you set the repo variable `EVE_DEPLOYMENT_URL`; then add the
-secrets the workflow references - `RALPH_EVAL_GROUP` (the
+[`.github/workflows/ralph-eval.yml`](../.github/workflows/ralph-eval.yml),
+targeting the `bob-v0` production alias. No repo variables are needed: it
+self-skips until you add the secrets it references - `RALPH_EVAL_GROUP` (the
 `"<parent> <ready> <blocked>"` fixture) and the target auth
 (`EVE_EVAL_AUTH_TOKEN`, plus `VERCEL_AUTOMATION_BYPASS_SECRET` if the deployment
 has protection).

@@ -3,8 +3,8 @@ name: Ralph eval
 # End-to-end eval for ralph mode (issue groups). It drives the deployed agent
 # against a dedicated Linear fixture and is authenticated, deployment-dependent,
 # and spins a real Vercel Sandbox - so it runs weekly and on demand, never on
-# pull requests. Opt in by setting the repo variable EVE_DEPLOYMENT_URL to the
-# target; the job is skipped until it is set.
+# pull requests. It targets the bob-v0 production alias directly and self-skips
+# until RALPH_EVAL_GROUP is set, so no repo variables are needed to configure it.
 on:
   workflow_dispatch:
   schedule:
@@ -15,7 +15,6 @@ permissions:
 
 jobs:
   ralph-eval:
-    if: ${{ vars.EVE_DEPLOYMENT_URL != '' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -25,14 +24,18 @@ jobs:
           node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Run ralph end-to-end eval against the deployment
-        run: pnpm exec eve eval ralph --strict --url "$EVE_DEPLOYMENT_URL"
+      - name: Run ralph end-to-end eval against production
         env:
-          # Deployment target (repo variable) and the Linear test group
-          # "<parent> <ready> <blocked>". Without the fixture the eval self-skips.
-          EVE_DEPLOYMENT_URL: ${{ vars.EVE_DEPLOYMENT_URL }}
+          # The Linear test group "<parent> <ready> <blocked>"; unset -> skip.
           RALPH_EVAL_GROUP: ${{ secrets.RALPH_EVAL_GROUP }}
-          # Auth for --url against the deployment: bearer token, plus the
-          # deployment-protection bypass when protection is on.
+          # Auth for the deployment: bearer token, plus the deployment-protection
+          # bypass when protection is on.
           EVE_EVAL_AUTH_TOKEN: ${{ secrets.EVE_EVAL_AUTH_TOKEN }}
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          if [ -z "$RALPH_EVAL_GROUP" ]; then
+            echo "RALPH_EVAL_GROUP not set - configure the Linear fixture to run this eval. Skipping."
+            exit 0
+          fi
+          pnpm exec eve eval ralph --strict \
+            --url https://bob-v0-bask-health.vercel.app
