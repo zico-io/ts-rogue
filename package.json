@@ -18,6 +18,7 @@
     "game:dev": "tsx --env-file-if-exists=.env.local src/app.tsx --dev",
     "play": "bash scripts/play.sh",
     "web:build": "vite build",
+    "vercel:build": "eve build && pnpm web:build && node scripts/merge-web-into-eve-output.mjs",
     "web:dev": "vite",
     "web:preview": "vite preview",
     "prepare": "git config core.hooksPath .githooks || true",
