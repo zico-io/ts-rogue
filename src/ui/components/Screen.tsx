@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import { createContext, type ReactNode, useContext } from "react";
 import type { GameState } from "../../engine/state/types";
+import { bar, hpColor, mpColor, theme } from "../theme";
 import { MessageLog } from "./MessageLog";
 import { lineCount, useTerminalLayout } from "./MinSizeGuard";
 
@@ -72,11 +73,11 @@ export function Screen({
 
   return (
     <Box flexDirection="column" height={rows} width={columns}>
-      <Text dimColor>{titledTop(title, columns)}</Text>
+      <Text color={theme.title}>{titledTop(title, columns)}</Text>
       <Box
         borderStyle="single"
         borderTop={false}
-        borderDimColor
+        borderColor={theme.border}
         flexDirection="column"
         flexGrow={1}
         paddingX={1}
@@ -87,7 +88,7 @@ export function Screen({
           </ScreenContentContext.Provider>
         </Box>
         <PartyBar state={state} />
-        {hint ? <Text dimColor>{hint}</Text> : null}
+        {hint ? <Text color={theme.textMuted}>{hint}</Text> : null}
         {showLog ? (
           <MessageLog
             messages={state.log}
@@ -118,7 +119,7 @@ function titledTop(title: string, width: number): string {
   return `${head}${"─".repeat(w - head.length - 1)}┐`;
 }
 
-/** Persistent footer vitals: one row per party member plus gold. */
+/** Persistent footer vitals: one meter row per party member plus gold. */
 function PartyBar({ state }: { state: GameState }) {
   return (
     <Box flexDirection="column">
@@ -126,23 +127,15 @@ function PartyBar({ state }: { state: GameState }) {
         <Text key={member.id}>
           {member.name.padEnd(8)} Lv{member.level} {"  "}
           <Text color={hpColor(member.hp, member.maxHp)}>
-            HP {member.hp}/{member.maxHp}
+            HP {bar(member.hp, member.maxHp, 10)} {member.hp}/{member.maxHp}
           </Text>
           {"   "}
-          <Text color="cyan">
-            MP {member.mp}/{member.maxMp}
+          <Text color={mpColor(member.mp, member.maxMp)}>
+            MP {bar(member.mp, member.maxMp, 6)} {member.mp}/{member.maxMp}
           </Text>
         </Text>
       ))}
-      <Text color="yellow">Gold {state.gold}</Text>
+      <Text color={theme.gold}>Gold {state.gold}</Text>
     </Box>
   );
-}
-
-/** HP color by remaining fraction: green healthy, yellow hurt, red critical. */
-function hpColor(hp: number, maxHp: number): string {
-  const ratio = maxHp > 0 ? hp / maxHp : 0;
-  if (ratio <= 0.25) return "red";
-  if (ratio <= 0.5) return "yellow";
-  return "green";
 }

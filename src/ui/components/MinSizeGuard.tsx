@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import { createContext, type ReactNode, useContext } from "react";
 import { type TerminalSize, useTerminalSize } from "../hooks/useTerminalSize";
+import { theme } from "../theme";
 
 /**
  * Readable minimum terminal size. Chosen from the densest scene's real needs:
@@ -89,11 +90,11 @@ export function MinSizeGuard({
       height={rows}
       width={columns}
     >
-      <Text bold color="yellow">
+      <Text bold color={theme.warn}>
         Terminal too small - resize to at least {minWidth} columns by{" "}
         {minHeight} rows
       </Text>
-      <Text dimColor>
+      <Text color={theme.textMuted}>
         Current: {columns} columns by {rows} rows
       </Text>
     </Box>

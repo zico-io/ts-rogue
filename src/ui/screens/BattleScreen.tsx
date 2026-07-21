@@ -14,6 +14,7 @@ import type { BattleState } from "../../engine/combat/types";
 import type { GameEvent, GameState } from "../../engine/state/types";
 import { MessageLog } from "../components/MessageLog";
 import { Screen, useScreenContent } from "../components/Screen";
+import { theme } from "../theme";
 import { type PackedEnemies, packEnemyColumns } from "./battle/render";
 
 export interface BattleScreenProps {
@@ -182,7 +183,9 @@ export function BattleScreen({ state, dispatch }: BattleScreenProps) {
   if (!bs) {
     return (
       <Screen state={state} title="Battle">
-        <Text dimColor>(no active battle - press 2 for the overworld)</Text>
+        <Text color={theme.textMuted}>
+          (no active battle - press 2 for the overworld)
+        </Text>
       </Screen>
     );
   }
@@ -260,7 +263,7 @@ function BattleBody({
           height={viewportHeight}
           position="relative"
           borderStyle="single"
-          borderDimColor
+          borderColor={theme.border}
           overflow="hidden"
         >
           <Box flexGrow={1} alignItems="center" justifyContent="center">
@@ -275,10 +278,10 @@ function BattleBody({
             left={0}
             flexDirection="column"
             borderStyle="round"
-            borderDimColor
+            borderColor={theme.borderFocus}
             paddingX={1}
           >
-            <Text bold color="cyan">
+            <Text bold color={theme.accent}>
               {hero.name}
             </Text>
             <ActionMenu
@@ -298,14 +301,14 @@ function BattleBody({
           {hero.name} Lv{hero.level} | XP {hero.xp}/{xpToNext(hero.level)} | ATK{" "}
           {atkFrom(hero)} DEF {defFrom(hero)} SPD {spdFrom(hero)}
         </Text>
-        <Text dimColor>
+        <Text color={theme.textMuted}>
           Turn order: {initiativeNames(bs, hero.name).join(" -> ")}
         </Text>
       </Box>
 
       {/* Battle log, pinned to the right of the combat layout. */}
       <Box flexDirection="column" width={logWidth}>
-        <Text dimColor>Battle Log</Text>
+        <Text color={theme.textMuted}>Battle Log</Text>
         <MessageLog
           messages={state.log}
           height={Math.max(3, height - 1)}
@@ -328,9 +331,9 @@ function EnemyField({ packed }: { packed: PackedEnemies }) {
         >
           {row.map((col) => {
             const color = col.dead
-              ? "gray"
+              ? theme.textFaint
               : col.selected
-                ? "green"
+                ? theme.accent
                 : undefined;
             return (
               <Box key={col.enemy.id} flexDirection="column">
@@ -378,10 +381,10 @@ function ActionMenu({
             <Text
               color={
                 index === skillCursor
-                  ? "green"
+                  ? theme.accent
                   : affordable
                     ? undefined
-                    : "gray"
+                    : theme.textFaint
               }
               key={skill.id}
             >
@@ -398,7 +401,7 @@ function ActionMenu({
     if (healItems.length === 0) {
       return (
         <Box flexDirection="column">
-          <Text dimColor>(no usable items)</Text>
+          <Text color={theme.textFaint}>(no usable items)</Text>
         </Box>
       );
     }
@@ -406,7 +409,7 @@ function ActionMenu({
       <Box flexDirection="column">
         {healItems.map((entry, index) => (
           <Text
-            color={index === itemCursor ? "green" : undefined}
+            color={index === itemCursor ? theme.accent : undefined}
             key={entry.itemId}
           >
             {index === itemCursor ? "> " : "  "}
@@ -429,7 +432,10 @@ function ActionMenu({
   return (
     <Box flexDirection="column">
       {actions.map((action, index) => (
-        <Text color={index === actionCursor ? "green" : undefined} key={action}>
+        <Text
+          color={index === actionCursor ? theme.accent : undefined}
+          key={action}
+        >
           {index === actionCursor ? "> " : "  "}
           {action}
         </Text>

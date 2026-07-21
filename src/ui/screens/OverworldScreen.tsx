@@ -6,6 +6,7 @@ import {
   generateOverworldMap,
 } from "../../engine/world/overworld";
 import { Screen, useScreenContent } from "../components/Screen";
+import { theme } from "../theme";
 import {
   buildMinimapRows,
   buildViewportRows,
@@ -125,7 +126,7 @@ function OverworldBody({ state }: { state: GameState }) {
           width={minimapBoxWidth}
           height={minimapBoxHeight}
         >
-          <Text dimColor>Map</Text>
+          <Text color={theme.textMuted}>Map</Text>
           <TileGrid rows={minimapRows} />
         </Box>
       </Box>

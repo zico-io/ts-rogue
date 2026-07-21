@@ -2,6 +2,7 @@ import { Text, useInput } from "ink";
 import { useState } from "react";
 import type { GameState } from "../../../engine/state/types";
 import { Screen } from "../../components/Screen";
+import { theme } from "../../theme";
 import type { VillageBuilding } from "./types";
 
 /** A selectable row on the overview: a building sub-view, or leaving to the overworld. */
@@ -65,7 +66,10 @@ export function VillageOverview({
       hint="Controls: up/down + Enter, or i/c/s/o to act directly; 1-4 switch scenes; q to quit."
     >
       {OPTIONS.map((option, index) => (
-        <Text color={index === cursor ? "green" : undefined} key={option.key}>
+        <Text
+          color={index === cursor ? theme.accent : undefined}
+          key={option.key}
+        >
           {index === cursor ? "> " : "  "}[{option.shortcut}] {option.label}
         </Text>
       ))}

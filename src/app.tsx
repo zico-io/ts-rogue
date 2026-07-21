@@ -30,6 +30,7 @@ import { GameOverScreen } from "./ui/screens/GameOverScreen";
 import { OverworldScreen } from "./ui/screens/OverworldScreen";
 import { TitleScreen } from "./ui/screens/TitleScreen";
 import { VillageScreen } from "./ui/screens/VillageScreen";
+import { theme } from "./ui/theme";
 
 const sceneKeys: Record<string, Scene> = {
   "1": "village",
@@ -202,7 +203,7 @@ function App({
           modeCursor={modeCursor}
         />
         {devConsoleEnabled && (
-          <Text dimColor>Dev console: press ` to switch.</Text>
+          <Text color={theme.textMuted}>Dev console: press ` to switch.</Text>
         )}
       </Box>
     );

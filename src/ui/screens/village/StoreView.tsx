@@ -15,6 +15,7 @@ import {
 import type { ItemInstance } from "../../../engine/loot/types";
 import type { GameEvent, GameState } from "../../../engine/state/types";
 import { Screen } from "../../components/Screen";
+import { theme } from "../../theme";
 
 export interface StoreViewProps {
   state: GameState;
@@ -193,7 +194,10 @@ function ShopCatalog({ cursor, state }: ShopCatalogProps) {
           state.inventory.find((entry) => entry.itemId === item.id)?.quantity ??
           0;
         return (
-          <Text color={index === cursor ? "green" : undefined} key={item.id}>
+          <Text
+            color={index === cursor ? theme.accent : undefined}
+            key={item.id}
+          >
             {index === cursor ? "> " : "  "}
             {item.name} - buy {item.price}g / sell {sellPriceFor(item)}g (owned{" "}
             {owned})
@@ -234,7 +238,16 @@ function BackpackPanel({
             ? `${entry.label}: ${describeItem(entry.item)} (${itemStatLine(entry.item)})`
             : `${entry.label}: (empty)`;
           return (
-            <Text color={selectedRow ? "green" : undefined} key={entry.slot}>
+            <Text
+              color={
+                selectedRow
+                  ? theme.accent
+                  : entry.item
+                    ? theme.rarity[entry.item.rarity]
+                    : theme.textFaint
+              }
+              key={entry.slot}
+            >
               {selectedRow ? "> " : "  "}
               {text}
               {entry.item ? " [u to unequip]" : ""}
@@ -243,7 +256,7 @@ function BackpackPanel({
         }
         return (
           <Text
-            color={selectedRow ? "green" : undefined}
+            color={selectedRow ? theme.accent : theme.rarity[entry.item.rarity]}
             key={entry.item.instanceId}
           >
             {selectedRow ? "> " : "  "}
@@ -253,9 +266,9 @@ function BackpackPanel({
         );
       })}
       {compare ? (
-        <Text color="yellow">{compare}</Text>
+        <Text color={theme.gold}>{compare}</Text>
       ) : (
-        <Text dimColor>
+        <Text color={theme.textMuted}>
           Select a backpack item to compare against its slot.
         </Text>
       )}
