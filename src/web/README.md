@@ -47,3 +47,13 @@ does not yet include:
   ROG-52 add real sprites and per-scene rendering.
 - A dev console or rich crash screen - failures show a minimal plain-text
   overlay; ROG-48 owns a proper browser dev console and crash screen.
+
+## Deployment
+
+The root `vercel.json` builds this renderer as a static site: `pnpm web:build`
+into `dist/web`, served with a catch-all rewrite to `index.html` for any
+future client-side routes. Link the repository with `vercel link` (or import
+it in the Vercel dashboard) and it deploys with no further configuration;
+`vercel.json`'s `buildCommand`/`outputDirectory` override any framework
+auto-detection since the Vite root lives under `src/web` rather than the
+repository root.
