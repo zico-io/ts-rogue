@@ -33,8 +33,8 @@ jobs:
           EVE_EVAL_AUTH_TOKEN: ${{ secrets.EVE_EVAL_AUTH_TOKEN }}
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
         run: |
-          if [ -z "$RALPH_EVAL_GROUP" ]; then
-            echo "RALPH_EVAL_GROUP not set - configure the Linear fixture to run this eval. Skipping."
+          if [ -z "$RALPH_EVAL_GROUP" ] || [ -z "$EVE_EVAL_AUTH_TOKEN" ]; then
+            echo "RALPH_EVAL_GROUP or EVE_EVAL_AUTH_TOKEN not set - configure the fixture and deployment auth to run this eval. Skipping."
             exit 0
           fi
           pnpm exec eve eval ralph --strict \
