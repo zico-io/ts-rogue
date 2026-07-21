@@ -16,7 +16,7 @@ describe("state incident boundary", () => {
       { ...newGame(1), inventory: [{ itemId: "potion", quantity: 0 }] },
       {
         ...newGame(1),
-        party: [{ ...newGame(1).party[0], hp: 21 }],
+        party: [{ ...newGame(1).party[0], hp: newGame(1).party[0].maxHp + 1 }],
       },
     ];
     for (const state of invalid) {

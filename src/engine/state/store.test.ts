@@ -28,9 +28,10 @@ describe("game store", () => {
     expect(state.party[0]).toMatchObject({
       id: "hero-1",
       name: "Hero",
+      classId: "warrior",
       level: 1,
-      hp: 20,
-      maxHp: 20,
+      hp: 24,
+      maxHp: 24,
     });
     expect(state.gold).toBe(50);
     expect(state.inventory).toEqual([]);

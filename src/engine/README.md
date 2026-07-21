@@ -17,7 +17,7 @@ bounded debug journal.
 | [`combat/`](combat/) | Initiative, actions, damage, rewards, and defeat handling |
 | [`loot/`](loot/) | Item generation, affixes, monster-specific drops, and equipment |
 | [`entities/`](entities/) | Party and inventory models |
-| [`../data/`](../data/) | Typed monsters, shops, dungeons, items, affixes, and loot tables |
+| [`../data/`](../data/) | Typed classes, monsters, shops, dungeons, items, affixes, and loot tables |
 | [`../persistence/`](../persistence/) | Single-slot SQLite save/load for the complete state |
 
 The engine may read static definitions from `src/data`, but it never imports
@@ -30,7 +30,8 @@ from `src/ui`. The application and UI dispatch events and perform external I/O.
 - Overworld and dungeon layouts are reproducible from their seed inputs.
 - Combat, loot, exploration, and economy changes flow through the reducer.
 - Saves serialize the whole state to `save.db`; older supported saves are
-  backfilled during deserialization.
+  backfilled with required run flags and the default Warrior class during
+  deserialization.
 
 Normal defeat revives the party in the village with one HP and half its gold.
 Permadeath marks the run as over and clears its active battle and dungeon; the
@@ -39,6 +40,8 @@ loot before returning to the originating scene.
 
 ## Gameplay systems
 
+- Warrior, Rogue, and Wizard classes define starting stats, per-level growth,
+  and known skills through the `CLASSES` data table.
 - The overworld contains passable biomes, a village, reachable dungeon
   entrances, and a seeded encounter meter.
 - Dungeons contain deterministic rooms, corridors, chests, stairs, wandering

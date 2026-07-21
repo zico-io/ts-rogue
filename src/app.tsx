@@ -6,6 +6,7 @@ import {
   useEffect,
   useState,
 } from "react";
+import { CLASSES } from "./data/classes";
 import { attempt } from "./engine/state/incidents";
 import { GameStore, newGame } from "./engine/state/store";
 import type { Scene } from "./engine/state/types";
@@ -59,6 +60,8 @@ function App({
   const { exit } = useApp();
   const { columns, rows, tooSmall } = useTerminalLayout();
   const [started, setStarted] = useState(false);
+  const [titlePhase, setTitlePhase] = useState<"class" | "mode">("class");
+  const [classCursor, setClassCursor] = useState(0);
   const [modeCursor, setModeCursor] = useState(0);
   const [consoleOpen, setConsoleOpen] = useState(false);
   const [consoleOutput, setConsoleOutput] = useState<string[]>([]);
@@ -76,8 +79,10 @@ function App({
     }
   });
 
-  // Title screen phase: mode selection on a fresh boot (no save), or any key
-  // to continue an existing save (Phase 6, ROG-12 permadeath choice).
+  // Title screen phase: on a fresh boot (no save) the player first picks a
+  // class from the CLASSES table, then a mode (Normal/Permadeath), and Enter
+  // starts the run; with an existing save any key continues (Phase 6, ROG-12
+  // permadeath choice; ROG-17 class choice).
   useInput(
     (input, key) => {
       if (devConsoleEnabled && input === "`") return;
@@ -93,6 +98,21 @@ function App({
         setStarted(true);
         return;
       }
+      if (titlePhase === "class") {
+        if (key.upArrow) {
+          setClassCursor((c) => (c + CLASSES.length - 1) % CLASSES.length);
+        } else if (key.downArrow) {
+          setClassCursor((c) => (c + 1) % CLASSES.length);
+        } else if (key.return) {
+          setTitlePhase("mode");
+        }
+        return;
+      }
+      // titlePhase === "mode"
+      if (key.escape) {
+        setTitlePhase("class");
+        return;
+      }
       if (key.upArrow) {
         setModeCursor((c) => (c === 0 ? 1 : 0));
       } else if (key.downArrow) {
@@ -101,6 +121,7 @@ function App({
         store.dispatch({
           type: "NewGame",
           seed,
+          classId: CLASSES[classCursor].id,
           permadeath: modeCursor === 1,
         });
         setStarted(true);
@@ -122,7 +143,9 @@ function App({
     { isActive: !fatal && started && !consoleOpen && !gameOver },
   );
 
-  // Game-over phase: Enter starts a new run (same permadeath mode), q quits.
+  // Game-over phase: Enter starts a new run (same class and permadeath mode),
+  // q quits. The class is reused from the fallen hero so a run restarts in the
+  // same class the player chose (ROG-17).
   useInput(
     (input, key) => {
       if (isQuit(input, key)) {
@@ -131,7 +154,13 @@ function App({
       }
       if (key.return) {
         const permadeath = state.flags?.permadeath ?? false;
-        store.dispatch({ type: "NewGame", seed: Date.now(), permadeath });
+        const classId = state.party[0].classId;
+        store.dispatch({
+          type: "NewGame",
+          seed: Date.now(),
+          permadeath,
+          classId,
+        });
       }
     },
     { isActive: !fatal && started && !consoleOpen && gameOver },
@@ -166,7 +195,12 @@ function App({
   } else if (!started) {
     content = (
       <Box flexDirection="column">
-        <TitleScreen hasSave={hasSave} modeCursor={modeCursor} />
+        <TitleScreen
+          hasSave={hasSave}
+          titlePhase={titlePhase}
+          classCursor={classCursor}
+          modeCursor={modeCursor}
+        />
         {devConsoleEnabled && (
           <Text dimColor>Dev console: press ` to switch.</Text>
         )}

@@ -51,10 +51,12 @@ import type {
 /** Gold cost per party member to fully heal at the inn. */
 export const INN_COST_PER_MEMBER = 10;
 
-/** Options for starting a new run (Phase 6, ROG-12). */
+/** Options for starting a new run (Phase 6, ROG-12; ROG-17 class choice). */
 export interface NewGameOptions {
   /** When true, a defeat ends the run instead of reviving at the village. */
   permadeath?: boolean;
+  /** Character class id for the starting hero; defaults to warrior when omitted. */
+  classId?: string;
 }
 
 /** Build a fresh state tree for a new run from a seed, logging the seed. */
@@ -66,7 +68,7 @@ export function newGame(seed: number, options?: NewGameOptions): GameState {
     rngState: rng.getState(),
     scene: "village",
     log: [`Started new game with seed ${seed}`],
-    party: [createStartingHero()],
+    party: [createStartingHero(options?.classId)],
     gold: 50,
     inventory: [],
     items: [],
@@ -515,7 +517,10 @@ function sellItem(state: GameState, instanceId: string): GameState {
 export function reduce(state: GameState, event: GameEvent): GameState {
   switch (event.type) {
     case "NewGame":
-      return newGame(event.seed, { permadeath: event.permadeath });
+      return newGame(event.seed, {
+        permadeath: event.permadeath,
+        classId: event.classId,
+      });
     case "ChangeScene":
       return { ...state, scene: event.scene };
     case "Log":

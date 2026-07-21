@@ -19,7 +19,7 @@ dungeon geometry, and enemy layouts from the available content region.
 | Context | Controls |
 | --- | --- |
 | Global | `q` or Ctrl+C exits; backtick switches the developer console in dev mode |
-| New game | Up/Down selects Normal or Permadeath; Enter starts |
+| New game | Up/Down and Enter select a class, then Normal or Permadeath mode; Esc returns to class selection |
 | Village | Up/Down and Enter select; `i`, `c`, `s`, `o` open buildings or leave; Esc returns |
 | Overworld | Arrows or `h`, `j`, `k`, `l` move; Esc returns to the village |
 | Dungeon | Arrows, WASD, or HJKL move and turn; `o` opens; Enter or `>` descends; `<` exits |
@@ -27,6 +27,10 @@ dungeon geometry, and enemy layouts from the available content region.
 
 The store view uses Tab to switch between shop and backpack modes. Backpack
 actions equip, unequip, compare, and sell generated items.
+
+The class selection offers Warrior, Rogue, and Wizard. Battle skill menus show
+only the selected class's known skills, and restarting after permadeath keeps
+the same class and mode.
 
 ## Diagnostics
 
