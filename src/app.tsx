@@ -307,7 +307,6 @@ process.on("uncaughtException", (error) =>
   failures.report("uncaught-exception", error, true),
 );
 
-initTiles();
 const rendered = failures.run("boot", true, () =>
   render(
     <TerminalLayoutProvider>
@@ -325,6 +324,10 @@ const rendered = failures.run("boot", true, () =>
     { alternateScreen: true },
   ),
 );
+// Kitty graphics storage is per-screen (Ghostty clears the alternate screen's
+// images on entry), so the tileset must be transmitted after Ink switches to
+// the alternate screen - i.e. after render(), not before.
+initTiles();
 if (!rendered.ok) {
   const display = pipeline.getFatal();
   if (display) render(<CrashScreen display={display} />);
