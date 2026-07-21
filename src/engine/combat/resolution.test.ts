@@ -79,9 +79,9 @@ describe("derived stats", () => {
 
   it("atkFrom/defFrom/spdFrom read a party member's stats", () => {
     const hero = createStartingHero();
-    expect(atkFrom(hero)).toBe(5);
-    expect(defFrom(hero)).toBe(2);
-    expect(spdFrom(hero)).toBe(5);
+    expect(atkFrom(hero)).toBe(7);
+    expect(defFrom(hero)).toBe(3);
+    expect(spdFrom(hero)).toBe(4);
   });
 });
 
@@ -178,9 +178,9 @@ describe("level-up curve", () => {
     expect(leveledUp).toBe(false);
     expect(member.level).toBe(1);
     expect(member.xp).toBe(5);
-    expect(member.hp).toBe(20);
-    expect(member.mp).toBe(10);
-    expect(member.maxHp).toBe(20);
+    expect(member.hp).toBe(24);
+    expect(member.mp).toBe(6);
+    expect(member.maxHp).toBe(24);
   });
 
   it("levels up across a threshold, raising maxHp/maxMp/stats and restoring HP/MP", () => {
@@ -189,11 +189,11 @@ describe("level-up curve", () => {
     expect(leveledUp).toBe(true);
     expect(member.level).toBe(4);
     expect(member.xp).toBe(10);
-    expect(member.maxHp).toBe(38);
-    expect(member.maxMp).toBe(19);
-    expect(member.hp).toBe(38);
-    expect(member.mp).toBe(19);
-    expect(member.stats).toEqual({ str: 8, agi: 8, vit: 8, int: 8 });
+    expect(member.maxHp).toBe(48);
+    expect(member.maxMp).toBe(12);
+    expect(member.hp).toBe(48);
+    expect(member.mp).toBe(12);
+    expect(member.stats).toEqual({ str: 13, agi: 7, vit: 13, int: 2 });
   });
 });
 
@@ -343,11 +343,11 @@ describe("full win scenario", () => {
     // 80 XP: 15 -> L2, 22 -> L3, 33 -> L4, leaving 10 below the 50 threshold.
     expect(after.party[0].level).toBe(4);
     expect(after.party[0].xp).toBe(10);
-    expect(after.party[0].maxHp).toBe(38);
-    expect(after.party[0].hp).toBe(38);
-    expect(after.party[0].maxMp).toBe(19);
-    expect(after.party[0].mp).toBe(19);
-    expect(after.party[0].stats).toEqual({ str: 8, agi: 8, vit: 8, int: 8 });
+    expect(after.party[0].maxHp).toBe(48);
+    expect(after.party[0].hp).toBe(48);
+    expect(after.party[0].maxMp).toBe(12);
+    expect(after.party[0].mp).toBe(12);
+    expect(after.party[0].stats).toEqual({ str: 13, agi: 7, vit: 13, int: 2 });
     expect(after.gold).toBe(70);
     expect(after.log.some((m) => m.includes("Victory!"))).toBe(true);
     expect(after.log.some((m) => m.includes("reached level 4"))).toBe(true);

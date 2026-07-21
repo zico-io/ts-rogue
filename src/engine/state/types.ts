@@ -27,6 +27,7 @@ export interface GameFlags {
  * the backpack) and `nextItemId` (the monotonically increasing source of unique
  * item instance ids, so loot ids are deterministic from the event history).
  * Phase 6 (ROG-12) adds `flags` (run-level permadeath and game-over flags).
+ * ROG-17 adds `classId` on each `PartyMember` (the chosen character class).
  */
 export interface GameState {
   seed: number;
@@ -60,14 +61,15 @@ export type StepDirection = "forward" | "back";
 
 /**
  * Events the pure reducer understands. Dungeon events (PROJECT_PLAN Phase 3)
- * flag encounters and move the party; battle events (PROJECT_PLAN Phase 4)
- * resolve turn-based combat; loot/equip/sell events (Phase 5, ROG-11) flow
- * generated equipment between the backpack, equipment slots, and the store.
- * Phase 6 (ROG-12) adds `ExitDungeon` (leave the active dungeon for the
- * overworld) and a `permadeath` option on `NewGame`.
+ * flag encounters and move the party; battle events (Phase 4) resolve
+ * turn-based combat; loot/equip/sell events (Phase 5, ROG-11) flow generated
+ * equipment between the backpack, equipment slots, and the store. Phase 6
+ * (ROG-12) adds `ExitDungeon` (leave the active dungeon for the overworld) and
+ * a `permadeath` option on `NewGame`. ROG-17 adds a `classId` option on
+ * `NewGame` (the chosen character class; defaults to warrior when omitted).
  */
 export type GameEvent =
-  | { type: "NewGame"; seed: number; permadeath?: boolean }
+  | { type: "NewGame"; seed: number; permadeath?: boolean; classId?: string }
   | { type: "ChangeScene"; scene: Scene }
   | { type: "Log"; message: string }
   | { type: "InnHeal" }

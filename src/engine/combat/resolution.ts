@@ -24,6 +24,7 @@
  * cleared so the player knows it is safe to leave.
  */
 
+import { DEFAULT_CLASS_ID, findClass } from "../../data/classes";
 import { findMonster, MONSTERS, type MonsterDef } from "../../data/monsters";
 import { findShopItem } from "../../data/shops";
 import type { InventoryItem, PartyMember } from "../entities/party";
@@ -38,7 +39,7 @@ import {
   generateOverworldMap,
 } from "../world/overworld";
 import type { DungeonState, WorldState } from "../world/types";
-import { findSkill } from "./skills";
+import { findSkill, type SkillDef } from "./skills";
 import type {
   BattleEnemy,
   BattleEvent,
@@ -77,10 +78,6 @@ export const FLEE_MAX = 0.9;
 /** Level-up curve: xp needed to advance from `level` to `level + 1`. */
 export const XP_BASE = 10;
 export const XP_GROWTH = 1.5;
-/** Stat growth per level. */
-export const LEVEL_HP_GAIN = 6;
-export const LEVEL_MP_GAIN = 3;
-export const LEVEL_STAT_GAIN = 1;
 
 /** Battle healing items and how much HP they restore. */
 export const BATTLE_ITEM_HEAL: Readonly<Record<string, number>> = {
@@ -121,6 +118,15 @@ export function defFrom(member: PartyMember): number {
 
 export function spdFrom(member: PartyMember): number {
   return deriveSpd(effectiveStats(member));
+}
+
+/**
+ * The core stat a skill scales off. Older skills omit `stat` and default to
+ * `int`, so prior Flame/Heal behavior is unchanged; class skills declare the
+ * stat they scale with (Warrior Cleave uses str, Rogue Backstab uses agi).
+ */
+export function skillStatValue(skill: SkillDef, stats: CoreStats): number {
+  return stats[skill.stat ?? "int"];
 }
 
 /* -------------------------------------------------------------------------- */
@@ -220,8 +226,8 @@ export interface GrantXpResult {
 
 /**
  * Add `amount` XP to `member`, leveling up as many times as the threshold
- * allows. Each level-up raises maxHp/maxMp and every stat by the growth
- * constants and restores HP/MP to full. `member.xp` holds progress toward the
+ * allows. Each level-up raises maxHp/maxMp and each stat by the hero's class
+ * growth and restores HP/MP to full. `member.xp` holds progress toward the
  * next level, with the remainder carried across each level-up. Pure.
  */
 export function grantXp(member: PartyMember, amount: number): GrantXpResult {
@@ -231,18 +237,22 @@ export function grantXp(member: PartyMember, amount: number): GrantXpResult {
   let maxMp = member.maxMp;
   let stats = member.stats;
   let leveledUp = false;
+  const growth = (findClass(member.classId) ?? findClass(DEFAULT_CLASS_ID))
+    ?.growth;
   while (xp >= xpToNext(level)) {
     xp -= xpToNext(level);
     level += 1;
     leveledUp = true;
-    maxHp += LEVEL_HP_GAIN;
-    maxMp += LEVEL_MP_GAIN;
-    stats = {
-      str: stats.str + LEVEL_STAT_GAIN,
-      agi: stats.agi + LEVEL_STAT_GAIN,
-      vit: stats.vit + LEVEL_STAT_GAIN,
-      int: stats.int + LEVEL_STAT_GAIN,
-    };
+    if (growth) {
+      maxHp += growth.hp;
+      maxMp += growth.mp;
+      stats = {
+        str: stats.str + growth.str,
+        agi: stats.agi + growth.agi,
+        vit: stats.vit + growth.vit,
+        int: stats.int + growth.int,
+      };
+    }
   }
   const updated: PartyMember = { ...member, level, xp, maxHp, maxMp, stats };
   if (leveledUp) {
@@ -492,7 +502,7 @@ function applyHeroCommand(
           const damage = Math.max(
             1,
             Math.floor(
-              (skill.power + heroStats.int) *
+              (skill.power + skillStatValue(skill, heroStats)) *
                 (DAMAGE_VARIANCE_MIN +
                   variance * (DAMAGE_VARIANCE_MAX - DAMAGE_VARIANCE_MIN)),
             ),
@@ -504,7 +514,7 @@ function applyHeroCommand(
           if (target.hp === 0) logs.push(`${target.name} is defeated!`);
         }
       } else {
-        const heal = skill.power + heroStats.int;
+        const heal = skill.power + skillStatValue(skill, heroStats);
         hp = Math.min(hero.maxHp, hp + heal);
         logs.push(`Hero casts ${skill.name} and recovers ${heal} HP.`);
       }
