@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { atkFrom } from "../combat/resolution";
+import { deserialize, serialize } from "../../persistence/save";
+import { atkFrom, startBattle } from "../combat/resolution";
 import type { PartyMember } from "../entities/party";
 import { describeItem, itemSellPrice } from "../loot/items";
 import type { ItemInstance } from "../loot/types";
+import { Rng } from "../rng/rng";
 import { isDungeonWall } from "../world/dungeon";
 import { generateOverworldMap, isPassable, tileAt } from "../world/overworld";
 import type {
@@ -41,6 +43,17 @@ describe("game store", () => {
       player: map.village,
       encounterMeter: 0,
     });
+  });
+
+  it("defaults flags to permadeath=false and gameOver=false", () => {
+    const state = newGame(1234);
+    expect(state.flags).toEqual({ permadeath: false, gameOver: false });
+  });
+
+  it("accepts a permadeath option at new-game time", () => {
+    const state = newGame(1234, { permadeath: true });
+    expect(state.flags.permadeath).toBe(true);
+    expect(state.flags.gameOver).toBe(false);
   });
 
   it("changes scene without mutating the previous state", () => {
@@ -375,6 +388,7 @@ describe("Dungeon", () => {
     expect(state.dungeonState?.player).toEqual(
       state.dungeonState?.layout.entrance,
     );
+    expect(state.dungeonState?.cleared).toBe(false);
     expect(state.log.at(-1)).toBe("You descend into the dungeon");
   });
 
@@ -820,5 +834,354 @@ describe("Phase 5 loot, equip, and sell", () => {
       // The whole descend + boss fight path (loot included) is deterministic.
       expect(runOnce()).toEqual(runOnce());
     });
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Phase 6 (ROG-12): exit dungeon, death handling, save/restore integrity     */
+/* -------------------------------------------------------------------------- */
+
+/** Weaken the hero so a battle resolves to a loss (1 HP, zero stats). */
+function withWeakHero(state: GameState): GameState {
+  const weak: PartyMember = {
+    ...state.party[0],
+    hp: 1,
+    maxHp: 1,
+    mp: 0,
+    maxMp: 0,
+    stats: { str: 0, agi: 0, vit: 0, int: 0 },
+  };
+  return { ...state, party: [weak] };
+}
+
+/** A tough hero with a controlled strength so a battle lasts many rounds. */
+function withControlledHero(state: GameState, str: number): GameState {
+  const hero: PartyMember = {
+    ...state.party[0],
+    hp: 999,
+    maxHp: 999,
+    mp: 999,
+    maxMp: 999,
+    stats: { str, agi: 50, vit: 50, int: 50 },
+  };
+  return { ...state, party: [hero] };
+}
+
+/** Start a battle of the given kind on the current dungeon floor. */
+function withBattle(state: GameState, kind: "wandering" | "boss"): GameState {
+  const floor = state.dungeonState?.floor ?? 1;
+  const rng = new Rng(state.seed, state.rngState);
+  const battle = startBattle(rng, state.party[0], kind, floor, "dungeon");
+  return {
+    ...state,
+    scene: "battle",
+    rngState: rng.getState(),
+    battleState: battle,
+    dungeonState: state.dungeonState
+      ? { ...state.dungeonState, encounter: { kind, floor } }
+      : state.dungeonState,
+  };
+}
+
+/** Drive an active battle by attacking until it resolves (win or lose). */
+function fightToEnd(state: GameState): GameState {
+  let s = state;
+  for (let i = 0; i < 200 && s.scene === "battle"; i++) {
+    const bs = s.battleState;
+    if (!bs) break;
+    const target = bs.enemies.find((enemy) => enemy.hp > 0);
+    if (!target) break;
+    s = reduce(s, { type: "BattleAttack", targetId: target.id });
+  }
+  return s;
+}
+
+describe("Phase 6: exit dungeon", () => {
+  it("ExitDungeon returns to the overworld and clears dungeonState", () => {
+    const state = enterDungeon(1);
+    expect(state.scene).toBe("dungeon");
+    expect(state.dungeonState).not.toBeNull();
+
+    const after = reduce(state, { type: "ExitDungeon" });
+    expect(after.scene).toBe("overworld");
+    expect(after.dungeonState).toBeNull();
+    expect(after.battleState).toBeNull();
+    expect(after.worldState.encounterMeter).toBe(0);
+    expect(after.log.at(-1)).toBe("You emerge from the dungeon");
+    // The player stays at the dungeon entrance tile on the overworld.
+    const map = generateOverworldMap(1);
+    expect(after.worldState.player).toEqual(map.dungeonEntrances[0]);
+  });
+
+  it("ExitDungeon is a no-op when not in a dungeon", () => {
+    const state = newGame(1);
+    const after = reduce(state, { type: "ExitDungeon" });
+    expect(after).toBe(state);
+  });
+
+  it("full loop: enter dungeon, open chest, exit, then re-enter fresh", () => {
+    let state = withToughHero(enterDungeon(1234));
+    const chest = findDungeonTile(state, "chest");
+    expect(chest).toBeDefined();
+    state = walkTo(state, chest ?? { x: 0, y: 0 });
+    state = reduce(state, { type: "OpenChest" });
+    expect(state.gold).toBeGreaterThan(50);
+
+    // Exit back to the overworld.
+    state = reduce(state, { type: "ExitDungeon" });
+    expect(state.scene).toBe("overworld");
+    expect(state.dungeonState).toBeNull();
+
+    // Re-enter the same dungeon entrance: a fresh floor 1 (cleared reset).
+    const map = generateOverworldMap(1234);
+    const entrance = map.dungeonEntrances[0];
+    const approach = findPassableNeighbor(map, entrance);
+    state = reduce(
+      { ...state, worldState: { player: approach.from, encounterMeter: 0 } },
+      { type: "MoveOverworld", dx: approach.dx, dy: approach.dy },
+    );
+    expect(state.scene).toBe("dungeon");
+    expect(state.dungeonState?.floor).toBe(1);
+    expect(state.dungeonState?.cleared).toBe(false);
+  });
+});
+
+describe("Phase 6: death handling", () => {
+  it("default (permadeath=false): defeat revives at village with 1 HP and half gold lost", () => {
+    let state = enterDungeon(1);
+    state = { ...state, gold: 100 };
+    state = withWeakHero(state);
+    state = withBattle(state, "boss");
+    expect(state.scene).toBe("battle");
+
+    const result = fightToEnd(state);
+    expect(result.scene).toBe("village");
+    expect(result.battleState).toBeNull();
+    expect(result.dungeonState).toBeNull();
+    expect(result.party[0].hp).toBe(1);
+    expect(result.party[0].mp).toBe(0);
+    expect(result.gold).toBe(50); // 100 - floor(100/2)
+    expect(result.flags.gameOver).toBe(false);
+    expect(result.log.some((m) => m.includes("revived at the village"))).toBe(
+      true,
+    );
+  });
+
+  it("permadeath=true: defeat sets gameOver and ends the run", () => {
+    let state = enterDungeon(1);
+    state = {
+      ...state,
+      gold: 100,
+      flags: { permadeath: true, gameOver: false },
+    };
+    state = withWeakHero(state);
+    state = withBattle(state, "boss");
+    expect(state.scene).toBe("battle");
+
+    const result = fightToEnd(state);
+    expect(result.flags.gameOver).toBe(true);
+    expect(result.battleState).toBeNull();
+    expect(result.dungeonState).toBeNull();
+    expect(result.log.some((m) => m.includes("perished"))).toBe(true);
+  });
+
+  it("gold penalty floors at zero (losing with 0 gold keeps 0)", () => {
+    let state = { ...enterDungeon(1), gold: 0 };
+    state = withWeakHero(state);
+    state = withBattle(state, "boss");
+    const result = fightToEnd(state);
+    expect(result.scene).toBe("village");
+    expect(result.gold).toBe(0);
+  });
+});
+
+describe("Phase 6: boss victory marks the dungeon cleared", () => {
+  it("defeating the floor-3 boss sets cleared=true and logs completion", () => {
+    let state = withToughHero(enterDungeon(1234));
+    // Descend to floor 3, fighting through wandering encounters.
+    for (let floor = 1; floor < 3; floor++) {
+      const stairs = findDungeonTile(state, "stairsDown");
+      state = walkTo(state, stairs ?? { x: 0, y: 0 });
+      state = reduce(state, { type: "DescendStairs" });
+    }
+    const boss = findDungeonTile(state, "bossMarker");
+    state = walkTo(state, boss ?? { x: 0, y: 0 });
+    expect(state.scene).toBe("battle");
+    expect(state.dungeonState?.encounter?.kind).toBe("boss");
+
+    state = fightToResolution(state);
+    expect(state.scene).toBe("dungeon");
+    expect(state.battleState).toBeNull();
+    expect(state.dungeonState?.cleared).toBe(true);
+    expect(state.dungeonState?.encounter).toBeNull();
+    expect(state.log.some((m) => m.includes("dungeon is cleared"))).toBe(true);
+  });
+
+  it("a wandering victory does NOT mark the dungeon cleared", () => {
+    let state = withToughHero(enterDungeon(1234));
+    // Walk until a wandering encounter triggers.
+    let found = false;
+    for (let i = 0; i < 60 && !found; i++) {
+      const ds = state.dungeonState;
+      if (!ds) break;
+      const path = bfsPath(
+        ds.layout,
+        ds.player,
+        findDungeonTile(state, "stairsDown") ?? { x: 0, y: 0 },
+      );
+      if (!path || path.length < 2) break;
+      const next = path[1];
+      state = turnTo(state, facingFor(ds.player, next));
+      state = reduce(state, { type: "StepDungeon", direction: "forward" });
+      if (
+        state.scene === "battle" &&
+        state.dungeonState?.encounter?.kind === "wandering"
+      ) {
+        state = fightToResolution(state);
+        expect(state.dungeonState?.cleared).toBe(false);
+        found = true;
+      }
+    }
+    // If no wandering encounter triggered, the cleared flag should still be false.
+    if (!found) expect(state.dungeonState?.cleared).toBe(false);
+  });
+});
+
+describe("Phase 6: save/restore integrity", () => {
+  it("save/load round-trip mid-dungeon produces an identical final state", () => {
+    const seed = 1234;
+
+    const toCheckpoint = (s: GameState): GameState => {
+      s = withToughHero(s);
+      const chest = findDungeonTile(s, "chest");
+      s = walkTo(s, chest ?? { x: 0, y: 0 });
+      s = reduce(s, { type: "OpenChest" });
+      return s;
+    };
+
+    const fromCheckpoint = (s: GameState): GameState => {
+      const stairs = findDungeonTile(s, "stairsDown");
+      s = walkTo(s, stairs ?? { x: 0, y: 0 });
+      s = reduce(s, { type: "DescendStairs" });
+      s = reduce(s, { type: "ExitDungeon" });
+      return s;
+    };
+
+    const control = fromCheckpoint(toCheckpoint(enterDungeon(seed)));
+    const restored = deserialize(serialize(toCheckpoint(enterDungeon(seed))));
+    const testState = fromCheckpoint(restored);
+
+    expect(testState).toEqual(control);
+  });
+
+  it("save/load round-trip mid-battle (battleState present) continues identically", () => {
+    const seed = 1234;
+
+    const toMidBattle = (s: GameState): GameState => {
+      // Controlled strength so the boss (60 HP) survives the first hit and
+      // the battle is still ongoing after one attack.
+      s = withControlledHero(s, 10);
+      s = withBattle(s, "boss");
+      const target = s.battleState?.enemies.find((e) => e.hp > 0);
+      if (!target) throw new Error("no living enemy at battle start");
+      s = reduce(s, { type: "BattleAttack", targetId: target.id });
+      // Battle must still be ongoing for a mid-battle save point.
+      if (s.scene !== "battle" || !s.battleState) {
+        throw new Error(
+          "boss died in one hit; increase floor/HP for this seed",
+        );
+      }
+      return s;
+    };
+
+    const control = fightToEnd(toMidBattle(enterDungeon(seed)));
+    const restored = deserialize(serialize(toMidBattle(enterDungeon(seed))));
+    const testState = fightToEnd(restored);
+
+    expect(testState).toEqual(control);
+  });
+
+  it("state-hash reproducibility: same seed and loop produce byte-identical serialized state", () => {
+    const seed = 2024;
+
+    const runOnce = () => {
+      let s = withToughHero(enterDungeon(seed));
+      const chest = findDungeonTile(s, "chest");
+      s = walkTo(s, chest ?? { x: 0, y: 0 });
+      s = reduce(s, { type: "OpenChest" });
+      const stairs = findDungeonTile(s, "stairsDown");
+      s = walkTo(s, stairs ?? { x: 0, y: 0 });
+      s = reduce(s, { type: "DescendStairs" });
+      s = reduce(s, { type: "ExitDungeon" });
+      return s;
+    };
+
+    const a = runOnce();
+    const b = runOnce();
+    expect(a).toEqual(b);
+    expect(serialize(a)).toBe(serialize(b));
+  });
+
+  it("deserialize backfills flags and cleared for older saves", () => {
+    // Simulate a pre-Phase-6 save that lacks `flags` and `cleared`. Typed as
+    // a plain record so `delete` is allowed on what would be required fields.
+    const legacy: Record<string, unknown> = JSON.parse(
+      JSON.stringify({
+        ...newGame(1),
+        dungeonState: enterDungeon(1).dungeonState,
+      }),
+    );
+    delete legacy.flags;
+    const ds = legacy.dungeonState as Record<string, unknown> | undefined;
+    if (ds) delete ds.cleared;
+
+    const restored = deserialize(JSON.stringify(legacy));
+    expect(restored.flags).toEqual({ permadeath: false, gameOver: false });
+    expect(restored.dungeonState?.cleared).toBe(false);
+  });
+
+  it("full-loop save/load: serialize mid-dungeon, deserialize, and the final state matches a no-save control", () => {
+    const seed = 1234;
+
+    // A longer sequence: enter, open chest, descend, open another chest, exit.
+    const runFull = (s: GameState): GameState => {
+      s = withToughHero(s);
+      const chest1 = findDungeonTile(s, "chest");
+      s = walkTo(s, chest1 ?? { x: 0, y: 0 });
+      s = reduce(s, { type: "OpenChest" });
+      const stairs = findDungeonTile(s, "stairsDown");
+      s = walkTo(s, stairs ?? { x: 0, y: 0 });
+      s = reduce(s, { type: "DescendStairs" });
+      const chest2 = findDungeonTile(s, "chest");
+      if (chest2) {
+        s = walkTo(s, chest2);
+        s = reduce(s, { type: "OpenChest" });
+      }
+      s = reduce(s, { type: "ExitDungeon" });
+      return s;
+    };
+
+    // Control: no save/load.
+    const control = runFull(enterDungeon(seed));
+
+    // Test: save after descending to floor 2, then continue.
+    let testState = withToughHero(enterDungeon(seed));
+    const chest1 = findDungeonTile(testState, "chest");
+    testState = walkTo(testState, chest1 ?? { x: 0, y: 0 });
+    testState = reduce(testState, { type: "OpenChest" });
+    const stairs = findDungeonTile(testState, "stairsDown");
+    testState = walkTo(testState, stairs ?? { x: 0, y: 0 });
+    testState = reduce(testState, { type: "DescendStairs" });
+    // Save mid-dungeon (on floor 2).
+    testState = deserialize(serialize(testState));
+    // Continue.
+    const chest2 = findDungeonTile(testState, "chest");
+    if (chest2) {
+      testState = walkTo(testState, chest2);
+      testState = reduce(testState, { type: "OpenChest" });
+    }
+    testState = reduce(testState, { type: "ExitDungeon" });
+
+    expect(testState).toEqual(control);
   });
 });

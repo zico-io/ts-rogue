@@ -360,5 +360,6 @@ function buildState(
     explored: exp,
     encounter: null,
     reachedBoss: false,
+    cleared: false,
   };
 }

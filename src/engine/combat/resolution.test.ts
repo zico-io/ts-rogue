@@ -373,13 +373,15 @@ describe("full lose scenario", () => {
     expect(after.scene).toBe("village");
     expect(after.battleState).toBeNull();
     expect(after.dungeonState).toBeNull();
-    expect(after.party[0].hp).toBe(after.party[0].maxHp);
-    expect(after.party[0].hp).toBe(20);
-    expect(after.party[0].mp).toBe(10);
+    // Phase 6 death handling: revive at 1 HP, 0 MP, half gold lost (floored).
+    expect(after.party[0].hp).toBe(1);
+    expect(after.party[0].mp).toBe(0);
+    expect(after.gold).toBe(25); // 50 starting gold - floor(50 / 2)
+    expect(after.flags.gameOver).toBe(false);
     const map = generateOverworldMap(1234);
     expect(after.worldState.player).toEqual(map.village);
     expect(after.worldState.encounterMeter).toBe(0);
-    expect(after.log.some((m) => m.includes("defeated"))).toBe(true);
+    expect(after.log.some((m) => m.includes("falls"))).toBe(true);
     expect(after.log.some((m) => m.includes("revived at the village"))).toBe(
       true,
     );
