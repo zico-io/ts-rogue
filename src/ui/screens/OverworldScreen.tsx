@@ -121,6 +121,7 @@ function OverworldBody({ state }: { state: GameState }) {
         />
         <Box
           borderStyle="single"
+          borderColor={theme.border}
           flexDirection="column"
           paddingX={1}
           width={minimapBoxWidth}

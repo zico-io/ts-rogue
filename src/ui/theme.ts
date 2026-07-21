@@ -13,9 +13,12 @@ export const theme = {
   // text hierarchy
   text: "#f2f2da",
   textMuted: "#a59b9d",
-  textFaint: "#6c6678",
+  // Blue-leaning faint (not the palette's #6c6678): pure darks downsample to
+  // invisible ANSI black on 16-color terminals, this keeps a visible blue.
+  textFaint: "#706a80",
   // chrome
-  border: "#5c5670",
+  // Palette indigo rather than the gray ramp for the same 16-color reason.
+  border: "#444f8d",
   borderFocus: "#e3aa3e",
   title: "#c6b4b1",
   // accent + states
