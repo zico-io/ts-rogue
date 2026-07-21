@@ -15,6 +15,12 @@ import type { GameEvent, GameState } from "../../engine/state/types";
 import { MessageLog } from "../components/MessageLog";
 import { Screen, useScreenContent } from "../components/Screen";
 import { theme } from "../theme";
+import {
+  hasTile,
+  SPRITE_CELLS,
+  spriteRows,
+  tilesSupported,
+} from "../tiles/kitty";
 import { type PackedEnemies, packEnemyColumns } from "./battle/render";
 
 export interface BattleScreenProps {
@@ -48,8 +54,9 @@ export function BattleScreen({ state, dispatch }: BattleScreenProps) {
   const [pendingSkill, setPendingSkill] = useState<string | null>(null);
 
   const bs = state.battleState;
-  const hero = state.party[0];
-  const knownSkills = classSkills(hero.classId);
+  const actor =
+    state.party.find((m) => m.id === bs?.activeMemberId) ?? state.party[0];
+  const knownSkills = classSkills(actor.classId);
 
   const reset = () => {
     setMode("action");
@@ -116,7 +123,7 @@ export function BattleScreen({ state, dispatch }: BattleScreenProps) {
       else if (down) setSkillCursor((c) => (c + 1) % knownSkills.length);
       else if (key.return) {
         const skill = knownSkills[skillCursor];
-        if (hero.mp >= skill.mpCost) {
+        if (actor.mp >= skill.mpCost) {
           if (skill.target === "enemy") {
             setMode("target");
             setTargetCursor(0);
@@ -125,7 +132,7 @@ export function BattleScreen({ state, dispatch }: BattleScreenProps) {
             dispatch({
               type: "BattleSkill",
               skillId: skill.id,
-              targetId: hero.id,
+              targetId: actor.id,
             });
             reset();
           }
@@ -145,7 +152,7 @@ export function BattleScreen({ state, dispatch }: BattleScreenProps) {
           dispatch({
             type: "BattleItem",
             itemId: item.itemId,
-            targetId: hero.id,
+            targetId: actor.id,
           });
           reset();
         }
@@ -200,6 +207,7 @@ export function BattleScreen({ state, dispatch }: BattleScreenProps) {
       <BattleBody
         state={state}
         bs={bs}
+        actor={actor}
         aliveEnemies={aliveEnemies}
         healItems={healItems}
         mode={mode}
@@ -216,6 +224,7 @@ export function BattleScreen({ state, dispatch }: BattleScreenProps) {
 interface BattleBodyProps {
   state: GameState;
   bs: BattleState;
+  actor: GameState["party"][number];
   aliveEnemies: BattleState["enemies"];
   healItems: GameState["inventory"];
   mode: Mode;
@@ -229,6 +238,7 @@ interface BattleBodyProps {
 function BattleBody({
   state,
   bs,
+  actor,
   aliveEnemies,
   healItems,
   mode,
@@ -239,19 +249,23 @@ function BattleBody({
   skills,
 }: BattleBodyProps) {
   const { width, height } = useScreenContent();
-  const hero = state.party[0];
 
   const logWidth = Math.min(BATTLE_LOG_MAX_WIDTH, Math.floor(width * 0.4));
   const viewportWidth = Math.max(1, width - logWidth - LAYOUT_GAP);
   // The framed viewport sits above the hero stat and turn-order lines.
   const viewportHeight = Math.max(1, height - 2);
 
+  const tiles = tilesSupported();
   const packed = packEnemyColumns(
     bs.enemies,
     aliveEnemies,
     mode === "target",
     targetCursor,
-    { columns: Math.max(1, viewportWidth - 2), gap: ENEMY_GAP },
+    {
+      columns: Math.max(1, viewportWidth - 2),
+      gap: ENEMY_GAP,
+      ...(tiles ? { artSize: SPRITE_CELLS } : {}),
+    },
   );
 
   return (
@@ -267,7 +281,7 @@ function BattleBody({
           overflow="hidden"
         >
           <Box flexGrow={1} alignItems="center" justifyContent="center">
-            <EnemyField packed={packed} />
+            <EnemyField packed={packed} tiles={tiles} />
           </Box>
 
           {/* Floating command window, anchored bottom-left over the viewport
@@ -282,7 +296,7 @@ function BattleBody({
             paddingX={1}
           >
             <Text bold color={theme.accent}>
-              {hero.name}
+              {actor.name}
             </Text>
             <ActionMenu
               mode={mode}
@@ -290,7 +304,7 @@ function BattleBody({
               actionCursor={actionCursor}
               skills={skills}
               skillCursor={skillCursor}
-              heroMp={hero.mp}
+              heroMp={actor.mp}
               healItems={healItems}
               itemCursor={itemCursor}
             />
@@ -298,11 +312,11 @@ function BattleBody({
         </Box>
 
         <Text>
-          {hero.name} Lv{hero.level} | XP {hero.xp}/{xpToNext(hero.level)} | ATK{" "}
-          {atkFrom(hero)} DEF {defFrom(hero)} SPD {spdFrom(hero)}
+          {actor.name} Lv{actor.level} | XP {actor.xp}/{xpToNext(actor.level)} |
+          ATK {atkFrom(actor)} DEF {defFrom(actor)} SPD {spdFrom(actor)}
         </Text>
         <Text color={theme.textMuted}>
-          Turn order: {initiativeNames(bs, hero.name).join(" -> ")}
+          Turn order: {initiativeNames(bs, state.party).join(" -> ")}
         </Text>
       </Box>
 
@@ -319,7 +333,18 @@ function BattleBody({
   );
 }
 
-function EnemyField({ packed }: { packed: PackedEnemies }) {
+/** Blank block the size of a sprite, keeping dead columns' layout stable. */
+const BLANK_SPRITE = Array.from({ length: SPRITE_CELLS.height }, () =>
+  " ".repeat(SPRITE_CELLS.width),
+).join("\n");
+
+function EnemyField({
+  packed,
+  tiles,
+}: {
+  packed: PackedEnemies;
+  tiles: boolean;
+}) {
   return (
     <Box flexDirection="column" gap={1}>
       {packed.rows.map((row, rowIndex) => (
@@ -335,9 +360,17 @@ function EnemyField({ packed }: { packed: PackedEnemies }) {
               : col.selected
                 ? theme.accent
                 : (col.enemy.color ?? theme.text);
+            const spriteId =
+              tiles && hasTile(col.enemy.id) ? col.enemy.id : null;
             return (
               <Box key={col.enemy.id} flexDirection="column">
-                <Text color={color}>{col.enemy.ascii.join("\n")}</Text>
+                {spriteId ? (
+                  <Text>
+                    {col.dead ? BLANK_SPRITE : spriteRows(spriteId).join("\n")}
+                  </Text>
+                ) : (
+                  <Text color={color}>{col.enemy.ascii.join("\n")}</Text>
+                )}
                 <Text bold color={color}>
                   {col.nameLine}
                 </Text>
@@ -445,9 +478,13 @@ function ActionMenu({
 }
 
 /** Map initiative combatant ids to display names for the turn-order line. */
-function initiativeNames(battle: BattleState, heroName: string): string[] {
+function initiativeNames(
+  battle: BattleState,
+  party: GameState["party"],
+): string[] {
   return battle.initiative.map((id) => {
-    if (id === "hero-1") return heroName;
+    const member = party.find((m) => m.id === id);
+    if (member) return member.name;
     const enemy = battle.enemies.find((entry) => entry.id === id);
     return enemy ? enemy.name : id;
   });

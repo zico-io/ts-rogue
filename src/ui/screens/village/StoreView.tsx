@@ -62,25 +62,30 @@ function deltaLine(delta: {
 }
 
 /**
- * Store sub-view (PROJECT_PLAN Phase 5, ROG-11). Two modes: `shop` browses the
- * static catalog and buys/sells stackable consumables one unit at a time; `pack`
- * manages generated, affix-bearing loot - equip, unequip, compare against the
- * slot it would fill, and sell for a rarity/affix-scaled price. Tab switches
- * modes; Esc returns to the village overview.
+ * Store sub-view (PROJECT_PLAN Phase 5, ROG-11; multi-member switcher in
+ * ROG-20). Two modes: `shop` browses the static catalog and buys/sells
+ * stackable consumables one unit at a time; `pack` manages generated,
+ * affix-bearing loot for the selected party member - equip, unequip, compare
+ * against the slot it would fill, and sell for a rarity/affix-scaled price.
+ * Tab switches modes; Left/Right cycles which party member `pack` mode
+ * targets (only shown once the party has more than one member); Esc returns
+ * to the village overview.
  */
 export function StoreView({ state, dispatch, onBack }: StoreViewProps) {
   const [mode, setMode] = useState<StoreMode>("shop");
   const [shopCursor, setShopCursor] = useState(0);
   const [packCursor, setPackCursor] = useState(0);
+  const [memberIndex, setMemberIndex] = useState(0);
 
-  const hero = state.party[0];
+  const clampedMemberIndex = Math.min(memberIndex, state.party.length - 1);
+  const member = state.party[clampedMemberIndex];
 
   const packEntries: PackEntry[] = [
     ...EQUIP_SLOTS.map((entry) => ({
       kind: "equipped" as const,
       slot: entry.slot,
       label: entry.label,
-      item: hero.equipment[entry.slot],
+      item: member.equipment[entry.slot],
     })),
     ...state.items.map((item) => ({ kind: "backpack" as const, item })),
   ];
@@ -95,6 +100,16 @@ export function StoreView({ state, dispatch, onBack }: StoreViewProps) {
     if (key.tab) {
       setMode((current) => (current === "shop" ? "pack" : "shop"));
       setShopCursor(0);
+      setPackCursor(0);
+      return;
+    }
+    if (state.party.length > 1 && (key.leftArrow || key.rightArrow)) {
+      setMemberIndex((current) => {
+        const next = key.leftArrow
+          ? current - 1 + state.party.length
+          : current + 1;
+        return next % state.party.length;
+      });
       setPackCursor(0);
       return;
     }
@@ -135,6 +150,7 @@ export function StoreView({ state, dispatch, onBack }: StoreViewProps) {
         dispatch({
           type: "EquipItem",
           instanceId: selectedPack.item.instanceId,
+          memberId: member.id,
         });
         return;
       }
@@ -147,9 +163,16 @@ export function StoreView({ state, dispatch, onBack }: StoreViewProps) {
       return;
     }
     if (input === "u") {
-      dispatch({ type: "UnequipItem", slot: selectedPack.slot });
+      dispatch({
+        type: "UnequipItem",
+        slot: selectedPack.slot,
+        memberId: member.id,
+      });
     }
   });
+
+  const switchHint =
+    state.party.length > 1 ? " Left/Right to switch member." : "";
 
   return (
     <Screen
@@ -157,13 +180,14 @@ export function StoreView({ state, dispatch, onBack }: StoreViewProps) {
       title={`Store - ${mode === "shop" ? "Shop" : "Backpack"}`}
       hint={
         mode === "shop"
-          ? "Up/down to select, b to buy 1, s to sell 1, Tab for backpack, Esc to go back."
-          : "Up/down to select, e to equip, u to unequip, s to sell, Tab for shop, Esc to go back."
+          ? `Up/down to select, b to buy 1, s to sell 1, Tab for backpack, Esc to go back.${switchHint}`
+          : `Up/down to select, e to equip, u to unequip, s to sell, Tab for shop, Esc to go back.${switchHint}`
       }
     >
       <Box flexDirection="column" gap={1}>
         <Text>
-          Hero ATK {atkFrom(hero)} DEF {defFrom(hero)} SPD {spdFrom(hero)}
+          {member.name} ATK {atkFrom(member)} DEF {defFrom(member)} SPD{" "}
+          {spdFrom(member)}
         </Text>
 
         {mode === "shop" ? (
@@ -172,7 +196,7 @@ export function StoreView({ state, dispatch, onBack }: StoreViewProps) {
           <BackpackPanel
             entries={packEntries}
             cursor={packIndex}
-            hero={hero}
+            member={member}
             selected={selectedPack}
           />
         )}
@@ -211,22 +235,22 @@ function ShopCatalog({ cursor, state }: ShopCatalogProps) {
 interface BackpackPanelProps {
   entries: readonly PackEntry[];
   cursor: number;
-  hero: GameState["party"][number];
+  member: GameState["party"][number];
   selected: PackEntry | undefined;
 }
 
 function BackpackPanel({
   entries,
   cursor,
-  hero,
+  member,
   selected,
 }: BackpackPanelProps) {
   let compare: string | null = null;
   if (selected?.kind === "backpack") {
-    const target = equipTargetSlot(hero, selected.item);
+    const target = equipTargetSlot(member, selected.item);
     const targetLabel =
       EQUIP_SLOTS.find((entry) => entry.slot === target)?.label ?? "?";
-    compare = `Equipping into ${targetLabel}: ${deltaLine(compareItem(hero, selected.item))}`;
+    compare = `Equipping into ${targetLabel}: ${deltaLine(compareItem(member, selected.item))}`;
   }
 
   return (

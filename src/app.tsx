@@ -31,6 +31,7 @@ import { OverworldScreen } from "./ui/screens/OverworldScreen";
 import { TitleScreen } from "./ui/screens/TitleScreen";
 import { VillageScreen } from "./ui/screens/VillageScreen";
 import { theme } from "./ui/theme";
+import { initTiles } from "./ui/tiles/kitty";
 
 const sceneKeys: Record<string, Scene> = {
   "1": "village",
@@ -306,6 +307,7 @@ process.on("uncaughtException", (error) =>
   failures.report("uncaught-exception", error, true),
 );
 
+initTiles();
 const rendered = failures.run("boot", true, () =>
   render(
     <TerminalLayoutProvider>

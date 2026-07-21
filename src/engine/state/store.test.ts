@@ -663,6 +663,33 @@ function walkTo(state: GameState, target: Point): GameState {
   return s;
 }
 
+describe("RecruitMember (ROG-20 dev/manual party growth)", () => {
+  it("appends a new member built from the class, up to 4 total", () => {
+    let state = newGame(1);
+    expect(state.party).toHaveLength(1);
+
+    state = reduce(state, { type: "RecruitMember", classId: "rogue" });
+    expect(state.party).toHaveLength(2);
+    expect(state.party[1]).toMatchObject({ id: "member-2", classId: "rogue" });
+    expect(state.log.at(-1)?.text).toMatch(/^Recruited .* the rogue!$/);
+
+    state = reduce(state, { type: "RecruitMember", classId: "wizard" });
+    state = reduce(state, { type: "RecruitMember", classId: "warrior" });
+    expect(state.party).toHaveLength(4);
+  });
+
+  it("logs and no-ops once the party is full", () => {
+    let state = newGame(1);
+    for (const classId of ["rogue", "wizard", "warrior"]) {
+      state = reduce(state, { type: "RecruitMember", classId });
+    }
+    expect(state.party).toHaveLength(4);
+    const after = reduce(state, { type: "RecruitMember", classId: "rogue" });
+    expect(after.party).toHaveLength(4);
+    expect(after.log.at(-1)?.text).toBe("The party is already full");
+  });
+});
+
 describe("Phase 5 loot, equip, and sell", () => {
   function makeItem(overrides: Partial<ItemInstance> = {}): ItemInstance {
     return {
@@ -690,7 +717,11 @@ describe("Phase 5 loot, equip, and sell", () => {
         items: [makeItem({ instanceId: "itm-1", baseId: "war-blade" })],
       };
       const atkBefore = atkFrom(before.party[0]);
-      const after = reduce(before, { type: "EquipItem", instanceId: "itm-1" });
+      const after = reduce(before, {
+        type: "EquipItem",
+        instanceId: "itm-1",
+        memberId: before.party[0].id,
+      });
       expect(after.items).toHaveLength(0);
       expect(after.party[0].equipment.weapon?.instanceId).toBe("itm-1");
       expect(atkFrom(after.party[0])).toBeGreaterThan(atkBefore);
@@ -713,6 +744,7 @@ describe("Phase 5 loot, equip, and sell", () => {
       const after = reduce(before, {
         type: "EquipItem",
         instanceId: "itm-new",
+        memberId: before.party[0].id,
       });
       expect(after.party[0].equipment.weapon?.instanceId).toBe("itm-new");
       expect(after.items.map((i) => i.instanceId)).toContain("itm-old");
@@ -720,7 +752,11 @@ describe("Phase 5 loot, equip, and sell", () => {
 
     it("no-ops on an unknown instance id", () => {
       const before = newGame(1);
-      const after = reduce(before, { type: "EquipItem", instanceId: "nope" });
+      const after = reduce(before, {
+        type: "EquipItem",
+        instanceId: "nope",
+        memberId: before.party[0].id,
+      });
       expect(after.party[0].equipment.weapon).toBeNull();
       expect(after.log.at(-1)?.text).toBe("There is nothing to equip");
     });
@@ -739,14 +775,60 @@ describe("Phase 5 loot, equip, and sell", () => {
           },
         ],
       };
-      const after = reduce(before, { type: "UnequipItem", slot: "weapon" });
+      const after = reduce(before, {
+        type: "UnequipItem",
+        slot: "weapon",
+        memberId: before.party[0].id,
+      });
       expect(after.party[0].equipment.weapon).toBeNull();
       expect(after.items.map((i) => i.instanceId)).toContain("itm-w");
     });
 
     it("no-ops on an empty slot", () => {
-      const after = reduce(newGame(1), { type: "UnequipItem", slot: "weapon" });
+      const after = reduce(newGame(1), {
+        type: "UnequipItem",
+        slot: "weapon",
+        memberId: newGame(1).party[0].id,
+      });
       expect(after.log.at(-1)?.text).toBe("Nothing is equipped there");
+    });
+
+    it("no-ops on an unknown memberId", () => {
+      const after = reduce(newGame(1), {
+        type: "UnequipItem",
+        slot: "weapon",
+        memberId: "nope",
+      });
+      expect(after.log.at(-1)?.text).toBe("Nothing is equipped there");
+    });
+  });
+
+  describe("EquipItem/UnequipItem target a specific memberId (ROG-20)", () => {
+    it("equips into the second party member's slot, leaving the first untouched", () => {
+      const recruited = reduce(newGame(1), {
+        type: "RecruitMember",
+        classId: "rogue",
+      });
+      const second = recruited.party[1];
+      const before = {
+        ...recruited,
+        items: [makeItem({ instanceId: "itm-2", baseId: "war-blade" })],
+      };
+      const after = reduce(before, {
+        type: "EquipItem",
+        instanceId: "itm-2",
+        memberId: second.id,
+      });
+      expect(after.party[0].equipment.weapon).toBeNull();
+      expect(after.party[1].equipment.weapon?.instanceId).toBe("itm-2");
+
+      const unequipped = reduce(after, {
+        type: "UnequipItem",
+        slot: "weapon",
+        memberId: second.id,
+      });
+      expect(unequipped.party[1].equipment.weapon).toBeNull();
+      expect(unequipped.items.map((i) => i.instanceId)).toContain("itm-2");
     });
   });
 
@@ -821,7 +903,11 @@ describe("Phase 5 loot, equip, and sell", () => {
 
       // Equip the signature drop -> it leaves the backpack and fills a slot.
       const sigId = signature?.instanceId ?? "";
-      let after = reduce(state, { type: "EquipItem", instanceId: sigId });
+      let after = reduce(state, {
+        type: "EquipItem",
+        instanceId: sigId,
+        memberId: state.party[0].id,
+      });
       const inSlot = equipmentSlots().some(
         (slot) => after.party[0].equipment[slot]?.instanceId === sigId,
       );
@@ -879,7 +965,7 @@ function withControlledHero(state: GameState, str: number): GameState {
 function withBattle(state: GameState, kind: "wandering" | "boss"): GameState {
   const floor = state.dungeonState?.floor ?? 1;
   const rng = new Rng(state.seed, state.rngState);
-  const battle = startBattle(rng, state.party[0], kind, floor, "dungeon");
+  const battle = startBattle(rng, state.party, kind, floor, "dungeon");
   return {
     ...state,
     scene: "battle",

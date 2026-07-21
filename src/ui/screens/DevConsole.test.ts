@@ -34,6 +34,16 @@ describe("runDevCommand", () => {
     expect(runDevCommand("bug", state).output).toEqual(["Usage: bug <title>"]);
   });
 
+  it("recruits a party member via a game event, and needs a classId", () => {
+    expect(runDevCommand("recruit warrior", state).event).toEqual({
+      type: "RecruitMember",
+      classId: "warrior",
+    });
+    expect(runDevCommand("recruit", state).output).toEqual([
+      "Usage: recruit <classId>",
+    ]);
+  });
+
   it("signals a flush of the local issue outbox", () => {
     expect(runDevCommand("flush", state).flushIssues).toBe(true);
   });

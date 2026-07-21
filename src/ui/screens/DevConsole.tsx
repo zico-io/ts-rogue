@@ -39,7 +39,7 @@ export function runDevCommand(
     case "help":
       return {
         output: [
-          "Commands: help, state, debug, scene <name>, log <message>, issue <title>, bug <title>, crash <message>, flush, clear",
+          "Commands: help, state, debug, scene <name>, log <message>, recruit <classId>, issue <title>, bug <title>, crash <message>, flush, clear",
         ],
       };
     case "state":
@@ -65,6 +65,13 @@ export function runDevCommand(
             output: ["Message logged"],
           }
         : { output: ["Usage: log <message>"] };
+    case "recruit":
+      return value
+        ? {
+            event: { type: "RecruitMember", classId: value },
+            output: [`Recruiting ${value} ...`],
+          }
+        : { output: ["Usage: recruit <classId>"] };
     case "issue":
     case "bug":
       return value

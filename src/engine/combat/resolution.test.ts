@@ -42,6 +42,7 @@ function makeEnemy(
 function battleVs(
   enemy: BattleEnemy,
   returnScene: Scene = "dungeon",
+  activeMemberId = "hero-1",
 ): BattleState {
   return {
     enemies: [enemy],
@@ -49,6 +50,8 @@ function battleVs(
     initiative: ["hero-1", enemy.id],
     awaitingCommand: true,
     returnScene,
+    activeMemberId,
+    defendingIds: [],
   };
 }
 
@@ -211,7 +214,11 @@ describe("rollInitiative", () => {
         8,
       ),
     ];
-    const order = rollInitiative(new Rng(1234), "hero-1", 5, enemies);
+    const order = rollInitiative(
+      new Rng(1234),
+      [createStartingHero()],
+      enemies,
+    );
     expect(order).toHaveLength(3);
     expect(order).toContain("hero-1");
     expect(order).toContain("slime-1");
@@ -222,7 +229,8 @@ describe("rollInitiative", () => {
     const enemies = [
       makeEnemy("slime-1", "slime", "Slime", 12, SLIME_STATS, 5, 3),
     ];
-    const runOnce = () => rollInitiative(new Rng(2024), "hero-1", 5, enemies);
+    const runOnce = () =>
+      rollInitiative(new Rng(2024), [createStartingHero()], enemies);
     expect(runOnce()).toEqual(runOnce());
   });
 });
@@ -254,7 +262,7 @@ describe("startBattle", () => {
   it("builds an ongoing battle awaiting the player's command", () => {
     const battle = startBattle(
       new Rng(1234),
-      createStartingHero(),
+      [createStartingHero()],
       "wandering",
       1,
       "dungeon",
@@ -265,6 +273,8 @@ describe("startBattle", () => {
     expect(battle.enemies.length).toBeGreaterThanOrEqual(1);
     expect(battle.initiative).toContain("hero-1");
     expect(battle.initiative).toHaveLength(1 + battle.enemies.length);
+    expect(battle.activeMemberId).toBe("hero-1");
+    expect(battle.defendingIds).toEqual([]);
     for (const enemy of battle.enemies) {
       expect(battle.initiative).toContain(enemy.id);
     }
@@ -427,5 +437,195 @@ describe("determinism and serializability", () => {
     });
     expect(state.battleState).not.toBeNull();
     expect(JSON.parse(JSON.stringify(state))).toEqual(state);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Multi-member party (ROG-20)                                                */
+/* -------------------------------------------------------------------------- */
+
+/** Build a GameState mid-battle against a fixed `enemy` for a given party. */
+function stateInMultiBattle(
+  seed: number,
+  members: PartyMember[],
+  enemy: BattleEnemy,
+): GameState {
+  const base = newGame(seed);
+  const rng = new Rng(seed, base.rngState);
+  const living = members.filter((m) => m.hp > 0);
+  const initiative = rollInitiative(rng, living, [enemy]);
+  const livingIds = new Set(living.map((m) => m.id));
+  const activeMemberId =
+    initiative.find((id) => livingIds.has(id)) ?? living[0].id;
+  const battleState: BattleState = {
+    enemies: [enemy],
+    status: "ongoing",
+    initiative,
+    awaitingCommand: true,
+    returnScene: "dungeon",
+    activeMemberId,
+    defendingIds: [],
+  };
+  return {
+    ...base,
+    scene: "battle",
+    rngState: rng.getState(),
+    party: members,
+    battleState,
+  };
+}
+
+describe("multi-member party (ROG-20)", () => {
+  function member(id: string, name: string): PartyMember {
+    return createStartingHero("warrior", id, name);
+  }
+
+  describe("rollInitiative", () => {
+    it("includes all living party members plus enemies, deterministic for a fixed seed", () => {
+      const memberA = member("member-a", "Aria");
+      const memberB = member("member-b", "Boro");
+      const enemies = [
+        makeEnemy("slime-1", "slime", "Slime", 12, SLIME_STATS, 5, 3),
+      ];
+      const order = rollInitiative(new Rng(42), [memberA, memberB], enemies);
+      expect(order).toHaveLength(3);
+      expect(order).toContain(memberA.id);
+      expect(order).toContain(memberB.id);
+      expect(order).toContain("slime-1");
+      const again = rollInitiative(new Rng(42), [memberA, memberB], enemies);
+      expect(again).toEqual(order);
+    });
+  });
+
+  it("both members get a turn in a round: the active member advances to the other after one dispatch", () => {
+    const memberA = member("member-a", "Aria");
+    const memberB = member("member-b", "Boro");
+    // Very tough so a single hit never kills it and the round keeps going.
+    const slime = makeEnemy(
+      "slime-1",
+      "slime",
+      "Slime",
+      999,
+      SLIME_STATS,
+      5,
+      3,
+    );
+    const state = stateInMultiBattle(1234, [memberA, memberB], slime);
+    const firstActive = state.battleState?.activeMemberId;
+    const otherId = firstActive === memberA.id ? memberB.id : memberA.id;
+
+    const after = reduce(state, {
+      type: "BattleAttack",
+      targetId: "slime-1",
+    });
+    expect(after.battleState?.status).toBe("ongoing");
+    expect(after.battleState?.activeMemberId).toBe(otherId);
+    // Both members are still present, carried forward with their current HP/MP.
+    expect(after.party.map((m) => m.id).sort()).toEqual(
+      [memberA.id, memberB.id].sort(),
+    );
+  });
+
+  it("skips a KO'd member's turn and never routes an enemy attack to them", () => {
+    const memberA = member("member-a", "Aria");
+    const koMember = { ...member("member-b", "Boro"), hp: 0 };
+    const slime = makeEnemy(
+      "slime-1",
+      "slime",
+      "Slime",
+      999,
+      SLIME_STATS,
+      5,
+      3,
+    );
+    const state = stateInMultiBattle(1234, [memberA, koMember], slime);
+
+    expect(state.battleState?.initiative).not.toContain(koMember.id);
+    expect(state.battleState?.activeMemberId).toBe(memberA.id);
+
+    let s = state;
+    for (let i = 0; i < 10 && s.battleState?.status === "ongoing"; i++) {
+      s = reduce(s, { type: "BattleAttack", targetId: "slime-1" });
+      expect(s.battleState?.activeMemberId).not.toBe(koMember.id);
+    }
+    // The KO'd member was never targeted, so their HP never moved off zero.
+    expect(s.party.find((m) => m.id === koMember.id)?.hp).toBe(0);
+  });
+
+  it("defeat only fires once the whole party is down; one survivor keeps the battle ongoing", () => {
+    const weakA = { ...member("member-a", "Aria"), hp: 5, maxHp: 5, mp: 0 };
+    const weakB = { ...member("member-b", "Boro"), hp: 5, maxHp: 5, mp: 0 };
+    const guardian = makeEnemy(
+      "guardian-1",
+      "dungeon-guardian",
+      "Guardian",
+      999,
+      { str: 40, agi: 5, vit: 30, int: 2 },
+      80,
+      120,
+    );
+    let s = stateInMultiBattle(1234, [weakA, weakB], guardian);
+    let sawOneDownWhileOngoing = false;
+    for (let i = 0; i < 100 && s.scene === "battle"; i++) {
+      s = reduce(s, { type: "BattleAttack", targetId: "guardian-1" });
+      if (s.scene === "battle") {
+        const aliveCount = s.party.filter((m) => m.hp > 0).length;
+        expect(aliveCount).toBeGreaterThanOrEqual(1);
+        if (aliveCount === 1) sawOneDownWhileOngoing = true;
+      }
+    }
+    expect(sawOneDownWhileOngoing).toBe(true);
+    // Once both are down, the battle resolves to defeat (revived at the village).
+    expect(s.scene).toBe("village");
+    expect(s.battleState).toBeNull();
+    expect(s.party.every((m) => m.hp === 1 && m.mp === 0)).toBe(true);
+  });
+
+  it("victory grants XP to every living member but excludes a KO'd member", () => {
+    const memberA = member("member-a", "Aria");
+    const koMember = { ...member("member-b", "Boro"), hp: 0 };
+    const richSlime = makeEnemy(
+      "rich-1",
+      "slime",
+      "Rich Slime",
+      3,
+      { str: 1, agi: 1, vit: 1, int: 1 },
+      80,
+      20,
+    );
+    const state = stateInMultiBattle(1234, [memberA, koMember], richSlime);
+    const after = reduce(state, {
+      type: "BattleSkill",
+      skillId: "flame",
+      targetId: "rich-1",
+    });
+    expect(after.battleState).toBeNull();
+    const memberAAfter = after.party.find((m) => m.id === memberA.id);
+    const koAfter = after.party.find((m) => m.id === koMember.id);
+    expect(memberAAfter?.xp).toBeGreaterThan(0);
+    expect(koAfter?.hp).toBe(0);
+    expect(koAfter?.xp).toBe(koMember.xp);
+  });
+
+  it("a successful flee carries every party member's HP/MP forward", () => {
+    const memberB = member("member-b", "Boro");
+    const slime = makeEnemy("slime-1", "slime", "Slime", 30, SLIME_STATS, 5, 3);
+    let fled: GameState | null = null;
+    for (let seed = 1; seed <= 200 && !fled; seed++) {
+      // A huge speed edge pushes flee chance to its clamped max, and puts
+      // this member first in initiative almost every seed.
+      const fastA = {
+        ...member("member-a", "Aria"),
+        stats: { str: 5, agi: 999, vit: 5, int: 5 },
+      };
+      const candidate = stateInMultiBattle(seed, [fastA, memberB], slime);
+      if (candidate.battleState?.activeMemberId !== fastA.id) continue;
+      const after = reduce(candidate, { type: "BattleFlee" });
+      if (after.battleState === null) fled = after;
+    }
+    expect(fled).not.toBeNull();
+    expect(fled?.party).toHaveLength(2);
+    expect(fled?.party.find((m) => m.id === memberB.id)?.hp).toBe(memberB.hp);
+    expect(fled?.party.find((m) => m.id === memberB.id)?.mp).toBe(memberB.mp);
   });
 });
