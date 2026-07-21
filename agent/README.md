@@ -23,6 +23,16 @@ The root agent performs bounded orientation, delegates ordinary implementation
 to one coding child, and retains review and external coordination. Agent Session
 activities carry progress and approval prompts without writing issue comments.
 
+When the assigned issue has sub-issues, the agent treats it as a group (ralph
+mode): it sequences the sub-issues by their Linear `blocks`/`blocked by`
+relations, priority, and `PROJECT_PLAN.md` phase, then drives one at a time,
+advancing to the next only after the current sub-issue's pull request merges to
+main. Linear is the only cross-session store - order and readiness are recomputed
+from it each turn - and the merge that advances the group is the existing
+`isMainMerge` signal in [`channels/github.ts`](channels/github.ts), which tags
+the merged issue's identifier so the woken session knows which group to advance.
+The sequencing and loop contract lives in [`instructions.md`](instructions.md).
+
 ## Development
 
 Run the local agent with:
@@ -33,5 +43,23 @@ pnpm eve:dev
 
 Agent integrations and sandbox behavior are covered by the root-level Vitest
 suite. Run `pnpm test:unit` or the complete `pnpm check` before handoff.
+
+Ralph mode has an end-to-end eval in [`evals/ralph`](../evals/ralph) that drives
+the real agent against a dedicated Linear group and asserts it sequences and
+drives the ready sub-issue first. It skips unless the fixture is set; run it
+against a sandbox-reachable target:
+
+```bash
+RALPH_EVAL_PARENT=ROG-200 RALPH_EVAL_READY=ROG-202 RALPH_EVAL_BLOCKED=ROG-203 \
+  eve eval ralph --url https://<deployment>
+```
+
+CI runs this weekly and on demand via
+[`.github/workflows/ralph-eval.yml`](../.github/workflows/ralph-eval.yml). It
+stays off until you opt in: set the repo variable `RALPH_EVAL_ENABLED=true` and
+`EVE_DEPLOYMENT_URL`, then add the secrets the workflow references -
+`RALPH_EVAL_PARENT`/`READY`/`BLOCKED` for the fixture and the Vercel target auth
+(`VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`, `VERCEL_AUTOMATION_BYPASS_SECRET`, or
+`EVE_EVAL_AUTH_TOKEN`).
 
 Repository workflow and requirements live in the [root README](../README.md).

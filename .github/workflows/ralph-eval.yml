@@ -1,0 +1,42 @@
+name: Ralph eval
+
+# End-to-end eval for ralph mode (issue groups). It drives the deployed agent
+# against a dedicated Linear fixture and is authenticated, deployment-dependent,
+# and spins a real Vercel Sandbox - so it runs weekly and on demand, never on
+# pull requests. Opt in by setting the repo variable RALPH_EVAL_ENABLED=true
+# once the fixture and secrets below are configured; the job is skipped
+# otherwise.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "37 9 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  ralph-eval:
+    if: ${{ vars.RALPH_EVAL_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Run ralph end-to-end eval against the deployment
+        run: pnpm exec eve eval ralph --strict --url "$EVE_DEPLOYMENT_URL"
+        env:
+          # Deployment target (repo variable) and the Linear test group. Without
+          # the fixture the eval self-skips; see evals/ralph/shared.ts.
+          EVE_DEPLOYMENT_URL: ${{ vars.EVE_DEPLOYMENT_URL }}
+          RALPH_EVAL_PARENT: ${{ secrets.RALPH_EVAL_PARENT }}
+          RALPH_EVAL_READY: ${{ secrets.RALPH_EVAL_READY }}
+          RALPH_EVAL_BLOCKED: ${{ secrets.RALPH_EVAL_BLOCKED }}
+          # Auth for --url against the Vercel deployment (see eve targets docs).
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+          EVE_EVAL_AUTH_TOKEN: ${{ secrets.EVE_EVAL_AUTH_TOKEN }}
