@@ -2,27 +2,15 @@ import { Text, useInput } from "ink";
 import { useState } from "react";
 import type { GameState } from "../../../engine/state/types";
 import { Screen } from "../../components/Screen";
+import { normalizeInkKey } from "../../hooks/normalizeInkKey";
 import { theme } from "../../theme";
+import {
+  OPTIONS,
+  type OverviewUiState,
+  reduceOverviewUi,
+  resolveOverviewIntent,
+} from "./interaction";
 import type { VillageBuilding } from "./types";
-
-/** A selectable row on the overview: a building sub-view, or leaving to the overworld. */
-interface MenuOption {
-  key: VillageBuilding | "overworld";
-  label: string;
-  shortcut: string;
-}
-
-const OPTIONS: readonly MenuOption[] = [
-  { key: "inn", label: "Inn - rest and heal the party", shortcut: "i" },
-  { key: "church", label: "Church - save your progress", shortcut: "c" },
-  { key: "store", label: "Store - buy and sell items", shortcut: "s" },
-  { key: "tavern", label: "Tavern - recruit party members", shortcut: "t" },
-  {
-    key: "overworld",
-    label: "Leave town - venture into the overworld",
-    shortcut: "o",
-  },
-];
 
 export interface VillageOverviewProps {
   state: GameState;
@@ -36,28 +24,28 @@ export function VillageOverview({
   onEnter,
   onLeave,
 }: VillageOverviewProps) {
-  const [cursor, setCursor] = useState(0);
-
-  const choose = (option: MenuOption) => {
-    if (option.key === "overworld") onLeave();
-    else onEnter(option.key);
-  };
+  const [overviewUi, setOverviewUi] = useState<OverviewUiState>({
+    cursor: 0,
+  });
 
   useInput((input, key) => {
-    if (key.upArrow) {
-      setCursor((current) => (current + OPTIONS.length - 1) % OPTIONS.length);
-      return;
+    const keyName = normalizeInkKey(input, key);
+    if (!keyName) return;
+    const intent = resolveOverviewIntent(keyName);
+    if (!intent) return;
+
+    const result = reduceOverviewUi(overviewUi, intent);
+    switch (result.effect?.type) {
+      case "enter":
+        onEnter(result.effect.building);
+        break;
+      case "leave":
+        onLeave();
+        break;
+      default:
+        break;
     }
-    if (key.downArrow) {
-      setCursor((current) => (current + 1) % OPTIONS.length);
-      return;
-    }
-    if (key.return) {
-      choose(OPTIONS[cursor]);
-      return;
-    }
-    const shortcut = OPTIONS.find((option) => option.shortcut === input);
-    if (shortcut) choose(shortcut);
+    setOverviewUi(result.state);
   });
 
   return (
@@ -68,10 +56,11 @@ export function VillageOverview({
     >
       {OPTIONS.map((option, index) => (
         <Text
-          color={index === cursor ? theme.accent : undefined}
+          color={index === overviewUi.cursor ? theme.accent : undefined}
           key={option.key}
         >
-          {index === cursor ? "> " : "  "}[{option.shortcut}] {option.label}
+          {index === overviewUi.cursor ? "> " : "  "}[{option.shortcut}]{" "}
+          {option.label}
         </Text>
       ))}
     </Screen>

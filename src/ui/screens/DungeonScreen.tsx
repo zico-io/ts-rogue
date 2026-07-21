@@ -3,8 +3,14 @@ import { useEffect, useRef, useState } from "react";
 import type { GameEvent, GameState } from "../../engine/state/types";
 import type { DungeonState } from "../../engine/world/types";
 import { Screen, useScreenContent } from "../components/Screen";
+import { normalizeInkKey } from "../hooks/normalizeInkKey";
 import { dungeonRamp, theme } from "../theme";
 import { type TileName, tilesSupported, tileText } from "../tiles/kitty";
+import {
+  type DungeonUiState,
+  reduceDungeonUi,
+  resolveDungeonIntent,
+} from "./dungeon/interaction";
 import {
   type CameraPose,
   lerpPose,
@@ -111,22 +117,35 @@ function useCameraPose(ds: DungeonState): CameraPose {
  * dungeon is never a dead-end after clearing a floor or defeating the boss.
  */
 export function DungeonScreen({ state, dispatch }: DungeonScreenProps) {
+  const [dungeonUi, setDungeonUi] = useState<DungeonUiState>({});
+
   useInput((input, key) => {
-    if (key.upArrow || input === "w" || input === "k") {
-      dispatch({ type: "StepDungeon", direction: "forward" });
-    } else if (key.downArrow || input === "s" || input === "j") {
-      dispatch({ type: "StepDungeon", direction: "back" });
-    } else if (key.leftArrow || input === "a" || input === "h") {
-      dispatch({ type: "TurnDungeon", direction: "left" });
-    } else if (key.rightArrow || input === "d" || input === "l") {
-      dispatch({ type: "TurnDungeon", direction: "right" });
-    } else if (input === "o") {
-      dispatch({ type: "OpenChest" });
-    } else if (input === ">" || key.return) {
-      dispatch({ type: "DescendStairs" });
-    } else if (input === "<") {
-      dispatch({ type: "ExitDungeon" });
+    const keyName = normalizeInkKey(input, key);
+    if (!keyName) return;
+    const intent = resolveDungeonIntent(keyName);
+    if (!intent) return;
+
+    const result = reduceDungeonUi(dungeonUi, intent);
+    switch (result.effect?.type) {
+      case "step":
+        dispatch({ type: "StepDungeon", direction: result.effect.direction });
+        break;
+      case "turn":
+        dispatch({ type: "TurnDungeon", direction: result.effect.direction });
+        break;
+      case "openChest":
+        dispatch({ type: "OpenChest" });
+        break;
+      case "descend":
+        dispatch({ type: "DescendStairs" });
+        break;
+      case "exit":
+        dispatch({ type: "ExitDungeon" });
+        break;
+      default:
+        break;
     }
+    setDungeonUi(result.state);
   });
 
   const ds = state.dungeonState;
