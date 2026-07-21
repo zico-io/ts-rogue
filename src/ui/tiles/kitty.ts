@@ -14,6 +14,7 @@
  */
 
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 const PLACEHOLDER = "\u{10EEEE}";
 /** First 8 entries of kitty's row/column-diacritics table (indices 0..7). */
@@ -143,8 +144,9 @@ export function initTiles(): void {
   if (initialized || !tilesSupported()) return;
   initialized = true;
   const images = NAMES.map((name): [TileName, string] => {
-    const path = new URL(`../../../assets/tiles/${name}.png`, import.meta.url)
-      .pathname;
+    const path = fileURLToPath(
+      new URL(`../../../assets/tiles/${name}.png`, import.meta.url),
+    );
     return [name, readFileSync(path).toString("base64")];
   });
   process.stdout.write(initSequence(images));

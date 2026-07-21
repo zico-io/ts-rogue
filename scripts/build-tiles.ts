@@ -9,6 +9,7 @@
  * Run after changing TILE_SOURCES: pnpm tsx scripts/build-tiles.ts
  */
 import { mkdirSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 import {
   SPRITE_CELLS,
@@ -16,9 +17,10 @@ import {
   type TileSource,
 } from "../src/ui/tiles/kitty";
 
-const SHEET = new URL("../assets/urizen_onebit_tileset__v2d0.png", import.meta.url)
-  .pathname;
-const OUT_DIR = new URL("../assets/tiles/", import.meta.url).pathname;
+const SHEET = fileURLToPath(
+  new URL("../assets/urizen_onebit_tileset__v2d0.png", import.meta.url),
+);
+const OUT_DIR = fileURLToPath(new URL("../assets/tiles/", import.meta.url));
 const TILE = 12;
 const PITCH = 13;
 const MONSTER_SCALE = 8;
