@@ -9,8 +9,22 @@ export function serialize(state: GameState): string {
   return JSON.stringify(state);
 }
 
+/**
+ * Parse a serialized `GameState` JSON blob. Adds forward-compatible defaults
+ * for fields introduced after the initial release so an older save does not
+ * crash the engine: `flags` (Phase 6, ROG-12) and `dungeonState.cleared`
+ * (Phase 6, ROG-12) are filled in when absent. Everything is plain data so no
+ * non-serializable values are introduced.
+ */
 export function deserialize(json: string): GameState {
-  return JSON.parse(json) as GameState;
+  const state = JSON.parse(json) as GameState;
+  if (!state.flags) {
+    state.flags = { permadeath: false, gameOver: false };
+  }
+  if (state.dungeonState && state.dungeonState.cleared === undefined) {
+    state.dungeonState.cleared = false;
+  }
+  return state;
 }
 
 /** Default sqlite file for the single save slot. */
@@ -53,6 +67,21 @@ export function loadGame(
       .prepare("SELECT state_json FROM saves WHERE slot = ?")
       .get(SAVE_SLOT) as { state_json: string } | undefined;
     return row ? deserialize(row.state_json) : undefined;
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * Clear the single save slot (Phase 6, ROG-12). Called by the UI when a
+ * permadeath run ends so the next boot starts a fresh run instead of loading
+ * the dead game-over state. I/O lives here in the persistence layer, not the
+ * engine; the engine only sets the `gameOver` flag.
+ */
+export function clearSave(dbPath: string = DEFAULT_SAVE_PATH): void {
+  const db = openDb(dbPath);
+  try {
+    db.prepare("DELETE FROM saves WHERE slot = ?").run(SAVE_SLOT);
   } finally {
     db.close();
   }
