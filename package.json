@@ -17,6 +17,9 @@
     "game": "tsx src/app.tsx",
     "game:dev": "tsx --env-file-if-exists=.env.local src/app.tsx --dev",
     "play": "bash scripts/play.sh",
+    "web:build": "vite build",
+    "web:dev": "vite",
+    "web:preview": "vite preview",
     "prepare": "git config core.hooksPath .githooks || true",
     "typecheck": "tsc --noEmit",
     "test:unit": "vitest run",
@@ -30,6 +33,7 @@
     "ai": "^7.0.26",
     "eve": "^0.25.2",
     "ink": "^7",
+    "pixi.js": "^8.19.0",
     "react": "^19",
     "rot-js": "^2",
     "zod": "4.4.3"
@@ -43,6 +47,7 @@
     "sharp": "^0.35.3",
     "tsx": "^4",
     "typescript": "^7",
+    "vite": "^8.1.5",
     "vitest": "^4"
   }
 }
