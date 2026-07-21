@@ -1,4 +1,4 @@
-import { Box, render, Text, useApp, useInput } from "ink";
+import { Box, type Key, render, Text, useApp, useInput } from "ink";
 import {
   Component,
   type ErrorInfo,
@@ -6,7 +6,6 @@ import {
   useEffect,
   useState,
 } from "react";
-import { CLASSES } from "./data/classes";
 import { attempt } from "./engine/state/incidents";
 import { GameStore, newGame } from "./engine/state/store";
 import type { Scene } from "./engine/state/types";
@@ -28,6 +27,7 @@ import {
   useTerminalLayout,
 } from "./ui/components/MinSizeGuard";
 import { useGameState } from "./ui/hooks/useGameState";
+import type { KeyName } from "./ui/scene/input";
 import { BattleScreen } from "./ui/screens/BattleScreen";
 import { CrashScreen } from "./ui/screens/CrashScreen";
 import { DevConsole } from "./ui/screens/DevConsole";
@@ -35,12 +35,12 @@ import { DungeonScreen } from "./ui/screens/DungeonScreen";
 import { GameOverScreen } from "./ui/screens/GameOverScreen";
 import { OverworldScreen } from "./ui/screens/OverworldScreen";
 import { SettingsScreen } from "./ui/screens/SettingsScreen";
+import { TitleScreen } from "./ui/screens/TitleScreen";
 import {
-  MAX_NAME_LENGTH,
-  mainMenuOptions,
-  TitleScreen,
-  type TitleView,
-} from "./ui/screens/TitleScreen";
+  reduceTitleUi,
+  resolveTitleIntent,
+  type TitleUiState,
+} from "./ui/screens/title/interaction";
 import { VillageScreen } from "./ui/screens/VillageScreen";
 import { theme } from "./ui/theme";
 import { initTiles } from "./ui/tiles/kitty";
@@ -54,6 +54,32 @@ const sceneKeys: Record<string, Scene> = {
 
 function isQuit(input: string, key: { ctrl: boolean }): boolean {
   return input === "q" || (key.ctrl && input === "c");
+}
+
+// Normalizes Ink's (input, key) pair to the renderer-agnostic KeyName
+// alphabet the title flow's Keymaps are written against. Ctrl/meta-modified
+// keys other than Ctrl-C are dropped (undefined) so they can't be typed into
+// the hero-name buffer, matching the previous inline `!key.ctrl && !key.meta`
+// guard.
+function normalizeInkKey(input: string, key: Key): KeyName | undefined {
+  if (key.ctrl && input === "c") return "ctrl+c";
+  if (key.ctrl || key.meta) return undefined;
+  if (key.upArrow) return "up";
+  if (key.downArrow) return "down";
+  if (key.leftArrow) return "left";
+  if (key.rightArrow) return "right";
+  if (key.return) return "enter";
+  if (key.escape) return "escape";
+  if (key.backspace || key.delete) return "backspace";
+  if (key.tab) return "tab";
+  if (input === "`") return "`";
+  if (input === "q") return "q";
+  if (input === "h" || input === "j" || input === "k" || input === "l") {
+    return input;
+  }
+  if (!input) return undefined;
+  if (/^[0-9]$/.test(input)) return `digit:${input}`;
+  return `char:${input}`;
 }
 
 function App({
@@ -78,11 +104,13 @@ function App({
   const [started, setStarted] = useState(false);
   const [hasSave, setHasSave] = useState(initialHasSave);
   const [settings, setSettings] = useState(initialSettings);
-  const [titleView, setTitleView] = useState<TitleView>("menu");
-  const [menuCursor, setMenuCursor] = useState(0);
-  const [classCursor, setClassCursor] = useState(0);
-  const [modeCursor, setModeCursor] = useState(0);
-  const [nameInput, setNameInput] = useState(initialSettings.defaultHeroName);
+  const [titleUi, setTitleUi] = useState<TitleUiState>({
+    view: "menu",
+    menuCursor: 0,
+    classCursor: 0,
+    modeCursor: 0,
+    nameInput: initialSettings.defaultHeroName,
+  });
   const [consoleOpen, setConsoleOpen] = useState(false);
   const [consoleOutput, setConsoleOutput] = useState<string[]>([]);
   const [fatal, setFatal] = useState<IncidentDisplay | undefined>(() =>
@@ -104,95 +132,54 @@ function App({
   // seeded with the custom seed setting or the boot seed so `--seed` stays
   // deterministic (ROG-16 play harness). Settings is a separate component that
   // owns its own input, so this handler is inactive there. (Phase 6, ROG-12
-  // permadeath; ROG-17 class; title overhaul.)
+  // permadeath; ROG-17 class; title overhaul.) The actual view/cursor
+  // transitions and side effects live in the pure `reduceTitleUi` (ROG-56);
+  // this handler only normalizes Ink's input and applies the result.
   useInput(
     (input, key) => {
       if (devConsoleEnabled && input === "`") return;
 
-      // Name entry accepts printable chars, so bare `q` must type - only
-      // Ctrl-C quits here; Esc backs out to mode selection.
-      if (titleView === "name") {
-        if (key.ctrl && input === "c") {
-          exit();
-        } else if (key.escape) {
-          setTitleView("mode");
-        } else if (key.return) {
-          const name = nameInput.trim();
-          if (!name) return;
+      const keyName = normalizeInkKey(input, key);
+      if (!keyName) return;
+      const intent = resolveTitleIntent(titleUi.view, keyName);
+      if (!intent) return;
+
+      const result = reduceTitleUi(titleUi, intent, {
+        hasSave,
+        defaultPermadeath: settings.defaultPermadeath,
+        defaultHeroName: settings.defaultHeroName,
+      });
+      let nextState = result.state;
+
+      switch (result.effect?.type) {
+        case "startNewGame":
           store.dispatch({
             type: "NewGame",
             seed: settings.customSeed ?? seed,
-            classId: CLASSES[classCursor].id,
-            permadeath: modeCursor === 1,
-            name,
+            classId: result.effect.classId,
+            permadeath: result.effect.permadeath,
+            name: result.effect.name,
           });
           setStarted(true);
-        } else if (key.backspace || key.delete) {
-          setNameInput((value) => value.slice(0, -1));
-        } else if (
-          input &&
-          !key.ctrl &&
-          !key.meta &&
-          nameInput.length < MAX_NAME_LENGTH
-        ) {
-          setNameInput((value) => value + input);
-        }
-        return;
+          break;
+        case "continueGame":
+          setStarted(true);
+          break;
+        case "openSettings":
+          nextState = { ...nextState, view: "settings" };
+          break;
+        case "quit":
+          exit();
+          break;
+        default:
+          break;
       }
 
-      if (isQuit(input, key)) {
-        exit();
-        return;
-      }
-
-      if (titleView === "menu") {
-        const options = mainMenuOptions(hasSave);
-        if (key.upArrow) {
-          setMenuCursor((c) => (c + options.length - 1) % options.length);
-        } else if (key.downArrow) {
-          setMenuCursor((c) => (c + 1) % options.length);
-        } else if (key.return) {
-          const option = options[menuCursor];
-          if (option.id === "new") {
-            setClassCursor(0);
-            setTitleView("class");
-          } else if (option.id === "continue") {
-            setStarted(true);
-          } else if (option.id === "settings") {
-            setTitleView("settings");
-          } else {
-            exit();
-          }
-        }
-        return;
-      }
-
-      if (titleView === "class") {
-        if (key.escape) {
-          setTitleView("menu");
-        } else if (key.upArrow) {
-          setClassCursor((c) => (c + CLASSES.length - 1) % CLASSES.length);
-        } else if (key.downArrow) {
-          setClassCursor((c) => (c + 1) % CLASSES.length);
-        } else if (key.return) {
-          setModeCursor(settings.defaultPermadeath ? 1 : 0);
-          setTitleView("mode");
-        }
-        return;
-      }
-
-      // titleView === "mode"
-      if (key.escape) {
-        setTitleView("class");
-      } else if (key.upArrow || key.downArrow) {
-        setModeCursor((c) => (c === 0 ? 1 : 0));
-      } else if (key.return) {
-        setNameInput(settings.defaultHeroName);
-        setTitleView("name");
-      }
+      setTitleUi(nextState);
     },
     {
-      isActive: !fatal && !started && !consoleOpen && titleView !== "settings",
+      isActive:
+        !fatal && !started && !consoleOpen && titleUi.view !== "settings",
     },
   );
 
@@ -254,7 +241,7 @@ function App({
   const deleteSave = () => {
     failures.run("clear", false, clearSave);
     setHasSave(false);
-    setMenuCursor(0);
+    setTitleUi((ui) => ({ ...ui, menuCursor: 0 }));
   };
 
   let content: ReactNode;
@@ -282,22 +269,22 @@ function App({
         alignItems="center"
         justifyContent="center"
       >
-        {titleView === "settings" ? (
+        {titleUi.view === "settings" ? (
           <SettingsScreen
             settings={settings}
             hasSave={hasSave}
             onUpdate={updateSettings}
             onDeleteSave={deleteSave}
-            onClose={() => setTitleView("menu")}
+            onClose={() => setTitleUi((ui) => ({ ...ui, view: "menu" }))}
           />
         ) : (
           <TitleScreen
-            titleView={titleView}
+            titleView={titleUi.view}
             hasSave={hasSave}
-            menuCursor={menuCursor}
-            classCursor={classCursor}
-            modeCursor={modeCursor}
-            nameInput={nameInput}
+            menuCursor={titleUi.menuCursor}
+            classCursor={titleUi.classCursor}
+            modeCursor={titleUi.modeCursor}
+            nameInput={titleUi.nameInput}
           />
         )}
         {devConsoleEnabled && (
