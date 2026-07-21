@@ -1,0 +1,92 @@
+/**
+ * Visual identity tokens (ROG-31). Every raw color in the UI lives here —
+ * components consume semantic tokens, never hex strings. Palette: the branded
+ * 64-swatch ramp set attached to ROG-31.
+ *
+ * ponytail: no terminal-capability detection — Ink routes hex through chalk,
+ * which downsamples truecolor -> 256 -> 16 by itself.
+ */
+
+import type { LogKind } from "../engine/state/types";
+
+export const theme = {
+  // text hierarchy
+  text: "#f2f2da",
+  textMuted: "#a59b9d",
+  textFaint: "#6c6678",
+  // chrome
+  border: "#5c5670",
+  borderFocus: "#e3aa3e",
+  title: "#c6b4b1",
+  // accent + states
+  accent: "#e3aa3e",
+  danger: "#e74343",
+  warn: "#f8a64c",
+  heal: "#5fae3b",
+  mp: "#23b4e9",
+  gold: "#fbc254",
+  // message log kinds
+  msg: {
+    damage: "#fa7d66",
+    loot: "#fbc254",
+    quest: "#ca7ef2",
+    system: "#837d83",
+  } satisfies Record<LogKind, string>,
+  // item rarity
+  rarity: {
+    common: "#c6b4b1",
+    magic: "#1793e6",
+    rare: "#fee284",
+    unique: "#ca7ef2",
+  },
+  // overworld biomes + player
+  biome: {
+    grass: "#5fae3b",
+    forest: "#21804c",
+    mountain: "#837d83",
+    water: "#23b4e9",
+    village: "#fbc254",
+    dungeonEntrance: "#ca7ef2",
+    player: "#f2f2da",
+  },
+  // title logo gradient, one hex per logo line (pink -> purple)
+  logoGradient: ["#ee99bf", "#cd67a8", "#ab4bab", "#8648b5", "#70388c"],
+  // game-over banner gradient (red ramp, bright -> dark)
+  gameOverGradient: ["#f9ab8f", "#fa7d66", "#e74343", "#b7383c", "#823439"],
+} as const;
+
+/** Per-dungeon first-person view ramps, index = depth band - 1 (far -> near). */
+export const DUNGEON_RAMPS: readonly (readonly string[])[] = [
+  ["#3a747a", "#419885", "#53c09f", "#87cead"], // dungeon-0: teal
+  ["#444f8d", "#5c60b8", "#817cd4", "#ab8ee4"], // dungeon-1: indigo
+  ["#823439", "#b7383c", "#e74343", "#fa7d66"], // dungeon-2: ember
+];
+
+/** Ramp for a dungeon id of the form `dungeon-N`; unknown ids get ramp 0. */
+export function dungeonRamp(dungeonId: string): readonly string[] {
+  const n = Number.parseInt(dungeonId.split("-")[1] ?? "", 10);
+  const index = Number.isNaN(n) ? 0 : n % DUNGEON_RAMPS.length;
+  return DUNGEON_RAMPS[index];
+}
+
+/** HP color by remaining fraction: healthy, hurt (≤0.5), critical (≤0.25). */
+export function hpColor(hp: number, maxHp: number): string {
+  const ratio = maxHp > 0 ? hp / maxHp : 0;
+  if (ratio <= 0.25) return theme.danger;
+  if (ratio <= 0.5) return theme.warn;
+  return theme.heal;
+}
+
+/** MP color: normal, faint when nearly empty (≤0.25). Zero max reads faint. */
+export function mpColor(mp: number, maxMp: number): string {
+  const ratio = maxMp > 0 ? mp / maxMp : 0;
+  return ratio <= 0.25 ? theme.textFaint : theme.mp;
+}
+
+/** Fixed-width meter string, e.g. `███████░░░`. Nonzero values show ≥1 tick. */
+export function bar(value: number, max: number, width: number): string {
+  const ratio = max > 0 ? Math.max(0, Math.min(1, value / max)) : 0;
+  let filled = Math.round(ratio * width);
+  if (value > 0 && filled === 0) filled = 1;
+  return "█".repeat(filled) + "░".repeat(width - filled);
+}
