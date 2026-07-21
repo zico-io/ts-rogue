@@ -35,9 +35,9 @@ vi.mock("eve/context", () => ({
   },
 }));
 
-// biome-ignore lint/suspicious/noExplicitAny: driving mocked hook handlers in a test
-const events = (await import("../agent/hooks/child-relay")).default
-  .events as any;
+const events =
+  // biome-ignore lint/suspicious/noExplicitAny: driving mocked hook handlers in a test
+  (await import("../agent/hooks/child-relay")).default.events as any;
 
 const child = { session: { parent: { sessionId: "root", callId: "c1" } } };
 const root = { session: {} };

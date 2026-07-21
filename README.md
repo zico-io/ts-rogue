@@ -1,77 +1,62 @@
 # ts-rogue
 
-A TypeScript terminal dungeon crawler. This repository holds the playable-loop specification, the coding harness, and a playable Ink application.
+A deterministic TypeScript terminal dungeon crawler built with Ink and rot.js.
+
+The playable loop runs from village to overworld to first-person dungeon and
+turn-based battle, then returns through loot, recovery, and saving.
+
+## Quick start
+
+```bash
+corepack enable
+pnpm install
+pnpm game
+```
 
 ## Requirements
 
-- Node.js 24
-- pnpm 11.7.0 (pinned via `packageManager`; run `corepack enable`)
+- Node.js 24 or newer
+- pnpm 11.7.0, pinned by `packageManager`
 - Git
 
-## Setup
-
-```bash
-pnpm install
-pnpm check
-```
+The tmux play harness also requires `tmux`.
 
 ## Repository map
 
 | Path | Purpose |
 | --- | --- |
-| [`PROJECT_PLAN.md`](PROJECT_PLAN.md) | Product scope, architecture, milestones, and definition of done |
-| [`docs/product.md`](docs/product.md) | Shipped product state and documentation upkeep contract |
-| [`agent/`](agent/) | Eve project agent, Linear integration, tools, and sandbox configuration |
+| [`src/engine/`](src/engine/README.md) | Deterministic game state, world, combat, loot, and persistence contract |
+| [`src/ui/`](src/ui/README.md) | Ink scenes, controls, responsive terminal layout, and runtime diagnostics |
+| [`agent/`](agent/README.md) | Eve project agent, integrations, and sandbox lifecycle |
+| [`PROJECT_PLAN.md`](PROJECT_PLAN.md) | Product scope, architecture decisions, and phase ordering |
 | [`.botfile/memory/`](.botfile/memory/index.md) | Curated, provenance-backed agent memory |
-| [`AGENTS.md`](AGENTS.md) | Coding-agent operating instructions |
 
-## Workflow
-
-Work is tracked in Linear. GitHub pull requests are used for review and merge. Each pull request links its Linear issue and updates product documentation when behavior, commands, or requirements change.
+## Common tasks
 
 | Task | Command |
 | --- | --- |
-| Run all repository checks | `pnpm check` |
-| Run the game (Ink shell) | `pnpm game` |
-| Run the game with the switchable dev console | `pnpm game:dev` |
-| Drive the game in a tmux session (play harness) | `pnpm play start` |
-| Test a PR's build remotely (interactive shell) | `pnpm pr:sandbox <PR#>` |
+| Run all checks | `pnpm check` |
+| Run the game | `pnpm game` |
+| Run the game with the developer console | `pnpm game:dev` |
+| Drive a deterministic tmux session | `pnpm play start [seed] [cols] [rows]` |
+| Test a pull request in a Vercel Sandbox | `pnpm pr:sandbox <PR#>` |
 | Run the Eve agent locally | `pnpm eve:dev` |
 | Type-check | `pnpm typecheck` |
 | Run tests | `pnpm test` |
 | Lint | `pnpm lint` |
 | Format | `pnpm format` |
-| Check documentation | `pnpm docs:check` |
+| Record a release-facing change | `pnpm changeset` |
+| Apply pending versions and changelogs | `pnpm version-packages` |
 
-## Devtools
+## Development
 
-`pnpm play start [seed]` drives the real game in a detached `tmux` session so an
-agent (or you) can play it like a user; `pnpm play key <tokens>`, `pnpm play
-frame`, and `pnpm play stop` send input and capture the coloured screen. Requires
-`tmux` (`brew install tmux`); the `.claude/skills/play-game` skill documents the loop.
+Work is tracked in Linear and reviewed through GitHub pull requests. See
+[`CONTRIBUTING.md`](CONTRIBUTING.md) for the workflow.
 
-The dev console (`pnpm game:dev`, backtick) can inspect its bounded event journal
-with `debug`, deliberately test failure capture with `crash <message>`, and file
-a Linear issue live with `issue <title>` / `bug <title>`. Reports include the
-seed, key sequence, last valid state, journal, error, stack, and fingerprint.
-Unexpected failures are filed automatically with a `bug` label in dev mode and
-show a crash screen that permits a clean quit. Credentials are brokered by Vercel Connect -
-the same `linear/ts-rogue-eve` connector the Eve agent uses - so no Linear key
-is stored; it only needs `VERCEL_OIDC_TOKEN` in `.env.local` (which `game:dev`
-loads). Override the team with `LINEAR_TEAM_KEY` (default `ROG`). If that
-identity is missing or the call fails, the issue is saved to a local
-`dev-issues.jsonl` outbox and retried on the next filing or the console's
-`flush` command, so nothing is lost.
+`pnpm play` drives the real application in a detached tmux session. Use
+`pnpm play key <tokens>`, `pnpm play frame`, and `pnpm play stop` to interact
+with it and capture the terminal output.
 
-`pnpm game` never contacts Linear. Unexpected failures are appended to the
-ignored `game-incidents.jsonl` file instead.
-
-`pnpm pr:sandbox <PR#>` spins up (or resumes) a persistent Vercel Sandbox on
-that PR's head, installs deps, and drops you into an interactive shell in the
-checked-out repo - run `pnpm game` to play the build or `pnpm check` to verify
-it, remotely. Re-running after new commits resumes the same `pr-<N>` box and
-re-fetches. One-time setup: `pnpm exec sandbox login`; cloning the private repo
-uses `$GH_TOKEN` or `gh auth token`. Stop with `pnpm exec sandbox stop pr-<N>`
-(resumable) or `remove pr-<N>` to delete.
-
-See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the development workflow.
+`pnpm pr:sandbox <PR#>` opens an interactive Vercel Sandbox for the pull
+request. Authenticate once with `pnpm exec sandbox login`; private repository
+cloning uses `GH_TOKEN` or `gh auth token`.
