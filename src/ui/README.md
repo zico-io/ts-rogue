@@ -14,6 +14,36 @@ The layout responds to terminal resize events. Below 64 columns by 24 rows it
 shows a minimum-size message. Pure render helpers size maps, first-person
 dungeon geometry, and enemy layouts from the available content region.
 
+## Visual identity
+
+All color lives in [`theme.ts`](theme.ts) as semantic tokens over the game's
+64-swatch palette (ROG-31). Components consume tokens, never raw color strings.
+Ink passes hex through chalk, which downsamples for 256- and 16-color
+terminals; there is no capability-detection code.
+
+| Token | Hex | Role |
+| --- | --- | --- |
+| `text` / `textMuted` / `textFaint` | `#f2f2da` / `#a59b9d` / `#706a80` | Text hierarchy: primary, hints, disabled/dead |
+| `border` / `borderFocus` / `title` | `#444f8d` / `#e3aa3e` / `#c6b4b1` | Panel chrome; gold border marks the active floating panel |
+| `accent` | `#e3aa3e` | Cursors, selection, the acting hero |
+| `danger` / `warn` / `heal` | `#e74343` / `#f8a64c` / `#5fae3b` | HP states (≤25% / ≤50% / healthy), errors |
+| `mp` / `gold` | `#23b4e9` / `#fbc254` | MP meter, currency |
+| `msg.*` | damage `#fa7d66`, loot `#fbc254`, quest `#ca7ef2`, system `#837d83` | Log line color by `LogEntry.kind`; the newest damage line renders bold |
+| `rarity.*` | common `#c6b4b1`, magic `#1793e6`, rare `#fee284`, unique `#ca7ef2` | Item rarity everywhere items appear |
+| `biome.*` | grass `#5fae3b`, forest `#21804c`, mountain `#837d83`, water `#23b4e9`, village `#fbc254`, entrance `#ca7ef2` | Overworld tiles |
+| `DUNGEON_RAMPS` | teal / indigo / ember, 4 steps each | First-person depth bands per dungeon, far-dim to near-bright |
+
+Monster art carries its own accent (`MonsterDef.color`); the title logo and
+game-over banner use the `logoGradient` / `gameOverGradient` ramps.
+
+Do: pick the existing semantic token for what the element *means*; keep one
+accent per region; treat dim colors as hierarchy, not decoration. Don't: put
+raw color strings in components; add hexes outside `theme.ts`; use bold for
+non-interactive text (bold marks selection and the damage flash). When adding a
+dark token, check it survives 16 colors (`new Chalk({level: 1}).hex(...)`) —
+pure darks downsample to invisible ANSI black; that is why `border` and
+`textFaint` lean blue.
+
 ## Controls
 
 | Context | Controls |
