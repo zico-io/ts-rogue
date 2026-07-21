@@ -16,6 +16,7 @@ const OPTIONS: readonly MenuOption[] = [
   { key: "inn", label: "Inn - rest and heal the party", shortcut: "i" },
   { key: "church", label: "Church - save your progress", shortcut: "c" },
   { key: "store", label: "Store - buy and sell items", shortcut: "s" },
+  { key: "tavern", label: "Tavern - recruit party members", shortcut: "t" },
   {
     key: "overworld",
     label: "Leave town - venture into the overworld",
@@ -63,7 +64,7 @@ export function VillageOverview({
     <Screen
       state={state}
       title="Village"
-      hint="Controls: up/down + Enter, or i/c/s/o to act directly; 1-4 switch scenes; q to quit."
+      hint="Controls: up/down + Enter, or i/c/s/t/o to act directly; 1-4 switch scenes; q to quit."
     >
       {OPTIONS.map((option, index) => (
         <Text
