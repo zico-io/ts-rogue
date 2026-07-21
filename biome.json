@@ -19,7 +19,7 @@
           "options": {
             "patterns": [
               {
-                "group": ["**/*.js"],
+                "group": ["**/*.js", "!pixi.js"],
                 "message": "Use extensionless imports in TypeScript"
               }
             ]
@@ -47,7 +47,7 @@
                     "message": "engine/ must not import from ui/ (PROJECT_PLAN Golden rule)"
                   },
                   {
-                    "group": ["**/*.js"],
+                    "group": ["**/*.js", "!pixi.js"],
                     "message": "Use extensionless imports in TypeScript"
                   }
                 ]

@@ -93,3 +93,13 @@ export function bar(value: number, max: number, width: number): string {
   if (value > 0 && filled === 0) filled = 1;
   return "█".repeat(filled) + "░".repeat(width - filled);
 }
+
+/**
+ * Packs a `#rrggbb` hex color string into the `0xRRGGBB` int Pixi's `Color`,
+ * tint, and fill APIs accept. The browser renderer reads theme tokens as hex
+ * strings (same as the terminal) and converts at the Pixi boundary here,
+ * instead of the theme module knowing anything about Pixi.
+ */
+export function toPixiColor(hex: string): number {
+  return Number.parseInt(hex.slice(1), 16);
+}
