@@ -16,6 +16,8 @@ import {
   VIEWPORT_WIDTH,
 } from "../../../engine/world/overworld";
 import type { OverworldMap, Point, Tile } from "../../../engine/world/types";
+import { theme } from "../../theme";
+import type { TileName } from "../../tiles/kitty";
 
 export interface TileGlyph {
   char: string;
@@ -24,6 +26,8 @@ export interface TileGlyph {
 
 export interface Cell extends TileGlyph {
   key: string;
+  /** Tileset name for kitty-graphics rendering; unset cells stay ASCII. */
+  tile?: TileName;
 }
 
 /** Integer viewport dimensions in tiles. */
@@ -43,15 +47,15 @@ export interface MinimapOptions {
 }
 
 const TILE_GLYPHS: Record<Tile, TileGlyph> = {
-  grass: { char: ".", color: "green" },
-  forest: { char: "%", color: "green" },
-  mountain: { char: "^", color: "gray" },
-  water: { char: "~", color: "blue" },
-  village: { char: "H", color: "yellow" },
-  dungeonEntrance: { char: "D", color: "magenta" },
+  grass: { char: ".", color: theme.biome.grass },
+  forest: { char: "%", color: theme.biome.forest },
+  mountain: { char: "^", color: theme.biome.mountain },
+  water: { char: "~", color: theme.biome.water },
+  village: { char: "H", color: theme.biome.village },
+  dungeonEntrance: { char: "D", color: theme.biome.dungeonEntrance },
 };
 
-export const PLAYER_GLYPH: TileGlyph = { char: "@", color: "white" };
+export const PLAYER_GLYPH: TileGlyph = { char: "@", color: theme.biome.player };
 
 export function glyphFor(tile: Tile): TileGlyph {
   return TILE_GLYPHS[tile];
@@ -93,7 +97,8 @@ export function buildViewportRows(
     for (let x = originX; x < originX + width; x++) {
       const isPlayer = x === player.x && y === player.y;
       const glyph = isPlayer ? PLAYER_GLYPH : glyphFor(map.tiles[y][x]);
-      row.push({ ...glyph, key: `${x},${y}` });
+      const tile = isPlayer ? "player" : map.tiles[y][x];
+      row.push({ ...glyph, key: `${x},${y}`, tile });
     }
     rows.push(row);
   }

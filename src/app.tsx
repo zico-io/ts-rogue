@@ -30,6 +30,8 @@ import { GameOverScreen } from "./ui/screens/GameOverScreen";
 import { OverworldScreen } from "./ui/screens/OverworldScreen";
 import { TitleScreen } from "./ui/screens/TitleScreen";
 import { VillageScreen } from "./ui/screens/VillageScreen";
+import { theme } from "./ui/theme";
+import { initTiles } from "./ui/tiles/kitty";
 
 const sceneKeys: Record<string, Scene> = {
   "1": "village",
@@ -202,7 +204,7 @@ function App({
           modeCursor={modeCursor}
         />
         {devConsoleEnabled && (
-          <Text dimColor>Dev console: press ` to switch.</Text>
+          <Text color={theme.textMuted}>Dev console: press ` to switch.</Text>
         )}
       </Box>
     );
@@ -322,6 +324,10 @@ const rendered = failures.run("boot", true, () =>
     { alternateScreen: true },
   ),
 );
+// Kitty graphics storage is per-screen (Ghostty clears the alternate screen's
+// images on entry), so the tileset must be transmitted after Ink switches to
+// the alternate screen - i.e. after render(), not before.
+initTiles();
 if (!rendered.ok) {
   const display = pipeline.getFatal();
   if (display) render(<CrashScreen display={display} />);

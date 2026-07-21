@@ -1,7 +1,9 @@
 import { Box, Text } from "ink";
+import type { LogEntry } from "../../engine/state/types";
+import { theme } from "../theme";
 
 export interface MessageLogProps {
-  messages: readonly string[];
+  messages: readonly LogEntry[];
   /**
    * Fixed box width in terminal columns (border included). When provided,
    * message lines wrap within the box so the log never spills horizontally.
@@ -36,16 +38,29 @@ export function MessageLog({
     ...(height !== undefined ? { height, overflow: "hidden" as const } : {}),
   };
   return (
-    <Box borderStyle="single" flexDirection="column" paddingX={1} {...boxProps}>
+    <Box
+      borderStyle="single"
+      borderColor={theme.border}
+      flexDirection="column"
+      paddingX={1}
+      {...boxProps}
+    >
       {visible.length === 0 ? (
-        <Text dimColor>(no messages yet)</Text>
+        <Text color={theme.textFaint}>(no messages yet)</Text>
       ) : (
         visible.map((message, index) => (
           // Key by absolute log position: unique even when lines repeat, and
-          // stable per occurrence as new lines append.
-          // biome-ignore lint/suspicious/noArrayIndexKey: append-only tail, position is identity
-          <Text dimColor key={start + index}>
-            {message}
+          // stable per occurrence as new lines append. The newest damage line
+          // is emphasized - the ROG-31 "hit flash" without animation state.
+          <Text
+            bold={
+              start + index === messages.length - 1 && message.kind === "damage"
+            }
+            color={theme.msg[message.kind]}
+            // biome-ignore lint/suspicious/noArrayIndexKey: append-only tail, position is identity
+            key={start + index}
+          >
+            {message.text}
           </Text>
         ))
       )}

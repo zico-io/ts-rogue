@@ -21,7 +21,13 @@ import type {
   DungeonFeature,
   DungeonState,
 } from "../../../engine/world/types";
-import { createDotCanvas, packBraille, plotLine } from "./braille";
+import {
+  type BrailleRun,
+  createDotCanvas,
+  packBraille,
+  packBrailleRuns,
+  plotLine,
+} from "./braille";
 
 export const MINIMAP_WIDTH = 17;
 export const MINIMAP_HEIGHT = 9;
@@ -107,12 +113,15 @@ interface FaceItem {
   jamb0: boolean;
   jamb1: boolean;
   density: number;
+  /** Depth band 1 (far) .. 4 (near); stored in the dot buffer for coloring. */
+  band: number;
 }
 
 /** A feature prop's projected wireframe segments, painter-sorted with faces. */
 interface PropItem {
   kind: "prop";
   distSq: number;
+  band: number;
   lines: Array<{ x0: number; y0: number; x1: number; y1: number }>;
 }
 
@@ -278,6 +287,17 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(value, max));
 }
 
+/** Number of depth color bands (see `theme.DUNGEON_RAMPS`). */
+export const DEPTH_BANDS = 4;
+
+/** Depth band for a view depth: DEPTH_BANDS near the eye, 1 at MAX_DEPTH. */
+function depthBand(depth: number): number {
+  return (
+    DEPTH_BANDS -
+    Math.min(DEPTH_BANDS - 1, Math.floor(depth / (MAX_DEPTH / DEPTH_BANDS)))
+  );
+}
+
 /**
  * Compose the first-person view as `viewport.height` rows of exactly
  * `viewport.width` characters (Braille wireframe on space). `camera` defaults
@@ -288,6 +308,30 @@ export function renderDungeonView(
   viewport: Viewport,
   camera: CameraPose = poseFromState(ds),
 ): string[] {
+  const { buf, dotW, dotH } = paintDungeonDots(ds, viewport, camera);
+  return packBraille(buf, dotW, dotH);
+}
+
+/**
+ * The FP view as rows of same-depth-band runs, for per-depth coloring (ROG-31
+ * near-bright/far-dim). Joining each row's run texts reproduces
+ * {@link renderDungeonView} exactly.
+ */
+export function renderDungeonViewRuns(
+  ds: DungeonState,
+  viewport: Viewport,
+  camera: CameraPose = poseFromState(ds),
+): BrailleRun[][] {
+  const { buf, dotW, dotH } = paintDungeonDots(ds, viewport, camera);
+  return packBrailleRuns(buf, dotW, dotH);
+}
+
+/** Shared paint pass: project and rasterize into a depth-band dot buffer. */
+function paintDungeonDots(
+  ds: DungeonState,
+  viewport: Viewport,
+  camera: CameraPose,
+): { buf: Uint8Array; dotW: number; dotH: number } {
   const cols = Math.max(1, viewport.width);
   const rows = Math.max(1, viewport.height);
   const dotW = cols * 2;
@@ -343,7 +387,7 @@ export function renderDungeonView(
         }
         if (lines.length > 0) {
           const distSq = (camera.x - cx) ** 2 + (camera.y - cy) ** 2;
-          items.push({ kind: "prop", distSq, lines });
+          items.push({ kind: "prop", distSq, band: depthBand(depth), lines });
         }
         continue;
       }
@@ -378,6 +422,7 @@ export function renderDungeonView(
           continue;
         }
         const distSq = (camera.x - fcx) ** 2 + (camera.y - fcy) ** 2;
+        const viewDepth = toCam(fcx, fcy).z;
         items.push({
           kind: "face",
           distSq,
@@ -385,7 +430,8 @@ export function renderDungeonView(
           e1,
           jamb0,
           jamb1,
-          density: fillDensity(toCam(fcx, fcy).z),
+          density: fillDensity(viewDepth),
+          band: depthBand(viewDepth),
         });
       }
     }
@@ -400,11 +446,11 @@ export function renderDungeonView(
       drawFace(buf, dotW, dotH, item);
     } else {
       for (const l of item.lines) {
-        plotLine(buf, dotW, dotH, l.x0, l.y0, l.x1, l.y1);
+        plotLine(buf, dotW, dotH, l.x0, l.y0, l.x1, l.y1, item.band);
       }
     }
   }
-  return packBraille(buf, dotW, dotH);
+  return { buf, dotW, dotH };
 }
 
 /** Clip the behind-camera endpoint of a segment to the near plane. */
@@ -452,15 +498,19 @@ function drawFace(
         dotH - 1,
       );
       for (let y = yT; y <= yB; y++) {
-        buf[y * dotW + x] = BAYER4[y & 3][x & 3] / 16 < face.density ? 1 : 0;
+        buf[y * dotW + x] =
+          BAYER4[y & 3][x & 3] / 16 < face.density ? face.band : 0;
       }
     }
   }
-  plotLine(buf, dotW, dotH, left.sx, left.syT, right.sx, right.syT);
-  plotLine(buf, dotW, dotH, left.sx, left.syB, right.sx, right.syB);
-  if (jambL) plotLine(buf, dotW, dotH, left.sx, left.syT, left.sx, left.syB);
+  const band = face.band;
+  plotLine(buf, dotW, dotH, left.sx, left.syT, right.sx, right.syT, band);
+  plotLine(buf, dotW, dotH, left.sx, left.syB, right.sx, right.syB, band);
+  if (jambL) {
+    plotLine(buf, dotW, dotH, left.sx, left.syT, left.sx, left.syB, band);
+  }
   if (jambR) {
-    plotLine(buf, dotW, dotH, right.sx, right.syT, right.sx, right.syB);
+    plotLine(buf, dotW, dotH, right.sx, right.syT, right.sx, right.syB, band);
   }
 }
 
@@ -469,24 +519,28 @@ function drawFace(
  * as `#`, floor as `.`, and features by glyph; unexplored tiles are blank.
  * The party is drawn as its facing arrow. Returns one string per render row.
  */
-export function renderMinimap(ds: DungeonState): string[] {
+export function renderMinimap(
+  ds: DungeonState,
+  width = MINIMAP_WIDTH,
+  height = MINIMAP_HEIGHT,
+): string[] {
   const layout = ds.layout;
-  const halfWidth = Math.floor(MINIMAP_WIDTH / 2);
-  const halfHeight = Math.floor(MINIMAP_HEIGHT / 2);
+  const halfWidth = Math.floor(width / 2);
+  const halfHeight = Math.floor(height / 2);
   const ox = clamp(
     ds.player.x - halfWidth,
     0,
-    Math.max(0, layout.width - MINIMAP_WIDTH),
+    Math.max(0, layout.width - width),
   );
   const oy = clamp(
     ds.player.y - halfHeight,
     0,
-    Math.max(0, layout.height - MINIMAP_HEIGHT),
+    Math.max(0, layout.height - height),
   );
   const rows: string[] = [];
-  for (let my = 0; my < MINIMAP_HEIGHT; my++) {
+  for (let my = 0; my < height; my++) {
     let row = "";
-    for (let mx = 0; mx < MINIMAP_WIDTH; mx++) {
+    for (let mx = 0; mx < width; mx++) {
       const x = ox + mx;
       const y = oy + my;
       if (x === ds.player.x && y === ds.player.y) {

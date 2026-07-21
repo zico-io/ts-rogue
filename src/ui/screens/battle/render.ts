@@ -36,6 +36,8 @@ export interface PackOptions {
   gap?: number;
   /** Vertical gap between wrapped rows. */
   rowGap?: number;
+  /** Fixed art size in cells (kitty-graphics sprites) instead of ASCII art. */
+  artSize?: { width: number; height: number };
 }
 
 /** Name line for an enemy column, with a selection marker and defeat suffix. */
@@ -57,11 +59,11 @@ export function enemyColumnWidth(
   enemy: BattleEnemy,
   selected: boolean,
   dead: boolean,
+  artWidth?: number,
 ): number {
-  const asciiWidth = enemy.ascii.reduce(
-    (max, line) => Math.max(max, line.length),
-    0,
-  );
+  const asciiWidth =
+    artWidth ??
+    enemy.ascii.reduce((max, line) => Math.max(max, line.length), 0);
   return Math.max(
     asciiWidth,
     enemyNameLine(enemy, selected, dead).length,
@@ -70,8 +72,11 @@ export function enemyColumnWidth(
 }
 
 /** Rows an enemy column occupies: art lines plus the name and HP lines. */
-export function enemyColumnHeight(enemy: BattleEnemy): number {
-  return enemy.ascii.length + 2;
+export function enemyColumnHeight(
+  enemy: BattleEnemy,
+  artHeight?: number,
+): number {
+  return (artHeight ?? enemy.ascii.length) + 2;
 }
 
 function rowWidth(row: EnemyColumn[], gap: number): number {
@@ -94,7 +99,7 @@ export function packEnemyColumns(
   targetCursor: number,
   options: PackOptions,
 ): PackedEnemies {
-  const { columns, gap = 4, rowGap = 1 } = options;
+  const { columns, gap = 4, rowGap = 1, artSize } = options;
 
   const cols: EnemyColumn[] = enemies.map((enemy) => {
     const aliveIndex = aliveEnemies.findIndex((entry) => entry.id === enemy.id);
@@ -106,8 +111,8 @@ export function packEnemyColumns(
       dead,
       nameLine: enemyNameLine(enemy, selected, dead),
       hpLine: enemyHpLine(enemy),
-      width: enemyColumnWidth(enemy, selected, dead),
-      height: enemyColumnHeight(enemy),
+      width: enemyColumnWidth(enemy, selected, dead, artSize?.width),
+      height: enemyColumnHeight(enemy, artSize?.height),
     };
   });
 

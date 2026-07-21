@@ -1,5 +1,6 @@
 import { Box, Text, useApp, useInput } from "ink";
 import type { IncidentDisplay } from "../../lib/incidents";
+import { theme } from "../theme";
 
 export function CrashScreen({ display }: { display: IncidentDisplay }) {
   const { exit } = useApp();
@@ -11,10 +12,10 @@ export function CrashScreen({ display }: { display: IncidentDisplay }) {
     <Box
       flexDirection="column"
       borderStyle="round"
-      borderColor="red"
+      borderColor={theme.danger}
       paddingX={1}
     >
-      <Text bold color="red">
+      <Text bold color={theme.danger}>
         Unexpected game failure
       </Text>
       <Text>{display.incident.message}</Text>
@@ -23,7 +24,7 @@ export function CrashScreen({ display }: { display: IncidentDisplay }) {
         Report: {display.status}
         {display.detail ? ` (${display.detail})` : ""}
       </Text>
-      <Text dimColor>
+      <Text color={theme.textMuted}>
         The last valid game state was preserved. Press q or Ctrl+C to quit.
       </Text>
     </Box>

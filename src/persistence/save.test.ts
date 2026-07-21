@@ -165,3 +165,15 @@ describe("deserialize backfills classId for older saves (ROG-17)", () => {
     expect(restored.party[0].classId).toBe("wizard");
   });
 });
+
+describe("deserialize upgrades plain-string log lines (pre-ROG-31)", () => {
+  it("wraps legacy strings as system entries and keeps typed entries", () => {
+    const modern = newGame(42);
+    const older = { ...modern, log: ["old line", modern.log[0]] };
+    const restored = deserialize(JSON.stringify(older));
+    expect(restored.log).toEqual([
+      { text: "old line", kind: "system" },
+      { text: "Started new game with seed 42", kind: "quest" },
+    ]);
+  });
+});

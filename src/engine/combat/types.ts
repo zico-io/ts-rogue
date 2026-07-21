@@ -20,6 +20,8 @@ export interface BattleEnemy {
   stats: CoreStats;
   /** Copy of the monster's first-person ASCII art so a save is self-contained. */
   ascii: readonly string[];
+  /** Copy of the monster's accent color; optional so older saves load (ROG-31). */
+  color?: string;
   xp: number;
   gold: number;
 }

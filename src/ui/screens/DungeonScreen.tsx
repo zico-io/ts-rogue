@@ -3,11 +3,13 @@ import { useEffect, useRef, useState } from "react";
 import type { GameEvent, GameState } from "../../engine/state/types";
 import type { DungeonState } from "../../engine/world/types";
 import { Screen, useScreenContent } from "../components/Screen";
+import { dungeonRamp, theme } from "../theme";
+import { type TileName, tilesSupported, tileText } from "../tiles/kitty";
 import {
   type CameraPose,
   lerpPose,
   poseFromState,
-  renderDungeonView,
+  renderDungeonViewRuns,
   renderMinimap,
 } from "./dungeon/render";
 
@@ -23,6 +25,32 @@ const HINT =
 const MINIMAP_BOX_WIDTH = 21;
 const MINIMAP_BOX_HEIGHT = 12;
 const MINIMAP_GAP = 2;
+
+/**
+ * Tiled minimap window: 8 tiles at 2 columns each (16 + 2 padding + 2 border
+ * = 20 cols). Half the glyph window, so the FP view keeps its width at the
+ * 64-column minimum terminal size.
+ */
+const TILED_MINIMAP_WIDTH = 8;
+const TILED_MINIMAP_HEIGHT = 9;
+
+const MINIMAP_TILES: Record<string, TileName> = {
+  "#": "wall",
+  ".": "floor",
+  C: "chest",
+  ">": "stairsDown",
+  B: "boss",
+};
+
+/** Map a glyph minimap row to tile runs; non-tile chars stay text, 2 cols wide. */
+function minimapRowToTiles(row: string): string {
+  let out = "";
+  for (const char of row) {
+    const tile = MINIMAP_TILES[char];
+    out += tile ? tileText(tile) : `${char} `;
+  }
+  return out;
+}
 
 /** Step/turn transitions render this many tween frames over ~100ms. */
 const ANIM_FRAMES = 3;
@@ -105,7 +133,9 @@ export function DungeonScreen({ state, dispatch }: DungeonScreenProps) {
   if (!ds) {
     return (
       <Screen state={state} title="Dungeon">
-        <Text dimColor>(no active dungeon - press 2 for the overworld)</Text>
+        <Text color={theme.textMuted}>
+          (no active dungeon - press 2 for the overworld)
+        </Text>
       </Screen>
     );
   }
@@ -124,16 +154,20 @@ export function DungeonScreen({ state, dispatch }: DungeonScreenProps) {
 function DungeonBody({ ds }: { ds: DungeonState }) {
   const { width, height } = useScreenContent();
   const camera = useCameraPose(ds);
+  const tiles = tilesSupported();
 
   // Content stacks the FP/minimap row above the facing line (with a gap row).
   const mainHeight = Math.max(1, height - 2);
   // Shrink the minimap box on short panes so it never outgrows the row; its
   // inner text clips rather than pushing the layout.
   const minimapBoxHeight = Math.min(MINIMAP_BOX_HEIGHT, mainHeight);
+  const minimapBoxWidth = tiles
+    ? TILED_MINIMAP_WIDTH * 2 + 4
+    : MINIMAP_BOX_WIDTH;
 
-  const fpWidth = Math.max(3, width - MINIMAP_BOX_WIDTH - MINIMAP_GAP);
+  const fpWidth = Math.max(3, width - minimapBoxWidth - MINIMAP_GAP);
   // The FP box has a single-cell border, so render into the interior.
-  const fpRows = renderDungeonView(
+  const fpRows = renderDungeonViewRuns(
     ds,
     {
       width: Math.max(1, fpWidth - 2),
@@ -141,7 +175,11 @@ function DungeonBody({ ds }: { ds: DungeonState }) {
     },
     camera,
   );
-  const minimapRows = renderMinimap(ds);
+  const minimapRows = tiles
+    ? renderMinimap(ds, TILED_MINIMAP_WIDTH, TILED_MINIMAP_HEIGHT)
+    : renderMinimap(ds);
+  // Per-dungeon accent ramp, band 1 (far, dim) .. 4 (near, bright).
+  const ramp = dungeonRamp(ds.dungeonId);
 
   const statusParts = [`Facing ${ds.facing}`];
   if (ds.reachedBoss) statusParts.push("boss room reached");
@@ -157,22 +195,43 @@ function DungeonBody({ ds }: { ds: DungeonState }) {
       >
         <Box
           borderStyle="single"
+          borderColor={theme.border}
+          flexDirection="column"
           width={fpWidth}
           height={mainHeight}
           overflow="hidden"
         >
-          <Text color="magenta">{fpRows.join("\n")}</Text>
+          {fpRows.map((runs, rowIndex) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: fixed-size viewport, row position is identity
+            <Text key={rowIndex}>
+              {runs.map((run, runIndex) => (
+                <Text
+                  color={ramp[Math.max(0, run.band - 1)]}
+                  // biome-ignore lint/suspicious/noArrayIndexKey: runs re-derive every render
+                  key={runIndex}
+                >
+                  {run.text}
+                </Text>
+              ))}
+            </Text>
+          ))}
         </Box>
         <Box
           borderStyle="single"
+          borderColor={theme.border}
           flexDirection="column"
           paddingX={1}
-          width={MINIMAP_BOX_WIDTH}
+          width={minimapBoxWidth}
           height={minimapBoxHeight}
           overflow="hidden"
         >
-          <Text dimColor>Map</Text>
-          <Text dimColor>{minimapRows.join("\n")}</Text>
+          <Text color={theme.textMuted}>Map</Text>
+          {tiles ? (
+            // Tile runs carry their own SGR; coloring the row would clobber it.
+            <Text>{minimapRows.map(minimapRowToTiles).join("\n")}</Text>
+          ) : (
+            <Text color={ramp[1]}>{minimapRows.join("\n")}</Text>
+          )}
         </Box>
       </Box>
       <Text>{statusParts.join(" | ")}</Text>

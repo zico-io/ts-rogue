@@ -6,6 +6,8 @@ import {
   generateOverworldMap,
 } from "../../engine/world/overworld";
 import { Screen, useScreenContent } from "../components/Screen";
+import { theme } from "../theme";
+import { tilesSupported } from "../tiles/kitty";
 import {
   buildMinimapRows,
   buildViewportRows,
@@ -98,9 +100,12 @@ function OverworldBody({ state }: { state: GameState }) {
   const minimapBoxWidth = minimapCols + MINIMAP_BOX_OVERHEAD_COLS;
   const minimapBoxHeight = minimapRows.length + MINIMAP_BOX_OVERHEAD_ROWS;
 
+  // Kitty-graphics tiles are 2 columns wide, so the viewport holds half as many.
+  const tiles = tilesSupported();
+  const tileCols = tiles ? 2 : 1;
   const viewportPaneWidth = Math.max(1, width - minimapBoxWidth - MINIMAP_GAP);
   const viewportRows = buildViewportRows(map, player, {
-    width: viewportPaneWidth,
+    width: Math.floor(viewportPaneWidth / tileCols),
     height: mainHeight,
   });
   const viewportCols = viewportRows[0]?.length ?? 0;
@@ -115,17 +120,19 @@ function OverworldBody({ state }: { state: GameState }) {
       >
         <TileGrid
           rows={viewportRows}
-          width={viewportCols}
+          width={viewportCols * tileCols}
           height={mainHeight}
+          tiles={tiles}
         />
         <Box
           borderStyle="single"
+          borderColor={theme.border}
           flexDirection="column"
           paddingX={1}
           width={minimapBoxWidth}
           height={minimapBoxHeight}
         >
-          <Text dimColor>Map</Text>
+          <Text color={theme.textMuted}>Map</Text>
           <TileGrid rows={minimapRows} />
         </Box>
       </Box>

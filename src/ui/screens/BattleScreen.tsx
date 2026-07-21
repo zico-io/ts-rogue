@@ -14,6 +14,13 @@ import type { BattleState } from "../../engine/combat/types";
 import type { GameEvent, GameState } from "../../engine/state/types";
 import { MessageLog } from "../components/MessageLog";
 import { Screen, useScreenContent } from "../components/Screen";
+import { theme } from "../theme";
+import {
+  hasTile,
+  SPRITE_CELLS,
+  spriteRows,
+  tilesSupported,
+} from "../tiles/kitty";
 import { type PackedEnemies, packEnemyColumns } from "./battle/render";
 
 export interface BattleScreenProps {
@@ -183,7 +190,9 @@ export function BattleScreen({ state, dispatch }: BattleScreenProps) {
   if (!bs) {
     return (
       <Screen state={state} title="Battle">
-        <Text dimColor>(no active battle - press 2 for the overworld)</Text>
+        <Text color={theme.textMuted}>
+          (no active battle - press 2 for the overworld)
+        </Text>
       </Screen>
     );
   }
@@ -246,12 +255,17 @@ function BattleBody({
   // The framed viewport sits above the hero stat and turn-order lines.
   const viewportHeight = Math.max(1, height - 2);
 
+  const tiles = tilesSupported();
   const packed = packEnemyColumns(
     bs.enemies,
     aliveEnemies,
     mode === "target",
     targetCursor,
-    { columns: Math.max(1, viewportWidth - 2), gap: ENEMY_GAP },
+    {
+      columns: Math.max(1, viewportWidth - 2),
+      gap: ENEMY_GAP,
+      ...(tiles ? { artSize: SPRITE_CELLS } : {}),
+    },
   );
 
   return (
@@ -263,11 +277,11 @@ function BattleBody({
           height={viewportHeight}
           position="relative"
           borderStyle="single"
-          borderDimColor
+          borderColor={theme.border}
           overflow="hidden"
         >
           <Box flexGrow={1} alignItems="center" justifyContent="center">
-            <EnemyField packed={packed} />
+            <EnemyField packed={packed} tiles={tiles} />
           </Box>
 
           {/* Floating command window, anchored bottom-left over the viewport
@@ -278,10 +292,10 @@ function BattleBody({
             left={0}
             flexDirection="column"
             borderStyle="round"
-            borderDimColor
+            borderColor={theme.borderFocus}
             paddingX={1}
           >
-            <Text bold color="cyan">
+            <Text bold color={theme.accent}>
               {actor.name}
             </Text>
             <ActionMenu
@@ -301,14 +315,14 @@ function BattleBody({
           {actor.name} Lv{actor.level} | XP {actor.xp}/{xpToNext(actor.level)} |
           ATK {atkFrom(actor)} DEF {defFrom(actor)} SPD {spdFrom(actor)}
         </Text>
-        <Text dimColor>
+        <Text color={theme.textMuted}>
           Turn order: {initiativeNames(bs, state.party).join(" -> ")}
         </Text>
       </Box>
 
       {/* Battle log, pinned to the right of the combat layout. */}
       <Box flexDirection="column" width={logWidth}>
-        <Text dimColor>Battle Log</Text>
+        <Text color={theme.textMuted}>Battle Log</Text>
         <MessageLog
           messages={state.log}
           height={Math.max(3, height - 1)}
@@ -319,7 +333,18 @@ function BattleBody({
   );
 }
 
-function EnemyField({ packed }: { packed: PackedEnemies }) {
+/** Blank block the size of a sprite, keeping dead columns' layout stable. */
+const BLANK_SPRITE = Array.from({ length: SPRITE_CELLS.height }, () =>
+  " ".repeat(SPRITE_CELLS.width),
+).join("\n");
+
+function EnemyField({
+  packed,
+  tiles,
+}: {
+  packed: PackedEnemies;
+  tiles: boolean;
+}) {
   return (
     <Box flexDirection="column" gap={1}>
       {packed.rows.map((row, rowIndex) => (
@@ -331,13 +356,21 @@ function EnemyField({ packed }: { packed: PackedEnemies }) {
         >
           {row.map((col) => {
             const color = col.dead
-              ? "gray"
+              ? theme.textFaint
               : col.selected
-                ? "green"
-                : undefined;
+                ? theme.accent
+                : (col.enemy.color ?? theme.text);
+            const spriteId =
+              tiles && hasTile(col.enemy.defId) ? col.enemy.defId : null;
             return (
               <Box key={col.enemy.id} flexDirection="column">
-                <Text color={color}>{col.enemy.ascii.join("\n")}</Text>
+                {spriteId ? (
+                  <Text>
+                    {col.dead ? BLANK_SPRITE : spriteRows(spriteId).join("\n")}
+                  </Text>
+                ) : (
+                  <Text color={color}>{col.enemy.ascii.join("\n")}</Text>
+                )}
                 <Text bold color={color}>
                   {col.nameLine}
                 </Text>
@@ -381,10 +414,10 @@ function ActionMenu({
             <Text
               color={
                 index === skillCursor
-                  ? "green"
+                  ? theme.accent
                   : affordable
                     ? undefined
-                    : "gray"
+                    : theme.textFaint
               }
               key={skill.id}
             >
@@ -401,7 +434,7 @@ function ActionMenu({
     if (healItems.length === 0) {
       return (
         <Box flexDirection="column">
-          <Text dimColor>(no usable items)</Text>
+          <Text color={theme.textFaint}>(no usable items)</Text>
         </Box>
       );
     }
@@ -409,7 +442,7 @@ function ActionMenu({
       <Box flexDirection="column">
         {healItems.map((entry, index) => (
           <Text
-            color={index === itemCursor ? "green" : undefined}
+            color={index === itemCursor ? theme.accent : undefined}
             key={entry.itemId}
           >
             {index === itemCursor ? "> " : "  "}
@@ -432,7 +465,10 @@ function ActionMenu({
   return (
     <Box flexDirection="column">
       {actions.map((action, index) => (
-        <Text color={index === actionCursor ? "green" : undefined} key={action}>
+        <Text
+          color={index === actionCursor ? theme.accent : undefined}
+          key={action}
+        >
           {index === actionCursor ? "> " : "  "}
           {action}
         </Text>

@@ -15,6 +15,7 @@ import {
   MINIMAP_WIDTH,
   poseFromState,
   renderDungeonView,
+  renderDungeonViewRuns,
   renderMinimap,
 } from "./render";
 
@@ -147,6 +148,33 @@ describe("renderDungeonView", () => {
     expect(far).toBeGreaterThan(near * 2); // distance darkens the surface
   });
 
+  it("run rows join to exactly the plain string render", () => {
+    const ds = createInitialDungeonState(1234, "dungeon-0", 1);
+    const joined = renderDungeonViewRuns(ds, VP).map((runs) =>
+      runs.map((run) => run.text).join(""),
+    );
+    expect(joined).toEqual(renderDungeonView(ds, VP));
+  });
+
+  it("assigns a nearer pillar a higher depth band than a farther one", () => {
+    // Same pillar rig as the dither test above.
+    const floor = Array.from({ length: 17 }, () => ".".repeat(17));
+    const withPillar = floor.map((row, y) =>
+      y === 7 ? `${row.slice(0, 8)}#${row.slice(9)}` : row,
+    );
+    const layout = buildLayout(withPillar);
+    const centerBand = (playerY: number) => {
+      const rows = renderDungeonViewRuns(
+        buildState(layout, { x: 8, y: playerY }, "north"),
+        VP,
+      );
+      return Math.max(
+        ...rows.slice(9, 11).flatMap((runs) => runs.map((run) => run.band)),
+      );
+    };
+    expect(centerBand(9)).toBeGreaterThan(centerBand(12));
+  });
+
   it("renders at the map edge facing out-of-bounds without throwing", () => {
     const ds = buildState(buildLayout(["..", ".."]), { x: 0, y: 0 }, "north");
     const rows = renderDungeonView(ds, VP);
@@ -249,6 +277,14 @@ describe("renderMinimap", () => {
     const rows = renderMinimap(ds);
     expect(rows).toHaveLength(MINIMAP_HEIGHT);
     for (const row of rows) expect(row).toHaveLength(MINIMAP_WIDTH);
+  });
+
+  it("honors a custom window size and still centers the party", () => {
+    const ds = createInitialDungeonState(1234, "dungeon-0", 1);
+    const rows = renderMinimap(ds, 8, 9);
+    expect(rows).toHaveLength(9);
+    for (const row of rows) expect(row).toHaveLength(8);
+    expect(rows.join("")).toContain(FACING_GLYPH[ds.facing]);
   });
 
   it("centers the party facing glyph and shows revealed walls/floor around it", () => {

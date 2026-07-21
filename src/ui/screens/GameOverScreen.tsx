@@ -1,4 +1,14 @@
 import { Box, Text } from "ink";
+import { theme } from "../theme";
+
+/** Block-letter banner, one red-ramp color per row (`theme.gameOverGradient`). */
+const BANNER = [
+  " ████  ███  █   █ █████      ███  █   █ █████ ████",
+  "█     █   █ ██ ██ █         █   █ █   █ █     █   █",
+  "█  ██ █████ █ █ █ ███       █   █ █   █ ███   ████",
+  "█   █ █   █ █   █ █         █   █  █ █  █     █  █",
+  " ███  █   █ █   █ █████      ███    █   █████ █   █",
+];
 
 /**
  * Game-over screen (Phase 6, ROG-12). Shown when the party perishes in
@@ -8,11 +18,17 @@ import { Box, Text } from "ink";
 export function GameOverScreen() {
   return (
     <Box flexDirection="column" gap={1} paddingY={1}>
-      <Text bold color="red">
-        Game Over
-      </Text>
+      <Box flexDirection="column">
+        {BANNER.map((line, index) => (
+          <Text bold color={theme.gameOverGradient[index]} key={line}>
+            {line}
+          </Text>
+        ))}
+      </Box>
       <Text>The party has perished. The run is over.</Text>
-      <Text dimColor>Press Enter to start a new run, q to quit.</Text>
+      <Text color={theme.textMuted}>
+        Press Enter to start a new run, q to quit.
+      </Text>
     </Box>
   );
 }

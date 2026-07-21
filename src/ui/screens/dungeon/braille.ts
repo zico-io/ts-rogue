@@ -18,7 +18,11 @@ export function createDotCanvas(dotW: number, dotH: number): Uint8Array {
   return new Uint8Array(dotW * dotH);
 }
 
-/** Bresenham line between two dot coordinates; endpoints outside are clipped. */
+/**
+ * Bresenham line between two dot coordinates; endpoints outside are clipped.
+ * `value` is the byte written for each lit dot (default 1); the dungeon
+ * renderer stores its depth band here so `packBrailleRuns` can color by depth.
+ */
 export function plotLine(
   buf: Uint8Array,
   dotW: number,
@@ -27,6 +31,7 @@ export function plotLine(
   y0: number,
   x1: number,
   y1: number,
+  value = 1,
 ): void {
   let x = Math.round(x0);
   let y = Math.round(y0);
@@ -39,7 +44,7 @@ export function plotLine(
   let error = dx - dy;
 
   while (true) {
-    if (x >= 0 && x < dotW && y >= 0 && y < dotH) buf[y * dotW + x] = 1;
+    if (x >= 0 && x < dotW && y >= 0 && y < dotH) buf[y * dotW + x] = value;
     if (x === xEnd && y === yEnd) break;
     const twiceError = error * 2;
     if (twiceError > -dy) {
@@ -78,6 +83,55 @@ export function packBraille(
       row += mask === 0 ? " " : String.fromCharCode(0x2800 + mask);
     }
     out.push(row);
+  }
+  return out;
+}
+
+/** A horizontal run of same-band characters within one packed row. */
+export interface BrailleRun {
+  text: string;
+  /** Max dot value across the run's cells; 0 for an all-space run. */
+  band: number;
+}
+
+/**
+ * Like {@link packBraille}, but returns each row as runs of consecutive cells
+ * sharing a band (the max dot value in the cell - nearest geometry wins), so
+ * the screen can color by depth without one `<Text>` per character. Space
+ * cells carry no color and merge into whichever run they touch.
+ */
+export function packBrailleRuns(
+  buf: Uint8Array,
+  dotW: number,
+  dotH: number,
+): BrailleRun[][] {
+  const cols = Math.floor(dotW / 2);
+  const rows = Math.floor(dotH / 4);
+  const out: BrailleRun[][] = [];
+  for (let cr = 0; cr < rows; cr++) {
+    const runs: BrailleRun[] = [];
+    for (let cc = 0; cc < cols; cc++) {
+      let mask = 0;
+      let band = 0;
+      for (let c = 0; c < 2; c++) {
+        for (let r = 0; r < 4; r++) {
+          const dot = buf[(cr * 4 + r) * dotW + (cc * 2 + c)];
+          if (dot) {
+            mask |= DOT_BIT[c][r];
+            if (dot > band) band = dot;
+          }
+        }
+      }
+      const char = mask === 0 ? " " : String.fromCharCode(0x2800 + mask);
+      const last = runs[runs.length - 1];
+      if (last && (band === 0 || last.band === 0 || last.band === band)) {
+        last.text += char;
+        if (band > last.band) last.band = band;
+      } else {
+        runs.push({ text: char, band });
+      }
+    }
+    out.push(runs);
   }
   return out;
 }

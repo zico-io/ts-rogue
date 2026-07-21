@@ -7,6 +7,20 @@ import type { DungeonState, WorldState } from "../world/types";
 /** The scene the router is currently showing. */
 export type Scene = "village" | "overworld" | "dungeon" | "battle";
 
+/** Category of a log line; drives message-log coloring (ROG-31). */
+export type LogKind = "damage" | "loot" | "quest" | "system";
+
+/** One game-log line with its display category. */
+export interface LogEntry {
+  text: string;
+  kind: LogKind;
+}
+
+/** Build a log entry; `kind` defaults to the neutral system category. */
+export function entry(text: string, kind: LogKind = "system"): LogEntry {
+  return { text, kind };
+}
+
 /**
  * Run-level flags (Phase 6, ROG-12). `permadeath` is chosen at new-game time
  * and decides whether a defeat ends the run (true) or revives the party at the
@@ -35,7 +49,7 @@ export interface GameState {
   seed: number;
   rngState: RngState;
   scene: Scene;
-  log: readonly string[];
+  log: readonly LogEntry[];
   party: PartyMember[];
   gold: number;
   /** Owned, unequipped stacks of consumable items (potions, antidotes). */
@@ -76,7 +90,7 @@ export type StepDirection = "forward" | "back";
 export type GameEvent =
   | { type: "NewGame"; seed: number; permadeath?: boolean; classId?: string }
   | { type: "ChangeScene"; scene: Scene }
-  | { type: "Log"; message: string }
+  | { type: "Log"; message: string; kind?: LogKind }
   | { type: "InnHeal" }
   | { type: "StoreBuy"; itemId: string; quantity: number }
   | { type: "StoreSell"; itemId: string; quantity: number }

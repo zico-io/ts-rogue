@@ -41,12 +41,14 @@ import {
   summarizeState,
   validateGameState,
 } from "./incidents";
-import type {
-  GameEvent,
-  GameState,
-  MoveDelta,
-  StepDirection,
-  TurnDirection,
+import {
+  entry,
+  type GameEvent,
+  type GameState,
+  type LogEntry,
+  type MoveDelta,
+  type StepDirection,
+  type TurnDirection,
 } from "./types";
 
 /** Gold cost per party member to fully heal at the inn. */
@@ -68,7 +70,7 @@ export function newGame(seed: number, options?: NewGameOptions): GameState {
     seed,
     rngState: rng.getState(),
     scene: "village",
-    log: [`Started new game with seed ${seed}`],
+    log: [entry(`Started new game with seed ${seed}`, "quest")],
     party: [createStartingHero(options?.classId)],
     gold: 50,
     inventory: [],
@@ -102,7 +104,7 @@ function innHeal(state: GameState): GameState {
   if (state.gold < cost) {
     return {
       ...state,
-      log: [...state.log, "Not enough gold to rest at the inn"],
+      log: [...state.log, entry("Not enough gold to rest at the inn")],
     };
   }
   return {
@@ -113,7 +115,7 @@ function innHeal(state: GameState): GameState {
       hp: member.maxHp,
       mp: member.maxMp,
     })),
-    log: [...state.log, `Healed the party for ${cost} gold`],
+    log: [...state.log, entry(`Healed the party for ${cost} gold`)],
   };
 }
 
@@ -126,21 +128,27 @@ function storeBuy(
   if (!item || quantity <= 0) {
     return {
       ...state,
-      log: [...state.log, `Cannot buy unknown item "${itemId}"`],
+      log: [...state.log, entry(`Cannot buy unknown item "${itemId}"`)],
     };
   }
   const cost = item.price * quantity;
   if (state.gold < cost) {
     return {
       ...state,
-      log: [...state.log, `Not enough gold to buy ${quantity} ${item.name}`],
+      log: [
+        ...state.log,
+        entry(`Not enough gold to buy ${quantity} ${item.name}`),
+      ],
     };
   }
   return {
     ...state,
     gold: state.gold - cost,
     inventory: addItem(state.inventory, itemId, quantity),
-    log: [...state.log, `Bought ${quantity} ${item.name} for ${cost} gold`],
+    log: [
+      ...state.log,
+      entry(`Bought ${quantity} ${item.name} for ${cost} gold`, "loot"),
+    ],
   };
 }
 
@@ -154,7 +162,10 @@ function storeSell(
   if (!item || quantity <= 0 || !owned || owned.quantity < quantity) {
     return {
       ...state,
-      log: [...state.log, `Cannot sell unknown or unowned item "${itemId}"`],
+      log: [
+        ...state.log,
+        entry(`Cannot sell unknown or unowned item "${itemId}"`),
+      ],
     };
   }
   const proceeds = sellPriceFor(item) * quantity;
@@ -169,7 +180,10 @@ function storeSell(
     ...state,
     gold: state.gold + proceeds,
     inventory,
-    log: [...state.log, `Sold ${quantity} ${item.name} for ${proceeds} gold`],
+    log: [
+      ...state.log,
+      entry(`Sold ${quantity} ${item.name} for ${proceeds} gold`, "loot"),
+    ],
   };
 }
 
@@ -198,7 +212,7 @@ function moveOverworld(
   if (!inBounds(map, target) || !isPassable(tileAt(map, target))) {
     return {
       ...state,
-      log: [...state.log, "The way is blocked"],
+      log: [...state.log, entry("The way is blocked")],
     };
   }
 
@@ -209,7 +223,7 @@ function moveOverworld(
       ...state,
       scene: "village",
       worldState: { ...state.worldState, player: target },
-      log: [...state.log, "You return to the village"],
+      log: [...state.log, entry("You return to the village", "quest")],
     };
   }
 
@@ -223,7 +237,7 @@ function moveOverworld(
       scene: "dungeon",
       worldState: { ...state.worldState, player: target },
       dungeonState: createInitialDungeonState(state.seed, dungeonId, 1),
-      log: [...state.log, "You descend into the dungeon"],
+      log: [...state.log, entry("You descend into the dungeon", "quest")],
     };
   }
 
@@ -240,7 +254,7 @@ function moveOverworld(
       rngState: rng.getState(),
       battleState: battle,
       worldState: { player: target, encounterMeter: 0 },
-      log: [...state.log, "A monster ambushes the party!"],
+      log: [...state.log, entry("A monster ambushes the party!", "damage")],
     };
   }
 
@@ -284,7 +298,7 @@ function stepDungeon(state: GameState, direction: StepDirection): GameState {
   const target = { x: ds.player.x + delta.x, y: ds.player.y + delta.y };
 
   if (isDungeonWall(ds.layout, target)) {
-    return { ...state, log: [...state.log, "The way is blocked"] };
+    return { ...state, log: [...state.log, entry("The way is blocked")] };
   }
 
   const explored = revealArea(ds.explored, ds.layout, target, FOV_RADIUS);
@@ -304,7 +318,10 @@ function stepDungeon(state: GameState, direction: StepDirection): GameState {
         reachedBoss: true,
         encounter: { kind: "boss", floor: ds.floor },
       },
-      log: [...state.log, "You have reached the boss room! A guardian stirs"],
+      log: [
+        ...state.log,
+        entry("You have reached the boss room! A guardian stirs", "quest"),
+      ],
     };
   }
 
@@ -328,7 +345,7 @@ function stepDungeon(state: GameState, direction: StepDirection): GameState {
           ...moved,
           encounter: { kind: "wandering", floor: ds.floor },
         },
-        log: [...state.log, "An enemy appears!"],
+        log: [...state.log, entry("An enemy appears!", "damage")],
       };
     }
     return { ...state, rngState: rng.getState(), dungeonState: moved };
@@ -348,7 +365,10 @@ function openChest(state: GameState): GameState {
   if (!ds) return state;
   const tile = ds.layout.tiles[ds.player.y][ds.player.x];
   if (tile.feature !== "chest") {
-    return { ...state, log: [...state.log, "There is nothing to open here"] };
+    return {
+      ...state,
+      log: [...state.log, entry("There is nothing to open here")],
+    };
   }
   const loot = chestLootFor(ds.dungeonId, ds.floor, ds.player.x, ds.player.y);
   const tiles = ds.layout.tiles.map((row, y) =>
@@ -381,7 +401,7 @@ function openChest(state: GameState): GameState {
     items,
     nextItemId: chest.nextId,
     dungeonState: { ...ds, layout },
-    log: [...state.log, message],
+    log: [...state.log, entry(message, "loot")],
   };
 }
 
@@ -397,17 +417,20 @@ function descendStairs(state: GameState): GameState {
   if (!ds) return state;
   const tile = ds.layout.tiles[ds.player.y][ds.player.x];
   if (tile.feature !== "stairsDown") {
-    return { ...state, log: [...state.log, "There are no stairs down here"] };
+    return {
+      ...state,
+      log: [...state.log, entry("There are no stairs down here")],
+    };
   }
   const nextFloor = ds.floor + 1;
   if (nextFloor > DUNGEON_FLOORS) {
-    return { ...state, log: [...state.log, "The stairs lead nowhere"] };
+    return { ...state, log: [...state.log, entry("The stairs lead nowhere")] };
   }
   const next = createInitialDungeonState(state.seed, ds.dungeonId, nextFloor);
   return {
     ...state,
     dungeonState: next,
-    log: [...state.log, `You descend to floor ${nextFloor}`],
+    log: [...state.log, entry(`You descend to floor ${nextFloor}`, "quest")],
   };
 }
 
@@ -429,7 +452,7 @@ function exitDungeon(state: GameState): GameState {
     worldState: { ...state.worldState, encounterMeter: 0 },
     dungeonState: null,
     battleState: null,
-    log: [...state.log, "You emerge from the dungeon"],
+    log: [...state.log, entry("You emerge from the dungeon", "quest")],
   };
 }
 
@@ -444,18 +467,24 @@ function equipItem(
 ): GameState {
   const item = state.items.find((entry) => entry.instanceId === instanceId);
   if (!item) {
-    return { ...state, log: [...state.log, "There is nothing to equip"] };
+    return {
+      ...state,
+      log: [...state.log, entry("There is nothing to equip")],
+    };
   }
   const memberIndex = state.party.findIndex((m) => m.id === memberId);
   if (memberIndex === -1) {
-    return { ...state, log: [...state.log, "There is nothing to equip"] };
+    return {
+      ...state,
+      log: [...state.log, entry("There is nothing to equip")],
+    };
   }
   const member = state.party[memberIndex];
   const target = equipTargetSlot(member, item);
   if (!target) {
     return {
       ...state,
-      log: [...state.log, `${describeItem(item)} cannot be equipped`],
+      log: [...state.log, entry(`${describeItem(item)} cannot be equipped`)],
     };
   }
   const swapped = member.equipment[target];
@@ -470,8 +499,9 @@ function equipItem(
       ? { ...entry, equipment: { ...entry.equipment, [target]: item } }
       : entry,
   );
-  const logs = [`Equipped ${describeItem(item)}.`];
-  if (swapped) logs.push(`${describeItem(swapped)} moved to the backpack.`);
+  const logs: LogEntry[] = [entry(`Equipped ${describeItem(item)}.`, "loot")];
+  if (swapped)
+    logs.push(entry(`${describeItem(swapped)} moved to the backpack.`, "loot"));
   return { ...state, party, items, log: [...state.log, ...logs] };
 }
 
@@ -482,12 +512,18 @@ function unequipItem(
 ): GameState {
   const memberIndex = state.party.findIndex((m) => m.id === memberId);
   if (memberIndex === -1) {
-    return { ...state, log: [...state.log, "Nothing is equipped there"] };
+    return {
+      ...state,
+      log: [...state.log, entry("Nothing is equipped there")],
+    };
   }
   const member = state.party[memberIndex];
   const item = member.equipment[slot];
   if (!item) {
-    return { ...state, log: [...state.log, "Nothing is equipped there"] };
+    return {
+      ...state,
+      log: [...state.log, entry("Nothing is equipped there")],
+    };
   }
   const party = state.party.map((entry, index) =>
     index === memberIndex
@@ -499,7 +535,7 @@ function unequipItem(
     ...state,
     party,
     items,
-    log: [...state.log, `Unequipped ${describeItem(item)}.`],
+    log: [...state.log, entry(`Unequipped ${describeItem(item)}.`, "loot")],
   };
 }
 
@@ -510,7 +546,10 @@ function unequipItem(
  */
 function recruitMember(state: GameState, classId: string): GameState {
   if (state.party.length >= 4) {
-    return { ...state, log: [...state.log, "The party is already full"] };
+    return {
+      ...state,
+      log: [...state.log, entry("The party is already full")],
+    };
   }
   const cls = findClass(classId);
   const id = `member-${state.party.length + 1}`;
@@ -519,14 +558,14 @@ function recruitMember(state: GameState, classId: string): GameState {
   return {
     ...state,
     party: [...state.party, member],
-    log: [...state.log, `Recruited ${name} the ${classId}!`],
+    log: [...state.log, entry(`Recruited ${name} the ${classId}!`, "quest")],
   };
 }
 
 function sellItem(state: GameState, instanceId: string): GameState {
   const item = state.items.find((entry) => entry.instanceId === instanceId);
   if (!item) {
-    return { ...state, log: [...state.log, "There is nothing to sell"] };
+    return { ...state, log: [...state.log, entry("There is nothing to sell")] };
   }
   const proceeds = itemSellPrice(item);
   const items = state.items.filter((entry) => entry.instanceId !== instanceId);
@@ -534,7 +573,10 @@ function sellItem(state: GameState, instanceId: string): GameState {
     ...state,
     gold: state.gold + proceeds,
     items,
-    log: [...state.log, `Sold ${describeItem(item)} for ${proceeds} gold.`],
+    log: [
+      ...state.log,
+      entry(`Sold ${describeItem(item)} for ${proceeds} gold.`, "loot"),
+    ],
   };
 }
 
@@ -549,7 +591,10 @@ export function reduce(state: GameState, event: GameEvent): GameState {
     case "ChangeScene":
       return { ...state, scene: event.scene };
     case "Log":
-      return { ...state, log: [...state.log, event.message] };
+      return {
+        ...state,
+        log: [...state.log, entry(event.message, event.kind)],
+      };
     case "InnHeal":
       return innHeal(state);
     case "StoreBuy":

@@ -39,7 +39,12 @@ import { describeItem } from "../loot/items";
 import { rollVictoryLoot } from "../loot/resolution";
 import type { ItemInstance } from "../loot/types";
 import { Rng, type RngState } from "../rng/rng";
-import type { GameState, Scene } from "../state/types";
+import {
+  entry,
+  type GameState,
+  type LogEntry,
+  type Scene,
+} from "../state/types";
 import {
   createInitialWorldState,
   generateOverworldMap,
@@ -313,6 +318,7 @@ function makeEnemy(def: MonsterDef, instance: number): BattleEnemy {
     maxHp: def.maxHp,
     stats: { ...def.stats },
     ascii: def.ascii,
+    color: def.color,
     xp: def.xp,
     gold: def.gold,
   };
@@ -476,7 +482,7 @@ function applyMemberCommand(
   _party: PartyMember[],
   enemies: BattleEnemy[],
   rng: Rng,
-  logs: string[],
+  logs: LogEntry[],
 ): MemberActionResult {
   let defending = false;
   let itemUsed: string | null = null;
@@ -491,13 +497,19 @@ function applyMemberCommand(
       if (target) {
         const result = resolveAttack(rng, actorStats, target.stats, false);
         if (!result.hit) {
-          logs.push(`${actor.name} attacks ${target.name} but misses!`);
+          logs.push(
+            entry(`${actor.name} attacks ${target.name} but misses!`, "damage"),
+          );
         } else {
           target.hp = Math.max(0, target.hp - result.damage);
           logs.push(
-            `${actor.name} hits ${target.name} for ${result.damage}${result.crit ? " - crit!" : ""}`,
+            entry(
+              `${actor.name} hits ${target.name} for ${result.damage}${result.crit ? " - crit!" : ""}`,
+              "damage",
+            ),
           );
-          if (target.hp === 0) logs.push(`${target.name} is defeated!`);
+          if (target.hp === 0)
+            logs.push(entry(`${target.name} is defeated!`, "damage"));
         }
       }
       break;
@@ -505,7 +517,7 @@ function applyMemberCommand(
     case "skill": {
       const skill = findSkill(command.skillId);
       if (!skill || actor.mp < skill.mpCost) {
-        logs.push("Not enough MP!");
+        logs.push(entry("Not enough MP!"));
         break;
       }
       actor.mp -= skill.mpCost;
@@ -525,16 +537,22 @@ function applyMemberCommand(
           );
           target.hp = Math.max(0, target.hp - damage);
           logs.push(
-            `${actor.name} casts ${skill.name} on ${target.name} for ${damage}!`,
+            entry(
+              `${actor.name} casts ${skill.name} on ${target.name} for ${damage}!`,
+              "damage",
+            ),
           );
-          if (target.hp === 0) logs.push(`${target.name} is defeated!`);
+          if (target.hp === 0)
+            logs.push(entry(`${target.name} is defeated!`, "damage"));
         }
       } else {
         // Heal skills always target the caster (self). Ally targeting is
         // ROG-32 skill-system scope, not added here.
         const heal = skill.power + skillStatValue(skill, actorStats);
         actor.hp = Math.min(actor.maxHp, actor.hp + heal);
-        logs.push(`${actor.name} casts ${skill.name} and recovers ${heal} HP.`);
+        logs.push(
+          entry(`${actor.name} casts ${skill.name} and recovers ${heal} HP.`),
+        );
       }
       break;
     }
@@ -544,15 +562,17 @@ function applyMemberCommand(
         actor.hp = Math.min(actor.maxHp, actor.hp + heal);
         itemUsed = command.itemId;
         const name = findShopItem(command.itemId)?.name ?? command.itemId;
-        logs.push(`${actor.name} uses ${name} and recovers ${heal} HP.`);
+        logs.push(entry(`${actor.name} uses ${name} and recovers ${heal} HP.`));
       } else {
-        logs.push(`${actor.name} uses ${command.itemId}... nothing happens.`);
+        logs.push(
+          entry(`${actor.name} uses ${command.itemId}... nothing happens.`),
+        );
       }
       break;
     }
     case "defend": {
       defending = true;
-      logs.push(`${actor.name} takes a defensive stance.`);
+      logs.push(entry(`${actor.name} takes a defensive stance.`));
       break;
     }
     case "flee": {
@@ -563,9 +583,9 @@ function applyMemberCommand(
       const roll = rng.next();
       if (roll < fleeChance(spdFrom(actor), fastestEnemySpd)) {
         fled = true;
-        logs.push("You flee the battle!");
+        logs.push(entry("You flee the battle!"));
       } else {
-        logs.push("You fail to flee!");
+        logs.push(entry("You fail to flee!"));
       }
       break;
     }
@@ -595,7 +615,7 @@ function advanceRound(
   enemies: BattleEnemy[],
   defendingIds: Set<string>,
   rng: Rng,
-  logs: string[],
+  logs: LogEntry[],
 ): AdvanceResult {
   for (let step = 0; step < initiative.length; step++) {
     const index = (fromIndex + 1 + step) % initiative.length;
@@ -622,11 +642,16 @@ function advanceRound(
       defendingIds.has(target.id),
     );
     if (!attack.hit) {
-      logs.push(`${enemy.name} attacks ${target.name} but misses!`);
+      logs.push(
+        entry(`${enemy.name} attacks ${target.name} but misses!`, "damage"),
+      );
     } else {
       target.hp = Math.max(0, target.hp - attack.damage);
       logs.push(
-        `${enemy.name} hits ${target.name} for ${attack.damage}${attack.crit ? " - crit!" : ""}`,
+        entry(
+          `${enemy.name} hits ${target.name} for ${attack.damage}${attack.crit ? " - crit!" : ""}`,
+          "damage",
+        ),
       );
       if (party.every((m) => m.hp <= 0)) {
         return { status: "lost", nextActorId: null };
@@ -651,7 +676,7 @@ function finalizeWon(
   bs: BattleState,
   enemies: BattleEnemy[],
   party: PartyMember[],
-  logs: string[],
+  logs: LogEntry[],
   rngState: RngState,
   itemUsed: string | null,
   loot: readonly ItemInstance[],
@@ -662,26 +687,33 @@ function finalizeWon(
   // Check for a boss victory before clearing the encounter flag so the
   // dungeon can be marked cleared.
   const wasBossVictory = state.dungeonState?.encounter?.kind === "boss";
-  const levelUpLogs: string[] = [];
+  const levelUpLogs: LogEntry[] = [];
   const finalParty = party.map((member) => {
     if (member.hp <= 0) return member;
     const granted = grantXp(member, xpGain);
     if (granted.leveledUp) {
       levelUpLogs.push(
-        `${granted.member.name} reached level ${granted.member.level}!`,
+        entry(
+          `${granted.member.name} reached level ${granted.member.level}!`,
+          "quest",
+        ),
       );
     }
     return granted.member;
   });
   const finalLogs = [
     ...logs,
-    `Victory! Gained ${xpGain} XP and ${goldGain} gold.`,
+    entry(`Victory! Gained ${xpGain} XP and ${goldGain} gold.`, "loot"),
     ...levelUpLogs,
   ];
   if (wasBossVictory) {
-    finalLogs.push("The dungeon guardian falls. The dungeon is cleared!");
+    finalLogs.push(
+      entry("The dungeon guardian falls. The dungeon is cleared!", "quest"),
+    );
   }
-  const lootLogs = loot.map((item) => `Looted ${describeItem(item)}!`);
+  const lootLogs = loot.map((item) =>
+    entry(`Looted ${describeItem(item)}!`, "loot"),
+  );
   const inventory = itemUsed
     ? consumeItem(state.inventory, itemUsed)
     : state.inventory;
@@ -717,7 +749,7 @@ function finalizeWon(
  */
 function finalizeLost(
   state: GameState,
-  logs: string[],
+  logs: LogEntry[],
   rngState: RngState,
   itemUsed: string | null,
 ): GameState {
@@ -726,7 +758,10 @@ function finalizeLost(
     : state.inventory;
 
   if (state.flags.permadeath) {
-    const finalLogs = [...logs, "The party has perished. The run is over."];
+    const finalLogs = [
+      ...logs,
+      entry("The party has perished. The run is over.", "damage"),
+    ];
     return {
       ...state,
       rngState,
@@ -741,7 +776,10 @@ function finalizeLost(
   const goldLoss = Math.floor(state.gold / 2);
   const finalLogs = [
     ...logs,
-    "The party falls... revived at the village, losing half your gold.",
+    entry(
+      "The party falls... revived at the village, losing half your gold.",
+      "damage",
+    ),
   ];
   return {
     ...state,
@@ -766,7 +804,7 @@ function finalizeFled(
   state: GameState,
   bs: BattleState,
   party: PartyMember[],
-  logs: string[],
+  logs: LogEntry[],
   rngState: RngState,
   itemUsed: string | null,
 ): GameState {
@@ -841,7 +879,7 @@ export function resolveBattleEvent(
   const party = state.party.map((m) => ({ ...m }));
   const enemies = bs.enemies.map((enemy) => ({ ...enemy }));
   const defendingIds = new Set(bs.defendingIds);
-  const logs: string[] = [];
+  const logs: LogEntry[] = [];
 
   const actorCopy = party.find((m) => m.id === actor.id)!;
   // A fresh turn: defend must be re-chosen each round to persist the stance.

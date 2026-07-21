@@ -19,7 +19,9 @@ import type { GameEvent, GameState } from "./types";
 describe("game store", () => {
   it("seeds the log with the seed on new game", () => {
     const state = newGame(1234);
-    expect(state.log).toEqual(["Started new game with seed 1234"]);
+    expect(state.log).toEqual([
+      { text: "Started new game with seed 1234", kind: "quest" },
+    ]);
   });
 
   it("starts a new game with one hero, starting gold, and empty inventory", () => {
@@ -68,8 +70,13 @@ describe("game store", () => {
   it("appends a log message without mutating the previous state's log", () => {
     const before = newGame(1);
     const after = reduce(before, { type: "Log", message: "hello" });
-    expect(after.log).toEqual([...before.log, "hello"]);
-    expect(before.log).toEqual(["Started new game with seed 1"]);
+    expect(after.log).toEqual([
+      ...before.log,
+      { text: "hello", kind: "system" },
+    ]);
+    expect(before.log).toEqual([
+      { text: "Started new game with seed 1", kind: "quest" },
+    ]);
     expect(after.log).not.toBe(before.log);
   });
 
@@ -94,7 +101,7 @@ describe("game store", () => {
       expect(after.gold).toBe(damaged.gold - cost);
       expect(after.party[0].hp).toBe(after.party[0].maxHp);
       expect(after.party[0].mp).toBe(after.party[0].maxMp);
-      expect(after.log.at(-1)).toBe(`Healed the party for ${cost} gold`);
+      expect(after.log.at(-1)?.text).toBe(`Healed the party for ${cost} gold`);
     });
 
     it("no-ops when gold is insufficient", () => {
@@ -103,7 +110,7 @@ describe("game store", () => {
       const after = reduce(poor, { type: "InnHeal" });
       expect(after.gold).toBe(0);
       expect(after.party[0].hp).toBe(1);
-      expect(after.log.at(-1)).toBe("Not enough gold to rest at the inn");
+      expect(after.log.at(-1)?.text).toBe("Not enough gold to rest at the inn");
     });
   });
 
@@ -117,7 +124,7 @@ describe("game store", () => {
       });
       expect(after.gold).toBe(before.gold - 20);
       expect(after.inventory).toEqual([{ itemId: "potion", quantity: 2 }]);
-      expect(after.log.at(-1)).toBe("Bought 2 Potion for 20 gold");
+      expect(after.log.at(-1)?.text).toBe("Bought 2 Potion for 20 gold");
     });
 
     it("merges quantities into an existing stack", () => {
@@ -154,7 +161,7 @@ describe("game store", () => {
       });
       expect(after.gold).toBe(5);
       expect(after.inventory).toEqual([]);
-      expect(after.log.at(-1)).toBe("Not enough gold to buy 1 Potion");
+      expect(after.log.at(-1)?.text).toBe("Not enough gold to buy 1 Potion");
     });
   });
 
@@ -172,7 +179,7 @@ describe("game store", () => {
       });
       expect(after.gold).toBe(owned.gold + 10);
       expect(after.inventory).toEqual([{ itemId: "potion", quantity: 1 }]);
-      expect(after.log.at(-1)).toBe("Sold 2 Potion for 10 gold");
+      expect(after.log.at(-1)?.text).toBe("Sold 2 Potion for 10 gold");
     });
 
     it("drops the stack entry when quantity hits zero", () => {
@@ -230,7 +237,7 @@ describe("game store", () => {
       expect(after.worldState.player).toEqual(blocked.from);
       expect(after.rngState).toEqual(before.rngState);
       expect(after.party).toBe(before.party);
-      expect(after.log.at(-1)).toBe("The way is blocked");
+      expect(after.log.at(-1)?.text).toBe("The way is blocked");
     });
 
     it("blocks movement off the edge of the map", () => {
@@ -240,7 +247,7 @@ describe("game store", () => {
       };
       const after = reduce(before, { type: "MoveOverworld", dx: -1, dy: 0 });
       expect(after.worldState.player).toEqual({ x: 0, y: 5 });
-      expect(after.log.at(-1)).toBe("The way is blocked");
+      expect(after.log.at(-1)?.text).toBe("The way is blocked");
     });
 
     it("stepping onto the village tile changes scene to village", () => {
@@ -257,7 +264,7 @@ describe("game store", () => {
       const after = reduce(before, { type: "MoveOverworld", dx: 1, dy: 0 });
       expect(after.scene).toBe("village");
       expect(after.worldState.player).toEqual(map.village);
-      expect(after.log.at(-1)).toBe("You return to the village");
+      expect(after.log.at(-1)?.text).toBe("You return to the village");
     });
 
     it("stepping onto a dungeon entrance changes scene to dungeon", () => {
@@ -277,7 +284,7 @@ describe("game store", () => {
       });
       expect(after.scene).toBe("dungeon");
       expect(after.worldState.player).toEqual(entrance);
-      expect(after.log.at(-1)).toBe("You descend into the dungeon");
+      expect(after.log.at(-1)?.text).toBe("You descend into the dungeon");
       expect(after.dungeonState).not.toBeNull();
       expect(after.dungeonState?.floor).toBe(1);
       expect(after.dungeonState?.dungeonId).toBe("dungeon-0");
@@ -308,7 +315,7 @@ describe("game store", () => {
       expect(after.scene).toBe("battle");
       expect(after.battleState).not.toBeNull();
       expect(after.worldState.encounterMeter).toBe(0);
-      expect(after.log.at(-1)).toBe("A monster ambushes the party!");
+      expect(after.log.at(-1)?.text).toBe("A monster ambushes the party!");
     });
 
     it("is deterministic: the same seed and move sequence produce identical states", () => {
@@ -390,7 +397,7 @@ describe("Dungeon", () => {
       state.dungeonState?.layout.entrance,
     );
     expect(state.dungeonState?.cleared).toBe(false);
-    expect(state.log.at(-1)).toBe("You descend into the dungeon");
+    expect(state.log.at(-1)?.text).toBe("You descend into the dungeon");
   });
 
   it("TurnDungeon rotates the facing without mutating the previous state or logging", () => {
@@ -436,7 +443,7 @@ describe("Dungeon", () => {
     }
     expect(blocked).not.toBeNull();
     expect(blocked?.after.rngState).toEqual(blocked?.before.rngState);
-    expect(blocked?.after.log.at(-1)).toBe("The way is blocked");
+    expect(blocked?.after.log.at(-1)?.text).toBe("The way is blocked");
   });
 
   it("starts a real battle on a wandering encounter and returns to the dungeon on victory", () => {
@@ -450,7 +457,7 @@ describe("Dungeon", () => {
         after.dungeonState?.encounter?.kind === "wandering" &&
         after.battleState
       ) {
-        expect(after.log.at(-1)).toBe("An enemy appears!");
+        expect(after.log.at(-1)?.text).toBe("An enemy appears!");
         const won = fightToResolution(after);
         expect(won.scene).toBe("dungeon");
         expect(won.battleState).toBeNull();
@@ -491,7 +498,7 @@ describe("Dungeon", () => {
     state = reduce(state, { type: "OpenChest" });
     expect(state.gold).toBeGreaterThan(goldBefore);
     expect(state.inventory.length).toBeGreaterThan(inventoryBefore);
-    expect(state.log.at(-1)).toMatch(/You open the chest and find/);
+    expect(state.log.at(-1)?.text).toMatch(/You open the chest and find/);
 
     const stairs1 = findDungeonTile(state, "stairsDown");
     expect(stairs1).toBeDefined();
@@ -511,7 +518,7 @@ describe("Dungeon", () => {
     expect(state.dungeonState?.reachedBoss).toBe(true);
     expect(state.scene).toBe("battle");
     expect(state.dungeonState?.encounter?.kind).toBe("boss");
-    expect(state.log.at(-1)).toBe(
+    expect(state.log.at(-1)?.text).toBe(
       "You have reached the boss room! A guardian stirs",
     );
   });
@@ -664,7 +671,7 @@ describe("RecruitMember (ROG-20 dev/manual party growth)", () => {
     state = reduce(state, { type: "RecruitMember", classId: "rogue" });
     expect(state.party).toHaveLength(2);
     expect(state.party[1]).toMatchObject({ id: "member-2", classId: "rogue" });
-    expect(state.log.at(-1)).toMatch(/^Recruited .* the rogue!$/);
+    expect(state.log.at(-1)?.text).toMatch(/^Recruited .* the rogue!$/);
 
     state = reduce(state, { type: "RecruitMember", classId: "wizard" });
     state = reduce(state, { type: "RecruitMember", classId: "warrior" });
@@ -679,7 +686,7 @@ describe("RecruitMember (ROG-20 dev/manual party growth)", () => {
     expect(state.party).toHaveLength(4);
     const after = reduce(state, { type: "RecruitMember", classId: "rogue" });
     expect(after.party).toHaveLength(4);
-    expect(after.log.at(-1)).toBe("The party is already full");
+    expect(after.log.at(-1)?.text).toBe("The party is already full");
   });
 });
 
@@ -718,7 +725,7 @@ describe("Phase 5 loot, equip, and sell", () => {
       expect(after.items).toHaveLength(0);
       expect(after.party[0].equipment.weapon?.instanceId).toBe("itm-1");
       expect(atkFrom(after.party[0])).toBeGreaterThan(atkBefore);
-      expect(after.log.some((m) => m.startsWith("Equipped"))).toBe(true);
+      expect(after.log.some((m) => m.text.startsWith("Equipped"))).toBe(true);
     });
 
     it("swaps the previously equipped item back to the backpack", () => {
@@ -751,7 +758,7 @@ describe("Phase 5 loot, equip, and sell", () => {
         memberId: before.party[0].id,
       });
       expect(after.party[0].equipment.weapon).toBeNull();
-      expect(after.log.at(-1)).toBe("There is nothing to equip");
+      expect(after.log.at(-1)?.text).toBe("There is nothing to equip");
     });
   });
 
@@ -783,7 +790,7 @@ describe("Phase 5 loot, equip, and sell", () => {
         slot: "weapon",
         memberId: newGame(1).party[0].id,
       });
-      expect(after.log.at(-1)).toBe("Nothing is equipped there");
+      expect(after.log.at(-1)?.text).toBe("Nothing is equipped there");
     });
 
     it("no-ops on an unknown memberId", () => {
@@ -792,7 +799,7 @@ describe("Phase 5 loot, equip, and sell", () => {
         slot: "weapon",
         memberId: "nope",
       });
-      expect(after.log.at(-1)).toBe("Nothing is equipped there");
+      expect(after.log.at(-1)?.text).toBe("Nothing is equipped there");
     });
   });
 
@@ -837,7 +844,7 @@ describe("Phase 5 loot, equip, and sell", () => {
       const after = reduce(before, { type: "SellItem", instanceId: "itm-s" });
       expect(after.items).toHaveLength(0);
       expect(after.gold).toBe(goldBefore + itemSellPrice(item));
-      expect(after.log.at(-1)).toBe(
+      expect(after.log.at(-1)?.text).toBe(
         `Sold ${describeItem(item)} for ${itemSellPrice(item)} gold.`,
       );
     });
@@ -846,7 +853,7 @@ describe("Phase 5 loot, equip, and sell", () => {
       const before = newGame(1);
       const after = reduce(before, { type: "SellItem", instanceId: "nope" });
       expect(after.gold).toBe(before.gold);
-      expect(after.log.at(-1)).toBe("There is nothing to sell");
+      expect(after.log.at(-1)?.text).toBe("There is nothing to sell");
     });
   });
 
@@ -861,7 +868,7 @@ describe("Phase 5 loot, equip, and sell", () => {
       state = reduce(state, { type: "OpenChest" });
       expect(state.items.length).toBe(itemsBefore + 1);
       expect(state.nextItemId).toBe(nextBefore + 1);
-      expect(state.log.at(-1)).toMatch(/You open the chest and find/);
+      expect(state.log.at(-1)?.text).toMatch(/You open the chest and find/);
     });
   });
 
@@ -994,7 +1001,7 @@ describe("Phase 6: exit dungeon", () => {
     expect(after.dungeonState).toBeNull();
     expect(after.battleState).toBeNull();
     expect(after.worldState.encounterMeter).toBe(0);
-    expect(after.log.at(-1)).toBe("You emerge from the dungeon");
+    expect(after.log.at(-1)?.text).toBe("You emerge from the dungeon");
     // The player stays at the dungeon entrance tile on the overworld.
     const map = generateOverworldMap(1);
     expect(after.worldState.player).toEqual(map.dungeonEntrances[0]);
@@ -1049,9 +1056,9 @@ describe("Phase 6: death handling", () => {
     expect(result.party[0].mp).toBe(0);
     expect(result.gold).toBe(50); // 100 - floor(100/2)
     expect(result.flags.gameOver).toBe(false);
-    expect(result.log.some((m) => m.includes("revived at the village"))).toBe(
-      true,
-    );
+    expect(
+      result.log.some((m) => m.text.includes("revived at the village")),
+    ).toBe(true);
   });
 
   it("permadeath=true: defeat sets gameOver and ends the run", () => {
@@ -1069,7 +1076,7 @@ describe("Phase 6: death handling", () => {
     expect(result.flags.gameOver).toBe(true);
     expect(result.battleState).toBeNull();
     expect(result.dungeonState).toBeNull();
-    expect(result.log.some((m) => m.includes("perished"))).toBe(true);
+    expect(result.log.some((m) => m.text.includes("perished"))).toBe(true);
   });
 
   it("gold penalty floors at zero (losing with 0 gold keeps 0)", () => {
@@ -1101,7 +1108,9 @@ describe("Phase 6: boss victory marks the dungeon cleared", () => {
     expect(state.battleState).toBeNull();
     expect(state.dungeonState?.cleared).toBe(true);
     expect(state.dungeonState?.encounter).toBeNull();
-    expect(state.log.some((m) => m.includes("dungeon is cleared"))).toBe(true);
+    expect(state.log.some((m) => m.text.includes("dungeon is cleared"))).toBe(
+      true,
+    );
   });
 
   it("a wandering victory does NOT mark the dungeon cleared", () => {

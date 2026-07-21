@@ -85,7 +85,7 @@ function issueBody(
     seed: state.seed,
     scene: state.scene,
     state,
-    logTail: state.log.slice(-12),
+    logTail: state.log.slice(-12).map((line) => line.text),
     debugJournal: journal,
     keySequence: readPlayKeys(),
     frame: readPlayFrame(),

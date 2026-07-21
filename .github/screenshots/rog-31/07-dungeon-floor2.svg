@@ -1,0 +1,206 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="640" font-family="Menlo,Consolas,DejaVu Sans Mono,monospace" font-size="12.5">
+<rect width="100%" height="100%" fill="#16131c"/>
+<text xml:space="preserve" textLength="900.0" x="10.0" y="24" fill="#c6b4b1">┌─ Dungeon - Floor 2 (dungeon-0) ──────────────────────────────────────────────────────────────────────────────────────┐</text>
+<text xml:space="preserve" textLength="7.5" x="10.0" y="39" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="697.5" x="25.0" y="39" fill="#444f8d">┌───────────────────────────────────────────────────────────────────────────────────────────┐</text>
+<text xml:space="preserve" textLength="157.5" x="737.5" y="39" fill="#444f8d">┌───────────────────┐</text>
+<text xml:space="preserve" textLength="7.5" x="902.5" y="39" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="10.0" y="54" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="25.0" y="54" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="715.0" y="54" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="737.5" y="54" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="22.5" x="752.5" y="54" fill="#a59b9d">Map</text>
+<text xml:space="preserve" textLength="7.5" x="887.5" y="54" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="902.5" y="54" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="10.0" y="70" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="25.0" y="70" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="715.0" y="70" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="737.5" y="70" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="887.5" y="70" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="902.5" y="70" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="10.0" y="86" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="25.0" y="86" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="715.0" y="86" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="737.5" y="86" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="127.5" x="752.5" y="86" fill="#419885">     #.####.     </text>
+<text xml:space="preserve" textLength="7.5" x="887.5" y="86" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="902.5" y="86" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="10.0" y="101" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="25.0" y="101" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="715.0" y="101" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="737.5" y="101" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="127.5" x="752.5" y="101" fill="#419885">     .......     </text>
+<text xml:space="preserve" textLength="7.5" x="887.5" y="101" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="902.5" y="101" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="10.0" y="116" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="25.0" y="116" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="715.0" y="116" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="737.5" y="116" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="127.5" x="752.5" y="116" fill="#419885">     C......     </text>
+<text xml:space="preserve" textLength="7.5" x="887.5" y="116" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="902.5" y="116" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="10.0" y="132" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="25.0" y="132" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="715.0" y="132" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="737.5" y="132" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="127.5" x="752.5" y="132" fill="#419885">     ...^...     </text>
+<text xml:space="preserve" textLength="7.5" x="887.5" y="132" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="902.5" y="132" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="10.0" y="148" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="25.0" y="148" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="682.5" x="32.5" y="148" fill="#53c09f">⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⢤⠤⣀⣀⡀         ⡤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⢤        ⣀⣀⣀</text>
+<text xml:space="preserve" textLength="7.5" x="715.0" y="148" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="737.5" y="148" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="127.5" x="752.5" y="148" fill="#419885">     .......     </text>
+<text xml:space="preserve" textLength="7.5" x="887.5" y="148" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="902.5" y="148" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="10.0" y="163" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="25.0" y="163" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="165.0" x="32.5" y="163" fill="#53c09f">⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⢽⠁⠅⠁⠍⠉⠕⠒⠖⠤⠤</text>
+<text xml:space="preserve" textLength="22.5" x="197.5" y="163" fill="#419885">⢄⣀⣀</text>
+<text xml:space="preserve" textLength="495.0" x="220.0" y="163" fill="#53c09f">⡇⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⢽⠤⠔⠒⠖⠒⠍⠉⠍⠁⠅⠁</text>
+<text xml:space="preserve" textLength="7.5" x="715.0" y="163" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="737.5" y="163" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="127.5" x="752.5" y="163" fill="#419885">     ######.     </text>
+<text xml:space="preserve" textLength="7.5" x="887.5" y="163" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="902.5" y="163" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="10.0" y="178" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="25.0" y="178" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="165.0" x="32.5" y="178" fill="#53c09f">⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⢽⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅</text>
+<text xml:space="preserve" textLength="22.5" x="197.5" y="178" fill="#419885">⠕⠅⠕</text>
+<text xml:space="preserve" textLength="495.0" x="220.0" y="178" fill="#53c09f">⡇⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⢽⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁</text>
+<text xml:space="preserve" textLength="7.5" x="715.0" y="178" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="737.5" y="178" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="127.5" x="752.5" y="178" fill="#419885">     .......     </text>
+<text xml:space="preserve" textLength="7.5" x="887.5" y="178" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="902.5" y="178" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="10.0" y="194" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="25.0" y="194" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="165.0" x="32.5" y="194" fill="#53c09f">⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⢽⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅</text>
+<text xml:space="preserve" textLength="22.5" x="197.5" y="194" fill="#419885">⠕⠅⠕</text>
+<text xml:space="preserve" textLength="495.0" x="220.0" y="194" fill="#53c09f">⡇⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⢽⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁</text>
+<text xml:space="preserve" textLength="7.5" x="715.0" y="194" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="737.5" y="194" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="887.5" y="194" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="902.5" y="194" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="10.0" y="210" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="25.0" y="210" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="165.0" x="32.5" y="210" fill="#53c09f">⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⢽⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅</text>
+<text xml:space="preserve" textLength="22.5" x="197.5" y="210" fill="#419885">⠕⠅⠕</text>
+<text xml:space="preserve" textLength="495.0" x="220.0" y="210" fill="#53c09f">⡇⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⢽⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁</text>
+<text xml:space="preserve" textLength="7.5" x="715.0" y="210" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="157.5" x="737.5" y="210" fill="#444f8d">└───────────────────┘</text>
+<text xml:space="preserve" textLength="7.5" x="902.5" y="210" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="10.0" y="225" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="25.0" y="225" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="165.0" x="32.5" y="225" fill="#53c09f">⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⢽⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅</text>
+<text xml:space="preserve" textLength="22.5" x="197.5" y="225" fill="#419885">⠕⠅⠕</text>
+<text xml:space="preserve" textLength="495.0" x="220.0" y="225" fill="#53c09f">⡇⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⢽⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁</text>
+<text xml:space="preserve" textLength="7.5" x="715.0" y="225" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="902.5" y="225" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="10.0" y="240" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="25.0" y="240" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="165.0" x="32.5" y="240" fill="#53c09f">⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⢽⠁⠅⠁⠅⠁⢅⣁⣅⠥⠥</text>
+<text xml:space="preserve" textLength="22.5" x="197.5" y="240" fill="#419885">⠕⠓⠓</text>
+<text xml:space="preserve" textLength="495.0" x="220.0" y="240" fill="#53c09f">⡇⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⠅⠁⢽⠥⢅⣁⣅⣁⠅⠁⠅⠁⠅⠁</text>
+<text xml:space="preserve" textLength="7.5" x="715.0" y="240" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="902.5" y="240" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="10.0" y="256" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="25.0" y="256" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="682.5" x="32.5" y="256" fill="#53c09f">⠥⠥⠥⠥⠥⠥⠥⠥⠥⠥⠥⠽⠥⠓⠓⠋⠉⠁       ⠧⠥⠥⠥⠥⠥⠥⠥⠥⠥⠥⠥⠥⠥⠥⠥⠥⠥⠥⠥⠥⠥⠥⠥⠥⠥⠥⠥⠥⠥⠥⠥⠥⠥⠥⠥⠥⠥⠥⠥⠥⠥⠥⠥⠥⠥⠥⠥⠥⠥⠥⠥⠥⠥⠽     ⠉⠉⠉⠓⠓⠓</text>
+<text xml:space="preserve" textLength="7.5" x="715.0" y="256" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="902.5" y="256" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="10.0" y="272" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="25.0" y="272" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="715.0" y="272" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="902.5" y="272" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="10.0" y="287" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="25.0" y="287" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="715.0" y="287" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="902.5" y="287" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="10.0" y="302" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="25.0" y="302" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="715.0" y="302" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="902.5" y="302" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="10.0" y="318" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="25.0" y="318" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="715.0" y="318" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="902.5" y="318" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="10.0" y="334" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="25.0" y="334" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="715.0" y="334" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="902.5" y="334" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="10.0" y="349" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="25.0" y="349" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="715.0" y="349" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="902.5" y="349" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="10.0" y="364" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="697.5" x="25.0" y="364" fill="#444f8d">└───────────────────────────────────────────────────────────────────────────────────────────┘</text>
+<text xml:space="preserve" textLength="7.5" x="902.5" y="364" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="10.0" y="380" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="902.5" y="380" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="10.0" y="396" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="885.0" x="17.5" y="396" fill="#c9c4ce"> Facing north                                                                                                         </text>
+<text xml:space="preserve" textLength="7.5" x="902.5" y="396" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="10.0" y="411" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="120.0" x="17.5" y="411" fill="#c9c4ce"> Hero     Lv3   </text>
+<text xml:space="preserve" textLength="142.5" x="137.5" y="411" fill="#5fae3b">HP ██████████ 39/40</text>
+<text xml:space="preserve" textLength="112.5" x="302.5" y="411" fill="#23b4e9">MP ██████ 10/10</text>
+<text xml:space="preserve" textLength="7.5" x="902.5" y="411" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="10.0" y="426" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="60.0" x="25.0" y="426" fill="#fbc254">Gold 100</text>
+<text xml:space="preserve" textLength="7.5" x="902.5" y="426" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="10.0" y="442" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="832.5" x="25.0" y="442" fill="#a59b9d">Up/W/k: forward | Down/s/j: back | Left/a/h or Right/d/l: turn | o: open chest | &gt; or Enter: descend | &lt;: exit </text>
+<text xml:space="preserve" textLength="7.5" x="902.5" y="442" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="10.0" y="458" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="127.5" x="25.0" y="458" fill="#a59b9d">dungeon | q: quit</text>
+<text xml:space="preserve" textLength="7.5" x="902.5" y="458" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="10.0" y="473" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="870.0" x="25.0" y="473" fill="#444f8d">┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐</text>
+<text xml:space="preserve" textLength="7.5" x="902.5" y="473" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="10.0" y="488" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="25.0" y="488" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="127.5" x="40.0" y="488" fill="#fa7d66">An enemy appears!</text>
+<text xml:space="preserve" textLength="7.5" x="887.5" y="488" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="902.5" y="488" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="10.0" y="504" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="25.0" y="504" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="225.0" x="40.0" y="504" fill="#fa7d66">Slime attacks Hero but misses!</text>
+<text xml:space="preserve" textLength="7.5" x="887.5" y="504" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="902.5" y="504" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="10.0" y="520" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="25.0" y="520" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="157.5" x="40.0" y="520" fill="#fa7d66">Hero hits Slime for 9</text>
+<text xml:space="preserve" textLength="7.5" x="887.5" y="520" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="902.5" y="520" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="10.0" y="535" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="25.0" y="535" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="217.5" x="40.0" y="535" fill="#fa7d66">Slime hits Hero for 1 - crit!</text>
+<text xml:space="preserve" textLength="7.5" x="887.5" y="535" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="902.5" y="535" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="10.0" y="550" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="25.0" y="550" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="165.0" x="40.0" y="550" fill="#fa7d66">Hero hits Slime for 10</text>
+<text xml:space="preserve" textLength="7.5" x="887.5" y="550" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="902.5" y="550" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="10.0" y="566" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="25.0" y="566" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="135.0" x="40.0" y="566" fill="#fa7d66">Slime is defeated!</text>
+<text xml:space="preserve" textLength="7.5" x="887.5" y="566" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="902.5" y="566" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="10.0" y="582" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="25.0" y="582" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="240.0" x="40.0" y="582" fill="#fbc254">Victory! Gained 5 XP and 5 gold.</text>
+<text xml:space="preserve" textLength="7.5" x="887.5" y="582" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="902.5" y="582" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="10.0" y="597" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="25.0" y="597" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="165.0" x="40.0" y="597" fill="#ca7ef2">You descend to floor 2</text>
+<text xml:space="preserve" textLength="7.5" x="887.5" y="597" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="902.5" y="597" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="7.5" x="10.0" y="612" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="870.0" x="25.0" y="612" fill="#444f8d">└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘</text>
+<text xml:space="preserve" textLength="7.5" x="902.5" y="612" fill="#444f8d">│</text>
+<text xml:space="preserve" textLength="900.0" x="10.0" y="628" fill="#444f8d">└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘</text>
+</svg>
