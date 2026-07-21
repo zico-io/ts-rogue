@@ -1,10 +1,12 @@
 name: Ralph eval
 
 # End-to-end eval for ralph mode (issue groups). It drives the deployed agent
-# against a dedicated Linear fixture and is authenticated, deployment-dependent,
-# and spins a real Vercel Sandbox - so it runs weekly and on demand, never on
-# pull requests. It targets the bob-v0 production alias directly and self-skips
-# until RALPH_EVAL_GROUP is set, so no repo variables are needed to configure it.
+# against a fixed Linear fixture and is authenticated, deployment-dependent, and
+# spins a real Vercel Sandbox - so it runs weekly and on demand, never on pull
+# requests. Auth is a short-lived GitHub OIDC token minted per run (no stored
+# bearer; the deployment's eve channel verifies it via oidc()). The only secret
+# is the Vercel deployment-protection bypass, which also gates the run: the job
+# self-skips until VERCEL_AUTOMATION_BYPASS_SECRET is set.
 on:
   workflow_dispatch:
   schedule:
@@ -12,6 +14,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   ralph-eval:
@@ -26,16 +29,16 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Run ralph end-to-end eval against production
         env:
-          # The Linear test group "<parent> <ready> <blocked>"; unset -> skip.
-          RALPH_EVAL_GROUP: ${{ secrets.RALPH_EVAL_GROUP }}
-          # Auth for the deployment: bearer token, plus the deployment-protection
-          # bypass when protection is on.
-          EVE_EVAL_AUTH_TOKEN: ${{ secrets.EVE_EVAL_AUTH_TOKEN }}
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
         run: |
-          if [ -z "$RALPH_EVAL_GROUP" ] || [ -z "$EVE_EVAL_AUTH_TOKEN" ]; then
-            echo "RALPH_EVAL_GROUP or EVE_EVAL_AUTH_TOKEN not set - configure the fixture and deployment auth to run this eval. Skipping."
+          if [ -z "$VERCEL_AUTOMATION_BYPASS_SECRET" ]; then
+            echo "VERCEL_AUTOMATION_BYPASS_SECRET not set - configure deployment access to run this eval. Skipping."
             exit 0
           fi
+          # Short-lived, per-run bearer. audience must match oidc() in agent/channels/eve.ts.
+          EVE_EVAL_AUTH_TOKEN="$(curl -sS \
+            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=eve-ralph-eval" | jq -r .value)"
+          export EVE_EVAL_AUTH_TOKEN
           pnpm exec eve eval ralph --strict \
             --url https://bob-v0-bask-health.vercel.app

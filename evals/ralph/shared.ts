@@ -1,30 +1,28 @@
 // Helpers for the ralph (issue-group) end-to-end eval. Not an eval file itself.
 
-// The dedicated Linear fixture the eval drives, as one env var
-// RALPH_EVAL_GROUP="<parent> <ready> <blocked>". Set it to a real test group so
-// the eval runs; leave it unset and the eval skips (keeps `eve eval` green
-// without the fixture). Recommended fixture under one parent assigned to Eve:
+// The dedicated Linear fixture the eval drives. These are stable, public issue
+// identifiers (not secrets) for a do-not-delete group in team ROG, so they live
+// in code rather than a CI secret. Structure under the parent:
 //
-//   PARENT   parent issue, assigned to the Eve agent, with three sub-issues:
-//     DONE     state Done            (an already-merged predecessor)
-//     READY    "blocked by" DONE     (now ready, since DONE is complete)
-//     BLOCKED  "blocked by" READY    (still blocked)
+//   PARENT (ROG-57), with three sub-issues:
+//     DONE     (ROG-58)  state Done            an already-merged predecessor
+//     READY    (ROG-59)  "blocked by" DONE     now ready, since DONE is complete
+//     BLOCKED  (ROG-60)  "blocked by" READY    still blocked
 //
 // The one correct move on the parent is to drive READY: it honors the satisfied
 // blocker (a merged predecessor unblocks the next - the "advance after merge"
 // rule), skips the finished DONE, and does not jump ahead to BLOCKED. DONE is
-// not passed - it is implied by READY becoming ready.
+// implied by READY becoming ready, so it is not asserted on.
 export interface RalphFixture {
   parent: string;
   ready: string;
   blocked: string;
 }
 
-export const ralphFixture = (): RalphFixture | null => {
-  const [parent, ready, blocked] = (process.env.RALPH_EVAL_GROUP ?? "")
-    .trim()
-    .split(/\s+/);
-  return parent && ready && blocked ? { parent, ready, blocked } : null;
+export const RALPH_FIXTURE: RalphFixture = {
+  parent: "ROG-57",
+  ready: "ROG-59",
+  blocked: "ROG-60",
 };
 
 // A synthetic Linear Agent Session delegation, mirroring the `<linear_context>`

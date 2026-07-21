@@ -50,15 +50,17 @@ drives the ready sub-issue first. It skips unless the fixture is set; run it
 against a sandbox-reachable target:
 
 ```bash
-RALPH_EVAL_GROUP="ROG-200 ROG-202 ROG-203" eve eval ralph --url https://<deployment>
+EVE_EVAL_AUTH_TOKEN=<bearer> eve eval ralph --url https://<deployment>
 ```
 
+The fixture is a fixed do-not-delete Linear group (identifiers in
+[`evals/ralph/shared.ts`](../evals/ralph/shared.ts)), so it is code, not config.
 CI runs this weekly and on demand via
 [`.github/workflows/ralph-eval.yml`](../.github/workflows/ralph-eval.yml),
-targeting the `bob-v0` production alias. No repo variables are needed: it
-self-skips until you add the secrets it references - `RALPH_EVAL_GROUP` (the
-`"<parent> <ready> <blocked>"` fixture) and the target auth
-(`EVE_EVAL_AUTH_TOKEN`, plus `VERCEL_AUTOMATION_BYPASS_SECRET` if the deployment
-has protection).
+targeting the `bob-v0` production alias. Deployment auth is a short-lived GitHub
+OIDC token minted per run and verified by `oidc()` in
+[`channels/eve.ts`](channels/eve.ts) - no stored bearer. The only secret is
+`VERCEL_AUTOMATION_BYPASS_SECRET` (the Vercel protection bypass), which also
+gates the run: the job self-skips until it is set.
 
 Repository workflow and requirements live in the [root README](../README.md).
