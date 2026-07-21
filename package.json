@@ -31,6 +31,7 @@
   },
   "dependencies": {
     "@vercel/connect": "0.4.0",
+    "@vercel/sandbox": "2.8.0",
     "ai": "^7.0.26",
     "eve": "^0.25.2",
     "ink": "^7",
@@ -44,6 +45,7 @@
     "@changesets/cli": "^2.31.1",
     "@types/node": "^24.13.3",
     "@types/react": "^19",
+    "esbuild": "^0.28.1",
     "sandbox": "3.5.2",
     "sharp": "^0.35.3",
     "tsx": "^4",
