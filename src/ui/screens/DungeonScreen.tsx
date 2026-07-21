@@ -17,7 +17,7 @@ export interface DungeonScreenProps {
 }
 
 const HINT =
-  "Up/W/k: forward | Down/s/j: back | Left/a/h or Right/d/l: turn | o: open chest | > or Enter: descend | q: quit";
+  "Up/W/k: forward | Down/s/j: back | Left/a/h or Right/d/l: turn | o: open chest | > or Enter: descend | <: exit dungeon | q: quit";
 
 /** Fixed minimap box chrome: 17 cols + 2 padding + 2 border; 9 rows + 1 label + 2 border. */
 const MINIMAP_BOX_WIDTH = 21;
@@ -79,6 +79,8 @@ function useCameraPose(ds: DungeonState): CameraPose {
  * into the pure dungeon reducer events. Entering / descending / encounters are all handled
  * by the reducer; this component only reads `state.dungeonState` and
  * dispatches. The FP view reflows to the content region the frame provides.
+ * Phase 6 (ROG-12) adds the `<` exit key (dispatches `ExitDungeon`) so the
+ * dungeon is never a dead-end after clearing a floor or defeating the boss.
  */
 export function DungeonScreen({ state, dispatch }: DungeonScreenProps) {
   useInput((input, key) => {
@@ -94,6 +96,8 @@ export function DungeonScreen({ state, dispatch }: DungeonScreenProps) {
       dispatch({ type: "OpenChest" });
     } else if (input === ">" || key.return) {
       dispatch({ type: "DescendStairs" });
+    } else if (input === "<") {
+      dispatch({ type: "ExitDungeon" });
     }
   });
 
@@ -139,6 +143,10 @@ function DungeonBody({ ds }: { ds: DungeonState }) {
   );
   const minimapRows = renderMinimap(ds);
 
+  const statusParts = [`Facing ${ds.facing}`];
+  if (ds.reachedBoss) statusParts.push("boss room reached");
+  if (ds.cleared) statusParts.push("dungeon cleared");
+
   return (
     <Box flexDirection="column" gap={1}>
       <Box
@@ -167,10 +175,7 @@ function DungeonBody({ ds }: { ds: DungeonState }) {
           <Text dimColor>{minimapRows.join("\n")}</Text>
         </Box>
       </Box>
-      <Text>
-        Facing {ds.facing}
-        {ds.reachedBoss ? " | boss room reached" : ""}
-      </Text>
+      <Text>{statusParts.join(" | ")}</Text>
     </Box>
   );
 }
