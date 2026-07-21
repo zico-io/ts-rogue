@@ -92,7 +92,13 @@ export type StepDirection = "forward" | "back";
  * party), and `DismissMember` (remove a non-hero member).
  */
 export type GameEvent =
-  | { type: "NewGame"; seed: number; permadeath?: boolean; classId?: string }
+  | {
+      type: "NewGame";
+      seed: number;
+      permadeath?: boolean;
+      classId?: string;
+      name?: string;
+    }
   | { type: "ChangeScene"; scene: Scene }
   | { type: "Log"; message: string; kind?: LogKind }
   | { type: "InnHeal" }

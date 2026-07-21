@@ -17,6 +17,12 @@ import {
 } from "./lib/incidents";
 import { clearSave, loadGame } from "./persistence/save";
 import {
+  DEFAULT_SETTINGS,
+  type GameSettings,
+  loadSettings,
+  saveSettings,
+} from "./persistence/settings";
+import {
   MinSizeGuard,
   TerminalLayoutProvider,
   useTerminalLayout,
@@ -28,7 +34,13 @@ import { DevConsole } from "./ui/screens/DevConsole";
 import { DungeonScreen } from "./ui/screens/DungeonScreen";
 import { GameOverScreen } from "./ui/screens/GameOverScreen";
 import { OverworldScreen } from "./ui/screens/OverworldScreen";
-import { TitleScreen } from "./ui/screens/TitleScreen";
+import { SettingsScreen } from "./ui/screens/SettingsScreen";
+import {
+  MAX_NAME_LENGTH,
+  mainMenuOptions,
+  TitleScreen,
+  type TitleView,
+} from "./ui/screens/TitleScreen";
 import { VillageScreen } from "./ui/screens/VillageScreen";
 import { theme } from "./ui/theme";
 import { initTiles } from "./ui/tiles/kitty";
@@ -46,7 +58,8 @@ function isQuit(input: string, key: { ctrl: boolean }): boolean {
 
 function App({
   store,
-  hasSave,
+  hasSave: initialHasSave,
+  initialSettings,
   devConsoleEnabled,
   seed,
   pipeline,
@@ -54,6 +67,7 @@ function App({
 }: {
   store: GameStore;
   hasSave: boolean;
+  initialSettings: GameSettings;
   devConsoleEnabled: boolean;
   seed: number;
   pipeline: IncidentPipeline;
@@ -62,9 +76,13 @@ function App({
   const { exit } = useApp();
   const { columns, rows, tooSmall } = useTerminalLayout();
   const [started, setStarted] = useState(false);
-  const [titlePhase, setTitlePhase] = useState<"class" | "mode">("class");
+  const [hasSave, setHasSave] = useState(initialHasSave);
+  const [settings, setSettings] = useState(initialSettings);
+  const [titleView, setTitleView] = useState<TitleView>("menu");
+  const [menuCursor, setMenuCursor] = useState(0);
   const [classCursor, setClassCursor] = useState(0);
   const [modeCursor, setModeCursor] = useState(0);
+  const [nameInput, setNameInput] = useState(initialSettings.defaultHeroName);
   const [consoleOpen, setConsoleOpen] = useState(false);
   const [consoleOutput, setConsoleOutput] = useState<string[]>([]);
   const [fatal, setFatal] = useState<IncidentDisplay | undefined>(() =>
@@ -81,55 +99,101 @@ function App({
     }
   });
 
-  // Title screen phase: on a fresh boot (no save) the player first picks a
-  // class from the CLASSES table, then a mode (Normal/Permadeath), and Enter
-  // starts the run; with an existing save any key continues (Phase 6, ROG-12
-  // permadeath choice; ROG-17 class choice).
+  // Title flow: the landing view is a main menu (New Game / Continue / Settings
+  // / Quit). New Game walks class -> mode -> name, then Enter starts the run,
+  // seeded with the custom seed setting or the boot seed so `--seed` stays
+  // deterministic (ROG-16 play harness). Settings is a separate component that
+  // owns its own input, so this handler is inactive there. (Phase 6, ROG-12
+  // permadeath; ROG-17 class; title overhaul.)
   useInput(
     (input, key) => {
       if (devConsoleEnabled && input === "`") return;
+
+      // Name entry accepts printable chars, so bare `q` must type - only
+      // Ctrl-C quits here; Esc backs out to mode selection.
+      if (titleView === "name") {
+        if (key.ctrl && input === "c") {
+          exit();
+        } else if (key.escape) {
+          setTitleView("mode");
+        } else if (key.return) {
+          const name = nameInput.trim();
+          if (!name) return;
+          store.dispatch({
+            type: "NewGame",
+            seed: settings.customSeed ?? seed,
+            classId: CLASSES[classCursor].id,
+            permadeath: modeCursor === 1,
+            name,
+          });
+          setStarted(true);
+        } else if (key.backspace || key.delete) {
+          setNameInput((value) => value.slice(0, -1));
+        } else if (
+          input &&
+          !key.ctrl &&
+          !key.meta &&
+          nameInput.length < MAX_NAME_LENGTH
+        ) {
+          setNameInput((value) => value + input);
+        }
+        return;
+      }
+
       if (isQuit(input, key)) {
         exit();
         return;
       }
-      // A loaded save is already the store's initial state; press any key to
-      // continue it. A fresh boot shows mode selection and seeds the new run
-      // with the boot seed so `--seed` stays deterministic across the
-      // transition (ROG-16 play harness).
-      if (hasSave) {
-        setStarted(true);
+
+      if (titleView === "menu") {
+        const options = mainMenuOptions(hasSave);
+        if (key.upArrow) {
+          setMenuCursor((c) => (c + options.length - 1) % options.length);
+        } else if (key.downArrow) {
+          setMenuCursor((c) => (c + 1) % options.length);
+        } else if (key.return) {
+          const option = options[menuCursor];
+          if (option.id === "new") {
+            setClassCursor(0);
+            setTitleView("class");
+          } else if (option.id === "continue") {
+            setStarted(true);
+          } else if (option.id === "settings") {
+            setTitleView("settings");
+          } else {
+            exit();
+          }
+        }
         return;
       }
-      if (titlePhase === "class") {
-        if (key.upArrow) {
+
+      if (titleView === "class") {
+        if (key.escape) {
+          setTitleView("menu");
+        } else if (key.upArrow) {
           setClassCursor((c) => (c + CLASSES.length - 1) % CLASSES.length);
         } else if (key.downArrow) {
           setClassCursor((c) => (c + 1) % CLASSES.length);
         } else if (key.return) {
-          setTitlePhase("mode");
+          setModeCursor(settings.defaultPermadeath ? 1 : 0);
+          setTitleView("mode");
         }
         return;
       }
-      // titlePhase === "mode"
+
+      // titleView === "mode"
       if (key.escape) {
-        setTitlePhase("class");
-        return;
-      }
-      if (key.upArrow) {
-        setModeCursor((c) => (c === 0 ? 1 : 0));
-      } else if (key.downArrow) {
+        setTitleView("class");
+      } else if (key.upArrow || key.downArrow) {
         setModeCursor((c) => (c === 0 ? 1 : 0));
       } else if (key.return) {
-        store.dispatch({
-          type: "NewGame",
-          seed,
-          classId: CLASSES[classCursor].id,
-          permadeath: modeCursor === 1,
-        });
-        setStarted(true);
+        setNameInput(settings.defaultHeroName);
+        setTitleView("name");
       }
     },
-    { isActive: !fatal && !started && !consoleOpen },
+    {
+      isActive: !fatal && !started && !consoleOpen && titleView !== "settings",
+    },
   );
 
   // In-game scene switching (blocked while the game is over).
@@ -157,11 +221,13 @@ function App({
       if (key.return) {
         const permadeath = state.flags?.permadeath ?? false;
         const classId = state.party[0].classId;
+        const name = state.party[0].name;
         store.dispatch({
           type: "NewGame",
           seed: Date.now(),
           permadeath,
           classId,
+          name,
         });
       }
     },
@@ -176,6 +242,20 @@ function App({
 
   const dispatch = (event: Parameters<GameStore["dispatch"]>[0]) =>
     store.dispatch(event);
+
+  // Settings edits persist to disk immediately; local state is the source of
+  // truth for the New Game defaults. Deleting the save flips `hasSave` so the
+  // menu's Continue entry disappears. I/O is wrapped so a write failure surfaces
+  // through the incident pipeline instead of crashing the title screen.
+  const updateSettings = (next: GameSettings) => {
+    setSettings(next);
+    failures.run("save", false, () => saveSettings(next));
+  };
+  const deleteSave = () => {
+    failures.run("clear", false, clearSave);
+    setHasSave(false);
+    setMenuCursor(0);
+  };
 
   let content: ReactNode;
   if (fatal) {
@@ -196,13 +276,30 @@ function App({
     );
   } else if (!started) {
     content = (
-      <Box flexDirection="column">
-        <TitleScreen
-          hasSave={hasSave}
-          titlePhase={titlePhase}
-          classCursor={classCursor}
-          modeCursor={modeCursor}
-        />
+      <Box
+        flexDirection="column"
+        flexGrow={1}
+        alignItems="center"
+        justifyContent="center"
+      >
+        {titleView === "settings" ? (
+          <SettingsScreen
+            settings={settings}
+            hasSave={hasSave}
+            onUpdate={updateSettings}
+            onDeleteSave={deleteSave}
+            onClose={() => setTitleView("menu")}
+          />
+        ) : (
+          <TitleScreen
+            titleView={titleView}
+            hasSave={hasSave}
+            menuCursor={menuCursor}
+            classCursor={classCursor}
+            modeCursor={modeCursor}
+            nameInput={nameInput}
+          />
+        )}
         {devConsoleEnabled && (
           <Text color={theme.textMuted}>Dev console: press ` to switch.</Text>
         )}
@@ -297,6 +394,8 @@ const loaded = attempt(() => {
 });
 const store = loaded.ok ? loaded.value.store : new GameStore(newGame(bootSeed));
 const hasSave = loaded.ok ? loaded.value.hasSave : false;
+const settingsLoad = attempt(() => loadSettings());
+const initialSettings = settingsLoad.ok ? settingsLoad.value : DEFAULT_SETTINGS;
 const failures = new FailureBoundary(store);
 store.subscribeIncidents((incident) => pipeline.capture(incident));
 if (!loaded.ok) failures.report("load", loaded.error, true);
@@ -315,6 +414,7 @@ const rendered = failures.run("boot", true, () =>
           devConsoleEnabled={devConsoleEnabled}
           failures={failures}
           hasSave={hasSave}
+          initialSettings={initialSettings}
           pipeline={pipeline}
           seed={bootSeed}
           store={store}
