@@ -65,6 +65,8 @@ export interface NewGameOptions {
   permadeath?: boolean;
   /** Character class id for the starting hero; defaults to warrior when omitted. */
   classId?: string;
+  /** Player-chosen name for the starting hero; defaults to "Hero" when omitted. */
+  name?: string;
 }
 
 /** Build a fresh state tree for a new run from a seed, logging the seed. */
@@ -76,7 +78,7 @@ export function newGame(seed: number, options?: NewGameOptions): GameState {
     rngState: rng.getState(),
     scene: "village",
     log: [entry(`Started new game with seed ${seed}`, "quest")],
-    party: [createStartingHero(options?.classId)],
+    party: [createStartingHero(options?.classId, "hero-1", options?.name)],
     recruits: [],
     gold: 50,
     inventory: [],
@@ -679,6 +681,7 @@ export function reduce(state: GameState, event: GameEvent): GameState {
       return newGame(event.seed, {
         permadeath: event.permadeath,
         classId: event.classId,
+        name: event.name,
       });
     case "ChangeScene":
       return { ...state, scene: event.scene };
