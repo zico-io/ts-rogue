@@ -28,6 +28,8 @@ export interface GameFlags {
  * item instance ids, so loot ids are deterministic from the event history).
  * Phase 6 (ROG-12) adds `flags` (run-level permadeath and game-over flags).
  * ROG-17 adds `classId` on each `PartyMember` (the chosen character class).
+ * ROG-20 makes `party` support up to 4 members that each act and get targeted
+ * in battle.
  */
 export interface GameState {
   seed: number;
@@ -67,6 +69,9 @@ export type StepDirection = "forward" | "back";
  * (ROG-12) adds `ExitDungeon` (leave the active dungeon for the overworld) and
  * a `permadeath` option on `NewGame`. ROG-17 adds a `classId` option on
  * `NewGame` (the chosen character class; defaults to warrior when omitted).
+ * ROG-20 adds `memberId` on `EquipItem`/`UnequipItem` (which party member the
+ * action targets) and `RecruitMember` (dev-console party growth ahead of the
+ * ROG-21 tavern recruiting UI).
  */
 export type GameEvent =
   | { type: "NewGame"; seed: number; permadeath?: boolean; classId?: string }
@@ -75,9 +80,10 @@ export type GameEvent =
   | { type: "InnHeal" }
   | { type: "StoreBuy"; itemId: string; quantity: number }
   | { type: "StoreSell"; itemId: string; quantity: number }
-  | { type: "EquipItem"; instanceId: string }
-  | { type: "UnequipItem"; slot: EquipmentSlotName }
+  | { type: "EquipItem"; instanceId: string; memberId: string }
+  | { type: "UnequipItem"; slot: EquipmentSlotName; memberId: string }
   | { type: "SellItem"; instanceId: string }
+  | { type: "RecruitMember"; classId: string }
   | { type: "MoveOverworld"; dx: MoveDelta; dy: MoveDelta }
   | { type: "TurnDungeon"; direction: TurnDirection }
   | { type: "StepDungeon"; direction: StepDirection }

@@ -1,20 +1,21 @@
 /**
  * Party & economy data model (PROJECT_PLAN §4.2, §10; Phase 5, ROG-11;
- * character classes in ROG-17).
+ * character classes in ROG-17; multi-member party in ROG-20).
  *
- * PROJECT_PLAN §10 defers multi-member parties until the loop is proven, so
- * `newGame` only ever creates one hero. `party` is still modeled as an array
- * so battle/UI code written against it does not need to change shape later.
+ * `party` is modeled as an array of up to 4 members. `newGame` still only ever
+ * creates one starting hero; additional members are added at runtime (e.g.
+ * `recruitMember` in `src/engine/state/store.ts`) via `createStartingHero`
+ * with a distinct id/name.
  *
  * Phase 5 equipment slots hold the full generated `ItemInstance` (not just an
  * id) so a save is self-contained: equipping moves an instance from the
  * backpack (`GameState.items`) into a slot, unequipping moves it back. Combat
  * reads effective stats via `src/engine/loot/equipment.ts`.
  *
- * ROG-17 adds `classId`: the hero's character class, which drives starting
+ * ROG-17 adds `classId`: a member's character class, which drives starting
  * stats/HP/MP, per-level growth, and starting skills via the `ClassDef` table
- * in `src/data/classes.ts`. `createStartingHero(classId)` builds a hero from a
- * ClassDef instead of hardcoded values; old saves without a `classId` are
+ * in `src/data/classes.ts`. `createStartingHero(classId)` builds a member from
+ * a ClassDef instead of hardcoded values; old saves without a `classId` are
  * backfilled to the default class (`warrior`) on load.
  */
 
@@ -60,18 +61,23 @@ export interface InventoryItem {
 }
 
 /**
- * Deterministic starting hero for a fresh run. No RNG involved. Stats, HP/MP,
- * and known skills all come from the `ClassDef` for `classId` (defaulting to
- * the default class), so adding a class is a data entry, not a code change.
+ * Deterministic starting hero/member for a fresh run or a recruit. No RNG
+ * involved. Stats, HP/MP, and known skills all come from the `ClassDef` for
+ * `classId` (defaulting to the default class), so adding a class is a data
+ * entry, not a code change. `id`/`name` default to the original single-hero
+ * values so `newGame`'s call site is unaffected; callers adding a second (or
+ * later) member pass a distinct id/name.
  */
 export function createStartingHero(
   classId: string = DEFAULT_CLASS_ID,
+  id: string = "hero-1",
+  name: string = "Hero",
 ): PartyMember {
   const cls = findClass(classId) ?? findClass(DEFAULT_CLASS_ID);
   if (!cls) throw new Error(`${DEFAULT_CLASS_ID} class missing from data`);
   return {
-    id: "hero-1",
-    name: "Hero",
+    id,
+    name,
     classId: cls.id,
     level: 1,
     xp: 0,

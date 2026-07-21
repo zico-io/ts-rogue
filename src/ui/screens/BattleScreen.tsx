@@ -47,8 +47,9 @@ export function BattleScreen({ state, dispatch }: BattleScreenProps) {
   const [pendingSkill, setPendingSkill] = useState<string | null>(null);
 
   const bs = state.battleState;
-  const hero = state.party[0];
-  const knownSkills = classSkills(hero.classId);
+  const actor =
+    state.party.find((m) => m.id === bs?.activeMemberId) ?? state.party[0];
+  const knownSkills = classSkills(actor.classId);
 
   const reset = () => {
     setMode("action");
@@ -115,7 +116,7 @@ export function BattleScreen({ state, dispatch }: BattleScreenProps) {
       else if (down) setSkillCursor((c) => (c + 1) % knownSkills.length);
       else if (key.return) {
         const skill = knownSkills[skillCursor];
-        if (hero.mp >= skill.mpCost) {
+        if (actor.mp >= skill.mpCost) {
           if (skill.target === "enemy") {
             setMode("target");
             setTargetCursor(0);
@@ -124,7 +125,7 @@ export function BattleScreen({ state, dispatch }: BattleScreenProps) {
             dispatch({
               type: "BattleSkill",
               skillId: skill.id,
-              targetId: hero.id,
+              targetId: actor.id,
             });
             reset();
           }
@@ -144,7 +145,7 @@ export function BattleScreen({ state, dispatch }: BattleScreenProps) {
           dispatch({
             type: "BattleItem",
             itemId: item.itemId,
-            targetId: hero.id,
+            targetId: actor.id,
           });
           reset();
         }
@@ -197,6 +198,7 @@ export function BattleScreen({ state, dispatch }: BattleScreenProps) {
       <BattleBody
         state={state}
         bs={bs}
+        actor={actor}
         aliveEnemies={aliveEnemies}
         healItems={healItems}
         mode={mode}
@@ -213,6 +215,7 @@ export function BattleScreen({ state, dispatch }: BattleScreenProps) {
 interface BattleBodyProps {
   state: GameState;
   bs: BattleState;
+  actor: GameState["party"][number];
   aliveEnemies: BattleState["enemies"];
   healItems: GameState["inventory"];
   mode: Mode;
@@ -226,6 +229,7 @@ interface BattleBodyProps {
 function BattleBody({
   state,
   bs,
+  actor,
   aliveEnemies,
   healItems,
   mode,
@@ -236,7 +240,6 @@ function BattleBody({
   skills,
 }: BattleBodyProps) {
   const { width, height } = useScreenContent();
-  const hero = state.party[0];
 
   const logWidth = Math.min(BATTLE_LOG_MAX_WIDTH, Math.floor(width * 0.4));
   const viewportWidth = Math.max(1, width - logWidth - LAYOUT_GAP);
@@ -279,7 +282,7 @@ function BattleBody({
             paddingX={1}
           >
             <Text bold color="cyan">
-              {hero.name}
+              {actor.name}
             </Text>
             <ActionMenu
               mode={mode}
@@ -287,7 +290,7 @@ function BattleBody({
               actionCursor={actionCursor}
               skills={skills}
               skillCursor={skillCursor}
-              heroMp={hero.mp}
+              heroMp={actor.mp}
               healItems={healItems}
               itemCursor={itemCursor}
             />
@@ -295,11 +298,11 @@ function BattleBody({
         </Box>
 
         <Text>
-          {hero.name} Lv{hero.level} | XP {hero.xp}/{xpToNext(hero.level)} | ATK{" "}
-          {atkFrom(hero)} DEF {defFrom(hero)} SPD {spdFrom(hero)}
+          {actor.name} Lv{actor.level} | XP {actor.xp}/{xpToNext(actor.level)} |
+          ATK {atkFrom(actor)} DEF {defFrom(actor)} SPD {spdFrom(actor)}
         </Text>
         <Text dimColor>
-          Turn order: {initiativeNames(bs, hero.name).join(" -> ")}
+          Turn order: {initiativeNames(bs, state.party).join(" -> ")}
         </Text>
       </Box>
 
@@ -439,9 +442,13 @@ function ActionMenu({
 }
 
 /** Map initiative combatant ids to display names for the turn-order line. */
-function initiativeNames(battle: BattleState, heroName: string): string[] {
+function initiativeNames(
+  battle: BattleState,
+  party: GameState["party"],
+): string[] {
   return battle.initiative.map((id) => {
-    if (id === "hero-1") return heroName;
+    const member = party.find((m) => m.id === id);
+    if (member) return member.name;
     const enemy = battle.enemies.find((entry) => entry.id === id);
     return enemy ? enemy.name : id;
   });
