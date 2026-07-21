@@ -12,6 +12,8 @@
  * `tilesSupported()` and fall back to ASCII when tiles are off.
  */
 
+import { readFileSync } from "node:fs";
+
 const IMAGE_ID = 1;
 const TILE = 12;
 /** Sheet geometry: 12 px tiles on a 13 px pitch behind a 1 px outer margin. */
@@ -95,13 +97,24 @@ function apc(payload: string): string {
   return `\x1b_G${payload}\x1b\\`;
 }
 
-/** Transmit-plus-placements sequence for the sheet at `pngPath` (absolute). */
-export function initSequence(pngPath: string, inTmux?: boolean): string {
-  const commands = [
-    apc(
-      `a=t,f=100,t=f,i=${IMAGE_ID},q=2;${Buffer.from(pngPath).toString("base64")}`,
-    ),
-  ];
+/** Direct chunked transmission: 4096-byte base64 chunks (m=1 until the last). */
+const CHUNK = 4096;
+
+/**
+ * Transmit-plus-placements sequence for the base64-encoded sheet PNG. Direct
+ * (in-band) medium - the file medium `t=f` fails silently in some terminals.
+ */
+export function initSequence(pngBase64: string, inTmux?: boolean): string {
+  const commands: string[] = [];
+  for (let i = 0; i < pngBase64.length; i += CHUNK) {
+    const chunk = pngBase64.slice(i, i + CHUNK);
+    const last = i + CHUNK >= pngBase64.length;
+    const control =
+      i === 0
+        ? `a=t,f=100,i=${IMAGE_ID},q=2,m=${last ? 0 : 1}`
+        : `m=${last ? 0 : 1}`;
+    commands.push(apc(`${control};${chunk}`));
+  }
   for (const name of NAMES) {
     const source: TileSource = TILE_SOURCES[name];
     const { c, r } = source.cells ?? { c: 2, r: 1 };
@@ -126,7 +139,7 @@ export function initTiles(): void {
     "../../../assets/urizen_onebit_tileset__v2d0.png",
     import.meta.url,
   ).pathname;
-  process.stdout.write(initSequence(pngPath));
+  process.stdout.write(initSequence(readFileSync(pngPath).toString("base64")));
   // ponytail: no image delete on exit; the terminal frees it with the session
 }
 

@@ -34,13 +34,14 @@ describe("spriteRows", () => {
 });
 
 describe("initSequence", () => {
-  it("transmits the sheet by file path and creates gutter-aware placements", () => {
-    const sequence = initSequence("/tmp/sheet.png", false);
+  it("transmits the sheet as direct chunks and creates gutter-aware placements", () => {
+    const b64 = "A".repeat(4096 + 100);
+    const sequence = initSequence(b64, false);
+    // first chunk carries the control keys with m=1, the final chunk m=0
     expect(
-      sequence.startsWith(
-        `${ESC}_Ga=t,f=100,t=f,i=1,q=2;${Buffer.from("/tmp/sheet.png").toString("base64")}${ESC}\\`,
-      ),
+      sequence.startsWith(`${ESC}_Ga=t,f=100,i=1,q=2,m=1;${"A".repeat(4096)}${ESC}\\`),
     ).toBe(true);
+    expect(sequence).toContain(`${ESC}_Gm=0;${"A".repeat(100)}${ESC}\\`);
     // grass at sheet (col 4, row 9) -> x = 1 + 13*4, y = 1 + 13*9
     expect(sequence).toContain(
       `${ESC}_Ga=p,U=1,q=2,i=1,p=1,x=53,y=118,w=12,h=12,c=2,r=1${ESC}\\`,
@@ -51,8 +52,15 @@ describe("initSequence", () => {
     );
   });
 
+  it("sends a single-chunk payload with m=0 up front", () => {
+    const sequence = initSequence("QUJD", false);
+    expect(sequence.startsWith(`${ESC}_Ga=t,f=100,i=1,q=2,m=0;QUJD${ESC}\\`)).toBe(
+      true,
+    );
+  });
+
   it("wraps every command for tmux passthrough when inside tmux", () => {
-    const sequence = initSequence("/tmp/sheet.png", true);
+    const sequence = initSequence("QUJD", true);
     expect(sequence.startsWith(`${ESC}Ptmux;${ESC}${ESC}_G`)).toBe(true);
     expect(sequence.endsWith(`${ESC}${ESC}\\${ESC}\\`)).toBe(true);
   });
