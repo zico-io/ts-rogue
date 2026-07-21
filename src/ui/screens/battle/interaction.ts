@@ -13,7 +13,9 @@
 
 import type { SkillDef } from "../../../engine/combat/skills";
 import type { Intent, Keymap, KeyName } from "../../scene/input";
-import { ACTIONS } from "../BattleScreen";
+
+/** The action-menu options, in cursor order. Owned here (not `BattleScreen.tsx`) so this module stays framework-free and importable from the browser adapter. */
+export const ACTIONS = ["Attack", "Skill", "Item", "Defend", "Flee"] as const;
 
 export type BattleMode = "action" | "skill" | "item" | "target";
 

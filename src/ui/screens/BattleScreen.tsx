@@ -23,6 +23,7 @@ import {
   tilesSupported,
 } from "../tiles/kitty";
 import {
+  ACTIONS,
   type BattleMode,
   type BattleUiState,
   INITIAL_BATTLE_UI_STATE,
@@ -36,7 +37,6 @@ export interface BattleScreenProps {
   dispatch: (event: GameEvent) => void;
 }
 
-export const ACTIONS = ["Attack", "Skill", "Item", "Defend", "Flee"] as const;
 const ENEMY_GAP = 4;
 const LAYOUT_GAP = 2;
 /** Max width of the right-hand battle log panel; shrinks on narrow panes. */
