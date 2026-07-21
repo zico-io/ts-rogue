@@ -319,6 +319,7 @@ function makeEnemy(def: MonsterDef, instance: number): BattleEnemy {
     stats: { ...def.stats },
     ascii: def.ascii,
     color: def.color,
+    sprite: def.sprite,
     xp: def.xp,
     gold: def.gold,
   };

@@ -28,22 +28,68 @@ serves that build locally.
 - `scenes.ts` - pure scene-switching logic (`SceneSwitcher`) that shows one
   scene view at a time and refreshes each with a state-derived label, without
   depending on Pixi or the DOM. Unit-tested in `scenes.test.ts`.
+- `atlas.ts` - loads the packed sprite atlas through Pixi's `Assets` loader
+  (ROG-44); see "Art pipeline" below.
 - `main.ts` - the entry point: builds the initial `GameState`, wires a
   `GameStore`, initializes the Pixi `Application`, builds one `Container` per
-  scene, and subscribes to store updates.
+  scene, loads the atlas, and subscribes to store updates.
 - `index.html` - the Vite HTML entry, a full-viewport canvas mount plus a
   hidden minimum-size overlay.
+- `public/atlas/` - the built atlas (`atlas.png` + `atlas.json`), served
+  as-is by Vite's default static-file handling for `<root>/public`
+  (`vite.config.ts` sets `root: "src/web"`) and copied verbatim into
+  `dist/web/atlas/` on build. Generated; do not hand-edit, see below.
+
+## Art pipeline (ROG-44)
+
+Style: 12x12 pixel art from the [Urizen 1-bit tileset](../../assets/README.md)
+(`assets/urizen_onebit_tileset__v2d0.png`), the same source the terminal's
+kitty-graphics tileset uses (`src/ui/tiles/kitty.ts`). Colors come from the
+ROG-31 palette in `src/ui/theme.ts`; the art itself is monochrome pixel art
+tinted only by each monster's `color` in battle framing, not by the tile
+atlas.
+
+`scripts/build-atlas.ts` slices named tile coordinates out of the sheet and
+packs them into one Pixi spritesheet (`atlas.png` + `atlas.json`, hash
+format) under `public/atlas/`. Frames stay at native 12x12 - Pixi scales
+pixel art at render time with nearest-neighbor filtering
+(`texture.source.scaleMode = "nearest"`) instead of baking a pre-scaled
+sprite, unlike the terminal pipeline which pre-scales monster glyphs 8x for
+fixed-size kitty placements.
+
+`atlas.ts`'s `loadAtlas()` registers the bundle with `Assets.addBundle` and
+awaits `Assets.loadBundle`, returning a `Spritesheet` whose `textures` map is
+keyed by frame name. `main.ts` looks sprites up by name, e.g.
+`sheet.textures.slime`.
+
+### Adding a new sprite
+
+1. Pick (or add) the tile's `(col, row)` coordinate on the Urizen sheet and
+   add it to `TILE_SOURCES` in `src/ui/tiles/kitty.ts` if it is not already
+   there (the terminal and browser pipelines share this table).
+2. Add the same name to `ATLAS_FRAMES` in `scripts/build-atlas.ts`.
+3. Regenerate the atlas: `pnpm tsx scripts/build-atlas.ts`. This rewrites
+   `public/atlas/atlas.png` and `atlas.json` - commit both.
+4. For a monster, set `sprite: "<name>"` on its `MonsterDef` in
+   `src/data/monsters.ts` (additive, alongside `ascii`; the terminal renderer
+   keeps using `ascii` unchanged). It carries through to `BattleEnemy.sprite`
+   in battle state automatically via `src/engine/combat/resolution.ts`.
+5. Look the texture up wherever it renders: `const sheet = await
+   loadAtlas(); new Sprite(sheet.textures["<name>"])`, and set
+   `texture.source.scaleMode = "nearest"` before scaling it up.
 
 ## Scope and limits
 
-This issue (ROG-43) only wires the build and boot sequence. It intentionally
-does not yet include:
+This issue (ROG-43) only wires the build and boot sequence. ROG-44 adds the
+texture atlas and an atlas-loading smoke test (see above), but real per-scene
+sprite content is still out of scope. Also intentionally missing:
 
 - Persistence - every load starts a fresh game; ROG-46 adds IndexedDB
   save/load.
 - Keyboard input - nothing dispatches events yet; ROG-45 adds a keyboard input
   manager with scene focus routing.
-- Real scene content - each scene is a placeholder label; ROG-49 through
+- Real scene content - each scene is a placeholder label (plus, since
+  ROG-44, a static atlas preview in the village scene); ROG-49 through
   ROG-52 add real sprites and per-scene rendering.
 - A dev console or rich crash screen - failures show a minimal plain-text
   overlay; ROG-48 owns a proper browser dev console and crash screen.
