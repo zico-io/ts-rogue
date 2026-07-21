@@ -8,11 +8,25 @@ import type { DungeonState, WorldState } from "../world/types";
 export type Scene = "village" | "overworld" | "dungeon" | "battle";
 
 /**
+ * Run-level flags (Phase 6, ROG-12). `permadeath` is chosen at new-game time
+ * and decides whether a defeat ends the run (true) or revives the party at the
+ * village with a gold penalty (false, the default). `gameOver` is a terminal
+ * flag set only by the death resolver when `permadeath` is true; the UI checks
+ * it to show a game-over screen and start a fresh run. Both are plain booleans
+ * so they round-trip through serialize/deserialize with the rest of the tree.
+ */
+export interface GameFlags {
+  permadeath: boolean;
+  gameOver: boolean;
+}
+
+/**
  * The single serializable state tree. Only the fields the current milestone
  * needs exist today; dungeon/battle are added as their PROJECT_PLAN phases
  * land. Phase 5 (ROG-11) adds `items` (generated, affix-bearing equipment in
  * the backpack) and `nextItemId` (the monotonically increasing source of unique
  * item instance ids, so loot ids are deterministic from the event history).
+ * Phase 6 (ROG-12) adds `flags` (run-level permadeath and game-over flags).
  */
 export interface GameState {
   seed: number;
@@ -32,6 +46,7 @@ export interface GameState {
   dungeonState: DungeonState | null;
   /** `null` outside battle; set by the encounter trigger points in the store. */
   battleState: BattleState | null;
+  flags: GameFlags;
 }
 
 /** A single-tile movement delta on the overworld grid. */
@@ -48,9 +63,11 @@ export type StepDirection = "forward" | "back";
  * flag encounters and move the party; battle events (PROJECT_PLAN Phase 4)
  * resolve turn-based combat; loot/equip/sell events (Phase 5, ROG-11) flow
  * generated equipment between the backpack, equipment slots, and the store.
+ * Phase 6 (ROG-12) adds `ExitDungeon` (leave the active dungeon for the
+ * overworld) and a `permadeath` option on `NewGame`.
  */
 export type GameEvent =
-  | { type: "NewGame"; seed: number }
+  | { type: "NewGame"; seed: number; permadeath?: boolean }
   | { type: "ChangeScene"; scene: Scene }
   | { type: "Log"; message: string }
   | { type: "InnHeal" }
@@ -64,4 +81,5 @@ export type GameEvent =
   | { type: "StepDungeon"; direction: StepDirection }
   | { type: "OpenChest" }
   | { type: "DescendStairs" }
+  | { type: "ExitDungeon" }
   | BattleEvent;

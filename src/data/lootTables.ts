@@ -6,6 +6,12 @@
  * is picked from `items`. Deeper tiers and the boss table favor rarer rolls and
  * reference higher-ilvl bases. The combat victory hook selects a monster's
  * table via its `lootTableRef`; the chest hook selects via floor.
+ *
+ * Phase 6 (ROG-12) balance pass: the tier-1 (slime) trash dropChance was raised
+ * from 0.25 to 0.30 so early kills feel a bit more rewarding. Tier-2 (0.30),
+ * tier-3/boss (1.0), and all chest tables (1.0) are unchanged. Monster-implicit
+ * pool drop chances stay infrequent for type pools and reliable for boss pools
+ * by design (see `src/data/implicitPools.ts`).
  */
 
 import type { LootTable } from "../engine/loot/types";
@@ -13,7 +19,7 @@ import type { LootTable } from "../engine/loot/types";
 export const LOOT_TABLES: readonly LootTable[] = [
   {
     id: "tier-1",
-    dropChance: 0.25,
+    dropChance: 0.3,
     rarityWeights: { common: 60, magic: 30, rare: 9, unique: 1 },
     items: [
       { baseId: "rusty-dagger", weight: 3 },

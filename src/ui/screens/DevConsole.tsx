@@ -89,6 +89,21 @@ function readPlayKeys(): string | undefined {
   }
 }
 
+/** Capture the harness's own tmux pane (plain, for the issue's Screen block). */
+function readPlayFrame(): string | undefined {
+  if (!process.env.TS_ROGUE_PLAY) return undefined;
+  try {
+    return (
+      execFileSync("tmux", ["capture-pane", "-t", "rogue", "-p"], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      }) || undefined
+    );
+  } catch {
+    return undefined;
+  }
+}
+
 function gitCommit(): string | undefined {
   try {
     return execFileSync("git", ["rev-parse", "--short", "HEAD"], {
@@ -122,6 +137,7 @@ async function fileIssue(
       state,
       logTail: state.log.slice(-12),
       keySequence: readPlayKeys(),
+      frame: readPlayFrame(),
       commit: gitCommit(),
       node: process.version,
       terminal,
