@@ -1,5 +1,6 @@
 /**
- * Turn-based combat resolution (PROJECT_PLAN Phase 4, ROG-10).
+ * Turn-based combat resolution (PROJECT_PLAN Phase 4, ROG-10; multi-member
+ * party in ROG-20).
  *
  * All randomness routes through the seeded `Rng` wrapper and the consumed
  * state is persisted back onto `GameState.rngState`, so a seed plus an event
@@ -8,15 +9,20 @@
  * around `resolveBattleEvent`; the three encounter trigger points call
  * `startBattle`.
  *
- * Round model: at battle start a single initiative order is rolled and reused
- * every round. When the player picks a command, the whole round resolves in
- * initiative order in one synchronous reducer step - the hero acts at their
- * initiative slot (executing the player's command), each living enemy
- * auto-attacks at its slot, and win/lose is re-checked after every action. A
- * new round begins if the battle is still ongoing when the order is exhausted.
- * Blocked actions (insufficient MP, no usable item, no living target) are
- * fully side-effect-free: they return the state untouched and consume no RNG,
- * so replays stay deterministic even if the UI hands in a disallowed command.
+ * Pause-per-actor round model: at battle start a single initiative order is
+ * rolled from the living party members plus the enemy group, and that fixed
+ * order is reused every round. One dispatch resolves exactly one command from
+ * the party member whose turn it is (`BattleState.activeMemberId`); after that
+ * command resolves, `advanceRound` walks forward through the initiative order
+ * auto-resolving every enemy attack (spread across a random living party
+ * member each time) and skipping KO'd party members, until either the next
+ * living party member comes up - the battle pauses again, awaiting their
+ * command - or the whole party is down (`lost`). This lets several party
+ * members each take their own action turn without changing the "one command
+ * per dispatch" UI contract. Blocked actions (insufficient MP, no usable item,
+ * no living target) are fully side-effect-free: they return the state
+ * untouched and consume no RNG, so replays stay deterministic even if the UI
+ * hands in a disallowed command.
  *
  * Phase 6 (ROG-12) adds death handling: a `lost` battle either revives the
  * party at the village with a gold penalty (default) or ends the run with a
@@ -267,25 +273,30 @@ export function grantXp(member: PartyMember, amount: number): GrantXpResult {
 /* -------------------------------------------------------------------------- */
 
 /**
- * Roll a fixed initiative order for the hero plus the enemy group. Each
- * combatant rolls `spd + rng.next() * spread`; ties break by a fixed order
- * (hero first, then enemies by spawn index) so the order is fully determined
- * by the seed without relying on sort stability.
+ * Roll a fixed initiative order for the living party members plus the enemy
+ * group. Each combatant rolls `spd + rng.next() * spread`; ties break by a
+ * fixed order (party members first in their party order, then enemies by
+ * spawn index) so the order is fully determined by the seed without relying
+ * on sort stability.
  */
 export function rollInitiative(
   rng: Rng,
-  heroId: string,
-  heroSpd: number,
+  party: readonly PartyMember[],
   enemies: readonly BattleEnemy[],
 ): string[] {
-  const entries: Array<{ id: string; roll: number; order: number }> = [
-    { id: heroId, roll: heroSpd + rng.next() * INITIATIVE_SPREAD, order: 0 },
-  ];
+  const entries: Array<{ id: string; roll: number; order: number }> = [];
+  party.forEach((member, index) => {
+    entries.push({
+      id: member.id,
+      roll: spdFrom(member) + rng.next() * INITIATIVE_SPREAD,
+      order: index,
+    });
+  });
   enemies.forEach((enemy, index) => {
     entries.push({
       id: enemy.id,
       roll: deriveSpd(enemy.stats) + rng.next() * INITIATIVE_SPREAD,
-      order: index + 1,
+      order: party.length + index,
     });
   });
   entries.sort((a, b) => b.roll - a.roll || a.order - b.order);
@@ -336,25 +347,34 @@ export function pickEnemyGroup(
 }
 
 /**
- * Build a fresh `BattleState`: pick the enemy group, roll initiative, and mark
- * the battle ongoing and awaiting the player's first command. The `rng` is
- * advanced in place; the caller persists `rng.getState()` onto the state.
+ * Build a fresh `BattleState`: pick the enemy group, roll initiative from the
+ * living party members, and mark the battle ongoing and awaiting the first
+ * living party member's command. The `rng` is advanced in place; the caller
+ * persists `rng.getState()` onto the state.
  */
 export function startBattle(
   rng: Rng,
-  hero: PartyMember,
+  party: readonly PartyMember[],
   kind: "wandering" | "boss",
   floor: number,
   returnScene: Scene,
 ): BattleState {
+  const living = party.filter((member) => member.hp > 0);
   const enemies = pickEnemyGroup(rng, kind, floor);
-  const initiative = rollInitiative(rng, hero.id, spdFrom(hero), enemies);
+  const initiative = rollInitiative(rng, living, enemies);
+  const livingIds = new Set(living.map((member) => member.id));
+  // A dungeon/overworld encounter can never start with a fully-KO'd party, so
+  // this always finds a member; the fallbacks are defensive only.
+  const activeMemberId =
+    initiative.find((id) => livingIds.has(id)) ?? living[0]?.id ?? party[0].id;
   return {
     enemies,
     status: "ongoing",
     initiative,
     awaitingCommand: true,
     returnScene,
+    activeMemberId,
+    defendingIds: [],
   };
 }
 
@@ -414,7 +434,7 @@ function consumeItem(
 
 function validateCommand(
   command: Command,
-  hero: PartyMember,
+  actor: PartyMember,
   inventory: readonly InventoryItem[],
   enemies: readonly BattleEnemy[],
 ): boolean {
@@ -423,7 +443,7 @@ function validateCommand(
       return enemies.some((enemy) => enemy.hp > 0);
     case "skill": {
       const skill = findSkill(command.skillId);
-      return !!skill && hero.mp >= skill.mpCost;
+      return !!skill && actor.mp >= skill.mpCost;
     }
     case "item": {
       const owned = inventory.find((entry) => entry.itemId === command.itemId);
@@ -436,36 +456,32 @@ function validateCommand(
   }
 }
 
-interface HeroActionResult {
-  heroHp: number;
-  heroMp: number;
-  enemies: BattleEnemy[];
+interface MemberActionResult {
   defending: boolean;
   itemUsed: string | null;
   fled: boolean;
 }
 
 /**
- * Execute the player's chosen command at the hero's initiative slot. Enemy
- * elements in `enemies` are working copies and are mutated in place; the
- * returned array is the same reference. Consumes RNG only for random outcomes
- * (attack rolls, spell variance, the flee attempt).
+ * Execute the player's chosen command for `actor`. `actor` is a reference into
+ * the mutable `party` working array, so mutating `actor.hp`/`actor.mp`
+ * directly updates the array (the same pattern used for `enemies` mutation in
+ * this file). Enemy elements in `enemies` are working copies and are mutated
+ * in place. Consumes RNG only for random outcomes (attack rolls, spell
+ * variance, the flee attempt).
  */
-function applyHeroCommand(
+function applyMemberCommand(
   command: Command,
-  hero: PartyMember,
-  heroHp: number,
-  heroMp: number,
+  actor: PartyMember,
+  _party: PartyMember[],
   enemies: BattleEnemy[],
   rng: Rng,
   logs: string[],
-): HeroActionResult {
-  let hp = heroHp;
-  let mp = heroMp;
+): MemberActionResult {
   let defending = false;
   let itemUsed: string | null = null;
   let fled = false;
-  const heroStats = effectiveStats(hero);
+  const actorStats = effectiveStats(actor);
 
   switch (command.kind) {
     case "attack": {
@@ -473,13 +489,13 @@ function applyHeroCommand(
         enemies.find((e) => e.id === command.targetId && e.hp > 0) ??
         firstAlive(enemies);
       if (target) {
-        const result = resolveAttack(rng, heroStats, target.stats, false);
+        const result = resolveAttack(rng, actorStats, target.stats, false);
         if (!result.hit) {
-          logs.push(`Hero attacks ${target.name} but misses!`);
+          logs.push(`${actor.name} attacks ${target.name} but misses!`);
         } else {
           target.hp = Math.max(0, target.hp - result.damage);
           logs.push(
-            `Hero hits ${target.name} for ${result.damage}${result.crit ? " - crit!" : ""}`,
+            `${actor.name} hits ${target.name} for ${result.damage}${result.crit ? " - crit!" : ""}`,
           );
           if (target.hp === 0) logs.push(`${target.name} is defeated!`);
         }
@@ -488,11 +504,11 @@ function applyHeroCommand(
     }
     case "skill": {
       const skill = findSkill(command.skillId);
-      if (!skill || mp < skill.mpCost) {
+      if (!skill || actor.mp < skill.mpCost) {
         logs.push("Not enough MP!");
         break;
       }
-      mp -= skill.mpCost;
+      actor.mp -= skill.mpCost;
       if (skill.kind === "attack") {
         const target =
           enemies.find((e) => e.id === command.targetId && e.hp > 0) ??
@@ -502,39 +518,41 @@ function applyHeroCommand(
           const damage = Math.max(
             1,
             Math.floor(
-              (skill.power + skillStatValue(skill, heroStats)) *
+              (skill.power + skillStatValue(skill, actorStats)) *
                 (DAMAGE_VARIANCE_MIN +
                   variance * (DAMAGE_VARIANCE_MAX - DAMAGE_VARIANCE_MIN)),
             ),
           );
           target.hp = Math.max(0, target.hp - damage);
           logs.push(
-            `Hero casts ${skill.name} on ${target.name} for ${damage}!`,
+            `${actor.name} casts ${skill.name} on ${target.name} for ${damage}!`,
           );
           if (target.hp === 0) logs.push(`${target.name} is defeated!`);
         }
       } else {
-        const heal = skill.power + skillStatValue(skill, heroStats);
-        hp = Math.min(hero.maxHp, hp + heal);
-        logs.push(`Hero casts ${skill.name} and recovers ${heal} HP.`);
+        // Heal skills always target the caster (self). Ally targeting is
+        // ROG-32 skill-system scope, not added here.
+        const heal = skill.power + skillStatValue(skill, actorStats);
+        actor.hp = Math.min(actor.maxHp, actor.hp + heal);
+        logs.push(`${actor.name} casts ${skill.name} and recovers ${heal} HP.`);
       }
       break;
     }
     case "item": {
       const heal = battleItemHealAmount(command.itemId);
       if (heal > 0) {
-        hp = Math.min(hero.maxHp, hp + heal);
+        actor.hp = Math.min(actor.maxHp, actor.hp + heal);
         itemUsed = command.itemId;
         const name = findShopItem(command.itemId)?.name ?? command.itemId;
-        logs.push(`Hero uses ${name} and recovers ${heal} HP.`);
+        logs.push(`${actor.name} uses ${name} and recovers ${heal} HP.`);
       } else {
-        logs.push(`Hero uses ${command.itemId}... nothing happens.`);
+        logs.push(`${actor.name} uses ${command.itemId}... nothing happens.`);
       }
       break;
     }
     case "defend": {
       defending = true;
-      logs.push("Hero takes a defensive stance.");
+      logs.push(`${actor.name} takes a defensive stance.`);
       break;
     }
     case "flee": {
@@ -543,7 +561,7 @@ function applyHeroCommand(
         0,
       );
       const roll = rng.next();
-      if (roll < fleeChance(spdFrom(hero), fastestEnemySpd)) {
+      if (roll < fleeChance(spdFrom(actor), fastestEnemySpd)) {
         fled = true;
         logs.push("You flee the battle!");
       } else {
@@ -553,21 +571,86 @@ function applyHeroCommand(
     }
   }
 
-  return { heroHp: hp, heroMp: mp, enemies, defending, itemUsed, fled };
+  return { defending, itemUsed, fled };
+}
+
+interface AdvanceResult {
+  status: "ongoing" | "lost";
+  nextActorId: string | null;
 }
 
 /**
- * Apply victory: award XP/gold, level up, clear the battle and the dungeon
- * encounter flag, and return to the battle's prior scene. A boss victory also
- * marks the dungeon cleared (Phase 6, ROG-12) so the player can leave knowing
- * the dungeon is done.
+ * Walk forward through `initiative` (wrapping around, since the same fixed
+ * order is reused every round) starting right after `fromIndex`, performing
+ * enemy auto-attacks and skipping KO'd party members / dead enemies, until
+ * either the next living party member comes up (pause) or the whole party is
+ * down (lost). Enemies auto-attack a randomly chosen living party member each
+ * time they come up, spreading damage across the party. `party` and `enemies`
+ * are mutable working copies; HP is mutated in place.
+ */
+function advanceRound(
+  initiative: readonly string[],
+  fromIndex: number,
+  party: PartyMember[],
+  enemies: BattleEnemy[],
+  defendingIds: Set<string>,
+  rng: Rng,
+  logs: string[],
+): AdvanceResult {
+  for (let step = 0; step < initiative.length; step++) {
+    const index = (fromIndex + 1 + step) % initiative.length;
+    const id = initiative[index];
+
+    const member = party.find((m) => m.id === id);
+    if (member) {
+      if (member.hp > 0) {
+        return { status: "ongoing", nextActorId: member.id };
+      }
+      continue;
+    }
+
+    const enemy = enemies.find((e) => e.id === id);
+    if (!enemy || enemy.hp <= 0) continue;
+
+    const living = party.filter((m) => m.hp > 0);
+    if (living.length === 0) return { status: "lost", nextActorId: null };
+    const target = rng.pick(living);
+    const attack = resolveAttack(
+      rng,
+      enemy.stats,
+      effectiveStats(target),
+      defendingIds.has(target.id),
+    );
+    if (!attack.hit) {
+      logs.push(`${enemy.name} attacks ${target.name} but misses!`);
+    } else {
+      target.hp = Math.max(0, target.hp - attack.damage);
+      logs.push(
+        `${enemy.name} hits ${target.name} for ${attack.damage}${attack.crit ? " - crit!" : ""}`,
+      );
+      if (party.every((m) => m.hp <= 0)) {
+        return { status: "lost", nextActorId: null };
+      }
+    }
+  }
+
+  // Defensive fallback: unreachable given the invariant that at least one
+  // party member is alive whenever a round is being advanced.
+  return { status: "lost", nextActorId: null };
+}
+
+/**
+ * Apply victory: award XP/gold to every living member, level them up, clear
+ * the battle and the dungeon encounter flag, and return to the battle's prior
+ * scene. A boss victory also marks the dungeon cleared (Phase 6, ROG-12) so
+ * the player can leave knowing the dungeon is done. KO'd members are left
+ * as-is (no XP split math; full award to all living members per ROG-20 scope).
  */
 function finalizeWon(
   state: GameState,
   bs: BattleState,
   enemies: BattleEnemy[],
-  heroHp: number,
-  heroMp: number,
+  party: PartyMember[],
   logs: string[],
   rngState: RngState,
   itemUsed: string | null,
@@ -576,20 +659,25 @@ function finalizeWon(
 ): GameState {
   const xpGain = enemies.reduce((sum, e) => sum + e.xp, 0);
   const goldGain = enemies.reduce((sum, e) => sum + e.gold, 0);
-  const heroAfterBattle = { ...state.party[0], hp: heroHp, mp: heroMp };
-  const granted = grantXp(heroAfterBattle, xpGain);
   // Check for a boss victory before clearing the encounter flag so the
   // dungeon can be marked cleared.
   const wasBossVictory = state.dungeonState?.encounter?.kind === "boss";
+  const levelUpLogs: string[] = [];
+  const finalParty = party.map((member) => {
+    if (member.hp <= 0) return member;
+    const granted = grantXp(member, xpGain);
+    if (granted.leveledUp) {
+      levelUpLogs.push(
+        `${granted.member.name} reached level ${granted.member.level}!`,
+      );
+    }
+    return granted.member;
+  });
   const finalLogs = [
     ...logs,
     `Victory! Gained ${xpGain} XP and ${goldGain} gold.`,
+    ...levelUpLogs,
   ];
-  if (granted.leveledUp) {
-    finalLogs.push(
-      `${granted.member.name} reached level ${granted.member.level}!`,
-    );
-  }
   if (wasBossVictory) {
     finalLogs.push("The dungeon guardian falls. The dungeon is cleared!");
   }
@@ -607,9 +695,7 @@ function finalizeWon(
     ...state,
     rngState,
     scene: bs.returnScene,
-    party: state.party.map((member, index) =>
-      index === 0 ? granted.member : member,
-    ),
+    party: finalParty,
     gold: state.gold + goldGain,
     inventory,
     items,
@@ -679,8 +765,7 @@ function finalizeLost(
 function finalizeFled(
   state: GameState,
   bs: BattleState,
-  heroHp: number,
-  heroMp: number,
+  party: PartyMember[],
   logs: string[],
   rngState: RngState,
   itemUsed: string | null,
@@ -692,9 +777,7 @@ function finalizeFled(
     ...state,
     rngState,
     scene: bs.returnScene,
-    party: state.party.map((member, index) =>
-      index === 0 ? { ...member, hp: heroHp, mp: heroMp } : member,
-    ),
+    party,
     inventory,
     dungeonState: clearEncounter(state.dungeonState),
     battleState: null,
@@ -703,8 +786,9 @@ function finalizeFled(
 }
 
 /**
- * Resolve one player command into a full round, then finalize victory, defeat,
- * flee, or the next awaiting-command state. Pure: returns a new `GameState`.
+ * Resolve one party member's command, auto-advance through any intervening
+ * enemy turns, then finalize victory, defeat, flee, or the next
+ * awaiting-command state. Pure: returns a new `GameState`.
  */
 export function resolveBattleEvent(
   state: GameState,
@@ -732,10 +816,9 @@ export function resolveBattleEvent(
     }
   })();
 
-  const hero = state.party[0];
-  const heroEffective = effectiveStats(hero);
-  if (hero.hp <= 0) return state;
-  if (!validateCommand(command, hero, state.inventory, bs.enemies))
+  const actor = state.party.find((m) => m.id === bs.activeMemberId);
+  if (!actor || actor.hp <= 0) return state;
+  if (!validateCommand(command, actor, state.inventory, bs.enemies))
     return state;
 
   // Defensive: a battle somehow left with all enemies dead resolves as a win
@@ -745,8 +828,7 @@ export function resolveBattleEvent(
       state,
       bs,
       bs.enemies,
-      hero.hp,
-      hero.mp,
+      state.party,
       [],
       state.rngState,
       null,
@@ -756,57 +838,43 @@ export function resolveBattleEvent(
   }
 
   const rng = new Rng(state.seed, state.rngState);
+  const party = state.party.map((m) => ({ ...m }));
   const enemies = bs.enemies.map((enemy) => ({ ...enemy }));
-  let heroHp = hero.hp;
-  let heroMp = hero.mp;
-  let defending = false;
-  let itemUsed: string | null = null;
-  let status: BattleStatus = "ongoing";
+  const defendingIds = new Set(bs.defendingIds);
   const logs: string[] = [];
 
-  for (const combatantId of bs.initiative) {
-    if (status !== "ongoing") break;
-    if (combatantId === hero.id) {
-      if (heroHp <= 0) break;
-      const result = applyHeroCommand(
-        command,
-        hero,
-        heroHp,
-        heroMp,
-        enemies,
-        rng,
-        logs,
-      );
-      heroHp = result.heroHp;
-      heroMp = result.heroMp;
-      defending = result.defending;
-      if (result.itemUsed) itemUsed = result.itemUsed;
-      if (result.fled) {
-        status = "fled";
-        break;
-      }
-      if (allDead(enemies)) {
-        status = "won";
-        break;
-      }
-    } else {
-      if (heroHp <= 0) break;
-      const enemy = enemies.find((e) => e.id === combatantId && e.hp > 0);
-      if (!enemy) continue;
-      const attack = resolveAttack(rng, enemy.stats, heroEffective, defending);
-      if (!attack.hit) {
-        logs.push(`${enemy.name} attacks Hero but misses!`);
-      } else {
-        heroHp = Math.max(0, heroHp - attack.damage);
-        logs.push(
-          `${enemy.name} hits Hero for ${attack.damage}${attack.crit ? " - crit!" : ""}`,
-        );
-        if (heroHp <= 0) {
-          status = "lost";
-          break;
-        }
-      }
-    }
+  const actorCopy = party.find((m) => m.id === actor.id)!;
+  // A fresh turn: defend must be re-chosen each round to persist the stance.
+  defendingIds.delete(actorCopy.id);
+  const result = applyMemberCommand(
+    command,
+    actorCopy,
+    party,
+    enemies,
+    rng,
+    logs,
+  );
+  if (result.defending) defendingIds.add(actorCopy.id);
+  const itemUsed = result.itemUsed;
+
+  let status: BattleStatus;
+  let nextActorId: string | null = null;
+  if (result.fled) {
+    status = "fled";
+  } else if (allDead(enemies)) {
+    status = "won";
+  } else {
+    const advance = advanceRound(
+      bs.initiative,
+      bs.initiative.indexOf(actorCopy.id),
+      party,
+      enemies,
+      defendingIds,
+      rng,
+      logs,
+    );
+    status = advance.status;
+    nextActorId = advance.nextActorId;
   }
 
   let loot: ItemInstance[] = [];
@@ -823,8 +891,7 @@ export function resolveBattleEvent(
       state,
       bs,
       enemies,
-      heroHp,
-      heroMp,
+      party,
       logs,
       rngState,
       itemUsed,
@@ -836,21 +903,26 @@ export function resolveBattleEvent(
     return finalizeLost(state, logs, rngState, itemUsed);
   }
   if (status === "fled") {
-    return finalizeFled(state, bs, heroHp, heroMp, logs, rngState, itemUsed);
+    return finalizeFled(state, bs, party, logs, rngState, itemUsed);
   }
 
-  // Round exhausted with the battle still ongoing: await the next command.
+  // Round paused with the battle still ongoing: await the next actor's command.
   const inventory = itemUsed
     ? consumeItem(state.inventory, itemUsed)
     : state.inventory;
   return {
     ...state,
     rngState,
-    party: state.party.map((member, index) =>
-      index === 0 ? { ...member, hp: heroHp, mp: heroMp } : member,
-    ),
+    party,
     inventory,
-    battleState: { ...bs, enemies, status: "ongoing", awaitingCommand: true },
+    battleState: {
+      ...bs,
+      enemies,
+      status: "ongoing",
+      awaitingCommand: true,
+      activeMemberId: nextActorId!,
+      defendingIds: [...defendingIds],
+    },
     log: [...state.log, ...logs],
   };
 }

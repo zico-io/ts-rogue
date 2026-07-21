@@ -31,9 +31,17 @@ export type BattleStatus = "ongoing" | "won" | "lost" | "fled";
  * serializable data only: the enemy group (each with current HP and a copy of
  * its first-person ASCII art), the fixed initiative order reused each round,
  * whether the player must choose an action, the scene to return to on victory
- * or a successful flee, and the battle's resolution status. Hero HP/MP are not
- * duplicated here - they live on `state.party` and are read/written by the
- * combat reducer - so a save/reload never disagrees.
+ * or a successful flee, and the battle's resolution status.
+ *
+ * Pause-per-actor model (ROG-20): a dispatch resolves exactly one acting party
+ * member's command, then auto-resolves every intervening enemy (and skipped,
+ * KO'd party member) turn in initiative order until either the next living
+ * party member comes up - `activeMemberId` is updated to them and the battle
+ * pauses again awaiting a command - or the whole party is down (`lost`). This
+ * lets several party members each take their own turn without changing the
+ * "one command per dispatch" UI contract. Member HP/MP are not duplicated
+ * here - they live on `state.party` and are read/written by the combat
+ * reducer - so a save/reload never disagrees.
  */
 export interface BattleState {
   enemies: BattleEnemy[];
@@ -44,6 +52,10 @@ export interface BattleState {
   awaitingCommand: boolean;
   /** Scene to return to on victory or a successful flee. */
   returnScene: Scene;
+  /** Party member id whose turn it is; only meaningful while awaitingCommand. */
+  activeMemberId: string;
+  /** Party member ids currently in a defensive stance, cleared when they act again. */
+  defendingIds: string[];
 }
 
 /** Player-initiated battle events (the battle members of `GameEvent`). */

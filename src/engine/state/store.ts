@@ -1,3 +1,4 @@
+import { findClass } from "../../data/classes";
 import { chestLootFor, chestLootMessage } from "../../data/dungeons";
 import { findShopItem, sellPriceFor } from "../../data/shops";
 import { resolveBattleEvent, startBattle } from "../combat/resolution";
@@ -232,13 +233,7 @@ function moveOverworld(
 
   if (meter >= ENCOUNTER_THRESHOLD) {
     // Overworld battles use the floor-1 (weak) monster pool and return here.
-    const battle = startBattle(
-      rng,
-      state.party[0],
-      "wandering",
-      1,
-      "overworld",
-    );
+    const battle = startBattle(rng, state.party, "wandering", 1, "overworld");
     return {
       ...state,
       scene: "battle",
@@ -298,13 +293,7 @@ function stepDungeon(state: GameState, direction: StepDirection): GameState {
 
   if (feature === "bossMarker") {
     const rng = new Rng(state.seed, state.rngState);
-    const battle = startBattle(
-      rng,
-      state.party[0],
-      "boss",
-      ds.floor,
-      "dungeon",
-    );
+    const battle = startBattle(rng, state.party, "boss", ds.floor, "dungeon");
     return {
       ...state,
       scene: "battle",
@@ -325,7 +314,7 @@ function stepDungeon(state: GameState, direction: StepDirection): GameState {
     if (roll < DUNGEON_ENCOUNTER_CHANCE) {
       const battle = startBattle(
         rng,
-        state.party[0],
+        state.party,
         "wandering",
         ds.floor,
         "dungeon",
@@ -448,46 +437,62 @@ function exitDungeon(state: GameState): GameState {
 /* Phase 5 (ROG-11): equip / unequip / sell generated loot                    */
 /* -------------------------------------------------------------------------- */
 
-function equipItem(state: GameState, instanceId: string): GameState {
+function equipItem(
+  state: GameState,
+  instanceId: string,
+  memberId: string,
+): GameState {
   const item = state.items.find((entry) => entry.instanceId === instanceId);
   if (!item) {
     return { ...state, log: [...state.log, "There is nothing to equip"] };
   }
-  const hero = state.party[0];
-  const target = equipTargetSlot(hero, item);
+  const memberIndex = state.party.findIndex((m) => m.id === memberId);
+  if (memberIndex === -1) {
+    return { ...state, log: [...state.log, "There is nothing to equip"] };
+  }
+  const member = state.party[memberIndex];
+  const target = equipTargetSlot(member, item);
   if (!target) {
     return {
       ...state,
       log: [...state.log, `${describeItem(item)} cannot be equipped`],
     };
   }
-  const swapped = hero.equipment[target];
+  const swapped = member.equipment[target];
   const items = swapped
     ? [
         ...state.items.filter((entry) => entry.instanceId !== instanceId),
         swapped,
       ]
     : state.items.filter((entry) => entry.instanceId !== instanceId);
-  const party = state.party.map((member, index) =>
-    index === 0
-      ? { ...member, equipment: { ...member.equipment, [target]: item } }
-      : member,
+  const party = state.party.map((entry, index) =>
+    index === memberIndex
+      ? { ...entry, equipment: { ...entry.equipment, [target]: item } }
+      : entry,
   );
   const logs = [`Equipped ${describeItem(item)}.`];
   if (swapped) logs.push(`${describeItem(swapped)} moved to the backpack.`);
   return { ...state, party, items, log: [...state.log, ...logs] };
 }
 
-function unequipItem(state: GameState, slot: EquipmentSlotName): GameState {
-  const hero = state.party[0];
-  const item = hero.equipment[slot];
+function unequipItem(
+  state: GameState,
+  slot: EquipmentSlotName,
+  memberId: string,
+): GameState {
+  const memberIndex = state.party.findIndex((m) => m.id === memberId);
+  if (memberIndex === -1) {
+    return { ...state, log: [...state.log, "Nothing is equipped there"] };
+  }
+  const member = state.party[memberIndex];
+  const item = member.equipment[slot];
   if (!item) {
     return { ...state, log: [...state.log, "Nothing is equipped there"] };
   }
-  const party = state.party.map((member, index) =>
-    index === 0
-      ? { ...member, equipment: { ...member.equipment, [slot]: null } }
-      : member,
+  const party = state.party.map((entry, index) =>
+    index === memberIndex
+      ? { ...entry, equipment: { ...entry.equipment, [slot]: null } }
+      : entry,
   );
   const items = [...state.items, item];
   return {
@@ -495,6 +500,26 @@ function unequipItem(state: GameState, slot: EquipmentSlotName): GameState {
     party,
     items,
     log: [...state.log, `Unequipped ${describeItem(item)}.`],
+  };
+}
+
+/**
+ * `RecruitMember` reducer (ROG-20 dev/manual testing helper; ROG-21 will add
+ * a tavern recruiting UI on top of this). Appends a fresh member built from
+ * `createStartingHero`, capped at 4 party members.
+ */
+function recruitMember(state: GameState, classId: string): GameState {
+  if (state.party.length >= 4) {
+    return { ...state, log: [...state.log, "The party is already full"] };
+  }
+  const cls = findClass(classId);
+  const id = `member-${state.party.length + 1}`;
+  const name = cls?.name ?? classId;
+  const member = createStartingHero(classId, id, name);
+  return {
+    ...state,
+    party: [...state.party, member],
+    log: [...state.log, `Recruited ${name} the ${classId}!`],
   };
 }
 
@@ -532,11 +557,13 @@ export function reduce(state: GameState, event: GameEvent): GameState {
     case "StoreSell":
       return storeSell(state, event.itemId, event.quantity);
     case "EquipItem":
-      return equipItem(state, event.instanceId);
+      return equipItem(state, event.instanceId, event.memberId);
     case "UnequipItem":
-      return unequipItem(state, event.slot);
+      return unequipItem(state, event.slot, event.memberId);
     case "SellItem":
       return sellItem(state, event.instanceId);
+    case "RecruitMember":
+      return recruitMember(state, event.classId);
     case "MoveOverworld":
       return moveOverworld(state, event.dx, event.dy);
     case "TurnDungeon":
