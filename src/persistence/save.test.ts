@@ -146,3 +146,22 @@ describe("save round-trip with loot and equipment", () => {
     }
   });
 });
+
+describe("deserialize backfills classId for older saves (ROG-17)", () => {
+  it("defaults a party member without classId to warrior", () => {
+    const modern = newGame(42);
+    // Simulate a pre-ROG-17 save: strip classId from the party member.
+    const older = {
+      ...modern,
+      party: [{ ...modern.party[0], classId: undefined }],
+    };
+    const restored = deserialize(JSON.stringify(older));
+    expect(restored.party[0].classId).toBe("warrior");
+  });
+
+  it("preserves an explicit classId through a round-trip", () => {
+    const state = newGame(42, { classId: "wizard" });
+    const restored = deserialize(serialize(state));
+    expect(restored.party[0].classId).toBe("wizard");
+  });
+});

@@ -1,4 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
+import { DEFAULT_CLASS_ID } from "../data/classes";
 import type { GameState } from "../engine/state/types";
 
 /**
@@ -12,8 +13,9 @@ export function serialize(state: GameState): string {
 /**
  * Parse a serialized `GameState` JSON blob. Adds forward-compatible defaults
  * for fields introduced after the initial release so an older save does not
- * crash the engine: `flags` (Phase 6, ROG-12) and `dungeonState.cleared`
- * (Phase 6, ROG-12) are filled in when absent. Everything is plain data so no
+ * crash the engine: `flags` (Phase 6, ROG-12), `dungeonState.cleared`
+ * (Phase 6, ROG-12), and each party member's `classId` (ROG-17, defaulted to
+ * the warrior class) are filled in when absent. Everything is plain data so no
  * non-serializable values are introduced.
  */
 export function deserialize(json: string): GameState {
@@ -23,6 +25,9 @@ export function deserialize(json: string): GameState {
   }
   if (state.dungeonState && state.dungeonState.cleared === undefined) {
     state.dungeonState.cleared = false;
+  }
+  for (const member of state.party) {
+    if (!member.classId) member.classId = DEFAULT_CLASS_ID;
   }
   return state;
 }

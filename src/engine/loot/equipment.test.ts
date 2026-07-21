@@ -42,10 +42,10 @@ function heroWith(equipment: Partial<PartyMember["equipment"]>): PartyMember {
 describe("effectiveStats", () => {
   it("equals base stats with no equipment", () => {
     expect(effectiveStats(createStartingHero())).toEqual({
-      str: 5,
-      agi: 5,
-      vit: 5,
-      int: 5,
+      str: 7,
+      agi: 4,
+      vit: 7,
+      int: 2,
     });
   });
 
@@ -55,8 +55,8 @@ describe("effectiveStats", () => {
       armor: VIT_ARMOR,
       accessory1: AGI_RING,
     });
-    // war-blade str+5, plate-mail vit+5, copper-ring agi+1
-    expect(effectiveStats(hero)).toEqual({ str: 10, agi: 6, vit: 10, int: 5 });
+    // war-blade str+5, plate-mail vit+5, copper-ring agi+1, on a warrior base
+    expect(effectiveStats(hero)).toEqual({ str: 12, agi: 5, vit: 12, int: 2 });
   });
 });
 
