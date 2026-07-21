@@ -32,10 +32,12 @@ function App({
   store,
   hasSave,
   devConsoleEnabled,
+  seed,
 }: {
   store: GameStore;
   hasSave: boolean;
   devConsoleEnabled: boolean;
+  seed: number;
 }) {
   const { exit } = useApp();
   const { columns, rows, tooSmall } = useTerminalLayout();
@@ -61,6 +63,10 @@ function App({
         exit();
         return;
       }
+      // A loaded save is already the store's initial state; press any key to
+      // continue it. A fresh boot shows mode selection and seeds the new run
+      // with the boot seed so `--seed` stays deterministic across the
+      // transition (ROG-16 play harness).
       if (hasSave) {
         setStarted(true);
         return;
@@ -72,7 +78,7 @@ function App({
       } else if (key.return) {
         store.dispatch({
           type: "NewGame",
-          seed: Date.now(),
+          seed,
           permadeath: modeCursor === 1,
         });
         setStarted(true);
@@ -167,15 +173,26 @@ function App({
   );
 }
 
-const savedGame = loadGame();
+// Dev/headless boot flags. `--fresh` ignores any save so a session always
+// starts from a known state; `--seed=<n>` fixes the run seed instead of the
+// clock, so the tmux play harness can reproduce a session deterministically.
+const seedArg = process.argv.find((arg) => arg.startsWith("--seed="));
+const parsedSeed = seedArg
+  ? Number(seedArg.slice("--seed=".length))
+  : Number.NaN;
+const bootSeed = Number.isFinite(parsedSeed) ? parsedSeed : Date.now();
+const fresh = process.argv.includes("--fresh");
+
+const savedGame = fresh ? undefined : loadGame();
 const hasSave = savedGame !== undefined;
-const store = new GameStore(savedGame ?? newGame(Date.now()));
+const store = new GameStore(savedGame ?? newGame(bootSeed));
 
 render(
   <TerminalLayoutProvider>
     <App
       devConsoleEnabled={process.argv.includes("--dev")}
       hasSave={hasSave}
+      seed={bootSeed}
       store={store}
     />
   </TerminalLayoutProvider>,
