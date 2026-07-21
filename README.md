@@ -35,6 +35,7 @@ Work is tracked in Linear. GitHub pull requests are used for review and merge. E
 | Run the game (Ink shell) | `pnpm game` |
 | Run the game with the switchable dev console | `pnpm game:dev` |
 | Drive the game in a tmux session (play harness) | `pnpm play start` |
+| Test a PR's build remotely (interactive shell) | `pnpm pr:sandbox <PR#>` |
 | Run the Eve agent locally | `pnpm eve:dev` |
 | Type-check | `pnpm typecheck` |
 | Run tests | `pnpm test` |
@@ -58,5 +59,13 @@ loads). Override the team with `LINEAR_TEAM_KEY` (default `ROG`). If that
 identity is missing or the call fails, the issue is saved to a local
 `dev-issues.jsonl` outbox and retried on the next filing or the console's
 `flush` command, so nothing is lost.
+
+`pnpm pr:sandbox <PR#>` spins up (or resumes) a persistent Vercel Sandbox on
+that PR's head, installs deps, and drops you into an interactive shell in the
+checked-out repo - run `pnpm game` to play the build or `pnpm check` to verify
+it, remotely. Re-running after new commits resumes the same `pr-<N>` box and
+re-fetches. One-time setup: `pnpm exec sandbox login`; cloning the private repo
+uses `$GH_TOKEN` or `gh auth token`. Stop with `pnpm exec sandbox stop pr-<N>`
+(resumable) or `remove pr-<N>` to delete.
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the development workflow.

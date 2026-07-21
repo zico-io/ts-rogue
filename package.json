@@ -12,6 +12,7 @@
   "scripts": {
     "check": "pnpm typecheck && pnpm test && pnpm docs:check && pnpm lint",
     "eve:dev": "eve dev --no-ui",
+    "pr:sandbox": "bash scripts/pr-sandbox.sh",
     "game": "tsx src/app.tsx",
     "game:dev": "tsx --env-file-if-exists=.env.local src/app.tsx --dev",
     "play": "bash scripts/play.sh",
@@ -36,6 +37,7 @@
     "@biomejs/biome": "^2",
     "@types/node": "^24.13.3",
     "@types/react": "^19",
+    "sandbox": "3.5.2",
     "tsx": "^4",
     "typescript": "^7",
     "vitest": "^4"

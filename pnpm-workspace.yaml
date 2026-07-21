@@ -13,3 +13,4 @@ minimumReleaseAgeExclude:
   - nitro
   - rolldown
   - workflow
+  - sandbox@3.5.2
