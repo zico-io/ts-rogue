@@ -3,9 +3,8 @@ name: Ralph eval
 # End-to-end eval for ralph mode (issue groups). It drives the deployed agent
 # against a dedicated Linear fixture and is authenticated, deployment-dependent,
 # and spins a real Vercel Sandbox - so it runs weekly and on demand, never on
-# pull requests. Opt in by setting the repo variable RALPH_EVAL_ENABLED=true
-# once the fixture and secrets below are configured; the job is skipped
-# otherwise.
+# pull requests. Opt in by setting the repo variable EVE_DEPLOYMENT_URL to the
+# target; the job is skipped until it is set.
 on:
   workflow_dispatch:
   schedule:
@@ -16,7 +15,7 @@ permissions:
 
 jobs:
   ralph-eval:
-    if: ${{ vars.RALPH_EVAL_ENABLED == 'true' }}
+    if: ${{ vars.EVE_DEPLOYMENT_URL != '' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -29,14 +28,11 @@ jobs:
       - name: Run ralph end-to-end eval against the deployment
         run: pnpm exec eve eval ralph --strict --url "$EVE_DEPLOYMENT_URL"
         env:
-          # Deployment target (repo variable) and the Linear test group. Without
-          # the fixture the eval self-skips; see evals/ralph/shared.ts.
+          # Deployment target (repo variable) and the Linear test group
+          # "<parent> <ready> <blocked>". Without the fixture the eval self-skips.
           EVE_DEPLOYMENT_URL: ${{ vars.EVE_DEPLOYMENT_URL }}
-          RALPH_EVAL_PARENT: ${{ secrets.RALPH_EVAL_PARENT }}
-          RALPH_EVAL_READY: ${{ secrets.RALPH_EVAL_READY }}
-          RALPH_EVAL_BLOCKED: ${{ secrets.RALPH_EVAL_BLOCKED }}
-          # Auth for --url against the Vercel deployment (see eve targets docs).
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+          RALPH_EVAL_GROUP: ${{ secrets.RALPH_EVAL_GROUP }}
+          # Auth for --url against the deployment: bearer token, plus the
+          # deployment-protection bypass when protection is on.
           EVE_EVAL_AUTH_TOKEN: ${{ secrets.EVE_EVAL_AUTH_TOKEN }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}

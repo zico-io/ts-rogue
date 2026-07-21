@@ -18,8 +18,7 @@ import { drivesIssue, linearDelegation, ralphFixture } from "./shared";
 //
 // Run against the deployed target (or a sandbox-configured env), where the
 // Vercel Sandbox and Linear MCP are reachable:
-//   RALPH_EVAL_PARENT=ROG-200 RALPH_EVAL_READY=ROG-202 RALPH_EVAL_BLOCKED=ROG-203 \
-//     eve eval ralph --url https://<deployment>
+//   RALPH_EVAL_GROUP="ROG-200 ROG-202 ROG-203" eve eval ralph --url https://<deployment>
 // Thresholds are a baseline; tune on the first authenticated run.
 export default defineEval({
   description:
@@ -29,7 +28,7 @@ export default defineEval({
     const fixture = ralphFixture();
     if (!fixture) {
       t.skip(
-        "set RALPH_EVAL_PARENT/READY/BLOCKED to a Linear test group to run this E2E",
+        'set RALPH_EVAL_GROUP="<parent> <ready> <blocked>" to a Linear test group to run this E2E',
       );
       return;
     }

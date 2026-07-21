@@ -1,7 +1,8 @@
 // Helpers for the ralph (issue-group) end-to-end eval. Not an eval file itself.
 
-// The dedicated Linear fixture the eval drives. Set these to a real test group
-// so the eval runs; leave any unset and the eval skips (keeps `eve eval` green
+// The dedicated Linear fixture the eval drives, as one env var
+// RALPH_EVAL_GROUP="<parent> <ready> <blocked>". Set it to a real test group so
+// the eval runs; leave it unset and the eval skips (keeps `eve eval` green
 // without the fixture). Recommended fixture under one parent assigned to Eve:
 //
 //   PARENT   parent issue, assigned to the Eve agent, with three sub-issues:
@@ -11,7 +12,8 @@
 //
 // The one correct move on the parent is to drive READY: it honors the satisfied
 // blocker (a merged predecessor unblocks the next - the "advance after merge"
-// rule), skips the finished DONE, and does not jump ahead to BLOCKED.
+// rule), skips the finished DONE, and does not jump ahead to BLOCKED. DONE is
+// not passed - it is implied by READY becoming ready.
 export interface RalphFixture {
   parent: string;
   ready: string;
@@ -19,9 +21,9 @@ export interface RalphFixture {
 }
 
 export const ralphFixture = (): RalphFixture | null => {
-  const parent = process.env.RALPH_EVAL_PARENT;
-  const ready = process.env.RALPH_EVAL_READY;
-  const blocked = process.env.RALPH_EVAL_BLOCKED;
+  const [parent, ready, blocked] = (process.env.RALPH_EVAL_GROUP ?? "")
+    .trim()
+    .split(/\s+/);
   return parent && ready && blocked ? { parent, ready, blocked } : null;
 };
 

@@ -50,16 +50,15 @@ drives the ready sub-issue first. It skips unless the fixture is set; run it
 against a sandbox-reachable target:
 
 ```bash
-RALPH_EVAL_PARENT=ROG-200 RALPH_EVAL_READY=ROG-202 RALPH_EVAL_BLOCKED=ROG-203 \
-  eve eval ralph --url https://<deployment>
+RALPH_EVAL_GROUP="ROG-200 ROG-202 ROG-203" eve eval ralph --url https://<deployment>
 ```
 
 CI runs this weekly and on demand via
 [`.github/workflows/ralph-eval.yml`](../.github/workflows/ralph-eval.yml). It
-stays off until you opt in: set the repo variable `RALPH_EVAL_ENABLED=true` and
-`EVE_DEPLOYMENT_URL`, then add the secrets the workflow references -
-`RALPH_EVAL_PARENT`/`READY`/`BLOCKED` for the fixture and the Vercel target auth
-(`VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`, `VERCEL_AUTOMATION_BYPASS_SECRET`, or
-`EVE_EVAL_AUTH_TOKEN`).
+stays off until you set the repo variable `EVE_DEPLOYMENT_URL`; then add the
+secrets the workflow references - `RALPH_EVAL_GROUP` (the
+`"<parent> <ready> <blocked>"` fixture) and the target auth
+(`EVE_EVAL_AUTH_TOKEN`, plus `VERCEL_AUTOMATION_BYPASS_SECRET` if the deployment
+has protection).
 
 Repository workflow and requirements live in the [root README](../README.md).
