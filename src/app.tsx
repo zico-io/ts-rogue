@@ -1,7 +1,19 @@
 import { Box, render, Text, useApp, useInput } from "ink";
-import { type ReactNode, useEffect, useState } from "react";
+import {
+  Component,
+  type ErrorInfo,
+  type ReactNode,
+  useEffect,
+  useState,
+} from "react";
+import { attempt } from "./engine/state/incidents";
 import { GameStore, newGame } from "./engine/state/store";
 import type { Scene } from "./engine/state/types";
+import {
+  FailureBoundary,
+  type IncidentDisplay,
+  IncidentPipeline,
+} from "./lib/incidents";
 import { clearSave, loadGame } from "./persistence/save";
 import {
   MinSizeGuard,
@@ -10,6 +22,7 @@ import {
 } from "./ui/components/MinSizeGuard";
 import { useGameState } from "./ui/hooks/useGameState";
 import { BattleScreen } from "./ui/screens/BattleScreen";
+import { CrashScreen } from "./ui/screens/CrashScreen";
 import { DevConsole } from "./ui/screens/DevConsole";
 import { DungeonScreen } from "./ui/screens/DungeonScreen";
 import { GameOverScreen } from "./ui/screens/GameOverScreen";
@@ -33,11 +46,15 @@ function App({
   hasSave,
   devConsoleEnabled,
   seed,
+  pipeline,
+  failures,
 }: {
   store: GameStore;
   hasSave: boolean;
   devConsoleEnabled: boolean;
   seed: number;
+  pipeline: IncidentPipeline;
+  failures: FailureBoundary;
 }) {
   const { exit } = useApp();
   const { columns, rows, tooSmall } = useTerminalLayout();
@@ -45,11 +62,16 @@ function App({
   const [modeCursor, setModeCursor] = useState(0);
   const [consoleOpen, setConsoleOpen] = useState(false);
   const [consoleOutput, setConsoleOutput] = useState<string[]>([]);
+  const [fatal, setFatal] = useState<IncidentDisplay | undefined>(() =>
+    pipeline.getFatal(),
+  );
   const state = useGameState(store);
   const gameOver = state.flags?.gameOver ?? false;
 
+  useEffect(() => pipeline.subscribe(setFatal), [pipeline]);
+
   useInput((input) => {
-    if (devConsoleEnabled && input === "`") {
+    if (!fatal && devConsoleEnabled && input === "`") {
       setConsoleOpen((open) => !open);
     }
   });
@@ -84,7 +106,7 @@ function App({
         setStarted(true);
       }
     },
-    { isActive: !started && !consoleOpen },
+    { isActive: !fatal && !started && !consoleOpen },
   );
 
   // In-game scene switching (blocked while the game is over).
@@ -97,7 +119,7 @@ function App({
       const scene = sceneKeys[input];
       if (scene) store.dispatch({ type: "ChangeScene", scene });
     },
-    { isActive: started && !consoleOpen && !gameOver },
+    { isActive: !fatal && started && !consoleOpen && !gameOver },
   );
 
   // Game-over phase: Enter starts a new run (same permadeath mode), q quits.
@@ -112,26 +134,31 @@ function App({
         store.dispatch({ type: "NewGame", seed: Date.now(), permadeath });
       }
     },
-    { isActive: started && !consoleOpen && gameOver },
+    { isActive: !fatal && started && !consoleOpen && gameOver },
   );
 
   // Clear the persisted save once the game is over so the next boot starts a
   // fresh run. I/O lives in the persistence layer, not the engine.
   useEffect(() => {
-    if (gameOver) clearSave();
-  }, [gameOver]);
+    if (gameOver) failures.run("clear", false, clearSave);
+  }, [failures, gameOver]);
 
   const dispatch = (event: Parameters<GameStore["dispatch"]>[0]) =>
     store.dispatch(event);
 
   let content: ReactNode;
-  if (tooSmall) {
+  if (fatal) {
+    content = <CrashScreen display={fatal} />;
+  } else if (tooSmall) {
     content = <MinSizeGuard columns={columns} rows={rows} />;
   } else if (consoleOpen) {
     content = (
       <DevConsole
         dispatch={dispatch}
+        crash={(message) => failures.report("manual", new Error(message), true)}
+        journal={store.getDebugJournal()}
         output={consoleOutput}
+        pipeline={pipeline}
         setOutput={setConsoleOutput}
         state={state}
       />
@@ -150,7 +177,13 @@ function App({
   } else {
     switch (state.scene) {
       case "village":
-        content = <VillageScreen dispatch={dispatch} state={state} />;
+        content = (
+          <VillageScreen
+            dispatch={dispatch}
+            failures={failures}
+            state={state}
+          />
+        );
         break;
       case "overworld":
         content = <OverworldScreen dispatch={dispatch} state={state} />;
@@ -173,6 +206,41 @@ function App({
   );
 }
 
+class GameErrorBoundary extends Component<
+  {
+    children: ReactNode;
+    failures: FailureBoundary;
+    pipeline: IncidentPipeline;
+  },
+  { display?: IncidentDisplay }
+> {
+  state: { display?: IncidentDisplay } = {};
+  private unsubscribe?: () => void;
+
+  componentDidMount(): void {
+    this.unsubscribe = this.props.pipeline.subscribe((display) =>
+      this.setState({ display }),
+    );
+  }
+
+  componentWillUnmount(): void {
+    this.unsubscribe?.();
+  }
+
+  componentDidCatch(error: Error, _info: ErrorInfo): void {
+    this.props.failures.report("render", error, true);
+    this.setState({ display: this.props.pipeline.getFatal() });
+  }
+
+  render(): ReactNode {
+    return this.state.display ? (
+      <CrashScreen display={this.state.display} />
+    ) : (
+      this.props.children
+    );
+  }
+}
+
 // Dev/headless boot flags. `--fresh` ignores any save so a session always
 // starts from a known state; `--seed=<n>` fixes the run seed instead of the
 // clock, so the tmux play harness can reproduce a session deterministically.
@@ -182,19 +250,45 @@ const parsedSeed = seedArg
   : Number.NaN;
 const bootSeed = Number.isFinite(parsedSeed) ? parsedSeed : Date.now();
 const fresh = process.argv.includes("--fresh");
-
-const savedGame = fresh ? undefined : loadGame();
-const hasSave = savedGame !== undefined;
-const store = new GameStore(savedGame ?? newGame(bootSeed));
-
-render(
-  <TerminalLayoutProvider>
-    <App
-      devConsoleEnabled={process.argv.includes("--dev")}
-      hasSave={hasSave}
-      seed={bootSeed}
-      store={store}
-    />
-  </TerminalLayoutProvider>,
-  { alternateScreen: true },
+const devConsoleEnabled = process.argv.includes("--dev");
+const pipeline = new IncidentPipeline(devConsoleEnabled);
+const loaded = attempt(() => {
+  const savedGame = fresh ? undefined : loadGame();
+  return {
+    hasSave: savedGame !== undefined,
+    store: new GameStore(savedGame ?? newGame(bootSeed)),
+  };
+});
+const store = loaded.ok ? loaded.value.store : new GameStore(newGame(bootSeed));
+const hasSave = loaded.ok ? loaded.value.hasSave : false;
+const failures = new FailureBoundary(store);
+store.subscribeIncidents((incident) => pipeline.capture(incident));
+if (!loaded.ok) failures.report("load", loaded.error, true);
+process.on("unhandledRejection", (error) =>
+  failures.report("unhandled-rejection", error, true),
 );
+process.on("uncaughtException", (error) =>
+  failures.report("uncaught-exception", error, true),
+);
+
+const rendered = failures.run("boot", true, () =>
+  render(
+    <TerminalLayoutProvider>
+      <GameErrorBoundary failures={failures} pipeline={pipeline}>
+        <App
+          devConsoleEnabled={devConsoleEnabled}
+          failures={failures}
+          hasSave={hasSave}
+          pipeline={pipeline}
+          seed={bootSeed}
+          store={store}
+        />
+      </GameErrorBoundary>
+    </TerminalLayoutProvider>,
+    { alternateScreen: true },
+  ),
+);
+if (!rendered.ok) {
+  const display = pipeline.getFatal();
+  if (display) render(<CrashScreen display={display} />);
+}

@@ -41,6 +41,15 @@ export interface IssueContext {
   node?: string;
   /** Terminal size, e.g. "120x40". */
   terminal?: string;
+  debugJournal?: readonly unknown[];
+  incident?: {
+    category: string;
+    message: string;
+    stack?: string;
+    triggeringEvent?: string;
+    fingerprint: string;
+    journal: readonly unknown[];
+  };
 }
 
 function fence(body: string, lang = ""): string {
@@ -66,6 +75,42 @@ export function buildIssueBody(ctx: IssueContext): string {
   ].filter(Boolean);
 
   const sections = ["## Repro", repro, "", "## Environment", ...meta];
+
+  if (ctx.incident) {
+    sections.push(
+      "",
+      "## Incident",
+      `- Category: \`${ctx.incident.category}\``,
+      `- Message: ${ctx.incident.message}`,
+      `- Fingerprint: \`${ctx.incident.fingerprint}\``,
+      ctx.incident.triggeringEvent
+        ? `- Triggering event: \`${ctx.incident.triggeringEvent}\``
+        : "",
+    );
+    if (ctx.incident.stack) {
+      sections.push("", "### Stack", fence(ctx.incident.stack));
+    }
+    if (ctx.incident.journal.length > 0) {
+      sections.push(
+        "",
+        "### Debug journal",
+        details(
+          "Recent entries",
+          fence(JSON.stringify(ctx.incident.journal, null, 2), "json"),
+        ),
+      );
+    }
+  }
+  if (!ctx.incident && ctx.debugJournal?.length) {
+    sections.push(
+      "",
+      "## Debug journal",
+      details(
+        "Recent entries",
+        fence(JSON.stringify(ctx.debugJournal, null, 2), "json"),
+      ),
+    );
+  }
 
   if (ctx.keySequence?.trim()) {
     sections.push("", "## Key sequence", fence(ctx.keySequence.trim()));
@@ -207,6 +252,7 @@ export async function createLinearIssue(
 
 /** Local outbox: issues that couldn't be filed yet (JSONL, one per line). */
 export const ISSUE_OUTBOX = "dev-issues.jsonl";
+export const INCIDENT_LOG = "game-incidents.jsonl";
 
 export interface QueuedIssue extends CreateIssueInput {
   /** Why it was queued: a missing identity or the API error text. */
@@ -272,4 +318,118 @@ export async function flushQueuedIssues(
     stuck.map((q) => JSON.stringify(q)).join("\n") + (stuck.length ? "\n" : ""),
   );
   return { filed, remaining: stuck.length };
+}
+
+export type ReportStatus = "created" | "queued" | "local" | "failed";
+
+export interface ReportResult {
+  status: ReportStatus;
+  identifier?: string;
+  url?: string;
+  error?: string;
+  repeatCount?: number;
+}
+
+export interface ReportRequest {
+  input: CreateIssueInput;
+  dev: boolean;
+  automatic?: boolean;
+  fingerprint?: string;
+  recordedAt?: string;
+  localPath?: string;
+  outboxPath?: string;
+}
+
+export interface ReportDependencies {
+  resolveConfig?: () => Promise<LinearConfig | null>;
+  createIssue?: typeof createLinearIssue;
+  queue?: (
+    input: CreateIssueInput,
+    reason: string,
+    queuedAt: string,
+    path?: string,
+  ) => number;
+  append?: (path: string, data: string) => void;
+  repeats?: Map<string, number>;
+  flush?: typeof flushQueuedIssues;
+}
+
+const processRepeats = new Map<string, number>();
+
+/** Shared manual/automatic submission path with per-process incident dedupe. */
+export async function submitReport(
+  request: ReportRequest,
+  dependencies: ReportDependencies = {},
+): Promise<ReportResult> {
+  const recordedAt = request.recordedAt ?? new Date().toISOString();
+  const append = dependencies.append ?? appendFileSync;
+  const repeats = dependencies.repeats ?? processRepeats;
+  const localPath = request.localPath ?? INCIDENT_LOG;
+
+  if (request.automatic && request.fingerprint) {
+    const repeatCount = (repeats.get(request.fingerprint) ?? 0) + 1;
+    repeats.set(request.fingerprint, repeatCount);
+    if (repeatCount > 1) {
+      try {
+        append(
+          localPath,
+          `${JSON.stringify({ type: "repeat", fingerprint: request.fingerprint, repeatCount, recordedAt })}\n`,
+        );
+        return { status: "local", repeatCount };
+      } catch (error) {
+        return {
+          status: "failed",
+          error: (error as Error).message,
+          repeatCount,
+        };
+      }
+    }
+  }
+
+  if (!request.dev) {
+    try {
+      append(
+        localPath,
+        `${JSON.stringify({ type: "incident", ...request.input, fingerprint: request.fingerprint, recordedAt })}\n`,
+      );
+      return { status: "local" };
+    } catch (error) {
+      return { status: "failed", error: (error as Error).message };
+    }
+  }
+
+  const queue = dependencies.queue ?? queueIssue;
+  const outboxPath = request.outboxPath ?? ISSUE_OUTBOX;
+  try {
+    const config = await (dependencies.resolveConfig ?? resolveLinearConfig)();
+    if (!config) {
+      queue(
+        request.input,
+        "vercel-identity-unavailable",
+        recordedAt,
+        outboxPath,
+      );
+      return { status: "queued" };
+    }
+    try {
+      const issue = await (dependencies.createIssue ?? createLinearIssue)(
+        request.input,
+        config,
+      );
+      const flush =
+        dependencies.flush ??
+        (dependencies.createIssue ? undefined : flushQueuedIssues);
+      try {
+        await flush?.(config, outboxPath);
+      } catch {
+        // The new report is already filed; a stuck outbox can wait for `flush`.
+      }
+      return { status: "created", ...issue };
+    } catch (error) {
+      queue(request.input, (error as Error).message, recordedAt, outboxPath);
+      return { status: "queued", error: (error as Error).message };
+    }
+  } catch (error) {
+    return { status: "failed", error: (error as Error).message };
+  }
 }

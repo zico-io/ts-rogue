@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { GameEvent, GameState } from "../../engine/state/types";
+import type { FailureBoundary } from "../../lib/incidents";
 import { ChurchView } from "./village/ChurchView";
 import { InnView } from "./village/InnView";
 import { StoreView } from "./village/StoreView";
@@ -9,6 +10,7 @@ import { VillageOverview } from "./village/VillageOverview";
 export interface VillageScreenProps {
   state: GameState;
   dispatch: (event: GameEvent) => void;
+  failures: FailureBoundary;
 }
 
 /**
@@ -17,7 +19,11 @@ export interface VillageScreenProps {
  * to the overview. From the overview, leaving town dispatches a scene
  * change to the overworld (PROJECT_PLAN Phase 2, ROG-8).
  */
-export function VillageScreen({ state, dispatch }: VillageScreenProps) {
+export function VillageScreen({
+  state,
+  dispatch,
+  failures,
+}: VillageScreenProps) {
   const [building, setBuilding] = useState<VillageBuilding | null>(null);
   const onBack = () => setBuilding(null);
   const onLeave = () => dispatch({ type: "ChangeScene", scene: "overworld" });
@@ -26,7 +32,14 @@ export function VillageScreen({ state, dispatch }: VillageScreenProps) {
     case "inn":
       return <InnView dispatch={dispatch} onBack={onBack} state={state} />;
     case "church":
-      return <ChurchView dispatch={dispatch} onBack={onBack} state={state} />;
+      return (
+        <ChurchView
+          dispatch={dispatch}
+          failures={failures}
+          onBack={onBack}
+          state={state}
+        />
+      );
     case "store":
       return <StoreView dispatch={dispatch} onBack={onBack} state={state} />;
     case null:

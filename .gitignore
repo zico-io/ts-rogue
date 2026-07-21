@@ -10,3 +10,4 @@ dist/
 .env*
 /save.db
 /dev-issues.jsonl
+/game-incidents.jsonl

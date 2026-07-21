@@ -9,6 +9,7 @@ import {
   issueCreateVariables,
   queueIssue,
   readQueuedIssues,
+  submitReport,
 } from "./linear";
 
 describe("buildIssueBody", () => {
@@ -43,6 +44,24 @@ describe("buildIssueBody", () => {
     const body = buildIssueBody(base);
     expect(body).not.toContain("## Key sequence");
     expect(body).not.toContain("## Screen");
+  });
+
+  it("includes automatic incident metadata and its debug journal", () => {
+    const body = buildIssueBody({
+      ...base,
+      incident: {
+        category: "reducer",
+        message: "boom",
+        stack: "Error: boom\n at reduce",
+        triggeringEvent: "BattleAttack",
+        fingerprint: "inc-123",
+        journal: [{ event: "BattleAttack" }],
+      },
+    });
+    expect(body).toContain("Category: `reducer`");
+    expect(body).toContain("Fingerprint: `inc-123`");
+    expect(body).toContain("BattleAttack");
+    expect(body).toContain("Error: boom");
   });
 });
 
@@ -197,5 +216,112 @@ describe("issue outbox", () => {
     expect(result.filed).toEqual(["ROG-ok"]);
     expect(result.remaining).toBe(1);
     expect(readQueuedIssues(outbox).map((q) => q.title)).toEqual(["fails"]);
+  });
+});
+
+describe("submitReport", () => {
+  const input = { title: "crash", body: "packet", label: "bug" };
+
+  it("returns created after a successful dev filing", async () => {
+    const result = await submitReport(
+      { input, dev: true },
+      {
+        resolveConfig: async () => ({ accessToken: "k", teamKey: "ROG" }),
+        createIssue: async () => ({ identifier: "ROG-1", url: "u" }),
+      },
+    );
+    expect(result).toMatchObject({ status: "created", identifier: "ROG-1" });
+  });
+
+  it("queues dev reports when credentials or the API fail", async () => {
+    const queued: string[] = [];
+    const queue = (_input: { title: string }, reason: string) => {
+      queued.push(reason);
+      return queued.length;
+    };
+    expect(
+      await submitReport(
+        { input, dev: true },
+        { resolveConfig: async () => null, queue },
+      ),
+    ).toMatchObject({ status: "queued" });
+    expect(
+      await submitReport(
+        { input, dev: true },
+        {
+          resolveConfig: async () => ({ accessToken: "k", teamKey: "ROG" }),
+          createIssue: async () => {
+            throw new Error("offline");
+          },
+          queue,
+        },
+      ),
+    ).toMatchObject({ status: "queued", error: "offline" });
+    expect(queued).toEqual(["vercel-identity-unavailable", "offline"]);
+  });
+
+  it("writes normal-mode reports locally and surfaces local write failure", async () => {
+    const lines: string[] = [];
+    expect(
+      await submitReport(
+        { input, dev: false, fingerprint: "inc-a", recordedAt: "T0" },
+        { append: (_path, line) => lines.push(String(line)) },
+      ),
+    ).toEqual({ status: "local" });
+    expect(lines[0]).toContain('"fingerprint":"inc-a"');
+    expect(
+      await submitReport(
+        { input, dev: false },
+        {
+          append: () => {
+            throw new Error("disk full");
+          },
+        },
+      ),
+    ).toEqual({ status: "failed", error: "disk full" });
+  });
+
+  it("files an automatic fingerprint once and records repeat counts locally", async () => {
+    const repeats = new Map<string, number>();
+    const filed: string[] = [];
+    const local: string[] = [];
+    const dependencies = {
+      repeats,
+      resolveConfig: async () => ({ accessToken: "k", teamKey: "ROG" }),
+      createIssue: async () => {
+        filed.push("filed");
+        return { identifier: "ROG-2", url: "u" };
+      },
+      append: (_path: string, line: string) => local.push(line),
+    };
+    const request = {
+      input,
+      dev: true,
+      automatic: true,
+      fingerprint: "inc-repeat",
+    };
+    expect((await submitReport(request, dependencies)).status).toBe("created");
+    expect(await submitReport(request, dependencies)).toMatchObject({
+      status: "local",
+      repeatCount: 2,
+    });
+    expect(filed).toHaveLength(1);
+    expect(local[0]).toContain('"repeatCount":2');
+  });
+
+  it("does not deduplicate manual reports", async () => {
+    const filed: string[] = [];
+    const dependencies = {
+      repeats: new Map<string, number>(),
+      resolveConfig: async () => ({ accessToken: "k", teamKey: "ROG" }),
+      createIssue: async () => {
+        filed.push("filed");
+        return { identifier: "ROG-3", url: "u" };
+      },
+    };
+    const request = { input, dev: true, fingerprint: "inc-manual" };
+    await submitReport(request, dependencies);
+    await submitReport(request, dependencies);
+    expect(filed).toHaveLength(2);
   });
 });

@@ -28,6 +28,18 @@ import {
   tileAt,
 } from "../world/overworld";
 import type { DungeonFeature, DungeonState } from "../world/types";
+import {
+  attempt,
+  createGameIncident,
+  DEBUG_JOURNAL_LIMIT,
+  type DebugJournalEntry,
+  eventName,
+  type GameIncident,
+  type IncidentCategory,
+  StateInvariantError,
+  summarizeState,
+  validateGameState,
+} from "./incidents";
 import type {
   GameEvent,
   GameState,
@@ -542,13 +554,17 @@ export function reduce(state: GameState, event: GameEvent): GameState {
 }
 
 export type Listener = (state: GameState) => void;
+export type IncidentListener = (incident: GameIncident) => void;
 
 /** Thin UI-facing holder around {@link reduce}. No Ink/React dependency. */
 export class GameStore {
   private state: GameState;
   private readonly listeners = new Set<Listener>();
+  private readonly incidentListeners = new Set<IncidentListener>();
+  private readonly journal: DebugJournalEntry[] = [];
 
   constructor(initial: GameState) {
+    validateGameState(initial);
     this.state = initial;
   }
 
@@ -557,9 +573,68 @@ export class GameStore {
   }
 
   dispatch(event: GameEvent): GameState {
-    this.state = reduce(this.state, event);
+    const before = this.state;
+    const reduced = attempt(() => {
+      const next = reduce(before, event);
+      validateGameState(next);
+      return next;
+    });
+    if (!reduced.ok) {
+      this.reportFailure(
+        reduced.error instanceof StateInvariantError ? "invariant" : "reducer",
+        reduced.error,
+        true,
+        event,
+      );
+      return before;
+    }
+    this.state = reduced.value;
+    this.pushJournal({
+      at: new Date().toISOString(),
+      kind: "dispatch",
+      event: event.type,
+      before: summarizeState(before),
+      after: summarizeState(reduced.value),
+    });
     for (const listener of this.listeners) listener(this.state);
     return this.state;
+  }
+
+  getDebugJournal(): readonly DebugJournalEntry[] {
+    return this.journal.slice();
+  }
+
+  reportFailure(
+    category: IncidentCategory,
+    error: unknown,
+    fatal: boolean,
+    event?: GameEvent,
+  ): GameIncident {
+    const incident = createGameIncident(
+      category,
+      error,
+      this.state,
+      this.getDebugJournal(),
+      fatal,
+      eventName(event),
+    );
+    this.pushJournal({
+      at: incident.occurredAt,
+      kind: category === "invariant" ? "invariant" : "failure",
+      ...(incident.triggeringEvent ? { event: incident.triggeringEvent } : {}),
+      message: incident.message,
+      before: summarizeState(this.state),
+    });
+    incident.journal = this.getDebugJournal();
+    for (const listener of this.incidentListeners) listener(incident);
+    return incident;
+  }
+
+  subscribeIncidents(listener: IncidentListener): () => void {
+    this.incidentListeners.add(listener);
+    return () => {
+      this.incidentListeners.delete(listener);
+    };
   }
 
   subscribe(listener: Listener): () => void {
@@ -567,5 +642,10 @@ export class GameStore {
     return () => {
       this.listeners.delete(listener);
     };
+  }
+
+  private pushJournal(entry: DebugJournalEntry): void {
+    this.journal.push(entry);
+    if (this.journal.length > DEBUG_JOURNAL_LIMIT) this.journal.shift();
   }
 }
