@@ -41,6 +41,8 @@ export interface MonsterDef {
   implicitPoolRef?: string;
   /** First-person ASCII art, line by line, facing the viewer. */
   ascii: readonly string[];
+  /** Accent color (hex) tinting this monster's battle art (ROG-31). */
+  color: string;
 }
 
 export const MONSTERS: readonly MonsterDef[] = [
@@ -56,7 +58,16 @@ export const MONSTERS: readonly MonsterDef[] = [
     tier: 1,
     lootTableRef: "tier-1",
     implicitPoolRef: "type_slime",
-    ascii: ["   ___   ", "  /   \\  ", " | ~o~ | ", "  \\___/  "],
+    ascii: [
+      "       .-~~~-.",
+      "   .-~~       ~~-.",
+      "  /   (o)   (o)   \\",
+      " |                 |",
+      " |   \\.       ./   |",
+      "  \\    ~-.-.-~    /",
+      "   ~-.________.-~",
+    ],
+    color: "#53c09f",
   },
   {
     id: "goblin",
@@ -70,12 +81,17 @@ export const MONSTERS: readonly MonsterDef[] = [
     tier: 2,
     lootTableRef: "tier-2",
     ascii: [
-      "   /\\    ",
-      "  /oo\\   ",
-      "  \\--/   ",
-      "  /||\\   ",
-      " /    \\  ",
+      "     /\\      /\\",
+      "    /  \\.--./  \\",
+      "    | (o)  (o) |",
+      "    |    __    |",
+      "    \\   \\__/   /",
+      "     |~~~~~~~~|",
+      "    /|  |__|  |\\",
+      "   / |__|  |__| \\",
+      "     (__)  (__)",
     ],
+    color: "#5fae3b",
   },
   {
     id: "dungeon-guardian",
@@ -90,13 +106,19 @@ export const MONSTERS: readonly MonsterDef[] = [
     lootTableRef: "tier-3",
     implicitPoolRef: "boss_dungeon_guardian",
     ascii: [
-      "  /===\\  ",
-      "  |O O|  ",
-      "  |___|  ",
-      " /|||\\   ",
-      " |   |   ",
-      " /___\\   ",
+      "       ______",
+      "      /|====|\\",
+      "     | |[][]| |",
+      "      \\|====|/",
+      "    .--|    |--.",
+      "   /   |----|   \\",
+      "  |  / |    | \\  |",
+      "  | |  |    |  | |",
+      "  |_|  |----|  |_|",
+      "       |    |",
+      "      _|____|_",
     ],
+    color: "#e74343",
   },
 ];
 

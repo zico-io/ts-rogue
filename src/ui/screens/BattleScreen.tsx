@@ -334,7 +334,7 @@ function EnemyField({ packed }: { packed: PackedEnemies }) {
               ? theme.textFaint
               : col.selected
                 ? theme.accent
-                : undefined;
+                : (col.enemy.color ?? theme.text);
             return (
               <Box key={col.enemy.id} flexDirection="column">
                 <Text color={color}>{col.enemy.ascii.join("\n")}</Text>
