@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="560" height="314" font-family="Menlo,Consolas,DejaVu Sans Mono,monospace" font-size="12.5">
+<rect width="100%" height="100%" fill="#16131c"/>
+<text xml:space="preserve" textLength="352.5" x="10.0" y="39" fill="#ee99bf" font-weight="bold">█████  ████       ████   ███   ████ █   █ █████</text>
+<text xml:space="preserve" textLength="322.5" x="10.0" y="54" fill="#cd67a8" font-weight="bold">  █   █           █   █ █   █ █     █   █ █</text>
+<text xml:space="preserve" textLength="337.5" x="10.0" y="70" fill="#ab4bab" font-weight="bold">  █    ███   ███  ████  █   █ █  ██ █   █ ███</text>
+<text xml:space="preserve" textLength="322.5" x="10.0" y="86" fill="#8648b5" font-weight="bold">  █       █       █  █  █   █ █   █ █   █ █</text>
+<text xml:space="preserve" textLength="352.5" x="10.0" y="101" fill="#70388c" font-weight="bold">  █   ████        █   █  ███   ███   ███  █████</text>
+<text xml:space="preserve" textLength="202.5" x="10.0" y="116" fill="#a59b9d">A terminal dungeon crawler.</text>
+<text xml:space="preserve" textLength="135.0" x="10.0" y="148" fill="#c9c4ce">Choose your class:</text>
+<text xml:space="preserve" textLength="495.0" x="10.0" y="178" fill="#e3aa3e">&gt; Warrior - A stalwart fighter who leans on strength and vitality.</text>
+<text xml:space="preserve" textLength="517.5" x="10.0" y="194" fill="#c9c4ce">  Rogue - A nimble skirmisher who strikes first and lives by agility.</text>
+<text xml:space="preserve" textLength="540.0" x="10.0" y="210" fill="#c9c4ce">  Wizard - A scholar of arcane power who channels intellect into spells.</text>
+<text xml:space="preserve" textLength="360.0" x="10.0" y="240" fill="#a59b9d">Up/Down to choose, Enter to continue, q to quit.</text>
+<text xml:space="preserve" textLength="45.0" x="10.0" y="272" fill="#706a80">v0.0.0</text>
+<text xml:space="preserve" textLength="232.5" x="10.0" y="302" fill="#a59b9d">Dev console: press ` to switch.</text>
+</svg>
