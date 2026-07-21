@@ -1,8 +1,9 @@
 /**
  * Tileset rendering via the kitty graphics protocol's Unicode placeholder
- * mode (Ghostty/kitty). The Urizen sheet is transmitted once at startup and
- * one virtual placement is created per named tile below; each map cell is
- * then plain text - U+10EEEE plus row/column diacritics, with the foreground
+ * mode (Ghostty/kitty). Each named tile below is a small pre-sliced PNG in
+ * `assets/tiles/` (see `scripts/build-tiles.ts`), transmitted once at startup
+ * with its own image id and one virtual placement; each map cell is then
+ * plain text - U+10EEEE plus row/column diacritics, with the foreground
  * color carrying the image id and the underline color the placement id - so
  * Ink lays out, diffs, and moves tiles exactly like any other text. Inside
  * tmux the APC commands (only) are wrapped in the DCS passthrough envelope;
@@ -14,11 +15,6 @@
 
 import { readFileSync } from "node:fs";
 
-const IMAGE_ID = 1;
-const TILE = 12;
-/** Sheet geometry: 12 px tiles on a 13 px pitch behind a 1 px outer margin. */
-const PITCH = 13;
-
 const PLACEHOLDER = "\u{10EEEE}";
 /** First 8 entries of kitty's row/column-diacritics table (indices 0..7). */
 const DIACRITICS = ["̅", "̍", "̎", "̐", "̒", "̽", "̾", "̿"];
@@ -26,7 +22,7 @@ const DIACRITICS = ["̅", "̍", "̎", "̐", "̒", "̽", "̾", "̿"];
 /** Cell footprint of battle monster sprites, exported for battle layout math. */
 export const SPRITE_CELLS = { width: 8, height: 4 };
 
-interface TileSource {
+export interface TileSource {
   col: number;
   row: number;
   /** Cell footprint; defaults to 2x1 (a near-square block for a 12px tile). */
@@ -35,8 +31,13 @@ interface TileSource {
 
 const MONSTER_CELLS = { c: SPRITE_CELLS.width, r: SPRITE_CELLS.height };
 
-/** Semantic name -> sheet position. Coordinates are tile (col,row) picks. */
-const TILE_SOURCES = {
+/**
+ * Semantic name -> sheet position. Coordinates are tile (col,row) picks on
+ * the Urizen sheet; `scripts/build-tiles.ts` slices these into the per-tile
+ * PNGs under `assets/tiles/` that are actually transmitted (terminals ignore
+ * kitty source rects on virtual placements, so each tile is its own image).
+ */
+export const TILE_SOURCES = {
   // overworld terrain + player
   grass: { col: 4, row: 9 },
   forest: { col: 0, row: 34 },
@@ -61,10 +62,13 @@ export type TileName = keyof typeof TILE_SOURCES;
 
 const NAMES = Object.keys(TILE_SOURCES) as TileName[];
 
-/** Placement id: registry position + 1 (all < 255, so `58;5;pid` works). */
-function placementId(name: TileName): number {
+/** Image id: registry position + 1 (all < 255, so `38;5;id` works). */
+function imageId(name: TileName): number {
   return NAMES.indexOf(name) + 1;
 }
+
+/** Every image gets exactly one virtual placement, always with this id. */
+const PLACEMENT_ID = 1;
 
 export function hasTile(name: string): name is TileName {
   return name in TILE_SOURCES;
@@ -101,55 +105,59 @@ function apc(payload: string): string {
 const CHUNK = 4096;
 
 /**
- * Transmit-plus-placements sequence for the base64-encoded sheet PNG. Direct
- * (in-band) medium - the file medium `t=f` fails silently in some terminals.
+ * Transmit-plus-placement sequence for one tile image (base64-encoded PNG).
+ * Direct (in-band) medium - the file medium `t=f` fails silently in some
+ * terminals - and one image per tile, because terminals ignore kitty source
+ * rects (`x,y,w,h`) on virtual placements.
  */
-export function initSequence(pngBase64: string, inTmux?: boolean): string {
+export function initSequence(
+  images: ReadonlyArray<[TileName, string]>,
+  inTmux?: boolean,
+): string {
   const commands: string[] = [];
-  for (let i = 0; i < pngBase64.length; i += CHUNK) {
-    const chunk = pngBase64.slice(i, i + CHUNK);
-    const last = i + CHUNK >= pngBase64.length;
-    const control =
-      i === 0
-        ? `a=t,f=100,i=${IMAGE_ID},q=2,m=${last ? 0 : 1}`
-        : `m=${last ? 0 : 1}`;
-    commands.push(apc(`${control};${chunk}`));
-  }
-  for (const name of NAMES) {
+  for (const [name, pngBase64] of images) {
+    const id = imageId(name);
+    for (let i = 0; i < pngBase64.length; i += CHUNK) {
+      const chunk = pngBase64.slice(i, i + CHUNK);
+      const last = i + CHUNK >= pngBase64.length;
+      const control =
+        i === 0
+          ? `a=t,f=100,i=${id},q=2,m=${last ? 0 : 1}`
+          : `m=${last ? 0 : 1}`;
+      commands.push(apc(`${control};${chunk}`));
+    }
     const source: TileSource = TILE_SOURCES[name];
     const { c, r } = source.cells ?? { c: 2, r: 1 };
-    const x = 1 + PITCH * source.col;
-    const y = 1 + PITCH * source.row;
-    commands.push(
-      apc(
-        `a=p,U=1,q=2,i=${IMAGE_ID},p=${placementId(name)},x=${x},y=${y},w=${TILE},h=${TILE},c=${c},r=${r}`,
-      ),
-    );
+    commands.push(apc(`a=p,U=1,q=2,i=${id},p=${PLACEMENT_ID},c=${c},r=${r}`));
   }
   return commands.map((command) => tmuxWrap(command, inTmux)).join("");
 }
 
 let initialized = false;
 
-/** Transmit the sheet and create all placements. Call once before Ink renders. */
+/**
+ * Transmit every tile image and create its placement. Must run after Ink
+ * enters the alternate screen - kitty graphics storage is per-screen.
+ */
 export function initTiles(): void {
   if (initialized || !tilesSupported()) return;
   initialized = true;
-  const pngPath = new URL(
-    "../../../assets/urizen_onebit_tileset__v2d0.png",
-    import.meta.url,
-  ).pathname;
-  process.stdout.write(initSequence(readFileSync(pngPath).toString("base64")));
+  const images = NAMES.map((name): [TileName, string] => {
+    const path = new URL(`../../../assets/tiles/${name}.png`, import.meta.url)
+      .pathname;
+    return [name, readFileSync(path).toString("base64")];
+  });
+  process.stdout.write(initSequence(images));
   // ponytail: no image delete on exit; the terminal frees it with the session
 }
 
-/** One placeholder line: cells (0..cols-1) of `row` for the given placement. */
-function placeholderLine(pid: number, row: number, cols: number): string {
+/** One placeholder line: cells (0..cols-1) of `row` for the given image. */
+function placeholderLine(id: number, row: number, cols: number): string {
   let cells = "";
   for (let col = 0; col < cols; col++) {
     cells += PLACEHOLDER + DIACRITICS[row] + DIACRITICS[col];
   }
-  return `\x1b[38;5;${IMAGE_ID}m\x1b[58;5;${pid}m${cells}\x1b[59;39m`;
+  return `\x1b[38;5;${id}m\x1b[58;5;${PLACEMENT_ID}m${cells}\x1b[59;39m`;
 }
 
 const tileTextCache = new Map<TileName, string>();
@@ -158,7 +166,7 @@ const tileTextCache = new Map<TileName, string>();
 export function tileText(name: TileName): string {
   let text = tileTextCache.get(name);
   if (text === undefined) {
-    text = placeholderLine(placementId(name), 0, 2);
+    text = placeholderLine(imageId(name), 0, 2);
     tileTextCache.set(name, text);
   }
   return text;
@@ -166,10 +174,10 @@ export function tileText(name: TileName): string {
 
 /** A battle sprite as one text run per terminal row (each 8 columns wide). */
 export function spriteRows(name: TileName): string[] {
-  const pid = placementId(name);
+  const id = imageId(name);
   const rows: string[] = [];
   for (let row = 0; row < SPRITE_CELLS.height; row++) {
-    rows.push(placeholderLine(pid, row, SPRITE_CELLS.width));
+    rows.push(placeholderLine(id, row, SPRITE_CELLS.width));
   }
   return rows;
 }

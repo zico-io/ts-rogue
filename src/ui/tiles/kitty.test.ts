@@ -14,7 +14,7 @@ const D = ["̅", "̍", "̎", "̐", "̒", "̽", "̾", "̿"];
 
 describe("tileText", () => {
   it("emits image-id fg, placement-id underline, and a 2-cell row-0 run", () => {
-    // grass is the first registry entry -> placement id 1
+    // grass is the first registry entry -> image id 1, placement always 1
     expect(tileText("grass")).toBe(
       `${ESC}[38;5;1m${ESC}[58;5;1m${PH}${D[0]}${D[0]}${PH}${D[0]}${D[1]}${ESC}[59;39m`,
     );
@@ -23,44 +23,44 @@ describe("tileText", () => {
 
 describe("spriteRows", () => {
   it("emits one self-contained run per sprite row", () => {
-    const rows = spriteRows("slime"); // registry position 13 -> pid 13
+    const rows = spriteRows("slime"); // registry position 13 -> image id 13
     expect(rows).toHaveLength(SPRITE_CELLS.height);
     const cells = Array.from(
       { length: SPRITE_CELLS.width },
       (_, col) => `${PH}${D[1]}${D[col]}`,
     ).join("");
-    expect(rows[1]).toBe(`${ESC}[38;5;1m${ESC}[58;5;13m${cells}${ESC}[59;39m`);
+    expect(rows[1]).toBe(`${ESC}[38;5;13m${ESC}[58;5;1m${cells}${ESC}[59;39m`);
   });
 });
 
 describe("initSequence", () => {
-  it("transmits the sheet as direct chunks and creates gutter-aware placements", () => {
-    const b64 = "A".repeat(4096 + 100);
-    const sequence = initSequence(b64, false);
+  it("transmits each tile as direct chunks under its own image id", () => {
+    const big = "A".repeat(4096 + 100);
+    const sequence = initSequence(
+      [
+        ["grass", big],
+        ["slime", "QUJD"],
+      ],
+      false,
+    );
     // first chunk carries the control keys with m=1, the final chunk m=0
     expect(
-      sequence.startsWith(`${ESC}_Ga=t,f=100,i=1,q=2,m=1;${"A".repeat(4096)}${ESC}\\`),
+      sequence.startsWith(
+        `${ESC}_Ga=t,f=100,i=1,q=2,m=1;${"A".repeat(4096)}${ESC}\\`,
+      ),
     ).toBe(true);
     expect(sequence).toContain(`${ESC}_Gm=0;${"A".repeat(100)}${ESC}\\`);
-    // grass at sheet (col 4, row 9) -> x = 1 + 13*4, y = 1 + 13*9
+    // grass placement: image 1, placement 1, 2x1 cells, no source rect
+    expect(sequence).toContain(`${ESC}_Ga=p,U=1,q=2,i=1,p=1,c=2,r=1${ESC}\\`);
+    // slime: single-chunk transmit (m=0 up front) + sprite-sized placement
+    expect(sequence).toContain(`${ESC}_Ga=t,f=100,i=13,q=2,m=0;QUJD${ESC}\\`);
     expect(sequence).toContain(
-      `${ESC}_Ga=p,U=1,q=2,i=1,p=1,x=53,y=118,w=12,h=12,c=2,r=1${ESC}\\`,
-    );
-    // monster sprites use the battle cell footprint
-    expect(sequence).toContain(
-      `c=${SPRITE_CELLS.width},r=${SPRITE_CELLS.height}${ESC}\\`,
-    );
-  });
-
-  it("sends a single-chunk payload with m=0 up front", () => {
-    const sequence = initSequence("QUJD", false);
-    expect(sequence.startsWith(`${ESC}_Ga=t,f=100,i=1,q=2,m=0;QUJD${ESC}\\`)).toBe(
-      true,
+      `${ESC}_Ga=p,U=1,q=2,i=13,p=1,c=${SPRITE_CELLS.width},r=${SPRITE_CELLS.height}${ESC}\\`,
     );
   });
 
   it("wraps every command for tmux passthrough when inside tmux", () => {
-    const sequence = initSequence("QUJD", true);
+    const sequence = initSequence([["grass", "QUJD"]], true);
     expect(sequence.startsWith(`${ESC}Ptmux;${ESC}${ESC}_G`)).toBe(true);
     expect(sequence.endsWith(`${ESC}${ESC}\\${ESC}\\`)).toBe(true);
   });
