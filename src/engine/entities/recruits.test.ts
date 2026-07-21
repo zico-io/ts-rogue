@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { deserialize, serialize } from "../../persistence/save";
+import { Rng } from "../rng/rng";
 import { newGame, reduce } from "../state/store";
 import type { GameState } from "../state/types";
-import { Rng } from "../rng/rng";
 import { createStartingHero, MAX_PARTY } from "./party";
 import { generateRecruits, recruitCost } from "./recruits";
 
