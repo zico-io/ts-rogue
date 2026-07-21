@@ -51,6 +51,8 @@ export interface GameState {
   scene: Scene;
   log: readonly LogEntry[];
   party: PartyMember[];
+  /** Tavern recruit pool (ROG-21); rerolls on inn rest, persisted so save/load doesn't reroll. */
+  recruits: PartyMember[];
   gold: number;
   /** Owned, unequipped stacks of consumable items (potions, antidotes). */
   inventory: InventoryItem[];
@@ -85,7 +87,9 @@ export type StepDirection = "forward" | "back";
  * `NewGame` (the chosen character class; defaults to warrior when omitted).
  * ROG-20 adds `memberId` on `EquipItem`/`UnequipItem` (which party member the
  * action targets) and `RecruitMember` (dev-console party growth ahead of the
- * ROG-21 tavern recruiting UI).
+ * ROG-21 tavern recruiting UI). ROG-21 adds the tavern events: `RefreshRecruits`
+ * (roll the recruit pool), `HireRecruit` (pay to add a pool recruit to the
+ * party), and `DismissMember` (remove a non-hero member).
  */
 export type GameEvent =
   | { type: "NewGame"; seed: number; permadeath?: boolean; classId?: string }
@@ -98,6 +102,9 @@ export type GameEvent =
   | { type: "UnequipItem"; slot: EquipmentSlotName; memberId: string }
   | { type: "SellItem"; instanceId: string }
   | { type: "RecruitMember"; classId: string }
+  | { type: "RefreshRecruits" }
+  | { type: "HireRecruit"; index: number }
+  | { type: "DismissMember"; memberId: string }
   | { type: "MoveOverworld"; dx: MoveDelta; dy: MoveDelta }
   | { type: "TurnDungeon"; direction: TurnDirection }
   | { type: "StepDungeon"; direction: StepDirection }

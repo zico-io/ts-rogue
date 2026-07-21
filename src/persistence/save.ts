@@ -15,7 +15,8 @@ export function serialize(state: GameState): string {
  * for fields introduced after the initial release so an older save does not
  * crash the engine: `flags` (Phase 6, ROG-12), `dungeonState.cleared`
  * (Phase 6, ROG-12), each party member's `classId` (ROG-17, defaulted to
- * the warrior class), and plain-string log lines (pre-ROG-31, upgraded to
+ * the warrior class), the tavern `recruits` pool (ROG-21, empty on old saves),
+ * and plain-string log lines (pre-ROG-31, upgraded to
  * `LogEntry` with the neutral kind) are filled in when absent. Everything is
  * plain data so no non-serializable values are introduced.
  */
@@ -33,6 +34,7 @@ export function deserialize(json: string): GameState {
   for (const member of state.party) {
     if (!member.classId) member.classId = DEFAULT_CLASS_ID;
   }
+  if (!state.recruits) state.recruits = [];
   return state;
 }
 
