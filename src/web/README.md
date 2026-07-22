@@ -30,10 +30,27 @@ serves that build locally.
   depending on Pixi or the DOM. Unit-tested in `scenes.test.ts`.
 - `atlas.ts` - loads the packed sprite atlas through Pixi's `Assets` loader
   (ROG-44); see "Art pipeline" below.
+- `render/sceneView.ts` - `SceneChromeView` (ROG-47): the Pixi interpreter for
+  the shared HUD chrome tree `buildChrome` (`src/ui/scene/chrome.ts`)
+  produces - the same tree `src/ui/components/Screen.tsx` walks for the
+  terminal. Draws the panel border/title, real filled-rect HP/MP meters
+  (replacing the terminal's glyph bars), and the message log tail, keeping
+  every draw object keyed by `node.key` so a dispatch only updates what
+  changed instead of rebuilding the chrome. Framework-free (no `pixi.js`
+  import) behind a `DrawFactory` interface, so it's unit-tested in
+  `sceneView.test.ts` without a real WebGL/canvas context.
+- `render/pixiDrawFactory.ts` - `createPixiDrawFactory`: the thin adapter that
+  implements `sceneView.ts`'s `DrawFactory` with real Pixi `Graphics`/`Text`
+  objects added to a given container. Not unit-tested (thin Pixi glue, like
+  `atlas.ts`).
 - `main.ts` - the entry point: builds the initial `GameState`, wires a
   `GameStore`, initializes the Pixi `Application`, builds one `Container` per
-  scene, loads the atlas, wires the keyboard manager, and subscribes to store
-  updates.
+  scene plus its `SceneChromeView` and content sub-container, loads the atlas,
+  wires the keyboard manager, and subscribes to store updates (which redraw
+  both the scene label/atlas preview and the chrome, and reposition each
+  scene's content container to the chrome's computed content rect). Chrome
+  also redraws on the Pixi renderer's `resize` event so layout survives a
+  window resize.
 - `input/normalizeBrowserKey.ts` - normalizes a DOM `KeyboardEvent` (or the
   minimal `{ key, ctrlKey, metaKey }` shape tests construct) to the same
   `KeyName` alphabet `normalizeInkKey` produces for the terminal. Pure,
@@ -90,6 +107,23 @@ keyed by frame name. `main.ts` looks sprites up by name, e.g.
    loadAtlas(); new Sprite(sheet.textures["<name>"])`, and set
    `texture.source.scaleMode = "nearest"` before scaling it up.
 
+## HUD chrome (ROG-47)
+
+The frame (bordered panel + title), party bar (HP/MP meters + gold), and
+message log around every scene are built once, framework-free, by
+`buildChrome` in `src/ui/scene/chrome.ts` - the same function the terminal's
+`Screen.tsx` and this renderer's `render/sceneView.ts` both walk. `buildChrome`
+takes the available size in an abstract `Unit` (`src/ui/scene/tree.ts`) and
+returns a `PanelNode` tree plus the drawable content-region size; neither the
+builder nor the tree types ever see terminal columns or Pixi pixels directly.
+
+`render/sceneView.ts`'s `UNIT_PX` constant is how many real pixels one chrome
+`Unit` is worth for this renderer (1 unit = 1 terminal cell for Ink). Each
+scene's `SceneChromeView` (built in `main.ts`) draws real filled-rect HP/MP
+meters instead of the terminal's `█`/`░` glyph bars, and reuses every draw
+object across renders by `node.key` so a dispatch that only changes HP/MP/log
+mutates existing Pixi objects instead of rebuilding the chrome.
+
 ## Scope and limits
 
 This issue (ROG-43) only wires the build and boot sequence. ROG-44 adds the
@@ -100,9 +134,10 @@ sprite content is still out of scope. Also intentionally missing:
   dev-console/quit global bindings are stashed (logged, not implemented)
   until ROG-46 adds IndexedDB save/load.
 - Real scene content - each scene is a placeholder label (plus, since
-  ROG-44, a static atlas preview in the village scene); ROG-49 through
-  ROG-52 add real sprites and per-scene rendering, including a visible focus
-  indicator for the keyboard manager's routing (ROG-45).
+  ROG-44, a static atlas preview in the village scene) drawn inside the
+  ROG-47 chrome's content region; ROG-49 through ROG-52 add real sprites and
+  per-scene rendering, including a visible focus indicator for the keyboard
+  manager's routing (ROG-45).
 - The title flow - the browser has no title scene yet, so `quit` is stashed
   and boots straight past it; ROG-52 wires the title flow in.
 - A dev console or rich crash screen - failures show a minimal plain-text

@@ -5,6 +5,8 @@ import { theme, toPixiColor } from "../ui/theme";
 import { loadAtlas } from "./atlas";
 import { parseBootFlags } from "./boot";
 import { BrowserKeyboardManager } from "./input/keyboard";
+import { createPixiDrawFactory } from "./render/pixiDrawFactory";
+import { SceneChromeView } from "./render/sceneView";
 import { SCENE_ORDER, SceneSwitcher, type SceneView } from "./scenes";
 
 const MIN_WIDTH = 480;
@@ -58,16 +60,39 @@ await app.init({
 });
 mount.appendChild(app.canvas);
 
-/** One scene's container plus the label-driven view `SceneSwitcher` uses. */
+/** Title-cases a scene id for the chrome panel's title, e.g. "village" -> "Village". */
+function sceneTitle(scene: Scene): string {
+  return scene.charAt(0).toUpperCase() + scene.slice(1);
+}
+
+/**
+ * One scene's container plus the label-driven view `SceneSwitcher` uses, and
+ * the ROG-47 HUD chrome drawn around its content. `chrome` is the Pixi
+ * interpreter for the shared `buildChrome` tree (`src/ui/scene/chrome.ts`);
+ * `contentContainer` is the scene's content region, repositioned to the
+ * chrome's computed content rect on every render - the Pixi analog of
+ * `useScreenContent` sizing a scene's viewport from the frame chrome.
+ */
 interface SceneEntry {
   container: Container;
+  contentContainer: Container;
+  chrome: SceneChromeView;
   view: SceneView;
 }
 
-/** Builds one scene's container plus the label-driven view `SceneSwitcher` uses. */
+/** Builds one scene's container, chrome view, and the label-driven view `SceneSwitcher` uses. */
 function buildSceneEntry(scene: Scene): SceneEntry {
   const container = new Container();
   container.visible = false;
+  app.stage.addChild(container);
+
+  const chromeContainer = new Container();
+  container.addChild(chromeContainer);
+  const chrome = new SceneChromeView(createPixiDrawFactory(chromeContainer));
+
+  const contentContainer = new Container();
+  container.addChild(contentContainer);
+
   const label = new Text({
     text: scene,
     style: {
@@ -77,10 +102,12 @@ function buildSceneEntry(scene: Scene): SceneEntry {
     },
   });
   label.position.set(24, 24);
-  container.addChild(label);
-  app.stage.addChild(container);
+  contentContainer.addChild(label);
+
   return {
     container,
+    contentContainer,
+    chrome,
     view: {
       setVisible(visible: boolean) {
         container.visible = visible;
@@ -100,22 +127,42 @@ const views = Object.fromEntries(
 ) as Record<Scene, SceneView>;
 const switcher = new SceneSwitcher(views);
 
+/**
+ * Rebuilds every scene's HUD chrome (frame, party bar, message log) at the
+ * canvas's current size and repositions each scene's content container to
+ * the chrome's computed content rect, so a resize or a dispatch that
+ * changes HP/MP/log always redraws the frame around up-to-date content.
+ */
+function renderChrome(state: GameState): void {
+  const size = { width: app.screen.width, height: app.screen.height };
+  for (const scene of SCENE_ORDER) {
+    const entry = entries[scene];
+    const contentRect = entry.chrome.render(state, size, {
+      title: sceneTitle(scene),
+    });
+    entry.contentContainer.position.set(contentRect.x, contentRect.y);
+  }
+}
+
 function renderState(state: GameState): void {
   switcher.render(state);
+  renderChrome(state);
 }
 
 store.subscribe(renderState);
 renderState(store.getState());
+app.renderer.on("resize", () => renderChrome(store.getState()));
 
 /**
  * Atlas smoke test (ROG-44): draws one tile sprite and one monster sprite
- * into the village scene (the scene a fresh boot lands on), proving the
- * atlas built by `scripts/build-atlas.ts` loads through Pixi's `Assets` and
- * renders. Real per-scene sprite content lands in ROG-49 through ROG-52.
+ * into the village scene's content region (the scene a fresh boot lands
+ * on), proving the atlas built by `scripts/build-atlas.ts` loads through
+ * Pixi's `Assets` and renders inside the ROG-47 chrome. Real per-scene
+ * sprite content lands in ROG-49 through ROG-52.
  */
 async function showAtlasPreview(): Promise<void> {
   const sheet = await loadAtlas();
-  const villageContainer = entries.village.container;
+  const villageContent = entries.village.contentContainer;
   const previewLabel = new Text({
     text: "atlas preview: grass tile + slime sprite",
     style: {
@@ -125,19 +172,19 @@ async function showAtlasPreview(): Promise<void> {
     },
   });
   previewLabel.position.set(24, 72);
-  villageContainer.addChild(previewLabel);
+  villageContent.addChild(previewLabel);
 
   const grass = new Sprite(sheet.textures.grass);
   grass.texture.source.scaleMode = "nearest";
   grass.scale.set(PREVIEW_SCALE);
   grass.position.set(24, 96);
-  villageContainer.addChild(grass);
+  villageContent.addChild(grass);
 
   const slime = new Sprite(sheet.textures.slime);
   slime.texture.source.scaleMode = "nearest";
   slime.scale.set(PREVIEW_SCALE);
   slime.position.set(24 + 12 * PREVIEW_SCALE + 16, 96);
-  villageContainer.addChild(slime);
+  villageContent.addChild(slime);
 }
 try {
   await showAtlasPreview();
