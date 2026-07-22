@@ -34,7 +34,9 @@ import { loadAtlas } from "./atlas";
 import { parseBootFlags } from "./boot";
 import { BrowserKeyboardManager } from "./input/keyboard";
 import { normalizeBrowserKey } from "./input/normalizeBrowserKey";
+import { BattleSceneView } from "./render/battleView";
 import { OverworldSceneView } from "./render/overworldView";
+import { createPixiBattleDrawFactory } from "./render/pixiBattleDrawFactory";
 import { createPixiDrawFactory } from "./render/pixiDrawFactory";
 import { createPixiOverworldDrawFactory } from "./render/pixiOverworldDrawFactory";
 import { type ContentRect, SceneChromeView } from "./render/sceneView";
@@ -208,6 +210,10 @@ entries.village.label.visible = false;
 // generic placeholder label the same way village's does.
 entries.overworld.label.visible = false;
 
+// Real battle content (sprites/menus, below) replaces its generic
+// placeholder label the same way village's/overworld's does.
+entries.battle.label.visible = false;
+
 /** Each scene's content-region rect from the most recent `renderChrome()`, in pixels. */
 const contentRects = Object.fromEntries(
   SCENE_ORDER.map((scene) => [
@@ -295,6 +301,27 @@ try {
 } catch (error) {
   showCrash("overworld", error);
 }
+
+let battleView: BattleSceneView | undefined;
+
+/** Loads the atlas (safe to call again; see `loadAtlas`'s doc comment) and builds the battle scene's Pixi draw factory/view. */
+async function setupBattleView(): Promise<void> {
+  const sheet = await loadAtlas();
+  const factory = createPixiBattleDrawFactory(
+    entries.battle.contentContainer,
+    sheet,
+  );
+  battleView = new BattleSceneView(factory);
+}
+try {
+  await setupBattleView();
+} catch (error) {
+  showCrash("battle", error);
+}
+// Ages/removes floating damage numbers and reverts tint flashes every real
+// animation frame (see `battleView.ts`'s module doc); a no-op before the
+// view exists (while `setupBattleView` is still loading the atlas).
+app.ticker.add((ticker) => battleView?.tick(ticker.deltaMS));
 
 let cachedOverworldMap: OverworldMap | undefined;
 let cachedOverworldSeed: number | undefined;
@@ -823,6 +850,29 @@ function renderOverworldContent(state: GameState): void {
 }
 
 /**
+ * Draws the battle scene's real content: enemy sprites/fallback rects with
+ * name/HP plates, the target-mode selection highlight, the action/skill/
+ * item/target command menu, and HP-delta-derived floating damage numbers
+ * (ROG-51). Mirrors `renderOverworldContent`'s guard/shape, delegating to
+ * `BattleSceneView` (framework-free, unit-tested in `battleView.test.ts`).
+ * Menu/cursor state is read from `keyboardManager.getState().battle`, the
+ * same `BrowserKeyboardManager` focus state `renderVillageContent` already
+ * reads for the village's building focus - `handleBattle` (ROG-45) already
+ * reduces this state machine and dispatches the resulting battle events, so
+ * this function only needs to draw it.
+ */
+function renderBattleContent(state: GameState): void {
+  if (state.scene !== "battle") return;
+  if (!battleView) return;
+  const rect = contentRects.battle;
+  battleView.render(
+    state,
+    { width: rect.width, height: rect.height },
+    keyboardManager.getState().battle,
+  );
+}
+
+/**
  * Redraws whatever should be visible for the current `phase`/game-over/scene
  * state. Called both from `store.subscribe` (a `GameStore` dispatch) and at
  * the end of every keydown, since local-only UI state (menu cursors, which
@@ -849,6 +899,7 @@ function renderCurrent(): void {
   renderChrome(state);
   renderVillageContent(state);
   renderOverworldContent(state);
+  renderBattleContent(state);
 }
 
 /**

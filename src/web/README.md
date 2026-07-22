@@ -128,6 +128,29 @@ meters instead of the terminal's `█`/`░` glyph bars, and reuses every draw
 object across renders by `node.key` so a dispatch that only changes HP/MP/log
 mutates existing Pixi objects instead of rebuilding the chrome.
 
+## Battle scene (ROG-51)
+
+`render/battleView.ts`'s `BattleSceneView` is the Pixi counterpart of the
+terminal's `BattleScreen.tsx` + `src/ui/screens/battle/{render,interaction}.ts`,
+following the same framework-free-view-behind-a-`DrawFactory` split as the
+overworld and HUD chrome above; `render/pixiBattleDrawFactory.ts`'s
+`createPixiBattleDrawFactory` is the thin real-Pixi adapter. It draws one
+sprite (or fallback rect) plus a name/HP plate per `BattleEnemy`, using the
+terminal's own `packEnemyColumns` for layout, a target-mode selection
+highlight, and the action/skill/item/target command menu the keyboard
+manager is already driving. A `BattleEnemy` with no `sprite` id, or whose
+`sprite` id isn't in the loaded atlas, always falls back to a solid rect
+tinted the same as a real sprite would be - battles never break on a
+missing sprite. Floating damage numbers and a brief hit-flash are derived
+from HP deltas observed across successive `render()` calls (never from the
+engine, which has no floating-combat-text concept and must stay pure) and
+aged/removed by `BattleSceneView.tick(deltaMS)`, which `main.ts` wires to
+the Pixi `Application`'s own `Ticker` once. Menu/cursor state is read from
+the same `BrowserKeyboardManager` focus state (`getState().battle`) the
+village content above already reads for its building focus - `handleBattle`
+(ROG-45) already reduces that state machine and dispatches the resulting
+battle events, so this view only needs to draw it.
+
 ## Title, village, and game-over (ROG-52)
 
 `GameStore.state.scene` only ever holds `village | overworld | dungeon |
@@ -174,12 +197,12 @@ sprite content is still out of scope. Also intentionally missing:
 - Persistence - every load starts a fresh game; the Church's save and the
   dev-console global binding are stashed (logged, not implemented) until
   ROG-46 adds IndexedDB save/load and ROG-48 adds a browser dev console.
-- Real overworld/dungeon/battle scene content - those three scenes are still
-  a placeholder label (plus, since ROG-44, a static atlas preview in the
-  village scene) drawn inside the ROG-47 chrome's content region; ROG-49
-  through ROG-51 add real sprites and per-scene rendering, including a
-  visible focus indicator for the keyboard manager's routing (ROG-45). The
-  village scene's content is real as of ROG-52 (see above).
+- Real dungeon scene content - it is still a placeholder label (plus, since
+  ROG-44, a static atlas preview in the village scene) drawn inside the
+  ROG-47 chrome's content region; ROG-50 owns its real sprites and per-scene
+  rendering, including a visible focus indicator for the keyboard manager's
+  routing (ROG-45). The village scene's content is real as of ROG-52, and
+  the overworld's (ROG-49) and battle's (ROG-51) as of the sections above.
 - A dev console or rich crash screen - failures show a minimal plain-text
   overlay; ROG-48 owns a proper browser dev console and crash screen.
 
