@@ -21,6 +21,57 @@ Open the printed local URL. Boot query params mirror the terminal's CLI flags:
 `pnpm web:build` produces a static bundle in `dist/web`; `pnpm web:preview`
 serves that build locally.
 
+## The GameStore/GameEvent seam (ROG-53)
+
+This renderer and the terminal one (`src/app.tsx`, `src/ui`) are two
+independent drawing layers glued to one shared, engine-owned contract:
+
+- `GameStore` (`src/engine/state/store.ts`) is the only place a `GameEvent`
+  turns into a new `GameState` - `dispatch(event)` runs the pure `reduce`
+  function, validates the result, and notifies every `subscribe` listener
+  with the new state. Neither renderer mutates `GameState` directly or
+  reimplements any reducer logic; both only ever call `store.dispatch(...)`
+  and read `store.getState()`.
+- `GameEvent` (`src/engine/state/types.ts`) is the closed set of actions
+  either renderer can perform - `NewGame`, `ChangeScene`, `MoveOverworld`,
+  battle/village/dungeon events, and so on. A new player action means adding
+  a `GameEvent` variant and a `reduce` case in the engine first, not
+  special-casing one renderer.
+- Everything renderer-specific - Pixi containers here, Ink components in
+  `src/ui` - lives strictly downstream of `store.subscribe`: read
+  `store.getState()`, draw it, and dispatch `GameEvent`s back in response to
+  input. `src/ui/scene/chrome.ts`'s `buildChrome` and the interaction
+  reducers under `src/ui/screens/**/interaction.ts` are the framework-free
+  middle layer both renderers already share on the drawing and input sides
+  (see "Structure" below); reach for that shared layer before adding
+  renderer-local logic.
+- **Engine changes must keep both frontends working.** A change to
+  `src/engine` (a new `GameEvent`, a new `GameState` field, a changed
+  reducer) is not done until both `pnpm game` (terminal) and `pnpm web:dev`
+  (this renderer) still boot and handle it - run both, not just the one you
+  were testing in. CI enforces the mechanical half of this: `pnpm check`
+  typechecks and tests the whole repository (both entries share one
+  `tsc --noEmit` pass) and lints in cross-boundary import guardrails (below);
+  `pnpm web:build` (a separate CI step) additionally proves this renderer's
+  `vite build` still succeeds. Neither check can see "does the new event
+  make sense in a Pixi container", so review both UIs by eye for anything
+  that isn't purely mechanical.
+
+### Cross-boundary import guardrails
+
+Biome (`biome.json` overrides) enforces the split CI relies on:
+
+- `src/web/**` may not import `ink` or any Node.js builtin module
+  (`node:*` or bare, e.g. `node:fs`, `fs`) - `lint/style/noRestrictedImports`
+  and `lint/correctness/noNodejsModules`.
+- `src/app.tsx` and `src/ui/**` may not import `pixi.js`
+  (`lint/style/noRestrictedImports`) or touch DOM globals like `window`,
+  `document`, or `localStorage` (`lint/style/noRestrictedGlobals`).
+
+`pnpm lint` (part of `pnpm check`) runs these on every push and pull request,
+so a cross-boundary import fails CI instead of silently coupling the two
+renderers.
+
 ## Structure
 
 - `boot.ts` - parses boot query params into `BootFlags`. Pure, unit-tested in
