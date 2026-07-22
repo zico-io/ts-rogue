@@ -99,7 +99,11 @@ export function createInitialKeyboardManagerState(): KeyboardManagerState {
 export class BrowserKeyboardManager {
   private state: KeyboardManagerState = createInitialKeyboardManagerState();
 
-  constructor(private readonly store: GameStore) {}
+  constructor(
+    private readonly store: GameStore,
+    /** Fired on the quit key while playing (ROG-52 wires this to the browser's title flow). */
+    private readonly onQuit: () => void,
+  ) {}
 
   getState(): KeyboardManagerState {
     return this.state;
@@ -146,10 +150,7 @@ export class BrowserKeyboardManager {
         );
         break;
       case "quit":
-        // No title scene to quit to yet in the browser (ROG-52 wires it up).
-        console.info(
-          "ts-rogue: quit key pressed (no browser title/quit flow yet)",
-        );
+        this.onQuit();
         break;
       default:
         break;
@@ -300,6 +301,16 @@ export class BrowserKeyboardManager {
           overview: result.state,
         },
       };
+      // The recruit pool is empty on an old save (or after hiring everyone);
+      // roll a fresh one on entry so the tavern is never bare, mirroring
+      // `TavernView.tsx`'s on-mount effect (there is no mount hook here, so
+      // the transition into the building is the equivalent moment).
+      if (
+        result.effect.building === "tavern" &&
+        this.store.getState().recruits.length === 0
+      ) {
+        this.store.dispatch({ type: "RefreshRecruits" });
+      }
       return;
     }
     if (result.effect?.type === "leave") {
