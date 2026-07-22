@@ -16,6 +16,7 @@
 import { isBattleHealItem } from "../../engine/combat/resolution";
 import { classSkills } from "../../engine/combat/skills";
 import type { GameStore } from "../../engine/state/store";
+import { saveGame } from "../../persistence/browserSave";
 import { resolveGlobalIntent } from "../../ui/scene/globalInput";
 import type { KeyName } from "../../ui/scene/input";
 import {
@@ -103,6 +104,8 @@ export class BrowserKeyboardManager {
     private readonly store: GameStore,
     /** Fired on the quit key while playing (ROG-52 wires this to the browser's title flow). */
     private readonly onQuit: () => void,
+    /** Fired after a successful Church save (ROG-46), so `main.ts` can flip its `hasSave` flag for the title screen's Continue entry. Optional so existing callers/tests are unaffected. */
+    private readonly onSaved?: () => void,
   ) {}
 
   getState(): KeyboardManagerState {
@@ -335,15 +338,23 @@ export class BrowserKeyboardManager {
     if (!intent) return;
     const effect = reduceChurchUi(intent);
     if (effect?.type === "save") {
-      // TODO(ROG-46): browser (IndexedDB) persistence. Stashed, matching
-      // main.ts's `?fresh` no-op, until that persistence layer exists.
-      console.info(
-        "ts-rogue: church save key pressed (no browser persistence yet)",
-      );
-      this.store.dispatch({
-        type: "Log",
-        message: "Saving isn't available in the browser yet",
-      });
+      // Real IndexedDB persistence (ROG-46), mirroring `ChurchView.tsx`'s
+      // terminal sqlite save. `saveGame` is async (IndexedDB has no sync
+      // API, unlike `node:sqlite`), so this fires the write and dispatches
+      // the resulting `Log` line once it settles instead of blocking key
+      // handling - matching "press Enter to save" not stalling the UI.
+      const state = this.store.getState();
+      saveGame(state)
+        .then(() => {
+          this.onSaved?.();
+          this.store.dispatch({ type: "Log", message: "Game saved" });
+        })
+        .catch(() => {
+          this.store.dispatch({
+            type: "Log",
+            message: "Failed to save game",
+          });
+        });
     } else if (effect?.type === "back") {
       this.backToOverview();
     }
