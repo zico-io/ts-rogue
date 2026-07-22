@@ -46,11 +46,12 @@ serves that build locally.
 - `main.ts` - the entry point: builds the initial `GameState`, wires a
   `GameStore`, initializes the Pixi `Application`, builds one `Container` per
   scene plus its `SceneChromeView` and content sub-container, loads the atlas,
-  wires the keyboard manager, and subscribes to store updates (which redraw
-  both the scene label/atlas preview and the chrome, and reposition each
-  scene's content container to the chrome's computed content rect). Chrome
-  also redraws on the Pixi renderer's `resize` event so layout survives a
-  window resize.
+  wires the keyboard manager, and owns the title/game-over `Phase` on top of
+  the store's own scenes (see "Title, village, and game-over" below). A single
+  `renderCurrent()` redraws whatever should be visible - called from
+  `store.subscribe` (a `GameStore` dispatch), the Pixi renderer's `resize`
+  event, and after every keydown, since menu-cursor moves and other local-only
+  UI state don't dispatch a `GameEvent` and would otherwise never redraw.
 - `input/normalizeBrowserKey.ts` - normalizes a DOM `KeyboardEvent` (or the
   minimal `{ key, ctrlKey, metaKey }` shape tests construct) to the same
   `KeyName` alphabet `normalizeInkKey` produces for the terminal. Pure,
@@ -61,7 +62,10 @@ serves that build locally.
   inside the village, whichever sub-view (overview/inn/church/store/tavern)
   - currently has focus, via the exact same `interaction.ts` modules under
   `src/ui/screens/**` the Ink renderer uses. No keymap or reducer logic is
-  duplicated here. Unit-tested in `input/keyboard.test.ts`.
+  duplicated here. `main.ts` only calls into it while the game is being
+  played (not during the title flow or a game-over screen; see below) and
+  passes it an `onQuit` callback (ROG-52) that returns to the title screen.
+  Unit-tested in `input/keyboard.test.ts`.
 - `index.html` - the Vite HTML entry, a full-viewport canvas mount plus a
   hidden minimum-size overlay.
 - `public/atlas/` - the built atlas (`atlas.png` + `atlas.json`), served
@@ -124,6 +128,43 @@ meters instead of the terminal's `█`/`░` glyph bars, and reuses every draw
 object across renders by `node.key` so a dispatch that only changes HP/MP/log
 mutates existing Pixi objects instead of rebuilding the chrome.
 
+## Title, village, and game-over (ROG-52)
+
+`GameStore.state.scene` only ever holds `village | overworld | dungeon |
+battle` - the terminal's title screen and game-over screen sit outside that,
+as local UI state in `app.tsx` (`started`/`flags.gameOver`). `main.ts` mirrors
+this with its own `Phase` (`"title" | "playing"`) plus the store's own
+`flags.gameOver`, and shows exactly one of three things at a time: the title
+container, the game-over container, or the normal scene switcher + chrome.
+
+- **Title**: owns a `TitleUiState` and runs it through the same pure,
+  renderer-agnostic `reduceTitleUi`/`resolveTitleIntent`
+  (`src/ui/screens/title/interaction.ts`) the terminal's `app.tsx` uses - no
+  duplicated menu/class/mode/name state machine. Its display data (block
+  logo, main-menu entries) lives in `src/ui/screens/title/display.ts`, a pure
+  module with no Ink/React import that `TitleScreen.tsx` also re-exports from,
+  so both renderers draw the same content without either depending on the
+  other's framework. The browser has no save persistence yet (ROG-46) or
+  `SettingsScreen`, so `hasSave` is always `false` (no "Continue" entry) and
+  selecting "Settings" is stashed (logged, matching the other not-yet-built
+  stashes below) instead of opening a screen.
+- **Game over**: drawn from `src/ui/screens/gameOverBanner.ts` (`BANNER`,
+  extracted the same way as the title's `display.ts`), with Enter starting a
+  new run (same class/permadeath, fresh seed, mirroring `app.tsx`) and `q`/
+  ctrl+c returning to the title.
+- **Village content**: the village scene's chrome-content region now draws
+  real menu text for the overview and each building
+  (inn/church/store/tavern), reading `BrowserKeyboardManager`'s existing focus
+  state (`getState().village`) - the same state ROG-45 already used for input
+  routing, now also driving what's on screen. Every menu (title, game-over,
+  village) redraws by destroying and recreating its `Text` children each time
+  rather than a keyed diff like the chrome's - these are small,
+  infrequently-updated lists, not a hot path worth `SceneChromeView`'s
+  abstraction.
+- `BrowserKeyboardManager`'s `"quit"` global intent now calls the `onQuit`
+  callback `main.ts` passes it (return to the title) instead of logging a
+  stash - there is still no OS process to actually exit from a browser tab.
+
 ## Scope and limits
 
 This issue (ROG-43) only wires the build and boot sequence. ROG-44 adds the
@@ -131,15 +172,14 @@ texture atlas and an atlas-loading smoke test (see above), but real per-scene
 sprite content is still out of scope. Also intentionally missing:
 
 - Persistence - every load starts a fresh game; the Church's save and the
-  dev-console/quit global bindings are stashed (logged, not implemented)
-  until ROG-46 adds IndexedDB save/load.
-- Real scene content - each scene is a placeholder label (plus, since
-  ROG-44, a static atlas preview in the village scene) drawn inside the
-  ROG-47 chrome's content region; ROG-49 through ROG-52 add real sprites and
-  per-scene rendering, including a visible focus indicator for the keyboard
-  manager's routing (ROG-45).
-- The title flow - the browser has no title scene yet, so `quit` is stashed
-  and boots straight past it; ROG-52 wires the title flow in.
+  dev-console global binding are stashed (logged, not implemented) until
+  ROG-46 adds IndexedDB save/load and ROG-48 adds a browser dev console.
+- Real overworld/dungeon/battle scene content - those three scenes are still
+  a placeholder label (plus, since ROG-44, a static atlas preview in the
+  village scene) drawn inside the ROG-47 chrome's content region; ROG-49
+  through ROG-51 add real sprites and per-scene rendering, including a
+  visible focus indicator for the keyboard manager's routing (ROG-45). The
+  village scene's content is real as of ROG-52 (see above).
 - A dev console or rich crash screen - failures show a minimal plain-text
   overlay; ROG-48 owns a proper browser dev console and crash screen.
 
