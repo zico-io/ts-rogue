@@ -11,6 +11,8 @@ import {
 } from "../engine/loot/items";
 import { GameStore, INN_COST_PER_MEMBER, newGame } from "../engine/state/store";
 import type { GameState, Scene } from "../engine/state/types";
+import { generateOverworldMap } from "../engine/world/overworld";
+import type { OverworldMap } from "../engine/world/types";
 import { resolveGlobalIntent } from "../ui/scene/globalInput";
 import { BANNER } from "../ui/screens/gameOverBanner";
 import { LOGO, mainMenuOptions } from "../ui/screens/title/display";
@@ -32,8 +34,10 @@ import { loadAtlas } from "./atlas";
 import { parseBootFlags } from "./boot";
 import { BrowserKeyboardManager } from "./input/keyboard";
 import { normalizeBrowserKey } from "./input/normalizeBrowserKey";
+import { OverworldSceneView } from "./render/overworldView";
 import { createPixiDrawFactory } from "./render/pixiDrawFactory";
-import { SceneChromeView } from "./render/sceneView";
+import { createPixiOverworldDrawFactory } from "./render/pixiOverworldDrawFactory";
+import { type ContentRect, SceneChromeView } from "./render/sceneView";
 import { SCENE_ORDER, SceneSwitcher, type SceneView } from "./scenes";
 
 const MIN_WIDTH = 480;
@@ -200,11 +204,26 @@ const switcher = new SceneSwitcher(views);
 // rendering for those).
 entries.village.label.visible = false;
 
+// Real overworld content (tilemap/minimap/meter, below) replaces its
+// generic placeholder label the same way village's does.
+entries.overworld.label.visible = false;
+
+/** Each scene's content-region rect from the most recent `renderChrome()`, in pixels. */
+const contentRects = Object.fromEntries(
+  SCENE_ORDER.map((scene) => [
+    scene,
+    { x: 0, y: 0, width: 0, height: 0 } satisfies ContentRect,
+  ]),
+) as Record<Scene, ContentRect>;
+
 /**
  * Rebuilds every scene's HUD chrome (frame, party bar, message log) at the
  * canvas's current size and repositions each scene's content container to
  * the chrome's computed content rect, so a resize or a dispatch that
  * changes HP/MP/log always redraws the frame around up-to-date content.
+ * Stashes each scene's content rect in `contentRects` so per-scene content
+ * renderers (e.g. `renderOverworldContent`) know how much pixel space they
+ * have without recomputing the chrome themselves.
  */
 function renderChrome(state: GameState): void {
   const size = { width: app.screen.width, height: app.screen.height };
@@ -214,6 +233,7 @@ function renderChrome(state: GameState): void {
       title: sceneTitle(scene),
     });
     entry.contentContainer.position.set(contentRect.x, contentRect.y);
+    contentRects[scene] = contentRect;
   }
 }
 
@@ -254,6 +274,39 @@ try {
   await showAtlasPreview();
 } catch (error) {
   showCrash("atlas", error);
+}
+
+/** Pixel size of one main-viewport overworld tile; the minimap draws smaller than this (see `overworldView.ts`). */
+const OVERWORLD_TILE_PX = 24;
+
+let overworldView: OverworldSceneView | undefined;
+
+/** Loads the atlas (safe to call again; see `loadAtlas`'s doc comment) and builds the overworld's Pixi draw factory/view. */
+async function setupOverworldView(): Promise<void> {
+  const sheet = await loadAtlas();
+  const factory = createPixiOverworldDrawFactory(
+    entries.overworld.contentContainer,
+    sheet,
+  );
+  overworldView = new OverworldSceneView(factory);
+}
+try {
+  await setupOverworldView();
+} catch (error) {
+  showCrash("overworld", error);
+}
+
+let cachedOverworldMap: OverworldMap | undefined;
+let cachedOverworldSeed: number | undefined;
+
+/** `generateOverworldMap` is a pure function of `state.seed` (see `overworld.ts`); memoized so a per-render call stays cheap. */
+function overworldMapFor(state: GameState): OverworldMap {
+  if (cachedOverworldMap && cachedOverworldSeed === state.seed) {
+    return cachedOverworldMap;
+  }
+  cachedOverworldMap = generateOverworldMap(state.seed);
+  cachedOverworldSeed = state.seed;
+  return cachedOverworldMap;
 }
 
 // ---------------------------------------------------------------------------
@@ -750,6 +803,26 @@ function renderVillageContent(state: GameState): void {
 }
 
 /**
+ * Draws the overworld scene's real content: sprite tilemap camera viewport,
+ * minimap, and encounter meter (ROG-49). Mirrors `renderVillageContent`'s
+ * guard/shape, but delegates the actual drawing to `OverworldSceneView`
+ * (framework-free, unit-tested in `overworldView.test.ts`) instead of
+ * building `Text` lines directly.
+ */
+function renderOverworldContent(state: GameState): void {
+  if (state.scene !== "overworld") return;
+  if (!overworldView) return;
+  const map = overworldMapFor(state);
+  const rect = contentRects.overworld;
+  overworldView.render(
+    state,
+    map,
+    { width: rect.width, height: rect.height },
+    OVERWORLD_TILE_PX,
+  );
+}
+
+/**
  * Redraws whatever should be visible for the current `phase`/game-over/scene
  * state. Called both from `store.subscribe` (a `GameStore` dispatch) and at
  * the end of every keydown, since local-only UI state (menu cursors, which
@@ -775,6 +848,7 @@ function renderCurrent(): void {
   switcher.render(state);
   renderChrome(state);
   renderVillageContent(state);
+  renderOverworldContent(state);
 }
 
 /**
