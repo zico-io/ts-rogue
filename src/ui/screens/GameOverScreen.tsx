@@ -1,14 +1,11 @@
 import { Box, Text } from "ink";
 import { theme } from "../theme";
+import { BANNER } from "./gameOverBanner";
 
-/** Block-letter banner, one red-ramp color per row (`theme.gameOverGradient`). */
-const BANNER = [
-  " ████  ███  █   █ █████      ███  █   █ █████ ████",
-  "█     █   █ ██ ██ █         █   █ █   █ █     █   █",
-  "█  ██ █████ █ █ █ ███       █   █ █   █ ███   ████",
-  "█   █ █   █ █   █ █         █   █  █ █  █     █  █",
-  " ███  █   █ █   █ █████      ███    █   █████ █   █",
-];
+// Re-exported so anything importing `BANNER` from here (none today, but
+// matches `TitleScreen.tsx`'s pattern) keeps working; the canonical home
+// for this pure data is `./gameOverBanner`.
+export { BANNER };
 
 /**
  * Game-over screen (Phase 6, ROG-12). Shown when the party perishes in

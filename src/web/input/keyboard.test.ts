@@ -20,7 +20,7 @@ function storeAt(
 describe("BrowserKeyboardManager - global bindings", () => {
   it("digit keys change the scene from anywhere", () => {
     const store = storeAt("village");
-    const manager = new BrowserKeyboardManager(store);
+    const manager = new BrowserKeyboardManager(store, () => {});
 
     manager.handleKeyDown(key("2"));
     expect(store.getState().scene).toBe("overworld");
@@ -29,22 +29,47 @@ describe("BrowserKeyboardManager - global bindings", () => {
     expect(store.getState().scene).toBe("dungeon");
   });
 
-  it("the dev-console toggle and quit keys are stashed, not dispatched", () => {
+  it("the dev-console toggle key is stashed, not dispatched", () => {
     const store = storeAt("village");
-    const manager = new BrowserKeyboardManager(store);
+    const manager = new BrowserKeyboardManager(store, () => {});
     const before = store.getState();
 
     manager.handleKeyDown(key("`"));
-    manager.handleKeyDown(key("q"));
 
     expect(store.getState()).toBe(before);
+  });
+
+  it("the quit key fires onQuit instead of dispatching to the store", () => {
+    const store = storeAt("village");
+    const before = store.getState();
+    let quit = false;
+    const manager = new BrowserKeyboardManager(store, () => {
+      quit = true;
+    });
+
+    manager.handleKeyDown(key("q"));
+
+    expect(quit).toBe(true);
+    expect(store.getState()).toBe(before);
+  });
+
+  it("ctrl+c also fires onQuit", () => {
+    const store = storeAt("village");
+    let quit = false;
+    const manager = new BrowserKeyboardManager(store, () => {
+      quit = true;
+    });
+
+    manager.handleKeyDown({ key: "c", ctrlKey: true, metaKey: false });
+
+    expect(quit).toBe(true);
   });
 });
 
 describe("BrowserKeyboardManager - overworld", () => {
   it("arrow keys dispatch MoveOverworld", () => {
     const store = storeAt("overworld");
-    const manager = new BrowserKeyboardManager(store);
+    const manager = new BrowserKeyboardManager(store, () => {});
     const before = store.getState().worldState.player;
 
     manager.handleKeyDown(key("ArrowRight"));
@@ -55,7 +80,7 @@ describe("BrowserKeyboardManager - overworld", () => {
 
   it("Escape returns to the village", () => {
     const store = storeAt("overworld");
-    const manager = new BrowserKeyboardManager(store);
+    const manager = new BrowserKeyboardManager(store, () => {});
 
     manager.handleKeyDown(key("Escape"));
 
@@ -66,7 +91,7 @@ describe("BrowserKeyboardManager - overworld", () => {
 describe("BrowserKeyboardManager - dungeon", () => {
   it("is a no-op with no active dungeon (reducer guards missing dungeonState)", () => {
     const store = storeAt("dungeon");
-    const manager = new BrowserKeyboardManager(store);
+    const manager = new BrowserKeyboardManager(store, () => {});
     const before = store.getState();
 
     manager.handleKeyDown(key("ArrowUp"));
@@ -91,7 +116,7 @@ describe("BrowserKeyboardManager - battle", () => {
 
   it("Down cycles the action cursor without dispatching an engine event", () => {
     const store = battleStore();
-    const manager = new BrowserKeyboardManager(store);
+    const manager = new BrowserKeyboardManager(store, () => {});
     const before = store.getState();
 
     manager.handleKeyDown(key("ArrowDown"));
@@ -102,7 +127,7 @@ describe("BrowserKeyboardManager - battle", () => {
 
   it("Enter on Attack (cursor 0) moves to target mode; Enter again dispatches BattleAttack", () => {
     const store = battleStore();
-    const manager = new BrowserKeyboardManager(store);
+    const manager = new BrowserKeyboardManager(store, () => {});
 
     manager.handleKeyDown(key("Enter"));
     expect(manager.getState().battle.mode).toBe("target");
@@ -120,7 +145,7 @@ describe("BrowserKeyboardManager - battle", () => {
 
   it("is a no-op when there is no battleState", () => {
     const store = storeAt("battle");
-    const manager = new BrowserKeyboardManager(store);
+    const manager = new BrowserKeyboardManager(store, () => {});
     const before = store.getState();
 
     manager.handleKeyDown(key("Enter"));
@@ -132,7 +157,7 @@ describe("BrowserKeyboardManager - battle", () => {
 describe("BrowserKeyboardManager - village focus stack", () => {
   it("i opens the Inn from the overview, Enter rests, Escape returns", () => {
     const store = storeAt("village");
-    const manager = new BrowserKeyboardManager(store);
+    const manager = new BrowserKeyboardManager(store, () => {});
 
     manager.handleKeyDown(key("i"));
     expect(manager.getState().village.building).toBe("inn");
@@ -147,7 +172,7 @@ describe("BrowserKeyboardManager - village focus stack", () => {
 
   it("o from the overview leaves to the overworld", () => {
     const store = storeAt("village");
-    const manager = new BrowserKeyboardManager(store);
+    const manager = new BrowserKeyboardManager(store, () => {});
 
     manager.handleKeyDown(key("o"));
 
@@ -156,7 +181,7 @@ describe("BrowserKeyboardManager - village focus stack", () => {
 
   it("Store: Tab flips shop/pack, and pack-mode keys change based on the flipped mode", () => {
     const store = storeAt("village");
-    const manager = new BrowserKeyboardManager(store);
+    const manager = new BrowserKeyboardManager(store, () => {});
 
     manager.handleKeyDown(key("s"));
     expect(manager.getState().village.building).toBe("store");
@@ -178,7 +203,7 @@ describe("BrowserKeyboardManager - village focus stack", () => {
 
   it("Tavern: h hires the selected recruit (literal h, not char:h)", () => {
     const store = storeAt("village");
-    const manager = new BrowserKeyboardManager(store);
+    const manager = new BrowserKeyboardManager(store, () => {});
 
     manager.handleKeyDown(key("t"));
     expect(manager.getState().village.building).toBe("tavern");
@@ -191,7 +216,7 @@ describe("BrowserKeyboardManager - village focus stack", () => {
 
   it("Tavern: d on the hero (index 0) never opens a dismiss confirmation", () => {
     const store = storeAt("village");
-    const manager = new BrowserKeyboardManager(store);
+    const manager = new BrowserKeyboardManager(store, () => {});
 
     manager.handleKeyDown(key("t"));
     manager.handleKeyDown(key("Tab"));
@@ -199,5 +224,14 @@ describe("BrowserKeyboardManager - village focus stack", () => {
 
     manager.handleKeyDown(key("d"));
     expect(manager.getState().village.tavern.confirmId).toBeNull();
+  });
+
+  it("Tavern: entering with an empty recruit pool refreshes it once", () => {
+    const store = storeAt("village", { recruits: [] });
+    const manager = new BrowserKeyboardManager(store, () => {});
+
+    manager.handleKeyDown(key("t"));
+
+    expect(store.getState().recruits.length).toBeGreaterThan(0);
   });
 });

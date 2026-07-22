@@ -3,37 +3,20 @@ import type { ReactNode } from "react";
 import pkg from "../../../package.json";
 import { CLASSES } from "../../data/classes";
 import { theme } from "../theme";
+import {
+  LOGO,
+  MAX_NAME_LENGTH,
+  type MenuOption,
+  mainMenuOptions,
+  type TitleView,
+} from "./title/display";
 
-/** Block-letter logo, one gradient color per row (see `theme.logoGradient`). */
-const LOGO = [
-  "█████  ████       ████   ███   ████ █   █ █████",
-  "  █   █           █   █ █   █ █     █   █ █",
-  "  █    ███   ███  ████  █   █ █  ██ █   █ ███",
-  "  █       █       █  █  █   █ █   █ █   █ █",
-  "  █   ████        █   █  ███   ███   ███  █████",
-];
-
-/** Which title view is showing; input for all of these lives in `app.tsx`. */
-export type TitleView = "menu" | "class" | "mode" | "name" | "settings";
-
-/** A main-menu entry. `id` drives the branch in `app.tsx`. */
-export interface MenuOption {
-  id: "new" | "continue" | "settings" | "quit";
-  label: string;
-}
-
-/** Main-menu entries; `Continue` only appears when a save exists. */
-export function mainMenuOptions(hasSave: boolean): readonly MenuOption[] {
-  return [
-    { id: "new", label: "New Game" },
-    ...(hasSave ? ([{ id: "continue", label: "Continue" }] as const) : []),
-    { id: "settings", label: "Settings" },
-    { id: "quit", label: "Quit" },
-  ];
-}
-
-/** Max hero-name length; keeps the `PartyBar` HUD footer aligned. */
-export const MAX_NAME_LENGTH = 12;
+export type { MenuOption, TitleView };
+// Re-exported so existing importers (`SettingsScreen.tsx`,
+// `title/interaction.test.ts`) don't need to change paths; the canonical
+// home for this pure data is `./title/display` (see that file's doc
+// comment for why it's split out).
+export { LOGO, MAX_NAME_LENGTH, mainMenuOptions };
 
 export interface TitleScreenProps {
   titleView: Exclude<TitleView, "settings">;
