@@ -1,0 +1,44 @@
+name: Ralph eval
+
+# End-to-end eval for ralph mode (issue groups). It drives the deployed agent
+# against a fixed Linear fixture and is authenticated, deployment-dependent, and
+# spins a real Vercel Sandbox - so it runs weekly and on demand, never on pull
+# requests. Auth is a short-lived GitHub OIDC token minted per run (no stored
+# bearer; the deployment's eve channel verifies it via oidc()). The only secret
+# is the Vercel deployment-protection bypass, which also gates the run: the job
+# self-skips until VERCEL_AUTOMATION_BYPASS_SECRET is set.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "37 9 * * 1"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  ralph-eval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Run ralph end-to-end eval against production
+        env:
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          if [ -z "$VERCEL_AUTOMATION_BYPASS_SECRET" ]; then
+            echo "VERCEL_AUTOMATION_BYPASS_SECRET not set - configure deployment access to run this eval. Skipping."
+            exit 0
+          fi
+          # Short-lived, per-run bearer. audience must match oidc() in agent/channels/eve.ts.
+          EVE_EVAL_AUTH_TOKEN="$(curl -sS \
+            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=eve-ralph-eval" | jq -r .value)"
+          export EVE_EVAL_AUTH_TOKEN
+          pnpm exec eve eval ralph --strict \
+            --url https://bob-v0-bask-health.vercel.app
