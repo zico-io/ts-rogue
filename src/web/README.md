@@ -151,6 +151,70 @@ village content above already reads for its building focus - `handleBattle`
 (ROG-45) already reduces that state machine and dispatches the resulting
 battle events, so this view only needs to draw it.
 
+## Dungeon scene (ROG-50)
+
+`render/dungeonView.ts`'s `DungeonSceneView` is the Pixi counterpart of the
+terminal's Braille-dot wireframe raycaster
+(`src/ui/screens/dungeon/render.ts` + `braille.ts`). None of that glyph
+output transfers, but the underlying model does - grid dungeon, discrete
+position + facing, engine-side FOV - so this is a genuinely different
+renderer: a classic textured DDA raycaster (Wolfenstein-style), following
+the same framework-free-view-behind-a-`DrawFactory` split as the other
+scenes; `render/pixiDungeonDrawFactory.ts`'s `createPixiDungeonDrawFactory`
+is the thin real-Pixi adapter.
+
+- **Raycasting core** - `render/dungeonRaycast.ts` is pure geometry, no
+  `pixi.js` import (unit-tested in `dungeonRaycast.test.ts` against tiny
+  synthetic layouts). `castWallColumns` casts one ray per `RAY_STRIP_PX` (4)
+  viewport pixels via the standard "camera plane" method (a 66° FOV,
+  `FOV_DEGREES`), so the resulting per-column distance is already
+  perpendicular/fisheye-corrected without a separate `cos` division step.
+  Rays are capped at `MAX_DEPTH` (8 tiles) - beyond that, a column reports
+  `distance: Infinity` and a zero-height placeholder, so the returned array
+  stays densely indexable by screen column (needed for billboard occlusion,
+  below) even where nothing was hit. `castBillboards` projects every in-view
+  `chest`/`stairsDown`/`bossMarker` feature the same way, culling anything
+  behind the camera, beyond `MAX_DEPTH`, or occluded by a nearer wall at its
+  own screen column - a single center-point distance test against
+  `castWallColumns`'s output, matching the TUI renderer's own
+  painter's-algorithm-level fidelity, not per-pixel clipping. One
+  coordinate wrinkle worth knowing: the engine's grid treats tile `(x, y)`'s
+  *center* as world position `(x, y)` itself, so every DDA computation is
+  done in a position shifted by `+0.5` on both axes to match the DDA
+  algorithm's usual `[x, x + 1)` tile convention - see the module doc
+  comment.
+- **Per-column wall texturing** - the point of a *textured* raycaster is
+  that adjacent columns sample different horizontal texels of the wall
+  tile, not `TEXELS_PER_TILE` squished copies of the whole thing.
+  `pixiDungeonDrawFactory.ts` crops the atlas's `wall` frame into
+  `TEXELS_PER_TILE` (12, the tile's native width) 1-texel-wide sub-`Texture`s
+  once at setup time via Pixi's `frame` rectangle support, and
+  `castWallColumns` outputs a texel index (`0..11`) per column; a wall
+  column's `setTexel` just swaps between the cached textures - no per-frame
+  texture allocation.
+- **v1 scope decisions** - floor and ceiling are flat depth-independent
+  colors (split at mid-screen), not per-pixel raycast/textured - the
+  original Wolfenstein 3D's own approach, and still satisfies "reuse
+  `DUNGEON_RAMPS` for distance fog/tinting" since walls carry the real
+  per-column depth tint (`dungeonRamp(ds.dungeonId)`, same convention as the
+  TUI). There is no move/turn tween - `poseFromState(ds)` renders directly
+  every call; the issue explicitly allows instant movement for v1 since Pixi
+  has no soft-real-time requirement here.
+- **Minimap** - reuses the TUI's own pure `renderMinimap` glyph rows
+  unmodified, mapped to small colored rects in a corner overlay (mirroring
+  `OverworldSceneView`'s minimap, which is colored rects too, not sprites),
+  plus a small facing-direction mark next to the player's cell.
+
+### Adding the dungeon atlas frames
+
+`wall`/`floor`/`chest`/`stairsDown`/`boss` were added to `ATLAS_FRAMES` in
+`scripts/build-atlas.ts` for this scene (they already had tile coordinates
+in `src/ui/tiles/kitty.ts`'s `TILE_SOURCES`, shared with the terminal's
+kitty-graphics pipeline, just weren't packed into the browser atlas yet).
+Regenerate the same way as any other atlas change: `pnpm tsx
+scripts/build-atlas.ts`, then commit the rewritten `public/atlas/atlas.png`
++ `atlas.json`.
+
 ## Title, village, and game-over (ROG-52)
 
 `GameStore.state.scene` only ever holds `village | overworld | dungeon |
@@ -196,12 +260,8 @@ sprite content is still out of scope. Also intentionally missing:
 
 - Persistence - every load starts a fresh game; the Church's save is
   stashed (logged, not implemented) until ROG-46 adds IndexedDB save/load.
-- Real dungeon scene content - it is still a placeholder label (plus, since
-  ROG-44, a static atlas preview in the village scene) drawn inside the
-  ROG-47 chrome's content region; ROG-50 owns its real sprites and per-scene
-  rendering, including a visible focus indicator for the keyboard manager's
-  routing (ROG-45). The village scene's content is real as of ROG-52, and
-  the overworld's (ROG-49) and battle's (ROG-51) as of the sections above.
+- All four playing scenes now have real content - village (ROG-52),
+  overworld (ROG-49), battle (ROG-51), and the dungeon (ROG-50, see above).
 - Filing a Linear issue from the dev console's `issue`/`bug`/`flush`
   commands - those use `src/lib/linear.ts`'s Node `fs`/Vercel Connect I/O,
   which doesn't belong in a browser bundle; the console runs every other

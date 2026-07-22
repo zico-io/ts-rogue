@@ -179,6 +179,96 @@
         "w": 12,
         "h": 12
       }
+    },
+    "wall": {
+      "frame": {
+        "x": 1,
+        "y": 29,
+        "w": 12,
+        "h": 12
+      },
+      "sourceSize": {
+        "w": 12,
+        "h": 12
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 12
+      }
+    },
+    "floor": {
+      "frame": {
+        "x": 15,
+        "y": 29,
+        "w": 12,
+        "h": 12
+      },
+      "sourceSize": {
+        "w": 12,
+        "h": 12
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 12
+      }
+    },
+    "chest": {
+      "frame": {
+        "x": 29,
+        "y": 29,
+        "w": 12,
+        "h": 12
+      },
+      "sourceSize": {
+        "w": 12,
+        "h": 12
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 12
+      }
+    },
+    "stairsDown": {
+      "frame": {
+        "x": 43,
+        "y": 29,
+        "w": 12,
+        "h": 12
+      },
+      "sourceSize": {
+        "w": 12,
+        "h": 12
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 12
+      }
+    },
+    "boss": {
+      "frame": {
+        "x": 57,
+        "y": 29,
+        "w": 12,
+        "h": 12
+      },
+      "sourceSize": {
+        "w": 12,
+        "h": 12
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 12
+      }
     }
   },
   "meta": {
@@ -186,7 +276,7 @@
     "format": "RGBA8888",
     "size": {
       "w": 70,
-      "h": 28
+      "h": 42
     },
     "scale": "1"
   }

@@ -42,6 +42,14 @@ const ATLAS_FRAMES: readonly TileName[] = [
   "slime",
   "goblin",
   "dungeon-guardian",
+  // Dungeon first-person scene (ROG-50): wall/floor tiles and the three
+  // billboarded feature markers (chest/stairs/boss), matching the TUI
+  // renderer's minimap glyphs and the FP raycaster's wall texture.
+  "wall",
+  "floor",
+  "chest",
+  "stairsDown",
+  "boss",
 ];
 
 interface AtlasFrame {
