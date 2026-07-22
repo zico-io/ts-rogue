@@ -19,11 +19,7 @@
 
 import { CLASSES } from "../../../data/classes";
 import type { Intent, Keymap, KeyName } from "../../scene/input";
-import {
-  MAX_NAME_LENGTH,
-  mainMenuOptions,
-  type TitleView,
-} from "../TitleScreen";
+import { MAX_NAME_LENGTH, mainMenuOptions, type TitleView } from "./display";
 
 /** The title flow's full input state; `app.tsx` holds exactly one of these. */
 export interface TitleUiState {
