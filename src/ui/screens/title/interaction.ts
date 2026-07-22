@@ -18,7 +18,12 @@
  */
 
 import { CLASSES } from "../../../data/classes";
-import type { Intent, Keymap, KeyName } from "../../scene/input";
+import {
+  charFromKey,
+  type Intent,
+  type Keymap,
+  type KeyName,
+} from "../../scene/input";
 import { MAX_NAME_LENGTH, mainMenuOptions, type TitleView } from "./display";
 
 /** The title flow's full input state; `app.tsx` holds exactly one of these. */
@@ -76,16 +81,6 @@ const nameKeymap: Keymap = {
   backspace: { kind: "backspace" },
   "ctrl+c": { kind: "quit" },
 };
-
-/** Extracts the literal character a key press represents, if it is one. */
-function charFromKey(key: KeyName): string | undefined {
-  if (key.startsWith("char:")) return key.slice("char:".length);
-  if (key.startsWith("digit:")) return key.slice("digit:".length);
-  // Single-character key names (h, j, k, l, q, `) double as their own literal
-  // character when typed during name entry.
-  if (key.length === 1) return key;
-  return undefined;
-}
 
 /**
  * Resolves the `Intent` for a key press given the current view. Name entry

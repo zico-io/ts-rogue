@@ -78,3 +78,18 @@ export function resolveIntent(
 ): Intent | undefined {
   return keymap[key];
 }
+
+/**
+ * Extracts the literal character a `KeyName` represents, if it is one
+ * (ROG-56 title name entry; ROG-48 browser dev console input). Shared so
+ * every free-text input (title name entry, the dev console command line)
+ * decodes the same `char:`/`digit:`/single-char key names the same way.
+ */
+export function charFromKey(key: KeyName): string | undefined {
+  if (key.startsWith("char:")) return key.slice("char:".length);
+  if (key.startsWith("digit:")) return key.slice("digit:".length);
+  // Single-character key names (h, j, k, l, q, `) double as their own literal
+  // character when typed into free text.
+  if (key.length === 1) return key;
+  return undefined;
+}

@@ -12,7 +12,13 @@ export type IncidentCategory =
   | "clear"
   | "unhandled-rejection"
   | "uncaught-exception"
-  | "manual";
+  | "manual"
+  // Browser-renderer boot phases (ROG-48): the atlas smoke test and the
+  // overworld/battle Pixi view setup, each wrapped in its own try/catch in
+  // `src/web/main.ts` so one scene's setup failure doesn't block the others.
+  | "atlas"
+  | "overworld-view"
+  | "battle-view";
 
 export interface StateSummary {
   scene: string;

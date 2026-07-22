@@ -16,7 +16,7 @@ Open the printed local URL. Boot query params mirror the terminal's CLI flags:
 | --- | --- | --- |
 | `?seed=123` | `--seed=123` | Seeds the new run; defaults to `Date.now()` |
 | `?fresh` | `--fresh` | Presence-only; no browser persistence exists yet, so this is currently a no-op |
-| `?dev` | `--dev` | Presence-only; stashed for a future dev console, no effect yet |
+| `?dev` | `--dev` | Gates the dev console overlay (ROG-48); backtick toggles it |
 
 `pnpm web:build` produces a static bundle in `dist/web`; `pnpm web:preview`
 serves that build locally.
@@ -194,17 +194,59 @@ This issue (ROG-43) only wires the build and boot sequence. ROG-44 adds the
 texture atlas and an atlas-loading smoke test (see above), but real per-scene
 sprite content is still out of scope. Also intentionally missing:
 
-- Persistence - every load starts a fresh game; the Church's save and the
-  dev-console global binding are stashed (logged, not implemented) until
-  ROG-46 adds IndexedDB save/load and ROG-48 adds a browser dev console.
+- Persistence - every load starts a fresh game; the Church's save is
+  stashed (logged, not implemented) until ROG-46 adds IndexedDB save/load.
 - Real dungeon scene content - it is still a placeholder label (plus, since
   ROG-44, a static atlas preview in the village scene) drawn inside the
   ROG-47 chrome's content region; ROG-50 owns its real sprites and per-scene
   rendering, including a visible focus indicator for the keyboard manager's
   routing (ROG-45). The village scene's content is real as of ROG-52, and
   the overworld's (ROG-49) and battle's (ROG-51) as of the sections above.
-- A dev console or rich crash screen - failures show a minimal plain-text
-  overlay; ROG-48 owns a proper browser dev console and crash screen.
+- Filing a Linear issue from the dev console's `issue`/`bug`/`flush`
+  commands - those use `src/lib/linear.ts`'s Node `fs`/Vercel Connect I/O,
+  which doesn't belong in a browser bundle; the console runs every other
+  command and reports these as unavailable (see below).
+
+## Dev console + crash screen (ROG-48)
+
+`?dev` (mirroring the terminal's `--dev`) gates a plain-DOM dev console
+overlay and enables the crash-overlay wiring below - a ponytail note on the
+issue: a plain overlay div is enough for both, no need to build them in
+Pixi.
+
+- **Dev console** - `devConsole.ts`'s `BrowserDevConsole` owns open/input/
+  output state and runs the exact same `runDevCommand` interpreter the
+  terminal's `DevConsole.tsx` uses (extracted to
+  `src/ui/screens/devConsoleCommands.ts` so this module doesn't import Ink),
+  so every command (`help`, `state`, `debug`, `scene`, `log`, `recruit`,
+  `crash`, `clear`) behaves identically under either renderer. `issue`/
+  `bug`/`flush` are stashed - see "Scope and limits" above - the console
+  reports "Issue filing isn't available in the browser yet." instead of
+  touching Node-only I/O. `render/devConsoleOverlay.ts`'s
+  `DevConsoleOverlayView` is the thin DOM glue that renders that state;
+  `main.ts` intercepts backtick globally (open or closed) and routes every
+  other key to `BrowserDevConsole.handleKeyDown` while it's open, mirroring
+  `DevConsole.tsx`'s own raw-input handling rather than the shared `Keymap`/
+  `resolveXIntent` screens use - the command line is unbounded free text.
+  Unit-tested in `devConsole.test.ts` without a real DOM (this repo has no
+  jsdom).
+- **Crash screen** - `main.ts` subscribes to `store.subscribeIncidents` (the
+  same engine-level incident pipeline the terminal's `FailureBoundary`/
+  `IncidentPipeline` sit on top of) and shows `render/crashOverlay.ts`'s
+  `CrashOverlayView` - the browser counterpart to the terminal's
+  `CrashScreen.tsx` - for every fatal incident, with the incident's message,
+  fingerprint, and the debug journal's tail, plus a Restart button that
+  reloads the page. `window.onerror` and `unhandledrejection` listeners
+  route otherwise-uncaught renderer failures through `store.reportFailure`
+  the same way; the atlas/overworld/battle-view setup try/catches (ROG-43)
+  now report through it too instead of the old plain-text `showCrash` stash
+  (kept only for the one failure mode that has no `store` yet: constructing
+  the initial `GameStore`). `renderCurrent` and the global keydown listener
+  both check the current fatal incident first and skip everything else,
+  mirroring the terminal's `if (fatal) return <CrashScreen/>`. This is
+  intentionally simpler than the terminal's `IncidentPipeline` - no
+  automatic Linear filing - since that pipeline's Node-only I/O doesn't
+  belong in a browser bundle (see "Scope and limits" above).
 
 ## Deployment
 
