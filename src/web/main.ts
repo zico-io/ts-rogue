@@ -9,6 +9,7 @@ import {
   itemSellPrice,
   itemStatLine,
 } from "../engine/loot/items";
+import type { GameIncident } from "../engine/state/incidents";
 import { GameStore, INN_COST_PER_MEMBER, newGame } from "../engine/state/store";
 import type { GameState, Scene } from "../engine/state/types";
 import { generateOverworldMap } from "../engine/world/overworld";
@@ -32,9 +33,12 @@ import {
 import { theme, toPixiColor } from "../ui/theme";
 import { loadAtlas } from "./atlas";
 import { parseBootFlags } from "./boot";
+import { BrowserDevConsole } from "./devConsole";
 import { BrowserKeyboardManager } from "./input/keyboard";
 import { normalizeBrowserKey } from "./input/normalizeBrowserKey";
 import { BattleSceneView } from "./render/battleView";
+import { CrashOverlayView } from "./render/crashOverlay";
+import { DevConsoleOverlayView } from "./render/devConsoleOverlay";
 import { OverworldSceneView } from "./render/overworldView";
 import { createPixiBattleDrawFactory } from "./render/pixiBattleDrawFactory";
 import { createPixiDrawFactory } from "./render/pixiDrawFactory";
@@ -83,9 +87,40 @@ try {
   showCrash("boot", error);
   throw error;
 }
-store.subscribeIncidents((incident) =>
-  showCrash(incident.category, incident.message),
+
+/**
+ * The current fatal incident, if any (ROG-48). Set from `store`'s own
+ * `subscribeIncidents` (reducer/invariant failures the store already
+ * catches internally) below, and by every `store.reportFailure` call this
+ * module makes directly for failures the store can't see itself (atlas/
+ * view setup, `window.onerror`, `unhandledrejection`). `renderCurrent`
+ * checks it first and, like the terminal's `if (fatal) return <CrashScreen
+ * />`, skips every other render while it's set - the crash overlay itself
+ * is shown synchronously from the `subscribeIncidents` callback, not from
+ * `renderCurrent`, so it appears immediately even if rendering itself is
+ * what's broken.
+ */
+let fatalIncident: GameIncident | undefined;
+const crashOverlay = new CrashOverlayView(document.body, () =>
+  window.location.reload(),
 );
+store.subscribeIncidents((incident) => {
+  if (!incident.fatal) return;
+  fatalIncident = incident;
+  crashOverlay.show(incident);
+});
+
+// Catches renderer failures `store.dispatch`/the try/catches below can't see
+// themselves - e.g. a throw inside a Pixi ticker callback or a DOM event
+// handler - and routes them through the same incident pipeline instead of a
+// blank tab. Wired here (store exists, nothing else has run yet) so every
+// later failure, including during Pixi/atlas setup, is covered.
+window.addEventListener("error", (event) => {
+  store.reportFailure("uncaught-exception", event.error ?? event.message, true);
+});
+window.addEventListener("unhandledrejection", (event) => {
+  store.reportFailure("unhandled-rejection", event.reason, true);
+});
 
 const app = new Application();
 await app.init({
@@ -279,7 +314,7 @@ async function showAtlasPreview(): Promise<void> {
 try {
   await showAtlasPreview();
 } catch (error) {
-  showCrash("atlas", error);
+  store.reportFailure("atlas", error, true);
 }
 
 /** Pixel size of one main-viewport overworld tile; the minimap draws smaller than this (see `overworldView.ts`). */
@@ -299,7 +334,7 @@ async function setupOverworldView(): Promise<void> {
 try {
   await setupOverworldView();
 } catch (error) {
-  showCrash("overworld", error);
+  store.reportFailure("overworld-view", error, true);
 }
 
 let battleView: BattleSceneView | undefined;
@@ -316,7 +351,7 @@ async function setupBattleView(): Promise<void> {
 try {
   await setupBattleView();
 } catch (error) {
-  showCrash("battle", error);
+  store.reportFailure("battle-view", error, true);
 }
 // Ages/removes floating damage numbers and reverts tint flashes every real
 // animation frame (see `battleView.ts`'s module doc); a no-op before the
@@ -877,9 +912,14 @@ function renderBattleContent(state: GameState): void {
  * state. Called both from `store.subscribe` (a `GameStore` dispatch) and at
  * the end of every keydown, since local-only UI state (menu cursors, which
  * village building has focus, title flow transitions) doesn't dispatch a
- * `GameEvent` and would otherwise never redraw.
+ * `GameEvent` and would otherwise never redraw. Bails out first when
+ * `fatalIncident` is set (ROG-48) - the crash overlay is already showing
+ * itself (see the `subscribeIncidents` callback above), so there is nothing
+ * else to draw, exactly like the terminal's `if (fatal) return
+ * <CrashScreen/>` short-circuit in `app.tsx`.
  */
 function renderCurrent(): void {
+  if (fatalIncident) return;
   const state = store.getState();
   const gameOver = phase === "playing" && (state.flags?.gameOver ?? false);
   titleContainer.visible = phase === "title";
@@ -900,19 +940,50 @@ function renderCurrent(): void {
   renderVillageContent(state);
   renderOverworldContent(state);
   renderBattleContent(state);
+
+  if (devConsole && devConsoleOverlay) {
+    devConsoleOverlay.setVisible(devConsole.isOpen());
+    if (devConsole.isOpen()) {
+      devConsoleOverlay.render(
+        state,
+        devConsole.getOutput(),
+        devConsole.getInput(),
+      );
+    }
+  }
 }
 
 /**
  * Keyboard input manager with scene focus routing (ROG-45). Scene hotkeys
- * (1-4), the dev-console toggle, and quit go through the same
- * `globalInput` keymap `app.tsx` uses; everything else routes to whichever
- * scene - and, inside the village, whichever sub-view - currently has
- * focus, via the exact same `interaction.ts` modules the Ink screens use.
- * `onQuit` (ROG-52) returns to the browser's own title screen, since there
- * is no OS process for "quit" to exit here. Declared before the first
- * `renderCurrent()` call below, since `renderVillageContent` reads its state.
+ * (1-4) and quit go through the same `globalInput` keymap `app.tsx` uses;
+ * everything else routes to whichever scene - and, inside the village,
+ * whichever sub-view - currently has focus, via the exact same
+ * `interaction.ts` modules the Ink screens use. `onQuit` (ROG-52) returns
+ * to the browser's own title screen, since there is no OS process for
+ * "quit" to exit here. Declared before the first `renderCurrent()` call
+ * below, since `renderVillageContent` reads its state. The dev-console
+ * toggle key is intercepted before it ever reaches this manager (see the
+ * keydown listener at the bottom of this module), so its own
+ * `toggleConsole` handling only fires when no browser dev console exists
+ * (i.e. `--dev`/`?dev` wasn't set).
  */
 const keyboardManager = new BrowserKeyboardManager(store, quitToTitle);
+
+/**
+ * Browser dev console (ROG-48): gated on `--dev`/`?dev`, exactly like the
+ * terminal's `devConsoleEnabled`. `undefined` when disabled, so every
+ * dev-console branch below is a no-op in a normal build - the backtick key
+ * falls through to `keyboardManager`'s existing stash in that case.
+ */
+const devConsole = flags.dev
+  ? new BrowserDevConsole(store, {
+      crash: (message) =>
+        store.reportFailure("manual", new Error(message), true),
+    })
+  : undefined;
+const devConsoleOverlay = flags.dev
+  ? new DevConsoleOverlayView(document.body)
+  : undefined;
 
 store.subscribe(() => renderCurrent());
 app.renderer.on("resize", () => renderCurrent());
@@ -929,18 +1000,31 @@ function updateMinSizeOverlay(): void {
 window.addEventListener("resize", updateMinSizeOverlay);
 updateMinSizeOverlay();
 
-if (flags.dev) {
-  // Stashed for ROG-48's browser dev console; no console UI in this issue.
-  console.info("ts-rogue: dev flag set (no browser dev console yet)");
-}
-
 /**
- * Routes every keydown to the phase currently showing (title, game-over, or
- * the normal scene-focus routing), then always redraws - see
- * `renderCurrent`'s doc comment for why a redraw is needed even when no
- * `GameEvent` was dispatched.
+ * Routes every keydown to the dev console (if open, or being opened/closed
+ * by backtick), then the phase currently showing (title, game-over, or the
+ * normal scene-focus routing), then always redraws - see `renderCurrent`'s
+ * doc comment for why a redraw is needed even when no `GameEvent` was
+ * dispatched. A fatal incident (ROG-48) blocks every branch below, matching
+ * the terminal's `isActive: !fatal` on each of its `useInput` hooks -
+ * there's nothing to route input to once the crash overlay is showing; its
+ * only interactive element is its own Restart button.
  */
 window.addEventListener("keydown", (event) => {
+  if (devConsole) {
+    const keyName = normalizeBrowserKey(event);
+    if (keyName === "`" && !fatalIncident) {
+      devConsole.toggle();
+      renderCurrent();
+      return;
+    }
+    if (devConsole.isOpen()) {
+      if (!fatalIncident) devConsole.handleKeyDown(event);
+      renderCurrent();
+      return;
+    }
+  }
+  if (fatalIncident) return;
   if (phase === "title") {
     handleTitleKeyDown(event);
   } else {
