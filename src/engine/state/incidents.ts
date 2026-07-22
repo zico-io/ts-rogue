@@ -18,7 +18,8 @@ export type IncidentCategory =
   // `src/web/main.ts` so one scene's setup failure doesn't block the others.
   | "atlas"
   | "overworld-view"
-  | "battle-view";
+  | "battle-view"
+  | "dungeon-view";
 
 export interface StateSummary {
   scene: string;

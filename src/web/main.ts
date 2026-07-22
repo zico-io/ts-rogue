@@ -39,9 +39,11 @@ import { normalizeBrowserKey } from "./input/normalizeBrowserKey";
 import { BattleSceneView } from "./render/battleView";
 import { CrashOverlayView } from "./render/crashOverlay";
 import { DevConsoleOverlayView } from "./render/devConsoleOverlay";
+import { DungeonSceneView } from "./render/dungeonView";
 import { OverworldSceneView } from "./render/overworldView";
 import { createPixiBattleDrawFactory } from "./render/pixiBattleDrawFactory";
 import { createPixiDrawFactory } from "./render/pixiDrawFactory";
+import { createPixiDungeonDrawFactory } from "./render/pixiDungeonDrawFactory";
 import { createPixiOverworldDrawFactory } from "./render/pixiOverworldDrawFactory";
 import { type ContentRect, SceneChromeView } from "./render/sceneView";
 import { SCENE_ORDER, SceneSwitcher, type SceneView } from "./scenes";
@@ -249,6 +251,10 @@ entries.overworld.label.visible = false;
 // placeholder label the same way village's/overworld's does.
 entries.battle.label.visible = false;
 
+// Real dungeon content (raycast scene, below) replaces its generic
+// placeholder label the same way the other three scenes' do.
+entries.dungeon.label.visible = false;
+
 /** Each scene's content-region rect from the most recent `renderChrome()`, in pixels. */
 const contentRects = Object.fromEntries(
   SCENE_ORDER.map((scene) => [
@@ -357,6 +363,23 @@ try {
 // animation frame (see `battleView.ts`'s module doc); a no-op before the
 // view exists (while `setupBattleView` is still loading the atlas).
 app.ticker.add((ticker) => battleView?.tick(ticker.deltaMS));
+
+let dungeonView: DungeonSceneView | undefined;
+
+/** Loads the atlas (safe to call again; see `loadAtlas`'s doc comment) and builds the dungeon scene's Pixi draw factory/view (ROG-50). */
+async function setupDungeonView(): Promise<void> {
+  const sheet = await loadAtlas();
+  const factory = createPixiDungeonDrawFactory(
+    entries.dungeon.contentContainer,
+    sheet,
+  );
+  dungeonView = new DungeonSceneView(factory);
+}
+try {
+  await setupDungeonView();
+} catch (error) {
+  store.reportFailure("dungeon-view", error, true);
+}
 
 let cachedOverworldMap: OverworldMap | undefined;
 let cachedOverworldSeed: number | undefined;
@@ -908,6 +931,24 @@ function renderBattleContent(state: GameState): void {
 }
 
 /**
+ * Draws the dungeon scene's real content: the textured-raycast first-person
+ * view (walls/floor/ceiling/billboards), a graphical minimap corner, and a
+ * facing/status readout (ROG-50). Mirrors `renderOverworldContent`'s guard/
+ * shape, delegating to `DungeonSceneView` (framework-free, unit-tested in
+ * `dungeonView.test.ts`).
+ */
+function renderDungeonContent(state: GameState): void {
+  if (state.scene !== "dungeon") return;
+  if (!dungeonView) return;
+  if (!state.dungeonState) return;
+  const rect = contentRects.dungeon;
+  dungeonView.render(state.dungeonState, {
+    width: rect.width,
+    height: rect.height,
+  });
+}
+
+/**
  * Redraws whatever should be visible for the current `phase`/game-over/scene
  * state. Called both from `store.subscribe` (a `GameStore` dispatch) and at
  * the end of every keydown, since local-only UI state (menu cursors, which
@@ -940,6 +981,7 @@ function renderCurrent(): void {
   renderVillageContent(state);
   renderOverworldContent(state);
   renderBattleContent(state);
+  renderDungeonContent(state);
 
   if (devConsole && devConsoleOverlay) {
     devConsoleOverlay.setVisible(devConsole.isOpen());
