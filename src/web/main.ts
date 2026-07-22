@@ -14,6 +14,10 @@ import { GameStore, INN_COST_PER_MEMBER, newGame } from "../engine/state/store";
 import type { GameState, Scene } from "../engine/state/types";
 import { generateOverworldMap } from "../engine/world/overworld";
 import type { OverworldMap } from "../engine/world/types";
+import {
+  clearSave as clearBrowserSave,
+  loadGame as loadBrowserGame,
+} from "../persistence/browserSave";
 import { resolveGlobalIntent } from "../ui/scene/globalInput";
 import { BANNER } from "../ui/screens/gameOverBanner";
 import { LOGO, mainMenuOptions } from "../ui/screens/title/display";
@@ -52,7 +56,7 @@ const MIN_WIDTH = 480;
 const MIN_HEIGHT = 320;
 /** Native atlas tiles are 12x12; scale up so pixel art reads clearly on a modern display. */
 const PREVIEW_SCALE = 6;
-/** No settings persistence in the browser yet (ROG-46), so New Game always defaults to this name. */
+/** No settings persistence in the browser yet, so New Game always defaults to this name. */
 const DEFAULT_HERO_NAME = "Hero";
 
 const appMount = document.getElementById("app");
@@ -80,11 +84,32 @@ function showCrash(context: string, error: unknown): void {
 
 const flags = parseBootFlags(window.location.search);
 
-// TODO(ROG-46): load a saved game via browser (IndexedDB) persistence instead
-// of always starting fresh, once that issue lands.
+/**
+ * Loads the single IndexedDB save slot (ROG-46), mirroring `app.tsx`'s
+ * `fresh ? undefined : loadGame()` - `?fresh` bypasses the load entirely so
+ * a session always starts from a known state. There is no `store`/incident
+ * pipeline yet at this point in boot, so a corrupt/unreadable save is
+ * logged and treated as "no save" rather than crashing the whole app; only
+ * `GameStore`'s own constructor failing below still shows the plain-text
+ * `showCrash` overlay.
+ */
+async function loadInitialSave(): Promise<GameState | undefined> {
+  if (flags.fresh) return undefined;
+  try {
+    return await loadBrowserGame();
+  } catch (error) {
+    console.error("ts-rogue: failed to load browser save", error);
+    return undefined;
+  }
+}
+
+const savedGame = await loadInitialSave();
+/** Drives the title menu's Continue entry; flipped by a successful Church save and by the auto-clear on game over below. */
+let hasSave = savedGame !== undefined;
+
 let store: GameStore;
 try {
-  store = new GameStore(newGame(flags.seed));
+  store = new GameStore(savedGame ?? newGame(flags.seed));
 } catch (error) {
   showCrash("boot", error);
   throw error;
@@ -543,7 +568,7 @@ function handleTitleKeyDown(event: KeyboardEvent): void {
   if (!intent) return;
 
   const result = reduceTitleUi(titleUi, intent, {
-    hasSave: false, // Browser has no save persistence yet (ROG-46).
+    hasSave,
     defaultPermadeath: false,
     defaultHeroName: DEFAULT_HERO_NAME,
   });
@@ -561,8 +586,10 @@ function handleTitleKeyDown(event: KeyboardEvent): void {
       phase = "playing";
       break;
     case "continueGame":
-      // Unreachable: `hasSave` is always false, so the menu never offers
-      // Continue. Handled gracefully as a no-op in case that ever changes.
+      // `store` was already constructed from the loaded save at boot
+      // (ROG-46), so there is nothing left to load here - just leave the
+      // title flow the same way `app.tsx`'s `setStarted(true)` does.
+      phase = "playing";
       break;
     case "openSettings":
       // No browser SettingsScreen. Stashed, matching `keyboard.ts`'s
@@ -1009,7 +1036,9 @@ function renderCurrent(): void {
  * `toggleConsole` handling only fires when no browser dev console exists
  * (i.e. `--dev`/`?dev` wasn't set).
  */
-const keyboardManager = new BrowserKeyboardManager(store, quitToTitle);
+const keyboardManager = new BrowserKeyboardManager(store, quitToTitle, () => {
+  hasSave = true;
+});
 
 /**
  * Browser dev console (ROG-48): gated on `--dev`/`?dev`, exactly like the
@@ -1027,7 +1056,28 @@ const devConsoleOverlay = flags.dev
   ? new DevConsoleOverlayView(document.body)
   : undefined;
 
-store.subscribe(() => renderCurrent());
+/**
+ * Clears the browser save once the game is over, matching `app.tsx`'s
+ * `useEffect(() => { if (gameOver) ... clearSave() }, [gameOver])` - so the
+ * next boot (or title "New Game") starts a fresh run instead of reloading
+ * the dead game-over state. `store.subscribe` fires on every dispatch, so
+ * `clearedForGameOver` guards against re-clearing (and re-flipping
+ * `hasSave`) on every subsequent redraw while still on the game-over screen.
+ */
+let clearedForGameOver = false;
+store.subscribe(() => {
+  const gameOver = store.getState().flags?.gameOver ?? false;
+  if (gameOver && !clearedForGameOver) {
+    clearedForGameOver = true;
+    hasSave = false;
+    clearBrowserSave().catch((error) => {
+      store.reportFailure("clear", error, false);
+    });
+  } else if (!gameOver) {
+    clearedForGameOver = false;
+  }
+  renderCurrent();
+});
 app.renderer.on("resize", () => renderCurrent());
 renderCurrent();
 

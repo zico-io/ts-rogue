@@ -15,7 +15,7 @@ Open the printed local URL. Boot query params mirror the terminal's CLI flags:
 | Param | Terminal equivalent | Effect |
 | --- | --- | --- |
 | `?seed=123` | `--seed=123` | Seeds the new run; defaults to `Date.now()` |
-| `?fresh` | `--fresh` | Presence-only; no browser persistence exists yet, so this is currently a no-op |
+| `?fresh` | `--fresh` | Presence-only; bypasses loading the IndexedDB save on boot (ROG-46), so a session always starts fresh |
 | `?dev` | `--dev` | Gates the dev console overlay (ROG-48); backtick toggles it |
 
 `pnpm web:build` produces a static bundle in `dist/web`; `pnpm web:preview`
@@ -231,10 +231,11 @@ container, the game-over container, or the normal scene switcher + chrome.
   logo, main-menu entries) lives in `src/ui/screens/title/display.ts`, a pure
   module with no Ink/React import that `TitleScreen.tsx` also re-exports from,
   so both renderers draw the same content without either depending on the
-  other's framework. The browser has no save persistence yet (ROG-46) or
-  `SettingsScreen`, so `hasSave` is always `false` (no "Continue" entry) and
-  selecting "Settings" is stashed (logged, matching the other not-yet-built
-  stashes below) instead of opening a screen.
+  other's framework. The browser has no `SettingsScreen` yet, so selecting
+  "Settings" is stashed (logged, matching the other not-yet-built stashes
+  below) instead of opening a screen. `hasSave` now reflects whether the
+  IndexedDB save slot held a game at boot (ROG-46, see "Persistence"
+  below), so the Continue entry appears exactly when a save exists.
 - **Game over**: drawn from `src/ui/screens/gameOverBanner.ts` (`BANNER`,
   extracted the same way as the title's `display.ts`), with Enter starting a
   new run (same class/permadeath, fresh seed, mirroring `app.tsx`) and `q`/
@@ -252,14 +253,55 @@ container, the game-over container, or the normal scene switcher + chrome.
   callback `main.ts` passes it (return to the title) instead of logging a
   stash - there is still no OS process to actually exit from a browser tab.
 
+## Persistence (ROG-46)
+
+A single IndexedDB save slot, the browser counterpart to the terminal's
+`node:sqlite` slot (`src/persistence/save.ts`) - same whole-state-JSON
+format, same single-slot semantics, both sharing `src/persistence/
+serializer.ts`'s `serialize`/`deserialize` so the save format stays
+portable even though the store underneath differs per platform.
+
+- `src/persistence/storage.ts`'s `SaveStorage` interface (`load`/`save`/
+  `clear`, all `Promise`-returning, dealing only in the raw serialized JSON
+  string) is the shared storage-backend contract. `src/persistence/
+  sqliteStorage.ts`'s `SqliteSaveStorage` and `src/persistence/
+  indexedDbStorage.ts`'s `IndexedDbSaveStorage` both implement it - the sqlite
+  side is what `save.ts`'s long-standing sync `saveGame`/`loadGame`/
+  `clearSave` build on (kept sync since `node:sqlite` has no async
+  variant and every terminal caller/test depends on that), the IndexedDB
+  side is async (IndexedDB has no sync API) and used only in the browser.
+- `src/persistence/browserSave.ts` exposes async `loadGame`/`saveGame`/
+  `clearSave` over a shared `IndexedDbSaveStorage`, the browser's
+  counterpart to `save.ts`'s sync functions.
+- `main.ts` awaits `loadGame()` at boot (unless `?fresh` is set, matching
+  the terminal's `--fresh`) and constructs the initial `GameStore` from the
+  loaded save if one exists, computing `hasSave` from that so the title
+  menu's Continue entry appears correctly. A save that fails to load is
+  logged and treated as no save, rather than crashing boot.
+- `input/keyboard.ts`'s `handleChurch` calls the browser `saveGame`,
+  mirroring `ChurchView.tsx`'s terminal save - fire-and-forget with a
+  `Log` event once the write settles (async, unlike the terminal's sync
+  save, so it doesn't block key handling), and flips `main.ts`'s `hasSave`
+  to `true` on success via an `onSaved` callback.
+- `main.ts` clears the browser save once `flags?.gameOver` goes true,
+  mirroring `app.tsx`'s `useEffect(() => { if (gameOver) ... clearSave()
+  })`, so the next boot or "New Game" starts fresh instead of reloading the
+  dead run.
+- Tested in `src/persistence/browserSave.test.ts` against
+  `fake-indexeddb/auto`'s polyfill of the global `indexedDB` (the same
+  global `IndexedDbSaveStorage` uses in a real browser) - round-trips a
+  plain state and one with an active `dungeonState`, plus the empty/cleared
+  cases, mirroring `save.test.ts`'s sqlite coverage.
+
 ## Scope and limits
 
 This issue (ROG-43) only wires the build and boot sequence. ROG-44 adds the
 texture atlas and an atlas-loading smoke test (see above), but real per-scene
 sprite content is still out of scope. Also intentionally missing:
 
-- Persistence - every load starts a fresh game; the Church's save is
-  stashed (logged, not implemented) until ROG-46 adds IndexedDB save/load.
+- Settings persistence - the browser has no `SettingsScreen` (see above),
+  so unlike the terminal there is nothing to persist there yet; the save
+  slot itself is implemented (see "Persistence" below).
 - All four playing scenes now have real content - village (ROG-52),
   overworld (ROG-49), battle (ROG-51), and the dungeon (ROG-50, see above).
 - Filing a Linear issue from the dev console's `issue`/`bug`/`flush`

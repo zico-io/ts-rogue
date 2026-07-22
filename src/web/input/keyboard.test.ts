@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import "fake-indexeddb/auto";
+import { describe, expect, it, vi } from "vitest";
 import { startBattle } from "../../engine/combat/resolution";
 import { Rng } from "../../engine/rng/rng";
 import { GameStore, newGame } from "../../engine/state/store";
@@ -233,5 +234,26 @@ describe("BrowserKeyboardManager - village focus stack", () => {
     manager.handleKeyDown(key("t"));
 
     expect(store.getState().recruits.length).toBeGreaterThan(0);
+  });
+
+  it("Church: Enter saves to the browser save slot and logs the result", async () => {
+    const store = storeAt("village");
+    let saved = false;
+    const manager = new BrowserKeyboardManager(
+      store,
+      () => {},
+      () => {
+        saved = true;
+      },
+    );
+
+    manager.handleKeyDown(key("c"));
+    expect(manager.getState().village.building).toBe("church");
+
+    manager.handleKeyDown(key("Enter"));
+    // The save write is async (IndexedDB); wait for it to settle before
+    // asserting on its side effects.
+    await vi.waitFor(() => expect(saved).toBe(true));
+    expect(store.getState().log.at(-1)?.text).toBe("Game saved");
   });
 });
