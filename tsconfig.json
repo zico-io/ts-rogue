@@ -18,7 +18,6 @@
     "node_modules",
     "dist",
     "src/web/.next",
-    "src/web/out",
     "src/web/next-env.d.ts"
   ]
 }

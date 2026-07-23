@@ -5,7 +5,6 @@
       "src/**",
       "agent/**",
       "!src/web/.next/**",
-      "!src/web/out/**",
       "!src/web/next-env.d.ts",
       "!src/web/tsconfig.json"
     ]
