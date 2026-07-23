@@ -6,6 +6,12 @@ import {
 } from "eve/sandbox";
 import { vercel } from "eve/sandbox/vercel";
 
+import {
+  buildOrientationBrief,
+  GIT_FACTS_COMMAND,
+  parseGitFacts,
+} from "./lib/orientation";
+
 // GitHub App installation tokens live ~1h; refresh the injected header well
 // before that so a session that outlasts one token can still push.
 const TOKEN_REFRESH_MS = 45 * 60 * 1000;
@@ -158,6 +164,19 @@ export default defineSandbox({
     });
     if (sync.exitCode !== 0)
       throw new Error(sync.stderr || "Sandbox repository sync failed");
+    // Pre-compute the orientation brief so the model reads settled repo state
+    // instead of rediscovering it. Best-effort: a missing brief only means the
+    // model falls back to orienting by hand, so it must never fail the session.
+    try {
+      const facts = await sandbox.run({ command: GIT_FACTS_COMMAND });
+      if (facts.exitCode === 0)
+        await sandbox.writeTextFile({
+          path: "ORIENTATION.md",
+          content: buildOrientationBrief(parseGitFacts(facts.stdout)),
+        });
+    } catch {
+      // Leave orientation to the model rather than failing startup over a brief.
+    }
     // If startup couldn't mint the token, retry soon so push recovers fast;
     // otherwise refresh on the normal cadence.
     keepTokenFresh(sandbox, mintFreshPolicy, {
