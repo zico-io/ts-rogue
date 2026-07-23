@@ -202,6 +202,13 @@ export async function bootGame(
     resizeTo: mount,
     backgroundColor: "#000000",
     antialias: true,
+    // Render the canvas's backing buffer at the device pixel ratio (falling
+    // back to 1 if it's ever missing, e.g. a mocked `window`) and let Pixi
+    // keep the CSS size matched via `autoDensity` - without this, HiDPI
+    // screens render at 1x CSS pixels and the browser blurs the upscale
+    // (ROG-63).
+    resolution: window.devicePixelRatio || 1,
+    autoDensity: true,
   });
   mount.appendChild(app.canvas);
 

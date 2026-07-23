@@ -15,6 +15,7 @@ import { BattleSceneView } from "./battleView";
 interface FakeSprite extends BattleSpriteHandle {
   setPosition: ReturnType<typeof vi.fn<(x: number, y: number) => void>>;
   setTexture: ReturnType<typeof vi.fn<(name: string) => void>>;
+  setSize: ReturnType<typeof vi.fn<(width: number, height: number) => void>>;
   setTint: ReturnType<typeof vi.fn<(color: number) => void>>;
   destroy: ReturnType<typeof vi.fn<() => void>>;
 }
@@ -59,6 +60,7 @@ function fakeFactory(textureNames: readonly string[] = []): FakeFactory {
       const handle: FakeSprite = {
         setPosition: vi.fn(),
         setTexture: vi.fn(),
+        setSize: vi.fn(),
         setTint: vi.fn(),
         destroy: vi.fn(),
       };
@@ -146,6 +148,10 @@ describe("BattleSceneView", () => {
     expect(slimeSprite).toBeDefined();
     expect(goblinSprite).toBeDefined();
     expect(factory.rects.length).toBeGreaterThanOrEqual(0);
+    // Every sprite gets sized into the fixed art box (ROG-63); the real
+    // Pixi adapter fits/centers the native texture inside it.
+    expect(slimeSprite?.setSize).toHaveBeenCalledWith(72, 72);
+    expect(goblinSprite?.setSize).toHaveBeenCalledWith(72, 72);
   });
 
   it("falls back to a tinted rect (not a sprite) for an enemy with no sprite id", () => {

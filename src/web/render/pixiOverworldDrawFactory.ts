@@ -30,8 +30,9 @@ export function createPixiOverworldDrawFactory(
           const texture = sheet.textures[name];
           if (sprite.texture !== texture) {
             sprite.texture = texture;
-            // Atlas tiles are native 12x12 pixel art (see `README.md`'s Art
-            // pipeline section); nearest-neighbor keeps upscaling crisp.
+            // Atlas tiles are native 8x8 pixel art (ART_DIRECTION.md §2.1);
+            // `atlas.ts`'s `loadAtlas()` already sets this on the shared
+            // texture source, so this is a defensive no-op (ROG-63).
             sprite.texture.source.scaleMode = "nearest";
           }
         },
