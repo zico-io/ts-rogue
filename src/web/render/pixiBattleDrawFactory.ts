@@ -4,11 +4,13 @@
  * keying, and turn-feedback logic lives in `BattleSceneView`, which never
  * imports `pixi.js` so it stays unit-testable without a WebGL/canvas context
  * (see `battleView.test.ts`). One factory is bound to a single Pixi
- * `Container` and looks enemy sprite textures up by name from a loaded atlas
- * `Spritesheet` (`atlas.ts`'s `loadAtlas()`).
+ * `Container` and looks enemy sprite textures up by name from a preloaded
+ * map of individual battler textures (`battlers.ts`'s `loadBattlerTextures()`)
+ * - battlers are a separate scale class from the 8x8 tile atlas (ROG-68), not
+ * packed atlas frames.
  */
 
-import { Graphics, Sprite, type Spritesheet, Text } from "pixi.js";
+import { Graphics, Sprite, Text, type Texture } from "pixi.js";
 import type {
   BattleDrawFactory,
   BattleRectHandle,
@@ -19,11 +21,11 @@ import type {
 /** Builds a `BattleDrawFactory` whose sprites/rects/text are all children of `container`. */
 export function createPixiBattleDrawFactory(
   container: { addChild(child: Sprite | Graphics | Text): void },
-  sheet: Spritesheet,
+  textures: Record<string, Texture>,
 ): BattleDrawFactory {
   return {
     hasTexture(name: string): boolean {
-      return name in sheet.textures;
+      return name in textures;
     },
     createSprite(): BattleSpriteHandle {
       const sprite = new Sprite();
@@ -33,11 +35,11 @@ export function createPixiBattleDrawFactory(
           sprite.position.set(x, y);
         },
         setTexture(name: string) {
-          const texture = sheet.textures[name];
+          const texture = textures[name];
           if (sprite.texture !== texture) {
             sprite.texture = texture;
-            // Atlas tiles are native 12x12 pixel art (see `README.md`'s Art
-            // pipeline section); nearest-neighbor keeps upscaling crisp.
+            // `loadBattlerTextures` already sets this; defensive no-op here,
+            // matching the other draw factories' pattern.
             sprite.texture.source.scaleMode = "nearest";
           }
         },

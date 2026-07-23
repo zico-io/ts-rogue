@@ -42,8 +42,8 @@ export const RAY_STRIP_PX = 4;
 /** Perpendicular distance (tiles) beyond which nothing is drawn - the corridor fades to darkness. */
 export const MAX_DEPTH = 8;
 
-/** Native wall tile width in the atlas (`src/ui/tiles/kitty.ts`'s 12x12 tiles) - the number of distinct texel columns a wall face samples from. */
-export const TEXELS_PER_TILE = 12;
+/** Native wall tile width in the atlas (ROG-68: the shared 8x8 Minifantasy grid) - the number of distinct texel columns a wall face samples from. */
+export const TEXELS_PER_TILE = 8;
 
 /** Safety cap on DDA steps per ray; `isDungeonWall` treats out-of-bounds as a wall, so this is only reached in pathological layouts. */
 const MAX_DDA_STEPS = 64;
