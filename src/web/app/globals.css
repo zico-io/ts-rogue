@@ -143,7 +143,14 @@ body {
 
 .portal {
   position: absolute;
-  inset: 0;
+  /* Explicit top/left + 100% sizing, not `inset: 0`: Chromium doesn't reliably
+     treat .portalFrame's aspect-ratio-derived height as definite for `bottom`,
+     so `inset: 0` let .portal collapse to its canvas's 800x600 default instead
+     of filling the 3:2 frame. Percentage sizing resolves against the same box. */
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
   overflow: hidden;
   background: #000;
 }
