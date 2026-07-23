@@ -11,9 +11,7 @@ REPO="zico-io/ts-rogue"
 DIR="/vercel/sandbox/ts-rogue"          # ponytail: Vercel Sandbox default home; adjust if it moves
 TOKEN="${GH_TOKEN:-$(gh auth token)}"
 
-# Project + team default to the CLI's login context (from `sandbox login`). Set
-# VERCEL_PROJECT / VERCEL_TEAM to pin a specific scope; otherwise the CLI infers
-# them. (.vercel/ is gitignored, so there's no committed link to read.)
+# Project + team default to the CLI login context; VERCEL_PROJECT / VERCEL_TEAM pin a scope.
 SBX=(pnpm exec sandbox)
 [ -n "${VERCEL_PROJECT:-}" ] && SBX+=(--project "$VERCEL_PROJECT")
 [ -n "${VERCEL_TEAM:-}" ] && SBX+=(--scope "$VERCEL_TEAM")
@@ -25,10 +23,8 @@ else
   NAME="branch-${REF_ARG//\//-}"; REF="$REF_ARG"
 fi
 
-# Create-or-resume a persistent, named sandbox. Creating a name that already
-# exists is the expected re-run path (resume it below), so tolerate only that;
-# surface any other failure instead of swallowing it into a confusing later 404.
-# TIMEOUT defaults to 45m (the Hobby-plan cap); set TIMEOUT=1h on a Pro plan.
+# Create-or-resume a named sandbox: an existing name is the normal re-run path, so
+# tolerate only that and surface any other failure. TIMEOUT is 45m (Hobby cap), 1h on Pro.
 if ! OUT=$("${SBX[@]}" create --name "$NAME" --timeout "${TIMEOUT:-45m}" --runtime node24 --silent 2>&1); then
   [[ "$OUT" == *"already exists"* ]] || { echo "$OUT" >&2; exit 1; }
 fi
