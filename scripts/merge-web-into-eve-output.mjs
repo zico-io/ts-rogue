@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// Merges the vite web build (dist/web) into eve's Vercel Build Output so one
-// Vercel deployment serves both the eve agent and the PixiJS game:
+// Merges the Next.js static export (src/web/out) into eve's Vercel Build Output
+// so one Vercel deployment serves both the eve agent and the PixiJS game:
 //   /eve/v1/*, /.well-known/workflow/*  -> eve functions (unchanged)
-//   /                                   -> the game's index.html
+//   /                                   -> the game's index.html (+ /_next/* assets)
 //   everything else                     -> eve's static + __server fallback
 //
 // Run after `eve build` (which writes .vercel/output when VERCEL is set) and
@@ -62,18 +62,19 @@ async function main() {
   if (!existsSync(CONFIG_PATH)) {
     throw new Error(`${CONFIG_PATH} not found - run \`eve build\` (with VERCEL set) first.`);
   }
-  if (!existsSync("dist/web/index.html")) {
-    throw new Error("dist/web/index.html not found - run `pnpm web:build` first.");
+  if (!existsSync("src/web/out/index.html")) {
+    throw new Error("src/web/out/index.html not found - run `pnpm web:build` first.");
   }
-  // eve emits an empty static/ dir; the game's assets slot in alongside it.
-  await cp("dist/web", `${OUTPUT_DIR}/static`, { recursive: true });
+  // eve emits an empty static/ dir; the game's exported assets (index.html plus
+  // the /_next/* bundle) slot in alongside it.
+  await cp("src/web/out", `${OUTPUT_DIR}/static`, { recursive: true });
 
   const config = JSON.parse(await readFile(CONFIG_PATH, "utf8"));
   const routes = withGameRootRoute(config.routes ?? []);
   if (routes !== config.routes) {
     await writeFile(CONFIG_PATH, `${JSON.stringify({ ...config, routes }, null, 2)}\n`);
   }
-  console.log("merged dist/web into .vercel/output; `/` now serves the game.");
+  console.log("merged src/web/out into .vercel/output; `/` now serves the game.");
 }
 
 if (process.argv.includes("--selftest")) {

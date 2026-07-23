@@ -13,5 +13,12 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src", "scripts"]
+  "include": ["src", "scripts"],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "src/web/.next",
+    "src/web/out",
+    "src/web/next-env.d.ts"
+  ]
 }

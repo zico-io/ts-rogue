@@ -1,7 +1,14 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.5.4/schema.json",
   "files": {
-    "includes": ["src/**", "agent/**"]
+    "includes": [
+      "src/**",
+      "agent/**",
+      "!src/web/.next/**",
+      "!src/web/out/**",
+      "!src/web/next-env.d.ts",
+      "!src/web/tsconfig.json"
+    ]
   },
   "formatter": {
     "enabled": true,

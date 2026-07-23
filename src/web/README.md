@@ -1,8 +1,13 @@
 # Browser renderer
 
 A PixiJS renderer that boots the same engine core (`src/engine`) the Ink
-terminal renderer (`src/app.tsx`, `src/ui`) uses, driven by a plain browser
-entry point instead of a terminal.
+terminal renderer (`src/app.tsx`, `src/ui`) uses, driven from the browser
+instead of a terminal.
+
+The renderer is wrapped in a Next.js "chrome" (ROG-54): a static-exported app
+shell (`app/`) that frames the canvas as a centred, letterboxed **portal** into
+the dungeon world instead of a raw full-viewport canvas. See "Chrome (ROG-54)"
+below.
 
 ## Running
 
@@ -18,8 +23,8 @@ Open the printed local URL. Boot query params mirror the terminal's CLI flags:
 | `?fresh` | `--fresh` | Presence-only; bypasses loading the IndexedDB save on boot (ROG-46), so a session always starts fresh |
 | `?dev` | `--dev` | Gates the dev console overlay (ROG-48); backtick toggles it |
 
-`pnpm web:build` produces a static bundle in `dist/web`; `pnpm web:preview`
-serves that build locally.
+`pnpm web:build` produces a static Next.js export in `src/web/out`;
+`pnpm web:preview` serves that build locally.
 
 ## The GameStore/GameEvent seam (ROG-53)
 
@@ -94,15 +99,24 @@ renderers.
   implements `sceneView.ts`'s `DrawFactory` with real Pixi `Graphics`/`Text`
   objects added to a given container. Not unit-tested (thin Pixi glue, like
   `atlas.ts`).
-- `main.ts` - the entry point: builds the initial `GameState`, wires a
-  `GameStore`, initializes the Pixi `Application`, builds one `Container` per
-  scene plus its `SceneChromeView` and content sub-container, loads the atlas,
-  wires the keyboard manager, and owns the title/game-over `Phase` on top of
-  the store's own scenes (see "Title, village, and game-over" below). A single
+- `bootGame.ts` - exports `bootGame(mount, flags)`, which builds the initial
+  `GameState`, wires a `GameStore`, initializes the Pixi `Application` into the
+  given `mount` element, builds one `Container` per scene plus its
+  `SceneChromeView` and content sub-container, loads the atlas, wires the
+  keyboard manager, and owns the title/game-over `Phase` on top of the store's
+  own scenes (see "Title, village, and game-over" below). A single
   `renderCurrent()` redraws whatever should be visible - called from
   `store.subscribe` (a `GameStore` dispatch), the Pixi renderer's `resize`
   event, and after every keydown, since menu-cursor moves and other local-only
-  UI state don't dispatch a `GameEvent` and would otherwise never redraw.
+  UI state don't dispatch a `GameEvent` and would otherwise never redraw. It
+  returns a `dispose()` handle that removes every `window` listener, destroys
+  the Pixi app, and clears the mount, so the React chrome can mount/unmount it
+  (including dev StrictMode's double-invoke) without leaking a second game. Was
+  `main.ts`'s module top level under the old Vite entry.
+- `app/` - the Next.js chrome (ROG-54): `page.tsx` renders the portal frame +
+  wordmark + controls legend, and `GamePortal.tsx` (a client component) mounts
+  the canvas by lazily importing `bootGame` inside a `useEffect`. See "Chrome
+  (ROG-54)" below.
 - `input/normalizeBrowserKey.ts` - normalizes a DOM `KeyboardEvent` (or the
   minimal `{ key, ctrlKey, metaKey }` shape tests construct) to the same
   `KeyName` alphabet `normalizeInkKey` produces for the terminal. Pure,
@@ -117,12 +131,10 @@ renderers.
   played (not during the title flow or a game-over screen; see below) and
   passes it an `onQuit` callback (ROG-52) that returns to the title screen.
   Unit-tested in `input/keyboard.test.ts`.
-- `index.html` - the Vite HTML entry, a full-viewport canvas mount plus a
-  hidden minimum-size overlay.
 - `public/atlas/` - the built atlas (`atlas.png` + `atlas.json`), served
-  as-is by Vite's default static-file handling for `<root>/public`
-  (`vite.config.ts` sets `root: "src/web"`) and copied verbatim into
-  `dist/web/atlas/` on build. Generated; do not hand-edit, see below.
+  as-is by Next's default static-file handling for `<root>/public` (the Next
+  root is `src/web`) and copied verbatim into `src/web/out/atlas/` on export.
+  Generated; do not hand-edit, see below.
 
 ## Art pipeline (ROG-44)
 
@@ -401,12 +413,48 @@ Pixi.
   automatic Linear filing - since that pipeline's Node-only I/O doesn't
   belong in a browser bundle (see "Scope and limits" above).
 
+## Chrome (ROG-54)
+
+The Next.js app shell frames the canvas as a centred, fixed-aspect (3:2)
+letterboxed **portal** - concept "The Portal": a dark scrying chamber whose
+palette is lifted straight from the game's own `src/ui/theme.ts` so the frame
+reads as the same artifact as the game.
+
+- `app/layout.tsx` - `<html>`/`<body>` + `globals.css` + page metadata.
+- `app/page.tsx` - the chrome: pink->purple wordmark, tagline, the portal
+  frame (indigo border, amber corner brackets, glow) and the controls legend.
+  All static furniture; the game owns real input.
+- `app/GamePortal.tsx` - the `#portal` mount. Its `useEffect` lazily
+  `import()`s `bootGame` (so Pixi/engine/IndexedDB code is never evaluated
+  during the static export) and disposes the returned handle on unmount.
+- The Pixi `Application` uses `resizeTo: <the portal element>`, so the game
+  world scales to the portal, never the whole window. The crash overlay, dev
+  console (`?dev`), and minimum-size notice are all scoped to the portal
+  (`position: absolute` inside it) rather than the viewport.
+
 ## Deployment
 
-The root `vercel.json` builds this renderer as a static site: `pnpm web:build`
-into `dist/web`, served with a catch-all rewrite to `index.html` for any
-future client-side routes. Link the repository with `vercel link` (or import
-it in the Vercel dashboard) and it deploys with no further configuration;
-`vercel.json`'s `buildCommand`/`outputDirectory` override any framework
-auto-detection since the Vite root lives under `src/web` rather than the
-repository root.
+The game ships as part of one Vercel deployment shared with the `eve` agent.
+`vercel.json` sets `framework: null` and `buildCommand: pnpm vercel:build`,
+which runs `eve build`, then `pnpm web:build` (Next static export into
+`src/web/out`), then `scripts/merge-web-into-eve-output.mjs` - which copies the
+export into eve's Vercel Build Output (`.vercel/output/static`) and inserts a
+`/ -> /index.html` route ahead of eve's own `/`, so `/` serves the game (and
+`/_next/*` its assets) while `/eve/v1/*` and the `__server` catch-all stay
+eve's.
+
+### Static export, and the TypeScript toolchain it needs
+
+Next.js is used purely as the app shell + static-site generator
+(`next.config.mjs` sets `output: "export"`); there is no Next server at runtime.
+
+The `typescript` package is **stable v5** (not the TypeScript 7 native preview),
+because Next's build loads the TypeScript compiler API - which the native
+preview does not expose, so Next would otherwise try to "fix" it by silently
+downgrading `typescript`. To keep the native preview's typecheck speed, the
+preview is installed under its own name, `@typescript/native-preview` (the
+`tsgo` binary), and `pnpm typecheck` runs `tsgo --noEmit`. So: stable
+`typescript` satisfies Next + editors + the language service, `tsgo` is the fast
+checker of record, and the whole app - chrome included - is normal `.tsx`.
+`next.config.mjs` is plain JS only so Next never has to transpile a `.ts` config
+with whichever compiler is active.

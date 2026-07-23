@@ -19,7 +19,9 @@ export class CrashOverlayView {
   constructor(mount: HTMLElement, onRestart: () => void) {
     this.root = document.createElement("div");
     Object.assign(this.root.style, {
-      position: "fixed",
+      // `absolute` (not `fixed`) so the overlay fills the portal mount it is
+      // appended to, not the whole viewport (ROG-54).
+      position: "absolute",
       inset: "0",
       display: "none",
       flexDirection: "column",
