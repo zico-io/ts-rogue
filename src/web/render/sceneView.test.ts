@@ -121,13 +121,14 @@ describe("SceneChromeView", () => {
     expect(hpValueText).toBeDefined();
   });
 
-  it("creates two rect handles (background + fill) per meter, plus one border rect", () => {
+  it("creates two rect handles (background + fill) per meter, plus the border and panel-background rects", () => {
     const factory = fakeFactory();
     const view = new SceneChromeView(factory);
     const state = newGame(1);
     view.render(state, SIZE, { title: "Village" });
-    // border rect + (background, fill) per member for HP and MP = 1 + party.length * 4
-    expect(factory.rects.length).toBe(1 + state.party.length * 4);
+    // border rect + panel background rect + (background, fill) per member for HP and MP
+    // = 2 + party.length * 4
+    expect(factory.rects.length).toBe(2 + state.party.length * 4);
   });
 
   it("sizes a meter's fill rect proportionally to value/max", () => {
@@ -139,9 +140,9 @@ describe("SceneChromeView", () => {
       party: [{ ...state.party[0], hp: state.party[0].maxHp / 2 }],
     };
     view.render(halfHp, SIZE, { title: "Village" });
-    // rects order: [border, hp-bg, hp-fill, mp-bg, mp-fill]
-    const hpBgWidth = factory.rects[1].setSize.mock.calls.at(-1)?.[0] as number;
-    const hpFillWidth = factory.rects[2].setSize.mock.calls.at(
+    // rects order: [border, panel-background, hp-bg, hp-fill, mp-bg, mp-fill]
+    const hpBgWidth = factory.rects[2].setSize.mock.calls.at(-1)?.[0] as number;
+    const hpFillWidth = factory.rects[3].setSize.mock.calls.at(
       -1,
     )?.[0] as number;
     expect(hpFillWidth).toBeCloseTo(hpBgWidth * 0.5, 0);
@@ -183,6 +184,6 @@ describe("SceneChromeView", () => {
     const view = new SceneChromeView(factory);
     const state = { ...newGame(1), party: [] };
     view.render(state, SIZE, { title: "Village" });
-    expect(factory.rects.length).toBe(1); // border only
+    expect(factory.rects.length).toBe(2); // border + panel background only
   });
 });
