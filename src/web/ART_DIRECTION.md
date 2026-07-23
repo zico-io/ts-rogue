@@ -268,11 +268,15 @@ except the battle, which is Aekashics. Every pack's license is attributed in
 | Effects (keyed) | Minifantasy *Spell Effects I/II*, *Magic And Sorcery*, *Magic Weapons And Effects* | Pre-animated sheets played on a frame ticker (§6). |
 | **Front-facing battle monsters** | [Aekashics Librarium (free Ultrapack)](https://aekashics.itch.io/librarium-statics-ultimate-monsters) | The one non-Minifantasy source. 900+ front-facing battlers, royalty-free commercial; graded to the palette (§2.4) so they sit in-world. Sets `sprite` on `MonsterDef` in `src/data/monsters.ts`. |
 
-**Licensing:** Minifantasy's license permits commercial use and modification,
-unlimited, **no attribution required** (appreciated) - verify the current text
-on any pack page before shipping; no resale/redistribution of the raw art.
-$69.99 for 78 packs (reg. $438). Aekashics Librarium is royalty-free commercial.
-Both are permissive-commercial, compatible with the repo's CC-BY-4.0 baseline.
+**Licensing (verified ROG-68, see `assets/README.md` for the pinned text):**
+Minifantasy's license permits commercial use and modification, unlimited, but
+**requires attribution** to Krishna Palacio in the shipped game's credits (not
+attribution-free as earlier drafted here); no resale/redistribution of the raw
+art. $69.99 for 78 packs (reg. $438). Aekashics Librarium is commercial-friendly
+but likewise **requires attribution** to Ækashics with a link back to
+akashics.moe; no redistribution of the raw battler files. Both are
+permissive-commercial-with-attribution, compatible with the repo's CC-BY-4.0
+baseline (which itself requires attribution).
 
 ## 10. Pipeline mapping - where follow-up work lands
 
