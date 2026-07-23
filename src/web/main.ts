@@ -578,7 +578,10 @@ function handleTitleKeyDown(event: KeyboardEvent): void {
     case "startNewGame":
       store.dispatch({
         type: "NewGame",
-        seed: Date.now(),
+        // Honor the boot `?seed` so a run started from the title is reproducible
+        // (the play-web harness replays this flow); `flags.seed` already defaults
+        // to a clock value when no `?seed` is given, so play stays random by default.
+        seed: flags.seed,
         classId: result.effect.classId,
         permadeath: result.effect.permadeath,
         name: result.effect.name,

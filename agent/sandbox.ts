@@ -141,10 +141,13 @@ export default defineSandbox({
     const sandbox = await use({ networkPolicy: policy });
     const setup = await sandbox.run({
       command:
-        // tmux backs the play harness (scripts/play.sh) so the agent can drive
-        // the real game in-sandbox; `|| true` keeps a locked-down image from
-        // failing the whole pre-warm if the package install is unavailable.
-        "(sudo apt-get update && sudo apt-get install -y tmux || true) && git config --global --add safe.directory /workspace && git clone https://github.com/zico-io/ts-rogue.git . && corepack pnpm install --frozen-lockfile",
+        // tmux backs the terminal play harness (scripts/play.sh) and Playwright's
+        // chromium backs the web play harness (scripts/play-web.mjs), so the agent
+        // can drive and screenshot both renderers in-sandbox. Install the browser
+        // now, while the pre-warm network policy is open (a locked-down runtime
+        // policy can block the browser CDN). `|| true` keeps a locked-down image
+        // from failing the whole pre-warm if either install is unavailable.
+        "(sudo apt-get update && sudo apt-get install -y tmux || true) && git config --global --add safe.directory /workspace && git clone https://github.com/zico-io/ts-rogue.git . && corepack pnpm install --frozen-lockfile && (corepack pnpm exec playwright install --with-deps chromium || true)",
     });
     if (setup.exitCode !== 0)
       throw new Error(setup.stderr || "Sandbox pre-warming failed");
