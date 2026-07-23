@@ -36,6 +36,14 @@ export function createPixiOverworldDrawFactory(
             sprite.texture.source.scaleMode = "nearest";
           }
         },
+        setSize(width: number, height: number) {
+          // Scales the native 8x8 atlas frame up to the viewport's tile
+          // cell (an integer factor at the current `OVERWORLD_TILE_PX`, so
+          // texels stay square) - without this the sprite renders at its
+          // own native size and leaves a gap in the cell (ROG-63).
+          sprite.width = width;
+          sprite.height = height;
+        },
         setTint(color: number) {
           sprite.tint = color;
         },

@@ -33,9 +33,15 @@ import { theme, toPixiColor } from "../../ui/theme";
 import type { TileName } from "../../ui/tiles/kitty";
 import type { DrawHandle, RectHandle } from "./sceneView";
 
-/** A positioned, keyed, texture-backed tile. */
+/**
+ * A positioned, keyed, texture-backed tile. `setSize` scales the sprite's
+ * native atlas-frame pixels (8x8, ROG-68) up to the viewport's `tilePx` cell
+ * size - without it a tile sprite renders at its own native 8px, leaving a
+ * gap in every `tilePx`-sized cell instead of filling it (ROG-63).
+ */
 export interface SpriteHandle extends DrawHandle {
   setTexture(name: TileName): void;
+  setSize(width: number, height: number): void;
   /** `0xffffff` (no tint) leaves the texture's own colors untouched. */
   setTint(color: number): void;
 }
@@ -168,6 +174,7 @@ export class OverworldSceneView {
           this.viewportSprites.set(cell.key, sprite);
         }
         sprite.setPosition(colIndex * tilePx, rowIndex * tilePx);
+        sprite.setSize(tilePx, tilePx);
         const tile = cell.tile ?? "grass";
         sprite.setTexture(tile);
         sprite.setTint(biomeTint(tile));
