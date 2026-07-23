@@ -16,6 +16,12 @@ const TOKEN_RETRY_MS = 2 * 60 * 1000;
 // Bound every token mint so a slow/degraded token service cannot block session
 // startup or a refresh tick indefinitely.
 const TOKEN_MINT_TIMEOUT_MS = 10 * 1000;
+// setNetworkPolicy failing usually means the sandbox is gone, but it can also be
+// a transient blip. Tolerate a few consecutive failures (retrying on the fast
+// cadence) before concluding the sandbox is torn down and stopping - so one blip
+// can't permanently strand the session with a frozen token that expires within
+// the hour. At the retry cadence this is ~10min of tolerance.
+export const MAX_SET_POLICY_FAILURES = 5;
 
 // Unauthenticated fallback: allow every host with no header injection. Public
 // clone/fetch and the npm registry still work; only authenticated `git push`
@@ -88,10 +94,14 @@ export interface TokenRefreshTiming {
 // The auth header is frozen into the firewall policy at session start, so a
 // static token expires mid-session. Re-mint it on an interval via
 // setNetworkPolicy. There is no session-end hook, so the chain self-terminates
-// when setNetworkPolicy throws (sandbox torn down) rather than leaking a timer.
-// A transient mint failure must NOT end refresh: it reschedules on the retry
-// cadence (fast) while a torn-down sandbox stops, and a success settles back to
-// the slow refresh cadence.
+// once setNetworkPolicy has failed MAX_SET_POLICY_FAILURES times in a row
+// (sandbox torn down) rather than leaking a timer forever.
+// Neither a transient mint failure nor a single setNetworkPolicy blip may end
+// refresh: both reschedule on the retry cadence (fast) so github auth recovers
+// within minutes of the sandbox healing, while a genuinely torn-down sandbox -
+// which fails setNetworkPolicy every time - still stops after the bounded
+// retries. A success resets the failure count and settles back to the slow
+// refresh cadence.
 export function keepTokenFresh(
   sandbox: Pick<SandboxSession, "setNetworkPolicy">,
   mintPolicy: () => Promise<SandboxNetworkPolicy> = githubNetworkPolicy,
@@ -106,6 +116,7 @@ export function keepTokenFresh(
   const initialMs =
     typeof timing === "number" ? timing : (timing.initialMs ?? refreshMs);
 
+  let setPolicyFailures = 0;
   const schedule = (delayMs: number): ReturnType<typeof setTimeout> =>
     setTimeout(async () => {
       let policy: SandboxNetworkPolicy;
@@ -119,9 +130,15 @@ export function keepTokenFresh(
       try {
         await sandbox.setNetworkPolicy(policy);
       } catch {
-        // setNetworkPolicy only fails once the sandbox is gone; stop the chain.
+        // Likely torn down, but could be a blip. Retry on the fast cadence and
+        // only give up after enough consecutive failures to be confident the
+        // sandbox is actually gone - so a single failure can't kill refresh and
+        // strand the session with a token that soon expires.
+        if (++setPolicyFailures >= MAX_SET_POLICY_FAILURES) return;
+        schedule(retryMs);
         return;
       }
+      setPolicyFailures = 0;
       schedule(refreshMs);
     }, delayMs);
 
