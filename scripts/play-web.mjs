@@ -1,17 +1,17 @@
 #!/usr/bin/env node
-// Drive the real WEB game (PixiJS on a WebGL canvas, served by Vite) so an agent
-// can see and refine the browser UI like a user. The web analogue of
-// scripts/play.sh: same seed+keylog repro and key-token vocabulary, but a canvas
-// can't be text-scraped, so "frame" becomes a real PNG screenshot from a headless
-// browser instead of `tmux capture-pane`.
+// Drive the real WEB game (PixiJS on a WebGL canvas, served by the Next.js dev
+// server) so an agent can see and refine the browser UI like a user. The web
+// analogue of scripts/play.sh: same seed+keylog repro and key-token vocabulary,
+// but a canvas can't be text-scraped, so "frame" becomes a real PNG screenshot
+// from a headless browser instead of `tmux capture-pane`.
 //
-//   node scripts/play-web.mjs start [seed] [w] [h] [--dev]  boot Vite, reset run
+//   node scripts/play-web.mjs start [seed] [w] [h] [--dev]  boot next dev, reset run
 //   node scripts/play-web.mjs key <tokens...>               record keystrokes
 //   node scripts/play-web.mjs shot [out.png]                screenshot the game
-//   node scripts/play-web.mjs stop                          stop the Vite server
+//   node scripts/play-web.mjs stop                          stop the dev server
 //   node scripts/play-web.mjs --selftest                    check the key map
 //
-// The Vite dev server is the only persistent process. Each `shot` launches
+// The Next.js dev server is the only persistent process. Each `shot` launches
 // chromium fresh, opens /?seed=<seed>&fresh, replays the recorded keys (game
 // state is deterministic from seed+keys via the shared engine), captures, and
 // exits - no browser daemon to leak in a sandbox.
@@ -29,8 +29,8 @@ const KEYLOG = path.join(ROOT, ".play-web-keys.log");
 const STATE = path.join(ROOT, ".play-web.json");
 const FRAMES = path.join(ROOT, ".play-web-frames");
 const PORT = 5173;
-// Bind and reach the dev server on explicit IPv4: Vite's default `localhost`
-// binds IPv6 [::1] only, which a 127.0.0.1 readiness probe can't see.
+// Bind and reach the dev server on explicit IPv4 (passed to `next dev -H`), so a
+// 127.0.0.1 readiness probe always matches where the server actually listens.
 const HOST = "127.0.0.1";
 const URL_BASE = `http://${HOST}:${PORT}`;
 
@@ -98,15 +98,15 @@ async function cmdStart(args) {
   fs.writeFileSync(STATE, JSON.stringify({ seed, width, height, dev }));
 
   if (await portOpen(PORT)) {
-    console.log(`Vite already up on :${PORT} (seed=${seed}); now: shot`);
+    console.log(`dev server already up on :${PORT} (seed=${seed}); now: shot`);
     return;
   }
-  // Run vite directly (not `pnpm web:dev`, whose arg forwarding mangles flags).
-  // --strictPort so it fails loudly instead of drifting to :5174 and breaking the
-  // hardcoded shot URL. Detached process group so `stop` can kill vite + esbuild.
+  // Run `next dev` directly (not `pnpm web:dev`, whose arg forwarding mangles
+  // flags), pointed at the src/web app, on an explicit host+port. Detached
+  // process group so `stop` can kill next + its child compilers.
   const child = spawn(
     "pnpm",
-    ["exec", "vite", "--host", HOST, "--port", String(PORT), "--strictPort"],
+    ["exec", "next", "dev", "src/web", "-H", HOST, "-p", String(PORT)],
     { cwd: ROOT, detached: true, stdio: "ignore" },
   );
   child.unref();
@@ -114,11 +114,11 @@ async function cmdStart(args) {
     STATE,
     JSON.stringify({ seed, width, height, dev, vitePid: child.pid }),
   );
-  if (!(await waitForPort(PORT, 30000))) {
-    throw new Error(`Vite did not come up on :${PORT} within 30s`);
+  if (!(await waitForPort(PORT, 60000))) {
+    throw new Error(`next dev did not come up on :${PORT} within 60s`);
   }
   console.log(
-    `started Vite on :${PORT} (seed=${seed} ${width}x${height}${dev ? " dev" : ""}); now: shot`,
+    `started next dev on :${PORT} (seed=${seed} ${width}x${height}${dev ? " dev" : ""}); now: shot`,
   );
 }
 
@@ -151,8 +151,10 @@ async function cmdShot(args) {
   try {
     const page = await browser.newPage({ viewport: { width, height } });
     await page.goto(`${URL_BASE}/${query}`, { waitUntil: "load" });
-    // main.ts appends app.canvas to #app only after the async atlas load.
-    await page.waitForSelector("#app canvas", { timeout: 15000 });
+    // GamePortal mounts app.canvas into #portal only after the client-side
+    // dynamic import of bootGame and its async atlas load; the Next dev server
+    // also compiles the route on first request, so allow a generous timeout.
+    await page.waitForSelector("#portal canvas", { timeout: 45000 });
     await sleep(500);
 
     const tokens = fs

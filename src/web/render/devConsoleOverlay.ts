@@ -18,7 +18,9 @@ export class DevConsoleOverlayView {
   constructor(mount: HTMLElement) {
     this.root = document.createElement("div");
     Object.assign(this.root.style, {
-      position: "fixed",
+      // `absolute` (not `fixed`) so the console fills the portal mount it is
+      // appended to, not the whole viewport (ROG-54).
+      position: "absolute",
       inset: "0",
       display: "none",
       flexDirection: "column",

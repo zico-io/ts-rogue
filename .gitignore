@@ -13,3 +13,6 @@ dist/
 /game-incidents.jsonl
 /.play-web.json
 /.play-web-frames/
+/src/web/.next/
+/src/web/out/
+/src/web/next-env.d.ts
