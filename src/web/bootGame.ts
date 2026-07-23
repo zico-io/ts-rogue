@@ -36,6 +36,7 @@ import {
 } from "../ui/screens/village/interaction";
 import { theme, toPixiColor } from "../ui/theme";
 import { loadAtlas } from "./atlas";
+import { loadBattlerTextures } from "./battlers";
 import type { BootFlags } from "./boot";
 import { BrowserDevConsole } from "./devConsole";
 import { BrowserKeyboardManager } from "./input/keyboard";
@@ -54,8 +55,8 @@ import { SCENE_ORDER, SceneSwitcher, type SceneView } from "./scenes";
 
 const MIN_WIDTH = 480;
 const MIN_HEIGHT = 320;
-/** Native atlas tiles are 12x12; scale up so pixel art reads clearly on a modern display. */
-const PREVIEW_SCALE = 6;
+/** Native atlas tiles are 8x8 (ROG-68); scale up so pixel art reads clearly on a modern display. */
+const PREVIEW_SCALE = 9;
 /** No settings persistence in the browser yet, so New Game always defaults to this name. */
 const DEFAULT_HERO_NAME = "Hero";
 
@@ -367,7 +368,7 @@ export async function bootGame(
     const sheet = await loadAtlas();
     const villageContent = entries.village.contentContainer;
     const previewLabel = new Text({
-      text: "atlas preview: grass tile + slime sprite",
+      text: "atlas preview: grass tile + wall tile",
       style: {
         fill: toPixiColor(theme.textMuted),
         fontSize: 12,
@@ -383,11 +384,14 @@ export async function bootGame(
     grass.position.set(24, 96);
     villageContent.addChild(grass);
 
-    const slime = new Sprite(sheet.textures.slime);
-    slime.texture.source.scaleMode = "nearest";
-    slime.scale.set(PREVIEW_SCALE);
-    slime.position.set(24 + 12 * PREVIEW_SCALE + 16, 96);
-    villageContent.addChild(slime);
+    // Slime/goblin/dungeon-guardian are battlers now (ROG-68) - loaded as
+    // individual textures, not atlas frames - so this smoke test's second
+    // sprite is another atlas tile instead.
+    const wall = new Sprite(sheet.textures.wall);
+    wall.texture.source.scaleMode = "nearest";
+    wall.scale.set(PREVIEW_SCALE);
+    wall.position.set(24 + grass.texture.frame.width * PREVIEW_SCALE + 16, 96);
+    villageContent.addChild(wall);
   }
   try {
     await showAtlasPreview();
@@ -419,10 +423,10 @@ export async function bootGame(
 
   /** Loads the atlas (safe to call again; see `loadAtlas`'s doc comment) and builds the battle scene's Pixi draw factory/view. */
   async function setupBattleView(): Promise<void> {
-    const sheet = await loadAtlas();
+    const textures = await loadBattlerTextures();
     const factory = createPixiBattleDrawFactory(
       entries.battle.contentContainer,
-      sheet,
+      textures,
     );
     battleView = new BattleSceneView(factory);
   }

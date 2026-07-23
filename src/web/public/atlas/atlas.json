@@ -4,270 +4,216 @@
       "frame": {
         "x": 1,
         "y": 1,
-        "w": 12,
-        "h": 12
+        "w": 8,
+        "h": 8
       },
       "sourceSize": {
-        "w": 12,
-        "h": 12
+        "w": 8,
+        "h": 8
       },
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 12,
-        "h": 12
+        "w": 8,
+        "h": 8
       }
     },
     "forest": {
       "frame": {
-        "x": 15,
+        "x": 11,
         "y": 1,
-        "w": 12,
-        "h": 12
+        "w": 8,
+        "h": 8
       },
       "sourceSize": {
-        "w": 12,
-        "h": 12
+        "w": 8,
+        "h": 8
       },
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 12,
-        "h": 12
+        "w": 8,
+        "h": 8
       }
     },
     "mountain": {
       "frame": {
-        "x": 29,
+        "x": 21,
         "y": 1,
-        "w": 12,
-        "h": 12
+        "w": 8,
+        "h": 8
       },
       "sourceSize": {
-        "w": 12,
-        "h": 12
+        "w": 8,
+        "h": 8
       },
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 12,
-        "h": 12
+        "w": 8,
+        "h": 8
       }
     },
     "water": {
       "frame": {
-        "x": 43,
+        "x": 31,
         "y": 1,
-        "w": 12,
-        "h": 12
+        "w": 8,
+        "h": 8
       },
       "sourceSize": {
-        "w": 12,
-        "h": 12
+        "w": 8,
+        "h": 8
       },
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 12,
-        "h": 12
+        "w": 8,
+        "h": 8
       }
     },
     "village": {
       "frame": {
-        "x": 57,
+        "x": 41,
         "y": 1,
-        "w": 12,
-        "h": 12
+        "w": 8,
+        "h": 8
       },
       "sourceSize": {
-        "w": 12,
-        "h": 12
+        "w": 8,
+        "h": 8
       },
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 12,
-        "h": 12
+        "w": 8,
+        "h": 8
       }
     },
     "dungeonEntrance": {
       "frame": {
         "x": 1,
-        "y": 15,
-        "w": 12,
-        "h": 12
+        "y": 11,
+        "w": 8,
+        "h": 8
       },
       "sourceSize": {
-        "w": 12,
-        "h": 12
+        "w": 8,
+        "h": 8
       },
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 12,
-        "h": 12
+        "w": 8,
+        "h": 8
       }
     },
     "player": {
       "frame": {
-        "x": 15,
-        "y": 15,
-        "w": 12,
-        "h": 12
+        "x": 11,
+        "y": 11,
+        "w": 8,
+        "h": 8
       },
       "sourceSize": {
-        "w": 12,
-        "h": 12
+        "w": 8,
+        "h": 8
       },
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 12,
-        "h": 12
-      }
-    },
-    "slime": {
-      "frame": {
-        "x": 29,
-        "y": 15,
-        "w": 12,
-        "h": 12
-      },
-      "sourceSize": {
-        "w": 12,
-        "h": 12
-      },
-      "spriteSourceSize": {
-        "x": 0,
-        "y": 0,
-        "w": 12,
-        "h": 12
-      }
-    },
-    "goblin": {
-      "frame": {
-        "x": 43,
-        "y": 15,
-        "w": 12,
-        "h": 12
-      },
-      "sourceSize": {
-        "w": 12,
-        "h": 12
-      },
-      "spriteSourceSize": {
-        "x": 0,
-        "y": 0,
-        "w": 12,
-        "h": 12
-      }
-    },
-    "dungeon-guardian": {
-      "frame": {
-        "x": 57,
-        "y": 15,
-        "w": 12,
-        "h": 12
-      },
-      "sourceSize": {
-        "w": 12,
-        "h": 12
-      },
-      "spriteSourceSize": {
-        "x": 0,
-        "y": 0,
-        "w": 12,
-        "h": 12
+        "w": 8,
+        "h": 8
       }
     },
     "wall": {
       "frame": {
-        "x": 1,
-        "y": 29,
-        "w": 12,
-        "h": 12
+        "x": 21,
+        "y": 11,
+        "w": 8,
+        "h": 8
       },
       "sourceSize": {
-        "w": 12,
-        "h": 12
+        "w": 8,
+        "h": 8
       },
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 12,
-        "h": 12
+        "w": 8,
+        "h": 8
       }
     },
     "floor": {
       "frame": {
-        "x": 15,
-        "y": 29,
-        "w": 12,
-        "h": 12
+        "x": 31,
+        "y": 11,
+        "w": 8,
+        "h": 8
       },
       "sourceSize": {
-        "w": 12,
-        "h": 12
+        "w": 8,
+        "h": 8
       },
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 12,
-        "h": 12
+        "w": 8,
+        "h": 8
       }
     },
     "chest": {
       "frame": {
-        "x": 29,
-        "y": 29,
-        "w": 12,
-        "h": 12
+        "x": 41,
+        "y": 11,
+        "w": 8,
+        "h": 8
       },
       "sourceSize": {
-        "w": 12,
-        "h": 12
+        "w": 8,
+        "h": 8
       },
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 12,
-        "h": 12
+        "w": 8,
+        "h": 8
       }
     },
     "stairsDown": {
       "frame": {
-        "x": 43,
-        "y": 29,
-        "w": 12,
-        "h": 12
+        "x": 1,
+        "y": 21,
+        "w": 8,
+        "h": 8
       },
       "sourceSize": {
-        "w": 12,
-        "h": 12
+        "w": 8,
+        "h": 8
       },
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 12,
-        "h": 12
+        "w": 8,
+        "h": 8
       }
     },
     "boss": {
       "frame": {
-        "x": 57,
-        "y": 29,
-        "w": 12,
-        "h": 12
+        "x": 11,
+        "y": 21,
+        "w": 8,
+        "h": 8
       },
       "sourceSize": {
-        "w": 12,
-        "h": 12
+        "w": 8,
+        "h": 8
       },
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 12,
-        "h": 12
+        "w": 8,
+        "h": 8
       }
     }
   },
@@ -275,8 +221,8 @@
     "image": "atlas.png",
     "format": "RGBA8888",
     "size": {
-      "w": 70,
-      "h": 42
+      "w": 50,
+      "h": 30
     },
     "scale": "1"
   }
