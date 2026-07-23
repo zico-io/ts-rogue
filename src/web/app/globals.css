@@ -143,7 +143,12 @@ body {
 
 .portal {
   position: absolute;
-  inset: 0;
+  /* Explicit sizing, not `inset: 0`: Chromium won't treat .portalFrame's
+     aspect-ratio height as definite, so `inset` collapsed .portal to 800x600. */
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
   overflow: hidden;
   background: #000;
 }

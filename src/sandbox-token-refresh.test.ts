@@ -1,7 +1,11 @@
 import type { SandboxNetworkPolicy } from "eve/sandbox";
 import { describe, expect, it, vi } from "vitest";
 
-import { keepTokenFresh, resolveStartupNetworkPolicy } from "../agent/sandbox";
+import {
+  keepTokenFresh,
+  MAX_SET_POLICY_FAILURES,
+  resolveStartupNetworkPolicy,
+} from "../agent/sandbox";
 
 describe("keepTokenFresh", () => {
   it("re-mints and re-applies the policy on each interval", async () => {
@@ -87,7 +91,32 @@ describe("keepTokenFresh", () => {
     vi.useRealTimers();
   });
 
-  it("stops refreshing once the sandbox is torn down", async () => {
+  it("recovers from a transient setNetworkPolicy blip instead of stopping", async () => {
+    vi.useFakeTimers();
+    const good = { allow: { b: [] } } as SandboxNetworkPolicy;
+    const applied: SandboxNetworkPolicy[] = [];
+    let call = 0;
+    const sandbox = {
+      setNetworkPolicy: (policy: SandboxNetworkPolicy) => {
+        call++;
+        // First apply blips; refresh must not die on it.
+        if (call === 1) return Promise.reject(new Error("transient blip"));
+        applied.push(policy);
+        return Promise.resolve();
+      },
+    };
+
+    keepTokenFresh(sandbox, () => Promise.resolve(good), 1000);
+    await vi.advanceTimersByTimeAsync(1000); // apply blips -> retry scheduled
+    expect(applied).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1000); // retry applies successfully
+    expect(applied).toEqual([good]);
+    await vi.advanceTimersByTimeAsync(1000); // and keeps refreshing afterward
+    expect(applied).toEqual([good, good]);
+    vi.useRealTimers();
+  });
+
+  it("gives up only after MAX_SET_POLICY_FAILURES consecutive failures (sandbox torn down)", async () => {
     vi.useFakeTimers();
     let calls = 0;
     const sandbox = {
@@ -102,9 +131,10 @@ describe("keepTokenFresh", () => {
       () => Promise.resolve({ allow: {} } as SandboxNetworkPolicy),
       1000,
     );
-    await vi.advanceTimersByTimeAsync(5000);
+    // Advance well past the bounded retries; the chain must stop, not loop forever.
+    await vi.advanceTimersByTimeAsync(1000 * (MAX_SET_POLICY_FAILURES + 5));
 
-    expect(calls).toBe(1);
+    expect(calls).toBe(MAX_SET_POLICY_FAILURES);
     vi.useRealTimers();
   });
 });

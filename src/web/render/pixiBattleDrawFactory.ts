@@ -29,10 +29,50 @@ export function createPixiBattleDrawFactory(
     },
     createSprite(): BattleSpriteHandle {
       const sprite = new Sprite();
+      // Battlers are drawn centered in their art box (see `setSize` below),
+      // so anchor at the sprite's own center rather than Pixi's default
+      // top-left - `boxX`/`boxY`/`boxWidth`/`boxHeight` below track the box
+      // `battleView.ts` positions/sizes us into.
+      sprite.anchor.set(0.5);
       container.addChild(sprite);
+      let boxX = 0;
+      let boxY = 0;
+      let boxWidth = 0;
+      let boxHeight = 0;
+      /**
+       * Fits the sprite's native texture into the current box, preserving
+       * aspect ratio (no stretch), and centers the result inside it - the
+       * three battler PNGs have wildly different native sizes and aspect
+       * ratios (`dungeon-guardian` 470x614, `goblin` 161x166, `slime`
+       * 104x60), so this is the only place that can compute a fit, since
+       * `battleView.ts` never sees a texture's native pixel size (ROG-63).
+       */
+      const layout = () => {
+        sprite.position.set(boxX + boxWidth / 2, boxY + boxHeight / 2);
+        const nativeWidth = sprite.texture.width;
+        const nativeHeight = sprite.texture.height;
+        if (
+          boxWidth <= 0 ||
+          boxHeight <= 0 ||
+          nativeWidth <= 0 ||
+          nativeHeight <= 0
+        ) {
+          return;
+        }
+        const scale = Math.min(
+          boxWidth / nativeWidth,
+          boxHeight / nativeHeight,
+        );
+        // Round to whole device pixels so nearest-neighbor sampling doesn't
+        // straddle texel boundaries unevenly.
+        sprite.width = Math.round(nativeWidth * scale);
+        sprite.height = Math.round(nativeHeight * scale);
+      };
       return {
         setPosition(x: number, y: number) {
-          sprite.position.set(x, y);
+          boxX = x;
+          boxY = y;
+          layout();
         },
         setTexture(name: string) {
           const texture = textures[name];
@@ -42,6 +82,12 @@ export function createPixiBattleDrawFactory(
             // matching the other draw factories' pattern.
             sprite.texture.source.scaleMode = "nearest";
           }
+          layout();
+        },
+        setSize(width: number, height: number) {
+          boxWidth = width;
+          boxHeight = height;
+          layout();
         },
         setTint(color: number) {
           sprite.tint = color;

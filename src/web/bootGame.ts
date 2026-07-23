@@ -200,10 +200,36 @@ export async function bootGame(
   const app = new Application();
   await app.init({
     resizeTo: mount,
-    backgroundColor: "#000000",
+    // The void behind every scene (ROG-63) - `theme.background`, not a raw
+    // literal, so it stays the single source of truth `SceneChromeView`'s
+    // own interior fill (`sceneView.ts`) matches.
+    backgroundColor: theme.background,
     antialias: true,
+    // Render the canvas's backing buffer at the device pixel ratio (falling
+    // back to 1 if it's ever missing, e.g. a mocked `window`) and let Pixi
+    // keep the CSS size matched via `autoDensity` - without this, HiDPI
+    // screens render at 1x CSS pixels and the browser blurs the upscale
+    // (ROG-63).
+    resolution: window.devicePixelRatio || 1,
+    autoDensity: true,
   });
   mount.appendChild(app.canvas);
+
+  // `resizeTo: mount` only re-measures on a *window* `resize` event (see
+  // Pixi's `ResizePlugin`) - it never observes `mount` itself, so a portal
+  // that changes size for any other reason (the `.portalFrame`'s CSS
+  // `aspect-ratio` settling after layout, the min-size notice's own effect
+  // on the surrounding flex layout, a container query) leaves the canvas
+  // stuck at its last window-resize size instead of filling the portal
+  // (ROG-63). A `ResizeObserver` on `mount` keeps the renderer honest
+  // regardless of *why* the portal's box changed; `renderer.resize()` emits
+  // the same `"resize"` event `resizeTo` would, so the redraw/min-size wiring
+  // below stays a single listener.
+  const portalResizeObserver = new ResizeObserver(() => {
+    app.renderer.resize(mount.clientWidth, mount.clientHeight);
+  });
+  portalResizeObserver.observe(mount);
+  disposers.push(() => portalResizeObserver.disconnect());
 
   /**
    * Which of the Ink terminal renderer's three top-level phases (see
@@ -1143,10 +1169,10 @@ export async function bootGame(
       ? `Portal too small - the window needs room for at least a ${MIN_WIDTH}x${MIN_HEIGHT}px portal (current: ${width}x${height})`
       : "";
   }
-  // The Pixi renderer's `resize` fires from its `resizeTo: mount` observer, so it
-  // already tracks the portal's own size (not just window resizes); drive both
-  // the redraw and the min-size notice from it, with a window `resize` as a
-  // belt-and-braces fallback.
+  // `renderer.resize()` emits `"resize"` whether it's `resizeTo`'s own
+  // window-resize handler or the `ResizeObserver` above that triggers it;
+  // drive both the redraw and the min-size notice from this one listener,
+  // with a window `resize` kept as a belt-and-braces fallback.
   app.renderer.on("resize", () => {
     renderCurrent();
     updateMinSizeOverlay();

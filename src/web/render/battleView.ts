@@ -45,9 +45,16 @@ export interface DrawHandle {
   destroy(): void;
 }
 
-/** A positioned, texture-backed enemy sprite. */
+/**
+ * A positioned, texture-backed enemy sprite. `setSize` gives the real Pixi
+ * adapter the square art box (see `ART_PX`) to fit the sprite's native
+ * texture into, preserving aspect ratio - the three battler PNGs have
+ * wildly different native sizes (`battlers.ts`), so the box, not the
+ * texture's own pixel dimensions, is what stays consistent (ROG-63).
+ */
 export interface BattleSpriteHandle extends DrawHandle {
   setTexture(name: string): void;
+  setSize(width: number, height: number): void;
   /** `0xffffff` (no tint) leaves the texture's own colors untouched. */
   setTint(color: number): void;
 }
@@ -81,7 +88,13 @@ export interface PixelSize {
   height: number;
 }
 
-/** Pixel size of one enemy's art tile - native 12x12 scaled up, matching `main.ts`'s `PREVIEW_SCALE`. */
+/**
+ * Pixel size of the square art box each enemy's sprite/rect is drawn into.
+ * Battlers are their own scale class from the 8x8 tile atlas (loaded
+ * individually by `battlers.ts`, see `pixiBattleDrawFactory.ts`'s module
+ * doc), so this is just a fixed slot size for the battle layout, not tied
+ * to any tile pitch.
+ */
 const ART_PX = 72;
 const ENEMY_GAP_PX = 24;
 const ROW_GAP_PX = 16;
@@ -321,6 +334,7 @@ export class BattleSceneView {
     entry.handle.setPosition(x, y);
     if (entry.kind === "sprite") {
       entry.handle.setTexture(enemy.sprite as string);
+      entry.handle.setSize(ART_PX, ART_PX);
       entry.handle.setTint(tint);
     } else {
       entry.handle.setSize(ART_PX, ART_PX);

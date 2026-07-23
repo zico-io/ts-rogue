@@ -16,12 +16,22 @@ export const ATLAS_BUNDLE = "atlas";
 
 let bundleAdded = false;
 
-/** Registers (once) and loads the atlas bundle, returning the parsed `Spritesheet`. */
+/**
+ * Registers (once) and loads the atlas bundle, returning the parsed
+ * `Spritesheet`. Every atlas frame shares one `textureSource` (the packed
+ * `atlas.png`), so nearest-neighbor filtering is set once here, at the
+ * source, rather than relying on a draw factory's per-sprite assignment
+ * (`pixiOverworldDrawFactory.ts`/`pixiDungeonDrawFactory.ts`) to hit it as a
+ * side effect (ROG-63) - those per-sprite assignments are now defensive
+ * no-ops.
+ */
 export async function loadAtlas(): Promise<Spritesheet> {
   if (!bundleAdded) {
     Assets.addBundle(ATLAS_BUNDLE, { atlas: "/atlas/atlas.json" });
     bundleAdded = true;
   }
   const bundle = await Assets.loadBundle(ATLAS_BUNDLE);
-  return bundle.atlas as Spritesheet;
+  const sheet = bundle.atlas as Spritesheet;
+  sheet.textureSource.scaleMode = "nearest";
+  return sheet;
 }

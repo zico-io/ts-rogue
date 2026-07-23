@@ -74,6 +74,17 @@ const ROW_HEIGHT_PX = UNIT_PX;
 const METER_HEIGHT_PX = Math.round(UNIT_PX * 0.5);
 /** Left/right and top padding inside the panel border, matching the Ink interpreter's `paddingX`. */
 const PANEL_PADDING_PX = UNIT_PX;
+/**
+ * Thickness of the visible border line. The Ink interpreter's border is a
+ * real outline (one terminal cell's worth of box-drawing characters) with
+ * the terminal's own implicit black behind it; the Pixi border rect below
+ * is a full-bleed fill instead (no stroke API on `RectHandle`), so a second,
+ * inset `background` rect covers everything but this margin - otherwise
+ * every pixel a scene's content doesn't cover reads as `theme.border`'s
+ * bright indigo instead of the dark interior the TUI's border implies
+ * (ROG-63).
+ */
+const BORDER_THICKNESS_PX = 3;
 
 /** One HP/MP meter's two rect handles. */
 interface MeterHandles {
@@ -88,6 +99,7 @@ interface MeterHandles {
  */
 export class SceneChromeView {
   private border: RectHandle | undefined;
+  private background: RectHandle | undefined;
   private title: TextHandle | undefined;
   private readonly texts = new Map<string, TextHandle>();
   private readonly meters = new Map<string, MeterHandles>();
@@ -118,6 +130,14 @@ export class SceneChromeView {
     this.border.setPosition(0, 0);
     this.border.setSize(pixelSize.width, pixelSize.height);
     this.border.setColor(toPixiColor(theme.border));
+
+    if (!this.background) this.background = this.factory.createRect();
+    this.background.setPosition(BORDER_THICKNESS_PX, BORDER_THICKNESS_PX);
+    this.background.setSize(
+      Math.max(0, pixelSize.width - BORDER_THICKNESS_PX * 2),
+      Math.max(0, pixelSize.height - BORDER_THICKNESS_PX * 2),
+    );
+    this.background.setColor(toPixiColor(theme.background));
 
     if (!this.title) this.title = this.factory.createText(panel.title ?? "");
     this.title.setText(panel.title ?? "");

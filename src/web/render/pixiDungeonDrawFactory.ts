@@ -48,6 +48,8 @@ function buildWallTexelTextures(sheet: Spritesheet): Texture[] {
         frame.height,
       ),
     });
+    // Each cropped `Texture` wraps the same shared atlas source `atlas.ts`'s
+    // `loadAtlas()` already sets to nearest-neighbor; defensive no-op here.
     texture.source.scaleMode = "nearest";
     textures.push(texture);
   }
@@ -135,6 +137,8 @@ export function createPixiDungeonDrawFactory(
           const texture = sheet.textures[name];
           if (texture && sprite.texture !== texture) {
             sprite.texture = texture;
+            // `atlas.ts`'s `loadAtlas()` already sets this on the shared
+            // texture source; defensive no-op here (ROG-63).
             sprite.texture.source.scaleMode = "nearest";
           }
         },

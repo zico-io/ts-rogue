@@ -8,6 +8,7 @@ import type { RectHandle } from "./sceneView";
 interface FakeSprite extends SpriteHandle {
   setPosition: ReturnType<typeof vi.fn<(x: number, y: number) => void>>;
   setTexture: ReturnType<typeof vi.fn<(name: string) => void>>;
+  setSize: ReturnType<typeof vi.fn<(width: number, height: number) => void>>;
   setTint: ReturnType<typeof vi.fn<(color: number) => void>>;
   destroy: ReturnType<typeof vi.fn<() => void>>;
 }
@@ -35,6 +36,7 @@ function fakeFactory(): FakeFactory {
       const handle: FakeSprite = {
         setPosition: vi.fn(),
         setTexture: vi.fn(),
+        setSize: vi.fn(),
         setTint: vi.fn(),
         destroy: vi.fn(),
       };
@@ -75,6 +77,10 @@ describe("OverworldSceneView", () => {
       0,
     );
     expect(playerSprite?.setPosition).toHaveBeenCalled();
+    // Every viewport tile sprite is scaled up from its native 8px atlas
+    // frame to fill the tile cell (ROG-63); otherwise it renders at 8px and
+    // leaves the rest of the cell empty.
+    expect(playerSprite?.setSize).toHaveBeenCalledWith(TILE_PX, TILE_PX);
   });
 
   it("reuses sprite/rect handles across renders when the map and state are unchanged", () => {
