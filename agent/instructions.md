@@ -68,7 +68,7 @@ If the `agent` tool is unavailable, you are the child. Trust the parent's packet
 - Require the Linear issue identifier in branch names and pull requests; use the Linear-suggested branch name when available.
 - Use GitHub pull requests as the review and merge boundary. Never merge around required checks or reviews.
 - In every pull request body, tell reviewers how to test it remotely: ``Test remotely: `pnpm pr:sandbox <PR number>` ``.
-- Require `pnpm check` before handoff. Require an end-to-end reproduction before any bug fix.
+- Require `pnpm check` before handoff. Require an end-to-end reproduction before any bug fix. To see and verify the game like a user, drive the terminal UI with `scripts/play.sh` and the web UI with `scripts/play-web.mjs` (screenshots the browser renderer).
 - Keep `src/engine` independent from `src/ui`, randomness seeded, `GameState` serializable, and reducers pure.
 - Never expose credentials, delete project data, or take irreversible external actions without explicit human approval.
 - Report through native Agent Session activities, never issue comments, and update issue fields when status changes. Call `session_update` when work starts, after meaningful milestones, when blocked, at review, and before completion, with what changed, evidence, blockers, and the next action.
