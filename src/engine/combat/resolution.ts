@@ -882,7 +882,9 @@ export function resolveBattleEvent(
   const defendingIds = new Set(bs.defendingIds);
   const logs: LogEntry[] = [];
 
-  const actorCopy = party.find((m) => m.id === actor.id)!;
+  // party is a positional clone of state.party, so actor's clone sits at the
+  // same index - avoids a re-find and a non-null assertion.
+  const actorCopy = party[state.party.indexOf(actor)];
   // A fresh turn: defend must be re-chosen each round to persist the stance.
   defendingIds.delete(actorCopy.id);
   const result = applyMemberCommand(
@@ -946,6 +948,10 @@ export function resolveBattleEvent(
   }
 
   // Round paused with the battle still ongoing: await the next actor's command.
+  // advanceRound only returns a null nextActorId alongside a "lost" status
+  // (handled above), so an ongoing battle always names its next actor.
+  if (nextActorId === null)
+    throw new Error("ongoing battle resolved without a next actor");
   const inventory = itemUsed
     ? consumeItem(state.inventory, itemUsed)
     : state.inventory;
@@ -959,7 +965,7 @@ export function resolveBattleEvent(
       enemies,
       status: "ongoing",
       awaitingCommand: true,
-      activeMemberId: nextActorId!,
+      activeMemberId: nextActorId,
       defendingIds: [...defendingIds],
     },
     log: [...state.log, ...logs],
