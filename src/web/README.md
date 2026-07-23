@@ -434,19 +434,26 @@ reads as the same artifact as the game.
 
 ## Deployment
 
-The game ships as part of one Vercel deployment shared with the `eve` agent.
-`vercel.json` sets `framework: null` and `buildCommand: pnpm vercel:build`,
-which runs `eve build`, then `pnpm web:build` (Next static export into
-`src/web/out`), then `scripts/merge-web-into-eve-output.mjs` - which copies the
-export into eve's Vercel Build Output (`.vercel/output/static`) and inserts a
-`/ -> /index.html` route ahead of eve's own `/`, so `/` serves the game (and
-`/_next/*` its assets) while `/eve/v1/*` and the `__server` catch-all stay
-eve's.
+The game ships as part of one Vercel deployment shared with the `eve` agent, and
+**this Next.js app is the host**. `next.config.mjs` wraps the config with
+`withEve` from `eve/next`, pointing `eveRoot` at the repo-root `agent/`. That
+mounts the agent at `/eve/v1/*`:
 
-### Static export, and the TypeScript toolchain it needs
+- **On Vercel**, `withEve` writes a Build Output `eve` *service* (which runs
+  `eve build` for the agent) plus a route sending `/eve/v1/**` to it ahead of
+  filesystem routing. Next stays the default app, so `/` serves the game (and
+  `/_next/*` and `/atlas/*` its assets), while `/eve/v1/*` and
+  `/.well-known/workflow/*` reach eve. One project, same origin, no CORS.
+- **Locally**, `withEve` boots an `eve dev` server beside `next dev` (and
+  `next build`/`next start`) and rewrites `/eve/**` to it.
 
-Next.js is used purely as the app shell + static-site generator
-(`next.config.mjs` sets `output: "export"`); there is no Next server at runtime.
+`src/web` is a pnpm workspace package (`@ts-rogue/web`) so Vercel detects it as a
+Next.js project: set the Vercel project **Root Directory to `src/web`**. Vercel's
+"Include files outside the root directory" (default on) makes the repo-root
+`agent/` available to the generated eve service build. There is no static export
+and no merge script - Next owns runtime routing.
+
+### The TypeScript toolchain the Next build needs
 
 The `typescript` package is **stable v5** (not the TypeScript 7 native preview),
 because Next's build loads the TypeScript compiler API - which the native
