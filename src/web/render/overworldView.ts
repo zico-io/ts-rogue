@@ -70,17 +70,6 @@ const METER_HEIGHT_PX = 14;
 const METER_GAP_PX = 10;
 
 /**
- * `Tile`/`"player"` -> theme biome color, converted to Pixi's `0xRRGGBB` int.
- * `Cell.tile` is typed as the broader `TileName` (it shares the atlas's
- * frame-name alphabet), but overworld cells only ever carry a `Tile` or
- * `"player"`; anything else falls back to plain white (no tint).
- */
-function biomeTint(tile: TileName): number {
-  const hex = (theme.biome as Partial<Record<TileName, string>>)[tile];
-  return hex ? toPixiColor(hex) : 0xffffff;
-}
-
-/**
  * Draws the overworld's camera-follow tilemap, a whole-map minimap, and the
  * encounter meter, matching the TUI's layout intent (viewport + minimap side
  * by side, meter below) without depending on Ink's box model.
@@ -200,7 +189,9 @@ export class OverworldSceneView {
         sprite.setSize(tilePx, tilePx);
         const tile = cell.tile ?? "grass";
         sprite.setTexture(tile);
-        sprite.setTint(biomeTint(tile));
+        // Minifantasy frames are full-color (ROG-68); no biome multiply-tint,
+        // which was a hack for the old monochrome Urizen tiles.
+        sprite.setTint(0xffffff);
       }
     }
   }
