@@ -43,6 +43,7 @@ import { loadHudFont } from "./font";
 import { BrowserKeyboardManager } from "./input/keyboard";
 import { normalizeBrowserKey } from "./input/normalizeBrowserKey";
 import { BattleSceneView } from "./render/battleView";
+import { createPaletteGrade } from "./render/colorGrade";
 import { CrashOverlayView } from "./render/crashOverlay";
 import { DevConsoleOverlayView } from "./render/devConsoleOverlay";
 import { DungeonSceneView } from "./render/dungeonView";
@@ -257,6 +258,12 @@ export async function bootGame(
     autoDensity: true,
   });
   mount.appendChild(app.canvas);
+
+  // Whole-frame palette-lock grade (ROG-67 art direction §2.4/WEB-1) - applied
+  // once to the stage so it covers every scene uniformly, including the
+  // Aekashics battler sprites the Minifantasy-only atlas grade in
+  // `scripts/build-atlas.ts` never touches. See `render/colorGrade.ts`.
+  app.stage.filters = createPaletteGrade();
 
   // HUD bitmap pixel font (ROG-64) - installed before any scene chrome is
   // built below so `createPixiDrawFactory`'s `createText` picks it up from
