@@ -60,6 +60,50 @@ const PREVIEW_SCALE = 9;
 /** No settings persistence in the browser yet, so New Game always defaults to this name. */
 const DEFAULT_HERO_NAME = "Hero";
 
+/** Base font/line-height/margin the menu-plumbing views (title, game over, village) were tuned at, and the portal's default CSS width (`.portalFrame` in `app/globals.css`) that scale is anchored to. */
+const MENU_BASE_FONT_PX = 14;
+const MENU_BASE_LOGO_FONT_PX = 16;
+const MENU_BASE_LINE_HEIGHT_PX = 18;
+const MENU_BASE_LOGO_LINE_HEIGHT_PX = 20;
+const MENU_BASE_MARGIN_PX = 24;
+const MENU_BASE_VILLAGE_MARGIN_PX = 8;
+const MENU_BASELINE_WIDTH_PX = 960;
+/** Cap on how far menu text scales up on a much bigger canvas - modest, not a doubling, so long lines (e.g. control hints) keep fitting comfortably. */
+const MENU_SCALE_MAX = 1.8;
+
+/**
+ * Font/line-height/margin for the menu-plumbing views (title, game over,
+ * village overview/building text - see "Title, village, and game-over"
+ * below), derived from the available pixel size instead of hardcoded
+ * literals (ROG-66). Below `MENU_BASELINE_WIDTH_PX` this reproduces the
+ * original fixed sizing exactly (`scale` clamps to 1); above it, text/margins
+ * grow so a much bigger canvas doesn't leave the same small text pinned in
+ * one corner of a proportionally huge void.
+ */
+interface MenuLayout {
+  fontSize: number;
+  logoFontSize: number;
+  lineHeight: number;
+  logoLineHeight: number;
+  margin: number;
+  villageMargin: number;
+}
+
+function menuLayout(pixelSize: { width: number; height: number }): MenuLayout {
+  const scale = Math.max(
+    1,
+    Math.min(MENU_SCALE_MAX, pixelSize.width / MENU_BASELINE_WIDTH_PX),
+  );
+  return {
+    fontSize: Math.round(MENU_BASE_FONT_PX * scale),
+    logoFontSize: Math.round(MENU_BASE_LOGO_FONT_PX * scale),
+    lineHeight: Math.round(MENU_BASE_LINE_HEIGHT_PX * scale),
+    logoLineHeight: Math.round(MENU_BASE_LOGO_LINE_HEIGHT_PX * scale),
+    margin: Math.round(MENU_BASE_MARGIN_PX * scale),
+    villageMargin: Math.round(MENU_BASE_VILLAGE_MARGIN_PX * scale),
+  };
+}
+
 /**
  * Boots the PixiJS renderer into `mount` (the Next.js chrome's portal
  * container, ROG-54) and returns a {@link BootHandle} whose `dispose()` tears
@@ -393,6 +437,15 @@ export async function bootGame(
   async function showAtlasPreview(): Promise<void> {
     const sheet = await loadAtlas();
     const villageContent = entries.village.contentContainer;
+    // Runs before the chrome's first `renderChrome()` populates
+    // `contentRects`, so scale off the full canvas rather than the (not yet
+    // known) village content rect - close enough for this one-time smoke
+    // test overlay (ROG-66: keep it consistent with the rest of the menu
+    // scaling instead of a stray fixed-size artifact).
+    const layout = menuLayout({
+      width: app.screen.width,
+      height: app.screen.height,
+    });
     const previewLabel = new Text({
       text: "atlas preview: grass tile + wall tile",
       style: {
@@ -401,13 +454,13 @@ export async function bootGame(
         fontFamily: "monospace",
       },
     });
-    previewLabel.position.set(24, 72);
+    previewLabel.position.set(layout.margin, layout.margin * 3);
     villageContent.addChild(previewLabel);
 
     const grass = new Sprite(sheet.textures.grass);
     grass.texture.source.scaleMode = "nearest";
     grass.scale.set(PREVIEW_SCALE);
-    grass.position.set(24, 96);
+    grass.position.set(layout.margin, layout.margin * 4);
     villageContent.addChild(grass);
 
     // Slime/goblin/dungeon-guardian are battlers now (ROG-68) - loaded as
@@ -416,7 +469,10 @@ export async function bootGame(
     const wall = new Sprite(sheet.textures.wall);
     wall.texture.source.scaleMode = "nearest";
     wall.scale.set(PREVIEW_SCALE);
-    wall.position.set(24 + grass.texture.frame.width * PREVIEW_SCALE + 16, 96);
+    wall.position.set(
+      layout.margin + grass.texture.frame.width * PREVIEW_SCALE + 16,
+      layout.margin * 4,
+    );
     villageContent.addChild(wall);
   }
   try {
@@ -425,8 +481,21 @@ export async function bootGame(
     store.reportFailure("atlas", error, true);
   }
 
-  /** Pixel size of one main-viewport overworld tile; the minimap draws smaller than this (see `overworldView.ts`). */
-  const OVERWORLD_TILE_PX = 24;
+  /** Target number of overworld viewport columns at the default portal width, used to derive a tile size that scales with the available space instead of a fixed pixel constant (ROG-66). */
+  const OVERWORLD_TARGET_COLS = 22;
+  const OVERWORLD_MIN_TILE_PX = 20;
+  const OVERWORLD_MAX_TILE_PX = 40;
+
+  /** Pixel size of one main-viewport overworld tile, scaled off the available viewport width; the minimap draws smaller than this regardless (see `overworldView.ts`). */
+  function overworldTilePx(availableWidth: number): number {
+    return Math.max(
+      OVERWORLD_MIN_TILE_PX,
+      Math.min(
+        OVERWORLD_MAX_TILE_PX,
+        Math.round(availableWidth / OVERWORLD_TARGET_COLS),
+      ),
+    );
+  }
 
   let overworldView: OverworldSceneView | undefined;
 
@@ -553,6 +622,10 @@ export async function bootGame(
   /** Draws the title menu: logo, then whichever of menu/class/mode/name is active. */
   function renderTitle(): void {
     clearContainer(titleContainer);
+    const layout = menuLayout({
+      width: app.screen.width,
+      height: app.screen.height,
+    });
 
     let y = drawLines(
       titleContainer,
@@ -560,9 +633,13 @@ export async function bootGame(
         text,
         color: toPixiColor(theme.logoGradient[index]),
       })),
-      24,
-      24,
-      { lineHeight: 20, fontSize: 16, bold: true },
+      layout.margin,
+      layout.margin,
+      {
+        lineHeight: layout.logoLineHeight,
+        fontSize: layout.logoFontSize,
+        bold: true,
+      },
     );
     y = drawLines(
       titleContainer,
@@ -572,8 +649,9 @@ export async function bootGame(
           color: toPixiColor(theme.textMuted),
         },
       ],
-      24,
+      layout.margin,
       y + 6,
+      { fontSize: layout.fontSize, lineHeight: layout.lineHeight },
     );
     y += 12;
 
@@ -630,12 +708,16 @@ export async function bootGame(
         break;
       }
     }
-    y = drawLines(titleContainer, lines, 24, y);
+    y = drawLines(titleContainer, lines, layout.margin, y, {
+      fontSize: layout.fontSize,
+      lineHeight: layout.lineHeight,
+    });
     drawLines(
       titleContainer,
       [{ text: hint, color: toPixiColor(theme.textMuted) }],
-      24,
+      layout.margin,
       y + 8,
+      { fontSize: layout.fontSize, lineHeight: layout.lineHeight },
     );
   }
 
@@ -700,22 +782,31 @@ export async function bootGame(
   /** Draws the game-over view: banner, one-line summary, and the restart/quit hint. */
   function renderGameOverView(): void {
     clearContainer(gameOverContainer);
+    const layout = menuLayout({
+      width: app.screen.width,
+      height: app.screen.height,
+    });
     let y = drawLines(
       gameOverContainer,
       BANNER.map((text, index) => ({
         text,
         color: toPixiColor(theme.gameOverGradient[index]),
       })),
-      24,
-      24,
-      { lineHeight: 20, fontSize: 16, bold: true },
+      layout.margin,
+      layout.margin,
+      {
+        lineHeight: layout.logoLineHeight,
+        fontSize: layout.logoFontSize,
+        bold: true,
+      },
     );
     y += 12;
     y = drawLines(
       gameOverContainer,
       [{ text: "The party has perished. The run is over." }],
-      24,
+      layout.margin,
       y,
+      { fontSize: layout.fontSize, lineHeight: layout.lineHeight },
     );
     drawLines(
       gameOverContainer,
@@ -725,8 +816,9 @@ export async function bootGame(
           color: toPixiColor(theme.textMuted),
         },
       ],
-      24,
+      layout.margin,
       y + 8,
+      { fontSize: layout.fontSize, lineHeight: layout.lineHeight },
     );
   }
 
@@ -993,7 +1085,23 @@ export async function bootGame(
         lines = buildVillageOverviewLines(state, village.overview);
         break;
     }
-    drawLines(villageContentContainer, lines, 8, 8);
+
+    // Scale text/margins to the village content rect, and vertically center
+    // the block when it's shorter than the available height instead of
+    // always pinning it flush at the top - on a much bigger canvas than a
+    // terminal's, a handful of short menu lines otherwise leaves most of the
+    // content region an unbalanced void below them (ROG-66).
+    const rect = contentRects.village;
+    const layout = menuLayout(rect);
+    const blockHeight = lines.length * layout.lineHeight;
+    const marginTop = Math.max(
+      layout.villageMargin,
+      (rect.height - blockHeight) / 2,
+    );
+    drawLines(villageContentContainer, lines, layout.villageMargin, marginTop, {
+      fontSize: layout.fontSize,
+      lineHeight: layout.lineHeight,
+    });
   }
 
   /**
@@ -1012,7 +1120,7 @@ export async function bootGame(
       state,
       map,
       { width: rect.width, height: rect.height },
-      OVERWORLD_TILE_PX,
+      overworldTilePx(rect.width),
     );
   }
 
