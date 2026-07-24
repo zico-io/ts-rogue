@@ -4,7 +4,7 @@
 
 `minifantasy/*.png` - the vendored source sheets the browser atlas is packed from (`scripts/build-atlas.ts`, coordinates in `src/ui/tiles/sources.ts`). Each is native 8x8 pixel art. Acquired as itch.io downloads attached to ROG-68; only the specific sheets the atlas consumes are committed here:
 
-- `forgotten_plains.png` - Tiny Overworld / Forgotten Plains tileset. Feeds `grass`, `water`, `mountain`.
+- `forgotten_plains.png` - Tiny Overworld / Forgotten Plains tileset. Feeds `grass`, `water`, `mountain`, plus `mountainSmall`/`mountainLarge` (ROG-73: same mossy-boulder family, color-matched crops of genuinely smaller/larger rock formations already on this sheet, used for a mountain tile's local-cluster-density auto-tile stand-in - `src/ui/tiles/overworldVariants.ts`). The pack also ships a `Biomes_Merging_Tiles` sheet with cross-biome edge blends, not vendored here - its dithered transitions aren't safely hand-croppable without a way to visually verify the result; see ROG-73's PR notes for the follow-up.
 - `overworld_props.png` - Tiny Overworld / All Props. Feeds `forest` (a tree).
 - `constructions.png` - Tiny Overworld / Constructions. Feeds the `village` and `dungeonEntrance` markers (single-tile crops from multi-tile buildings; interim reads pending the dedicated Towns pack, ROG-65).
 - `dungeon_tileset.png` - Dungeon tileset. Feeds `wall`, `floor`, `stairsDown`.

@@ -26,6 +26,9 @@ export interface TileGlyph {
 
 export interface Cell extends TileGlyph {
   key: string;
+  /** World tile coordinate (viewport) or downsampled block coordinate (minimap). */
+  x: number;
+  y: number;
   /** Tile-sheet frame name for the browser (Pixi) renderer; the terminal ignores it. */
   tile?: TileName;
 }
@@ -98,7 +101,7 @@ export function buildViewportRows(
       const isPlayer = x === player.x && y === player.y;
       const glyph = isPlayer ? PLAYER_GLYPH : glyphFor(map.tiles[y][x]);
       const tile = isPlayer ? "player" : map.tiles[y][x];
-      row.push({ ...glyph, key: `${x},${y}`, tile });
+      row.push({ ...glyph, key: `${x},${y}`, x, y, tile });
     }
     rows.push(row);
   }
@@ -174,7 +177,7 @@ export function buildMinimapRows(
       const glyph = isPlayer
         ? PLAYER_GLYPH
         : glyphFor(sampleBlock(map, bx, by, scale));
-      row.push({ ...glyph, key: `${bx},${by}` });
+      row.push({ ...glyph, key: `${bx},${by}`, x: bx, y: by });
     }
     rows.push(row);
   }

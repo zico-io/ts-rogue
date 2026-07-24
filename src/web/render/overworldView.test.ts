@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { newGame } from "../../engine/state/store";
 import { generateOverworldMap } from "../../engine/world/overworld";
+import type { OverworldMap, Tile } from "../../engine/world/types";
+import { theme, toPixiColor } from "../../ui/theme";
 import type { OverworldDrawFactory, SpriteHandle } from "./overworldView";
 import { OverworldSceneView } from "./overworldView";
 import type { RectHandle } from "./sceneView";
@@ -58,6 +60,26 @@ function fakeFactory(): FakeFactory {
 
 const SIZE = { width: 400, height: 300 };
 const TILE_PX = 20;
+
+/** Builds a minimal `OverworldMap` from a row-major grid of single-char tile codes (ROG-73 tests). */
+function mapFrom(rows: string[]): OverworldMap {
+  const codes: Record<string, Tile> = {
+    g: "grass",
+    f: "forest",
+    m: "mountain",
+    w: "water",
+    v: "village",
+    d: "dungeonEntrance",
+  };
+  const tiles = rows.map((row) => row.split("").map((c) => codes[c]));
+  return {
+    width: tiles[0].length,
+    height: tiles.length,
+    tiles,
+    village: { x: 0, y: 0 },
+    dungeonEntrances: [],
+  };
+}
 
 describe("OverworldSceneView", () => {
   it("positions and textures a viewport sprite per cell, tinting the player's cell with the player color", () => {
@@ -135,6 +157,83 @@ describe("OverworldSceneView", () => {
       (sprite) => sprite.destroy.mock.calls.length > 0,
     ).length;
     expect(destroyedCount).toBeGreaterThan(0);
+  });
+
+  it("draws a shore fringe rect on a water tile bordering land (ROG-73)", () => {
+    const factory = fakeFactory();
+    const view = new OverworldSceneView(factory);
+    const state = newGame(1);
+    const map = mapFrom(["ggggg", "gwwwg", "gwwwg", "gwwwg", "ggggg"]);
+    const positioned = {
+      ...state,
+      worldState: { ...state.worldState, player: { x: 0, y: 0 } },
+    };
+
+    view.render(positioned, map, SIZE, TILE_PX);
+
+    const shoreColor = toPixiColor(theme.biome.shore);
+    const shoreRects = factory.rects.filter((rect) =>
+      rect.setColor.mock.calls.some((call) => call[0] === shoreColor),
+    );
+    expect(shoreRects.length).toBeGreaterThan(0);
+  });
+
+  it("draws no shore fringe for a water tile fully surrounded by water (ROG-73)", () => {
+    const factory = fakeFactory();
+    const view = new OverworldSceneView(factory);
+    const state = newGame(1);
+    const map = mapFrom(["wwwww", "wwwww", "wwwww", "wwwww", "wwwww"]);
+    const positioned = {
+      ...state,
+      worldState: { ...state.worldState, player: { x: 0, y: 0 } },
+    };
+
+    view.render(positioned, map, SIZE, TILE_PX);
+
+    const shoreColor = toPixiColor(theme.biome.shore);
+    const shoreRects = factory.rects.filter((rect) =>
+      rect.setColor.mock.calls.some((call) => call[0] === shoreColor),
+    );
+    expect(shoreRects.length).toBe(0);
+  });
+
+  it("scales a mountain tile larger the more same-type neighbors it has (ROG-73)", () => {
+    const factory = fakeFactory();
+    const view = new OverworldSceneView(factory);
+    const state = newGame(1);
+    // (0,0) mountain is isolated; (3,2) mountain sits at the center of a 3x3
+    // cluster, so it should render bigger than the isolated one.
+    const map = mapFrom(["mgggg", "ggmmm", "ggmmm", "ggmmm", "ggggg"]);
+    const positioned = {
+      ...state,
+      worldState: { ...state.worldState, player: { x: 0, y: 4 } },
+    };
+
+    view.render(positioned, map, SIZE, TILE_PX);
+
+    const isolated = factory.sprites[0 * 5 + 0];
+    const clustered = factory.sprites[2 * 5 + 3];
+    const isolatedSize = isolated.setSize.mock.calls.at(-1)?.[0] as number;
+    const clusteredSize = clustered.setSize.mock.calls.at(-1)?.[0] as number;
+    expect(clusteredSize).toBeGreaterThan(isolatedSize);
+  });
+
+  it("swaps to a differently-sized mountain crop by same-type neighbor count (ROG-73)", () => {
+    const factory = fakeFactory();
+    const view = new OverworldSceneView(factory);
+    const state = newGame(1);
+    const map = mapFrom(["mgggg", "ggmmm", "ggmmm", "ggmmm", "ggggg"]);
+    const positioned = {
+      ...state,
+      worldState: { ...state.worldState, player: { x: 0, y: 4 } },
+    };
+
+    view.render(positioned, map, SIZE, TILE_PX);
+
+    const isolated = factory.sprites[0 * 5 + 0];
+    const clustered = factory.sprites[2 * 5 + 3];
+    expect(isolated.setTexture.mock.calls.at(-1)?.[0]).toBe("mountainSmall");
+    expect(clustered.setTexture.mock.calls.at(-1)?.[0]).toBe("mountainLarge");
   });
 
   it("sizes the encounter meter's fill rect proportionally to encounterMeter/ENCOUNTER_THRESHOLD", () => {

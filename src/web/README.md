@@ -187,7 +187,39 @@ keyed by frame name. `main.ts` looks sprites up by name, e.g.
    loadAtlas(); new Sprite(sheet.textures["<name>"])`, and set
    `texture.source.scaleMode = "nearest"` before scaling it up.
 
+### Overworld terrain auto-tile stand-in (ROG-73)
+
+`render/overworldView.ts`'s `OverworldSceneView` does not draw every
+grass/water/mountain/forest/village/dungeonEntrance tile at a fixed size and
+texture - `src/ui/tiles/overworldVariants.ts` (pure, unit-tested in
+`overworldVariants.test.ts`) computes a neighbor-driven render variant per
+tile instead:
+
+- A **water** tile bordering land grows a sand-tinted (`theme.biome.shore`)
+  fringe rect on its land-adjacent side(s), a lightweight stand-in for a real
+  shore-edge autotile.
+- A **mountain** tile swaps to `mountainSmall`/`mountain`/`mountainLarge` -
+  color-matched crops of genuinely differently-sized rock formations already
+  on `forgotten_plains.png` (`mountainTexture`, ROG-73) - by its same-type
+  orthogonal neighbor count, and every mountain/forest tile also scales up
+  with that count (`clusterScale`): an isolated tile draws smaller, a dense
+  cluster draws larger and with real extra rock detail, not just a blurrier
+  upscale.
+- A **village**/**dungeonEntrance** landmark gets a small per-instance size
+  variation (`landmarkScale`, hashed from its tile coordinate - never
+  `Math.random`, so a given map always renders identically) instead of every
+  instance drawing at the same size.
+
+The vendored Minifantasy Tiny Overworld packs (ROG-68) don't ship a
+documented bitmask autotile blob table for cross-biome edges - the pack does
+include a `Biomes_Merging_Tiles` sheet, but its dithered pixel-art blends
+between arbitrary biome pairs have no legend and aren't safely hand-croppable
+without a way to visually verify the result, so it isn't vendored here. A
+real shore/corner bitmask tileset is a follow-up once that's needed; this
+ships with the sheets already vendored instead.
+
 ## HUD chrome (ROG-47)
+
 
 The frame (bordered panel + title), party bar (HP/MP meters + gold), and
 message log around every scene are built once, framework-free, by
