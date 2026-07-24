@@ -53,6 +53,46 @@ unpushed commits so they survive even if this sandbox is discarded;
 `instructions.md` has the agent attach that patch to the Linear issue as a
 last resort before reporting the blocker.
 
+### Mid-turn steering on Linear
+
+[`channels/linear.ts`](channels/linear.ts) hand-rolls eve's built-in
+`linearChannel()` via `defineChannel` instead of re-exporting it, so it can
+reach the route-level `cancel()` primitive the convenience wrapper doesn't
+expose. On every inbound Linear Agent Session webhook (`created` and
+`prompted` alike) it now calls `cancel({ continuationToken })` unconditionally
+right before dispatching the new message, instead of letting the built-in
+behavior fold a new comment into the next turn. `cancel()` is a documented
+no-op (`"no_active_turn"`) when nothing is running, so this is safe to call on
+every message and needs no classification of "correction vs. unrelated" - a
+mid-turn Linear comment now really interrupts (`turn.cancelled` ->
+`session.waiting`) instead of silently queuing behind the current turn.
+
+Limits, by design:
+
+- It cancels unconditionally on every new inbound message. Two quick
+  follow-up comments will cancel each other's turns in sequence rather than
+  the agent inferring which one is a correction and which is unrelated.
+- Cancelling a turn recursively cancels any active subagent children too (see
+  `node_modules/eve/docs/subagents.mdx`, "Cancelling a parent also requests
+  cancellation of every active child it started, recursively"). This is also
+  how a mid-flight delegated coding subagent gets interrupted - no separate
+  subagent-interruption mechanism was built, it's inherent to turn
+  cancellation.
+- Cancellation stops work at the current step boundary; it does not undo
+  already-applied side effects (e.g. git commands the coding child already
+  ran). A cancelled mid-git-operation state is a general risk of any
+  interruption (crash, redeploy, cancel), not something specific to this
+  feature, so no new git-recovery mechanism was added for it.
+
+The built-in `linearChannel()` doesn't export everything it's built from:
+`eve/channels/linear`'s barrel omits `verifyLinearRequest` and
+`createDefaultEvents` (confirmed against the module's own runtime exports,
+not just its `.d.ts` files). `channels/linear.ts` reimplements both from the
+de-minified built-in source, built only from genuinely public primitives
+(`signLinearWebhookBody`, `node:crypto`, `createLinearAgentActivity`,
+`renderLinearInputRequests`) - see the file's own comments for the exact
+provenance of each piece.
+
 `ORIENTATION.md` also reports whether the sandbox's Playwright chromium
 (`scripts/play-web.mjs`'s screenshots) is confirmed working - `bootstrap`'s
 `buildBootstrapCommand` verifies the browser actually launches, not just that
