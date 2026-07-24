@@ -21,15 +21,21 @@ import {
 // before that so a session that outlasts one token can still push.
 const TOKEN_REFRESH_MS = 45 * 60 * 1000;
 // After the authed mint fails (or startup fell back to unauthenticated), retry
-// on a short cadence so push capability recovers within a couple of minutes of
-// the token service healing, instead of waiting a full refresh cycle.
-const TOKEN_RETRY_MS = 2 * 60 * 1000;
+// on a short cadence so push capability recovers within tens of seconds of the
+// token service healing, instead of an agent burning several minutes retrying
+// `git push` by hand against a still-unauthenticated policy (see HAR-5: a
+// session saw ~20 minutes of push/API failures because the old 2-minute retry
+// cadence checked far too infrequently during a startup-time credential blip).
+const TOKEN_RETRY_MS = 30 * 1000;
 // Bound every token mint so a slow/degraded token service cannot block session
 // startup or a refresh tick indefinitely.
 const TOKEN_MINT_TIMEOUT_MS = 10 * 1000;
 // Consecutive setNetworkPolicy failures tolerated before treating the sandbox as
-// gone - survives a transient blip (~10min at the retry cadence) without killing refresh.
-export const MAX_SET_POLICY_FAILURES = 5;
+// gone. Kept at the same ~10-minute total endurance as before (failures *
+// TOKEN_RETRY_MS), just checked more often now that TOKEN_RETRY_MS is shorter,
+// so recovery from a transient blip is faster without giving up on a longer
+// outage any sooner.
+export const MAX_SET_POLICY_FAILURES = 20;
 
 // Unauthenticated fallback: allow every host with no header injection. Public
 // clone/fetch and the npm registry still work; only authenticated `git push`
@@ -70,6 +76,30 @@ export async function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
   }
 }
 
+// Coming up unauthenticated at session start means every push fails outright
+// until the next background refresh tick (TOKEN_RETRY_MS later), so it's worth
+// a couple of quick attempts before conceding that fallback - a single
+// TOKEN_MINT_TIMEOUT_MS window is sometimes too tight for a token service
+// that's merely slow to warm up rather than actually down (see HAR-5).
+const STARTUP_MINT_ATTEMPTS = 2;
+const STARTUP_MINT_RETRY_GAP_MS = 3 * 1000;
+
+async function mintWithRetries(
+  mintPolicy: () => Promise<SandboxNetworkPolicy>,
+  attempts: number,
+  perAttemptTimeoutMs: number,
+  gapMs: number,
+): Promise<SandboxNetworkPolicy> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await withTimeout(mintPolicy(), perAttemptTimeoutMs);
+    } catch (err) {
+      if (attempt >= attempts) throw err;
+      await new Promise((resolve) => setTimeout(resolve, gapMs));
+    }
+  }
+}
+
 // Resolve the network policy to install at session/bootstrap start WITHOUT ever
 // letting GitHub-token trouble kill the session. The credential is needed only
 // for the late push/PR step, not for the model loop, file reads, `pnpm check`,
@@ -81,9 +111,14 @@ export async function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
 export async function resolveStartupNetworkPolicy(
   mintPolicy: () => Promise<SandboxNetworkPolicy> = githubNetworkPolicy,
   timeoutMs: number = TOKEN_MINT_TIMEOUT_MS,
+  attempts: number = STARTUP_MINT_ATTEMPTS,
+  gapMs: number = STARTUP_MINT_RETRY_GAP_MS,
 ): Promise<{ policy: SandboxNetworkPolicy; authed: boolean }> {
   try {
-    return { policy: await withTimeout(mintPolicy(), timeoutMs), authed: true };
+    return {
+      policy: await mintWithRetries(mintPolicy, attempts, timeoutMs, gapMs),
+      authed: true,
+    };
   } catch {
     return { policy: OPEN_NETWORK_POLICY, authed: false };
   }
@@ -239,6 +274,34 @@ export const SYNC_MAIN_COMMAND = [
     "else echo \"onSession: HEAD is on '$CURRENT_BRANCH', not main - leaving it in place instead of resyncing\"; fi",
 ].join(" && ");
 
+/**
+ * Best-effort recovery for commits stranded by a prior push failure (HAR-5):
+ * once this session has confirmed GitHub auth, flush anything left unpushed on
+ * a non-main branch before the agent even starts, instead of relying on it to
+ * remember to retry. A branch with no upstream yet is pushed with `-u`; a
+ * branch with an upstream but commits ahead of it is pushed plainly. Never
+ * fatal - a failed auto-push here just leaves the commits in place for the
+ * agent's own retry (and `ORIENTATION.md`'s unpushed-commit line reports it).
+ * `GIT_TERMINAL_PROMPT=0` guarantees a fast failure instead of a hang if auth
+ * turns out to be stale.
+ */
+export const AUTO_RECOVER_PUSH_COMMAND = [
+  "export GIT_TERMINAL_PROMPT=0",
+  'CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)"',
+  'if [ "$CURRENT_BRANCH" != "main" ] && [ "$CURRENT_BRANCH" != "HEAD" ]; then ' +
+    "if git rev-parse --abbrev-ref --symbolic-full-name @{u} >/dev/null 2>&1; then " +
+    'AHEAD="$(git rev-list --count @{u}..HEAD 2>/dev/null || echo 0)"; ' +
+    'if [ "$AHEAD" != "0" ]; then ' +
+    'echo "onSession: auto-recovering $AHEAD unpushed commit(s) on $CURRENT_BRANCH"; ' +
+    'git push origin "$CURRENT_BRANCH" || echo "onSession: auto-recover push failed, leaving commits for the agent to retry"; ' +
+    "fi; " +
+    "else " +
+    'echo "onSession: auto-recovering new branch $CURRENT_BRANCH (no upstream yet)"; ' +
+    'git push -u origin "$CURRENT_BRANCH" || echo "onSession: auto-recover push failed, leaving commits for the agent to retry"; ' +
+    "fi; " +
+    "fi",
+].join(" ; ");
+
 export default defineSandbox({
   backend: vercel(),
   revalidationKey: dependencyRevalidationKey,
@@ -255,6 +318,18 @@ export default defineSandbox({
     const sync = await sandbox.run({ command: SYNC_MAIN_COMMAND });
     if (sync.exitCode !== 0)
       throw new Error(sync.stderr || "Sandbox repository sync failed");
+    // Flush any commits stranded by a prior push failure now that auth is
+    // confirmed, before the agent even starts (see AUTO_RECOVER_PUSH_COMMAND).
+    // Best-effort and skipped entirely when unauthenticated, since it would
+    // just fail the same way the agent's own push already would.
+    if (authed) {
+      try {
+        await sandbox.run({ command: AUTO_RECOVER_PUSH_COMMAND });
+      } catch {
+        // Leave the commits in place; ORIENTATION.md's unpushed-commit line
+        // (computed from GIT_FACTS_COMMAND below) still surfaces them.
+      }
+    }
     // Pre-compute the orientation brief so the model reads settled repo state
     // instead of rediscovering it. Best-effort: a missing brief only means the
     // model falls back to orienting by hand, so it must never fail the session.
@@ -272,6 +347,7 @@ export default defineSandbox({
           content: buildOrientationBrief(
             parseGitFacts(facts.stdout),
             parseScreenshotToolingStatus(screenshotStatus.stdout),
+            authed,
           ),
         });
     } catch {

@@ -1,7 +1,13 @@
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import type { SandboxNetworkPolicy } from "eve/sandbox";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  AUTO_RECOVER_PUSH_COMMAND,
   buildBootstrapCommand,
   dependencyRevalidationKey,
   keepTokenFresh,
@@ -9,6 +15,11 @@ import {
   resolveStartupNetworkPolicy,
   SYNC_MAIN_COMMAND,
 } from "../agent/sandbox";
+
+// Runs a git command in `cwd`, returning trimmed stdout; throws on failure.
+function git(cwd: string, args: string[]): string {
+  return execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
+}
 
 describe("keepTokenFresh", () => {
   it("re-mints and re-applies the policy on each interval", async () => {
@@ -152,10 +163,11 @@ describe("resolveStartupNetworkPolicy", () => {
     expect(res).toEqual({ policy: authedPolicy, authed: true });
   });
 
-  it("falls back to an open, unauthenticated policy when the mint fails", async () => {
+  it("falls back to an open, unauthenticated policy when every attempt fails", async () => {
     const res = await resolveStartupNetworkPolicy(
       () => Promise.reject(new Error("token down")),
       1000,
+      1,
     );
     expect(res.authed).toBe(false);
     expect(res.policy).toEqual({ allow: { "*": [] } });
@@ -166,9 +178,53 @@ describe("resolveStartupNetworkPolicy", () => {
     const pending = resolveStartupNetworkPolicy(
       () => new Promise<SandboxNetworkPolicy>(() => {}),
       1000,
+      1,
     );
     await vi.advanceTimersByTimeAsync(1000);
     const res = await pending;
+    expect(res.authed).toBe(false);
+    expect(res.policy).toEqual({ allow: { "*": [] } });
+    vi.useRealTimers();
+  });
+
+  it("retries a transient startup blip and comes up authed instead of falling back", async () => {
+    vi.useFakeTimers();
+    const good = { allow: { x: [] } } as SandboxNetworkPolicy;
+    let call = 0;
+    const mintPolicy = () => {
+      call++;
+      return call === 1
+        ? Promise.reject(new Error("startup blip"))
+        : Promise.resolve(good);
+    };
+
+    const pending = resolveStartupNetworkPolicy(mintPolicy, 1000, 2, 500);
+    await vi.advanceTimersByTimeAsync(1000); // first attempt fails
+    await vi.advanceTimersByTimeAsync(500); // retry gap elapses, second attempt fires
+    const res = await pending;
+
+    expect(res).toEqual({ policy: good, authed: true });
+    expect(call).toBe(2);
+    vi.useRealTimers();
+  });
+
+  it("falls back to open only after exhausting every retry attempt", async () => {
+    vi.useFakeTimers();
+    let call = 0;
+    const mintPolicy = () => {
+      call++;
+      return Promise.reject(new Error("still down"));
+    };
+
+    const pending = resolveStartupNetworkPolicy(mintPolicy, 1000, 3, 500);
+    await vi.advanceTimersByTimeAsync(1000); // attempt 1 fails
+    await vi.advanceTimersByTimeAsync(500); // gap
+    await vi.advanceTimersByTimeAsync(1000); // attempt 2 fails
+    await vi.advanceTimersByTimeAsync(500); // gap
+    await vi.advanceTimersByTimeAsync(1000); // attempt 3 fails
+    const res = await pending;
+
+    expect(call).toBe(3);
     expect(res.authed).toBe(false);
     expect(res.policy).toEqual({ allow: { "*": [] } });
     vi.useRealTimers();
@@ -227,5 +283,98 @@ describe("SYNC_MAIN_COMMAND", () => {
     expect(SYNC_MAIN_COMMAND).toContain(
       "leaving it in place instead of resyncing",
     );
+  });
+});
+
+// Exercises AUTO_RECOVER_PUSH_COMMAND against a real bare origin + working
+// clone (HAR-5's auto-recovery: flush commits stranded by a prior push
+// failure as soon as auth is confirmed, without the agent having to remember).
+describe("AUTO_RECOVER_PUSH_COMMAND", () => {
+  let dir: string;
+
+  afterEach(() => {
+    if (dir) rmSync(dir, { recursive: true, force: true });
+  });
+
+  function setUpRepo() {
+    dir = mkdtempSync(join(tmpdir(), "har-5-auto-push-"));
+    const origin = join(dir, "origin.git");
+    const work = join(dir, "work");
+    execFileSync("git", ["init", "-q", "-b", "main", origin]);
+    // `origin` is a plain (non-bare) repo so `git branch -a`/log inspection
+    // below is simple; that means pushing to its checked-out `main` needs
+    // this opt-in instead of the default refusal.
+    git(origin, ["config", "receive.denyCurrentBranch", "ignore"]);
+    execFileSync("git", ["clone", "-q", origin, work]);
+    git(work, ["config", "user.email", "t@t.com"]);
+    git(work, ["config", "user.name", "t"]);
+    execFileSync("sh", ["-c", "echo a > a.txt"], { cwd: work });
+    git(work, ["add", "a.txt"]);
+    git(work, ["commit", "-q", "-m", "init"]);
+    git(work, ["push", "-q", "origin", "main"]);
+    return { origin, work };
+  }
+
+  const runAutoRecover = (cwd: string) =>
+    execFileSync("bash", ["-c", AUTO_RECOVER_PUSH_COMMAND], {
+      cwd,
+      encoding: "utf8",
+    });
+
+  it("pushes commits stranded on an already-tracked branch", () => {
+    const { origin, work } = setUpRepo();
+    // Simulate a branch that was already pushed once (so it has a real
+    // origin/feature upstream, not just origin/main) and then picked up a
+    // commit that failed to push - the exact HAR-5 shape.
+    git(work, ["checkout", "-q", "-b", "feature"]);
+    git(work, ["push", "-q", "-u", "origin", "feature"]);
+    execFileSync("sh", ["-c", "echo b > b.txt"], { cwd: work });
+    git(work, ["add", "b.txt"]);
+    git(work, ["commit", "-q", "-m", "stranded commit"]);
+
+    const output = runAutoRecover(work);
+
+    expect(output).toContain("auto-recovering 1 unpushed commit(s)");
+    const remoteLog = execFileSync(
+      "git",
+      ["log", "-1", "--format=%s", "feature"],
+      { cwd: origin, encoding: "utf8" },
+    ).trim();
+    expect(remoteLog).toBe("stranded commit");
+  });
+
+  it("pushes a brand-new branch that has no upstream yet", () => {
+    const { origin, work } = setUpRepo();
+    git(work, ["checkout", "-q", "-b", "feature-new"]);
+    execFileSync("sh", ["-c", "echo b > b.txt"], { cwd: work });
+    git(work, ["add", "b.txt"]);
+    git(work, ["commit", "-q", "-m", "new branch commit"]);
+
+    const output = runAutoRecover(work);
+
+    expect(output).toContain("auto-recovering new branch feature-new");
+    const branches = execFileSync("git", ["branch", "-a"], {
+      cwd: origin,
+      encoding: "utf8",
+    });
+    expect(branches).toContain("feature-new");
+  });
+
+  it("does nothing on main", () => {
+    const { work } = setUpRepo();
+
+    const output = runAutoRecover(work);
+
+    expect(output.trim()).toBe("");
+  });
+
+  it("is a no-op when the branch is already fully pushed", () => {
+    const { work } = setUpRepo();
+    git(work, ["checkout", "-q", "-b", "feature-clean", "-t", "origin/main"]);
+    git(work, ["push", "-q", "-u", "origin", "feature-clean"]);
+
+    const output = runAutoRecover(work);
+
+    expect(output.trim()).toBe("");
   });
 });
