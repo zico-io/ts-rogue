@@ -4,6 +4,7 @@ import {
   clusterScale,
   hasShore,
   landmarkScale,
+  mountainTexture,
   sameNeighborCount,
   shoreSides,
 } from "./overworldVariants";
@@ -89,6 +90,22 @@ describe("shoreSides", () => {
   it("treats out-of-bounds as non-land, not a shore", () => {
     const map = mapFrom(["w"]);
     expect(hasShore(shoreSides(map, 0, 0))).toBe(false);
+  });
+});
+
+describe("mountainTexture", () => {
+  it("picks the small crop for an isolated or lightly-neighbored mountain", () => {
+    expect(mountainTexture(0)).toBe("mountainSmall");
+    expect(mountainTexture(1)).toBe("mountainSmall");
+  });
+
+  it("picks the plain (medium) crop for a moderately clustered mountain", () => {
+    expect(mountainTexture(2)).toBe("mountain");
+    expect(mountainTexture(3)).toBe("mountain");
+  });
+
+  it("picks the large crop for a mountain surrounded on all 4 sides", () => {
+    expect(mountainTexture(4)).toBe("mountainLarge");
   });
 });
 

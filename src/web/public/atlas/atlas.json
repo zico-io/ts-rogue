@@ -54,7 +54,7 @@
         "h": 8
       }
     },
-    "forest": {
+    "mountainSmall": {
       "frame": {
         "x": 31,
         "y": 1,
@@ -72,9 +72,45 @@
         "h": 8
       }
     },
-    "village": {
+    "mountainLarge": {
       "frame": {
         "x": 1,
+        "y": 11,
+        "w": 8,
+        "h": 8
+      },
+      "sourceSize": {
+        "w": 8,
+        "h": 8
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 8,
+        "h": 8
+      }
+    },
+    "forest": {
+      "frame": {
+        "x": 11,
+        "y": 11,
+        "w": 8,
+        "h": 8
+      },
+      "sourceSize": {
+        "w": 8,
+        "h": 8
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 8,
+        "h": 8
+      }
+    },
+    "village": {
+      "frame": {
+        "x": 21,
         "y": 11,
         "w": 8,
         "h": 8
@@ -92,7 +128,7 @@
     },
     "dungeonEntrance": {
       "frame": {
-        "x": 11,
+        "x": 31,
         "y": 11,
         "w": 8,
         "h": 8
@@ -110,42 +146,6 @@
     },
     "player": {
       "frame": {
-        "x": 21,
-        "y": 11,
-        "w": 8,
-        "h": 8
-      },
-      "sourceSize": {
-        "w": 8,
-        "h": 8
-      },
-      "spriteSourceSize": {
-        "x": 0,
-        "y": 0,
-        "w": 8,
-        "h": 8
-      }
-    },
-    "wall": {
-      "frame": {
-        "x": 31,
-        "y": 11,
-        "w": 8,
-        "h": 8
-      },
-      "sourceSize": {
-        "w": 8,
-        "h": 8
-      },
-      "spriteSourceSize": {
-        "x": 0,
-        "y": 0,
-        "w": 8,
-        "h": 8
-      }
-    },
-    "floor": {
-      "frame": {
         "x": 1,
         "y": 21,
         "w": 8,
@@ -162,7 +162,7 @@
         "h": 8
       }
     },
-    "chest": {
+    "wall": {
       "frame": {
         "x": 11,
         "y": 21,
@@ -180,7 +180,7 @@
         "h": 8
       }
     },
-    "stairsDown": {
+    "floor": {
       "frame": {
         "x": 21,
         "y": 21,
@@ -198,10 +198,46 @@
         "h": 8
       }
     },
-    "boss": {
+    "chest": {
       "frame": {
         "x": 31,
         "y": 21,
+        "w": 8,
+        "h": 8
+      },
+      "sourceSize": {
+        "w": 8,
+        "h": 8
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 8,
+        "h": 8
+      }
+    },
+    "stairsDown": {
+      "frame": {
+        "x": 1,
+        "y": 31,
+        "w": 8,
+        "h": 8
+      },
+      "sourceSize": {
+        "w": 8,
+        "h": 8
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 8,
+        "h": 8
+      }
+    },
+    "boss": {
+      "frame": {
+        "x": 11,
+        "y": 31,
         "w": 8,
         "h": 8
       },
@@ -222,7 +258,7 @@
     "format": "RGBA8888",
     "size": {
       "w": 40,
-      "h": 30
+      "h": 40
     },
     "scale": "1"
   }

@@ -22,10 +22,12 @@
  *
  * Viewport tiles also run through `overworldVariants.ts`'s neighbor-driven
  * auto-tile stand-in (ROG-73): a water tile bordering land grows a
- * shore-tinted fringe rect, and a mountain/forest/village/dungeonEntrance
- * tile scales with its local density/position instead of always drawing at
- * a fixed size - see that module's doc comment for why (no real autotile
- * blob art is vendored yet).
+ * shore-tinted fringe rect; a mountain tile swaps to a genuinely bigger/
+ * smaller same-family rock crop as its cluster gets denser; every
+ * mountain/forest/village/dungeonEntrance tile also scales with its local
+ * density/position instead of always drawing at a fixed size - see that
+ * module's doc comment for the full picture (and why there's no per-neighbor
+ * bitmask shore autotile art here yet).
  */
 
 import type { GameState } from "../../engine/state/types";
@@ -40,6 +42,7 @@ import { theme, toPixiColor } from "../../ui/theme";
 import {
   clusterScale,
   landmarkScale,
+  mountainTexture,
   type Sides,
   sameNeighborCount,
   shoreSides,
@@ -212,19 +215,23 @@ export class OverworldSceneView {
         }
         const cellX = offsetX + colIndex * tilePx;
         const cellY = offsetY + rowIndex * tilePx;
-        const tile = cell.tile ?? "grass";
-        sprite.setTexture(tile);
+        const displayTile = cell.tile ?? "grass";
+        const terrain = map.tiles[cell.y]?.[cell.x];
+        const isPlayer = displayTile === "player" || terrain === undefined;
+
+        // Neighbor-density/position variant (ROG-73) - never for the
+        // player's own marker, which always draws at a fixed texture/size.
+        const texture = isPlayer
+          ? displayTile
+          : this.terrainTexture(map, terrain, cell.x, cell.y);
+        sprite.setTexture(texture);
         // Minifantasy frames are full-color (ROG-68); no biome multiply-tint,
         // which was a hack for the old monochrome Urizen tiles.
         sprite.setTint(0xffffff);
 
-        // Scale by neighbor density/position (ROG-73) - never for the
-        // player's own marker, which always draws at a fixed size.
-        const terrain = map.tiles[cell.y]?.[cell.x];
-        const scale =
-          tile === "player" || terrain === undefined
-            ? 1
-            : this.terrainScale(map, terrain, cell.x, cell.y);
+        const scale = isPlayer
+          ? 1
+          : this.terrainScale(map, terrain, cell.x, cell.y);
         const size = tilePx * scale;
         sprite.setPosition(
           cellX - (size - tilePx) / 2,
@@ -235,6 +242,19 @@ export class OverworldSceneView {
         this.drawShoreFringe(map, cell, cellX, cellY, tilePx, seenShoreRects);
       }
     }
+  }
+
+  /** Swaps `mountain` for a same-family, differently-sized crop by cluster density (ROG-73); every other terrain keeps its plain frame. */
+  private terrainTexture(
+    map: OverworldMap,
+    terrain: Tile,
+    x: number,
+    y: number,
+  ): TileName {
+    if (terrain === "mountain") {
+      return mountainTexture(sameNeighborCount(map, x, y, terrain));
+    }
+    return terrain;
   }
 
   /** Neighbor-density scale for mountain/forest, per-instance scale for village/dungeonEntrance, 1 otherwise. */

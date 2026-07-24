@@ -1,16 +1,24 @@
 /**
  * Pure neighbor-driven terrain variant helpers for the browser overworld
  * renderer (ROG-73, "leverage Tiny Overworld auto tiling of terrain"). The
- * vendored Tiny Overworld crop (`assets/minifantasy/forgotten_plains.png`,
- * ROG-68) is a small preview swatch, not a full autotile blob sheet, so
- * rather than invent source rects this "auto-tiles" by transforming the
- * existing single-frame grass/water/mountain/forest/village/dungeonEntrance
- * sprites at draw time:
+ * vendored Minifantasy Tiny Overworld packs (ROG-68) don't ship a
+ * documented bitmask autotile blob table for cross-biome edges - the one
+ * sheet that looks like it (`Minifantasy_TinyOverworldBiomesMergingTileset`,
+ * attached to ROG-68 but not vendored here) uses dithered pixel-art blends
+ * between arbitrary biome pairs with no legend, which isn't safely
+ * hand-croppable without a way to visually verify the result - a real
+ * follow-up once that's needed. So this "auto-tiles" with what the vendored
+ * `forgotten_plains.png`/`overworld_props.png` sheets actually contain -
+ * real, distinctly-sized objects already drawn by the artist - plus draw-time
+ * transforms:
  *
  * - a water tile bordering land grows a shore-tinted fringe on the land
  *   side(s) ({@link shoreSides});
- * - a mountain/forest tile in a denser same-type cluster renders larger than
- *   an isolated one ({@link clusterScale}, driven by {@link sameNeighborCount});
+ * - a mountain tile in a denser same-type cluster swaps to a genuinely
+ *   larger rock-formation crop from the same sheet family
+ *   ({@link mountainTexture}) and scales up ({@link clusterScale}); a forest
+ *   tile scales the same way without a texture swap (no verified distinct
+ *   tree-size crops on the vendored props sheet);
  * - a village/dungeonEntrance landmark gets a small per-instance size
  *   variation ({@link landmarkScale}) instead of every instance reading
  *   identically.
@@ -23,6 +31,7 @@
  */
 
 import type { OverworldMap, Tile } from "../../engine/world/types";
+import type { TileName } from "./sources";
 
 /** Which orthogonal sides of a tile border non-matching terrain. */
 export interface Sides {
@@ -65,6 +74,20 @@ export function clusterScale(sameNeighbors: number): number {
   const MAX_SCALE = 1.3;
   const clamped = Math.min(4, Math.max(0, sameNeighbors));
   return MIN_SCALE + ((MAX_SCALE - MIN_SCALE) / 4) * clamped;
+}
+
+/**
+ * Which `mountain*` atlas frame to draw for a mountain tile with this many
+ * same-type orthogonal neighbors - `mountainSmall`/`mountain`/`mountainLarge`
+ * are color-matched crops of the same mossy-boulder formation at three
+ * genuinely different sizes on `forgotten_plains.png` (ROG-73), not one
+ * crop rescaled, so a dense cluster shows real extra rock detail instead of
+ * just a bigger blur.
+ */
+export function mountainTexture(sameNeighbors: number): TileName {
+  if (sameNeighbors <= 1) return "mountainSmall";
+  if (sameNeighbors <= 3) return "mountain";
+  return "mountainLarge";
 }
 
 /** Which orthogonal sides of a water tile border non-water land - `NO_SIDES` for any other tile. */

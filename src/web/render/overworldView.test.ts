@@ -218,6 +218,24 @@ describe("OverworldSceneView", () => {
     expect(clusteredSize).toBeGreaterThan(isolatedSize);
   });
 
+  it("swaps to a differently-sized mountain crop by same-type neighbor count (ROG-73)", () => {
+    const factory = fakeFactory();
+    const view = new OverworldSceneView(factory);
+    const state = newGame(1);
+    const map = mapFrom(["mgggg", "ggmmm", "ggmmm", "ggmmm", "ggggg"]);
+    const positioned = {
+      ...state,
+      worldState: { ...state.worldState, player: { x: 0, y: 4 } },
+    };
+
+    view.render(positioned, map, SIZE, TILE_PX);
+
+    const isolated = factory.sprites[0 * 5 + 0];
+    const clustered = factory.sprites[2 * 5 + 3];
+    expect(isolated.setTexture.mock.calls.at(-1)?.[0]).toBe("mountainSmall");
+    expect(clustered.setTexture.mock.calls.at(-1)?.[0]).toBe("mountainLarge");
+  });
+
   it("sizes the encounter meter's fill rect proportionally to encounterMeter/ENCOUNTER_THRESHOLD", () => {
     const factory = fakeFactory();
     const view = new OverworldSceneView(factory);

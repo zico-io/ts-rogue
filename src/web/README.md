@@ -198,18 +198,25 @@ tile instead:
 - A **water** tile bordering land grows a sand-tinted (`theme.biome.shore`)
   fringe rect on its land-adjacent side(s), a lightweight stand-in for a real
   shore-edge autotile.
-- A **mountain**/**forest** tile scales up with its same-type orthogonal
-  neighbor count (`clusterScale`) - an isolated tile draws smaller, a dense
-  cluster draws larger, so density reads visually without new art.
+- A **mountain** tile swaps to `mountainSmall`/`mountain`/`mountainLarge` -
+  color-matched crops of genuinely differently-sized rock formations already
+  on `forgotten_plains.png` (`mountainTexture`, ROG-73) - by its same-type
+  orthogonal neighbor count, and every mountain/forest tile also scales up
+  with that count (`clusterScale`): an isolated tile draws smaller, a dense
+  cluster draws larger and with real extra rock detail, not just a blurrier
+  upscale.
 - A **village**/**dungeonEntrance** landmark gets a small per-instance size
   variation (`landmarkScale`, hashed from its tile coordinate - never
   `Math.random`, so a given map always renders identically) instead of every
   instance drawing at the same size.
 
-This is a code-level "auto-tile" - the vendored `forgotten_plains.png` crop
-(`assets/README.md`) is a small preview swatch, not a full autotile blob
-sheet, so there is no new source art here; a real shore/corner tileset is a
-follow-up once that art is vendored.
+The vendored Minifantasy Tiny Overworld packs (ROG-68) don't ship a
+documented bitmask autotile blob table for cross-biome edges - the pack does
+include a `Biomes_Merging_Tiles` sheet, but its dithered pixel-art blends
+between arbitrary biome pairs have no legend and aren't safely hand-croppable
+without a way to visually verify the result, so it isn't vendored here. A
+real shore/corner bitmask tileset is a follow-up once that's needed; this
+ships with the sheets already vendored instead.
 
 ## HUD chrome (ROG-47)
 

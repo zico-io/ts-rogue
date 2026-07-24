@@ -42,6 +42,12 @@ export const TILE_SOURCES = {
   grass: at("forgottenPlains", 19, 4),
   water: at("forgottenPlains", 1, 6),
   mountain: at("forgottenPlains", 16, 5, 1, 2), // mossy boulder, 2 tiles tall
+  // Same mossy-boulder family as `mountain`, cropped from adjacent smaller/
+  // larger rock formations on the same sheet (color-matched, ROG-73) so a
+  // dense mountain cluster reads as visually bigger/fuller than an isolated
+  // one, not just the same crop rescaled - see `overworldVariants.ts`.
+  mountainSmall: { sheet: "forgottenPlains", x: 124, y: 24, w: 12, h: 8 },
+  mountainLarge: { sheet: "forgottenPlains", x: 148, y: 32, w: 12, h: 24 },
   forest: at("overworldProps", 0, 7, 2, 2), // leafy tree, canopy + trunk
   // Overworld points of interest (Tiny Overworld - Constructions). Single-tile
   // markers cropped from multi-tile structures; interim reads pending the
