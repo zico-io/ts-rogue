@@ -201,6 +201,23 @@ describe("buildBootstrapCommand", () => {
     expect(command).toContain("chromium.launch()");
   });
 
+  it("installs the agent-friendly CLI toolchain (HAR-3): rg/fd/bat/eza/ast-grep", () => {
+    const command = buildBootstrapCommand();
+    expect(command).toContain(
+      "apt-get install -y tmux ripgrep fd-find bat eza",
+    );
+    expect(command).toContain("npm install -g @ast-grep/cli");
+  });
+
+  it("symlinks fd/bat onto PATH under their conventional names", () => {
+    // Debian/Ubuntu ship fd-find and bat as `fdfind`/`batcat` to avoid name
+    // clashes with pre-existing packages, so agents typing `fd`/`bat` would
+    // otherwise hit "command not found".
+    const command = buildBootstrapCommand();
+    expect(command).toContain("ln -sf /usr/bin/fdfind /usr/local/bin/fd");
+    expect(command).toContain("ln -sf /usr/bin/batcat /usr/local/bin/bat");
+  });
+
   it("records the screenshot-tooling verdict on both the success and failure path", () => {
     const command = buildBootstrapCommand();
     expect(command).toContain('"available":true');
