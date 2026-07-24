@@ -31,7 +31,10 @@ fi
 
 # Clone once; always fetch the latest head + reinstall so re-runs pick up new commits.
 # The token is injected per-command via --env and never written into git config.
-"${SBX[@]}" exec --env "GH_TOKEN=$TOKEN" "$NAME" -- bash -lc '
+# `--sudo` lets the one-time Playwright system-deps install (Chromium needs libglib2.0
+# and friends for `node scripts/play-web.mjs`'s headless screenshots) run apt-get; the
+# `dpkg -s` guard keeps re-runs from re-invoking apt-get once it's already satisfied.
+"${SBX[@]}" exec --sudo --env "GH_TOKEN=$TOKEN" "$NAME" -- bash -lc '
   set -e
   URL="https://x-access-token:$GH_TOKEN@github.com/'"$REPO"'.git"
   [ -d '"$DIR"'/.git ] || git clone --depth 1 "$URL" '"$DIR"'
@@ -39,6 +42,8 @@ fi
   git fetch --depth 1 "$URL" "'"$REF"'"
   git checkout -B pr FETCH_HEAD
   corepack pnpm install --frozen-lockfile
+  dpkg -s libglib2.0-0t64 >/dev/null 2>&1 || dpkg -s libglib2.0-0 >/dev/null 2>&1 || \
+    sudo pnpm exec playwright install --with-deps chromium
 '
 
 echo "Sandbox '$NAME' ready. Inside: 'pnpm game' to play, 'pnpm check' to verify."
