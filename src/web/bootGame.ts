@@ -1,4 +1,4 @@
-import { Application, Container, Sprite, Text } from "pixi.js";
+import { Application, Container, Text } from "pixi.js";
 import { CLASSES } from "../data/classes";
 import { SHOP_ITEMS, sellPriceFor } from "../data/shops";
 import { atkFrom, defFrom, spdFrom } from "../engine/combat/resolution";
@@ -56,8 +56,6 @@ import { SCENE_ORDER, SceneSwitcher, type SceneView } from "./scenes";
 
 const MIN_WIDTH = 480;
 const MIN_HEIGHT = 320;
-/** Native atlas tiles are 8x8 (ROG-68); scale up so pixel art reads clearly on a modern display. */
-const PREVIEW_SCALE = 9;
 /** No settings persistence in the browser yet, so New Game always defaults to this name. */
 const DEFAULT_HERO_NAME = "Hero";
 
@@ -433,60 +431,6 @@ export async function bootGame(
     }
   }
 
-  /**
-   * Atlas smoke test (ROG-44): draws one tile sprite and one monster sprite
-   * into the village scene's content region (the scene a fresh boot lands
-   * on), proving the atlas built by `scripts/build-atlas.ts` loads through
-   * Pixi's `Assets` and renders inside the ROG-47 chrome. Real per-scene
-   * sprite content lands in ROG-49 through ROG-52.
-   */
-  async function showAtlasPreview(): Promise<void> {
-    const sheet = await loadAtlas();
-    const villageContent = entries.village.contentContainer;
-    // Runs before the chrome's first `renderChrome()` populates
-    // `contentRects`, so scale off the full canvas rather than the (not yet
-    // known) village content rect - close enough for this one-time smoke
-    // test overlay (ROG-66: keep it consistent with the rest of the menu
-    // scaling instead of a stray fixed-size artifact).
-    const layout = menuLayout({
-      width: app.screen.width,
-      height: app.screen.height,
-    });
-    const previewLabel = new Text({
-      text: "atlas preview: grass tile + wall tile",
-      style: {
-        fill: toPixiColor(theme.textMuted),
-        fontSize: 12,
-        fontFamily: "monospace",
-      },
-    });
-    previewLabel.position.set(layout.margin, layout.margin * 3);
-    villageContent.addChild(previewLabel);
-
-    const grass = new Sprite(sheet.textures.grass);
-    grass.texture.source.scaleMode = "nearest";
-    grass.scale.set(PREVIEW_SCALE);
-    grass.position.set(layout.margin, layout.margin * 4);
-    villageContent.addChild(grass);
-
-    // Slime/goblin/dungeon-guardian are battlers now (ROG-68) - loaded as
-    // individual textures, not atlas frames - so this smoke test's second
-    // sprite is another atlas tile instead.
-    const wall = new Sprite(sheet.textures.wall);
-    wall.texture.source.scaleMode = "nearest";
-    wall.scale.set(PREVIEW_SCALE);
-    wall.position.set(
-      layout.margin + grass.texture.frame.width * PREVIEW_SCALE + 16,
-      layout.margin * 4,
-    );
-    villageContent.addChild(wall);
-  }
-  try {
-    await showAtlasPreview();
-  } catch (error) {
-    store.reportFailure("atlas", error, true);
-  }
-
   /** Target number of overworld viewport columns at the default portal width, used to derive a tile size that scales with the available space instead of a fixed pixel constant (ROG-66). */
   const OVERWORLD_TARGET_COLS = 22;
   const OVERWORLD_MIN_TILE_PX = 20;
@@ -632,6 +576,28 @@ export async function bootGame(
       width: app.screen.width,
       height: app.screen.height,
     });
+
+    // JRPG windowskin panel (ROG-72), the same beveled-navy-fill-inside-an-
+    // amber-frame treatment `SceneChromeView.render()` gives every in-game
+    // scene, so the title screen stops being bare text on a plain black
+    // canvas. Built fresh every render like the rest of this "menu plumbing"
+    // (see the file-level comment above `drawLines`) rather than a cached
+    // `RectHandle`, since `clearContainer` already destroys these Graphics
+    // along with the Text each call. Drawn before any text below so the
+    // panel sits behind it in the container's child order.
+    const panelFactory = createPixiDrawFactory(titleContainer);
+    const panelBorder = panelFactory.createRect();
+    panelBorder.setPosition(0, 0);
+    panelBorder.setSize(app.screen.width, app.screen.height);
+    panelBorder.setColor(toPixiColor(theme.borderFocus));
+
+    const panelBackground = panelFactory.createRect({ bevel: true });
+    panelBackground.setPosition(layout.margin, layout.margin);
+    panelBackground.setSize(
+      Math.max(0, app.screen.width - layout.margin * 2),
+      Math.max(0, app.screen.height - layout.margin * 2),
+    );
+    panelBackground.setColor(toPixiColor(theme.window.fill));
 
     let y = drawLines(
       titleContainer,
