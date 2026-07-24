@@ -11,3 +11,7 @@ dist/
 /save.db
 /dev-issues.jsonl
 /game-incidents.jsonl
+/.play-web.json
+/.play-web-frames/
+/src/web/.next/
+/src/web/next-env.d.ts

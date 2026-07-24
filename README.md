@@ -27,6 +27,7 @@ The tmux play harness also requires `tmux`.
 | --- | --- |
 | [`src/engine/`](src/engine/README.md) | Deterministic game state, world, combat, loot, and persistence contract |
 | [`src/ui/`](src/ui/README.md) | Ink scenes, controls, responsive terminal layout, and runtime diagnostics |
+| [`src/web/`](src/web/README.md) | PixiJS browser renderer sharing the engine core |
 | [`agent/`](agent/README.md) | Eve project agent, integrations, and sandbox lifecycle |
 | [`PROJECT_PLAN.md`](PROJECT_PLAN.md) | Product scope, architecture decisions, and phase ordering |
 | [`.botfile/memory/`](.botfile/memory/index.md) | Curated, provenance-backed agent memory |
@@ -38,6 +39,7 @@ The tmux play harness also requires `tmux`.
 | Run all checks | `pnpm check` |
 | Run the game | `pnpm game` |
 | Run the game with the developer console | `pnpm game:dev` |
+| Run the browser renderer locally | `pnpm web:dev` |
 | Drive a deterministic tmux session | `pnpm play start [seed] [cols] [rows]` |
 | Test a pull request in a Vercel Sandbox | `pnpm pr:sandbox <PR#>` |
 | Run the Eve agent locally | `pnpm eve:dev` |

@@ -319,6 +319,7 @@ function makeEnemy(def: MonsterDef, instance: number): BattleEnemy {
     stats: { ...def.stats },
     ascii: def.ascii,
     color: def.color,
+    sprite: def.sprite,
     xp: def.xp,
     gold: def.gold,
   };
@@ -881,7 +882,8 @@ export function resolveBattleEvent(
   const defendingIds = new Set(bs.defendingIds);
   const logs: LogEntry[] = [];
 
-  const actorCopy = party.find((m) => m.id === actor.id)!;
+  // party is a positional clone of state.party; index to actor's clone.
+  const actorCopy = party[state.party.indexOf(actor)];
   // A fresh turn: defend must be re-chosen each round to persist the stance.
   defendingIds.delete(actorCopy.id);
   const result = applyMemberCommand(
@@ -945,6 +947,9 @@ export function resolveBattleEvent(
   }
 
   // Round paused with the battle still ongoing: await the next actor's command.
+  // advanceRound yields a null nextActorId only with "lost" (handled above).
+  if (nextActorId === null)
+    throw new Error("ongoing battle resolved without a next actor");
   const inventory = itemUsed
     ? consumeItem(state.inventory, itemUsed)
     : state.inventory;
@@ -958,7 +963,7 @@ export function resolveBattleEvent(
       enemies,
       status: "ongoing",
       awaitingCommand: true,
-      activeMemberId: nextActorId!,
+      activeMemberId: nextActorId,
       defendingIds: [...defendingIds],
     },
     log: [...state.log, ...logs],

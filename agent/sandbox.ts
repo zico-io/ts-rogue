@@ -22,6 +22,9 @@ const TOKEN_RETRY_MS = 2 * 60 * 1000;
 // Bound every token mint so a slow/degraded token service cannot block session
 // startup or a refresh tick indefinitely.
 const TOKEN_MINT_TIMEOUT_MS = 10 * 1000;
+// Consecutive setNetworkPolicy failures tolerated before treating the sandbox as
+// gone - survives a transient blip (~10min at the retry cadence) without killing refresh.
+export const MAX_SET_POLICY_FAILURES = 5;
 
 // Unauthenticated fallback: allow every host with no header injection. Public
 // clone/fetch and the npm registry still work; only authenticated `git push`
@@ -91,13 +94,10 @@ export interface TokenRefreshTiming {
   initialMs?: number;
 }
 
-// The auth header is frozen into the firewall policy at session start, so a
-// static token expires mid-session. Re-mint it on an interval via
-// setNetworkPolicy. There is no session-end hook, so the chain self-terminates
-// when setNetworkPolicy throws (sandbox torn down) rather than leaking a timer.
-// A transient mint failure must NOT end refresh: it reschedules on the retry
-// cadence (fast) while a torn-down sandbox stops, and a success settles back to
-// the slow refresh cadence.
+// Re-mint the frozen auth header on an interval (it expires mid-session). A mint
+// failure or a transient setNetworkPolicy blip reschedules on the retry cadence;
+// the chain stops only after MAX_SET_POLICY_FAILURES consecutive setNetworkPolicy
+// failures (sandbox torn down - there's no session-end hook).
 export function keepTokenFresh(
   sandbox: Pick<SandboxSession, "setNetworkPolicy">,
   mintPolicy: () => Promise<SandboxNetworkPolicy> = githubNetworkPolicy,
@@ -112,6 +112,7 @@ export function keepTokenFresh(
   const initialMs =
     typeof timing === "number" ? timing : (timing.initialMs ?? refreshMs);
 
+  let setPolicyFailures = 0;
   const schedule = (delayMs: number): ReturnType<typeof setTimeout> =>
     setTimeout(async () => {
       let policy: SandboxNetworkPolicy;
@@ -125,9 +126,12 @@ export function keepTokenFresh(
       try {
         await sandbox.setNetworkPolicy(policy);
       } catch {
-        // setNetworkPolicy only fails once the sandbox is gone; stop the chain.
+        // Retry (could be a blip); give up only once we're sure it's torn down.
+        if (++setPolicyFailures >= MAX_SET_POLICY_FAILURES) return;
+        schedule(retryMs);
         return;
       }
+      setPolicyFailures = 0;
       schedule(refreshMs);
     }, delayMs);
 
@@ -147,10 +151,13 @@ export default defineSandbox({
     const sandbox = await use({ networkPolicy: policy });
     const setup = await sandbox.run({
       command:
-        // tmux backs the play harness (scripts/play.sh) so the agent can drive
-        // the real game in-sandbox; `|| true` keeps a locked-down image from
-        // failing the whole pre-warm if the package install is unavailable.
-        "(sudo apt-get update && sudo apt-get install -y tmux || true) && git config --global --add safe.directory /workspace && git clone https://github.com/zico-io/ts-rogue.git . && corepack pnpm install --frozen-lockfile",
+        // tmux backs the terminal play harness (scripts/play.sh) and Playwright's
+        // chromium backs the web play harness (scripts/play-web.mjs), so the agent
+        // can drive and screenshot both renderers in-sandbox. Install the browser
+        // now, while the pre-warm network policy is open (a locked-down runtime
+        // policy can block the browser CDN). `|| true` keeps a locked-down image
+        // from failing the whole pre-warm if either install is unavailable.
+        "(sudo apt-get update && sudo apt-get install -y tmux || true) && git config --global --add safe.directory /workspace && git clone https://github.com/zico-io/ts-rogue.git . && corepack pnpm install --frozen-lockfile && (corepack pnpm exec playwright install --with-deps chromium || true)",
     });
     if (setup.exitCode !== 0)
       throw new Error(setup.stderr || "Sandbox pre-warming failed");

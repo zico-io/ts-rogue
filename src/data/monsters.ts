@@ -14,6 +14,10 @@
  * early game is less grindy. Slime gold 3 -> 5; Goblin gold 8 -> 12. The boss
  * gold (120) and all XP values are unchanged; the XP curve already produces a
  * satisfying few levels over a 20-30 min session.
+ *
+ * ROG-44: monsters with a browser battle sprite carry an optional `sprite`
+ * atlas frame id alongside `ascii`; the terminal renderer keeps using `ascii`
+ * unchanged.
  */
 
 export interface MonsterStats {
@@ -43,6 +47,13 @@ export interface MonsterDef {
   ascii: readonly string[];
   /** Accent color (hex) tinting this monster's battle art (ROG-31). */
   color: string;
+  /**
+   * Browser sprite id (ROG-44): a frame name in the Pixi atlas built by
+   * `scripts/build-atlas.ts` (`src/web/atlas.ts` loads it, `src/web/main.ts`
+   * looks sprites up by this id). Additive - optional so terminal saves and
+   * the terminal renderer, which keeps using `ascii`, are unaffected.
+   */
+  sprite?: string;
 }
 
 export const MONSTERS: readonly MonsterDef[] = [
@@ -58,6 +69,7 @@ export const MONSTERS: readonly MonsterDef[] = [
     tier: 1,
     lootTableRef: "tier-1",
     implicitPoolRef: "type_slime",
+    sprite: "slime",
     ascii: [
       "       .-~~~-.",
       "   .-~~       ~~-.",
@@ -80,6 +92,7 @@ export const MONSTERS: readonly MonsterDef[] = [
     minFloor: 2,
     tier: 2,
     lootTableRef: "tier-2",
+    sprite: "goblin",
     ascii: [
       "     /\\      /\\",
       "    /  \\.--./  \\",
@@ -105,6 +118,7 @@ export const MONSTERS: readonly MonsterDef[] = [
     tier: 3,
     lootTableRef: "tier-3",
     implicitPoolRef: "boss_dungeon_guardian",
+    sprite: "dungeon-guardian",
     ascii: [
       "       ______",
       "      /|====|\\",

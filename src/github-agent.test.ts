@@ -1,6 +1,10 @@
+import type { GitHubPullRequestEvent } from "eve/channels/github";
 import { describe, expect, it } from "vitest";
 
-import { isMainMerge } from "../agent/channels/github";
+import {
+  isMainMerge,
+  linearRefFromPullRequest,
+} from "../agent/channels/github";
 
 describe("GitHub agent events", () => {
   it("wakes only for merged pull requests targeting main", () => {
@@ -24,5 +28,30 @@ describe("GitHub agent events", () => {
         raw: { ...pullRequest.raw, base: { ref: "release" } },
       }),
     ).toBe(false);
+  });
+
+  it("extracts the closed Linear issue from the branch, title, or body", () => {
+    const pr = (raw: GitHubPullRequestEvent["raw"]) => ({
+      action: "closed" as const,
+      headSha: "abc",
+      pullRequestNumber: 1,
+      raw,
+    });
+
+    expect(
+      linearRefFromPullRequest(pr({ head: { ref: "nico/rog-42-tavern" } })),
+    ).toBe("ROG-42");
+    expect(
+      linearRefFromPullRequest(pr({ title: "Fix ROG-7 loot table" })),
+    ).toBe("ROG-7");
+    expect(
+      linearRefFromPullRequest(pr({ head: { ref: "chore/cleanup" } })),
+    ).toBeNull();
+    // Branch wins over body so the advance targets the issue the branch names.
+    expect(
+      linearRefFromPullRequest(
+        pr({ head: { ref: "feat/ROG-3" }, body: "relates to ROG-99" }),
+      ),
+    ).toBe("ROG-3");
   });
 });

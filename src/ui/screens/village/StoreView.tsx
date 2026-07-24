@@ -2,44 +2,31 @@ import { Box, Text, useInput } from "ink";
 import { useState } from "react";
 import { SHOP_ITEMS, sellPriceFor } from "../../../data/shops";
 import { atkFrom, defFrom, spdFrom } from "../../../engine/combat/resolution";
-import {
-  compareItem,
-  type EquipmentSlotName,
-  equipTargetSlot,
-} from "../../../engine/loot/equipment";
+import { compareItem, equipTargetSlot } from "../../../engine/loot/equipment";
 import {
   describeItem,
   itemSellPrice,
   itemStatLine,
 } from "../../../engine/loot/items";
-import type { ItemInstance } from "../../../engine/loot/types";
 import type { GameEvent, GameState } from "../../../engine/state/types";
 import { Screen } from "../../components/Screen";
+import { normalizeInkKey } from "../../hooks/normalizeInkKey";
 import { theme } from "../../theme";
+import {
+  buildPackEntries,
+  EQUIP_SLOTS,
+  INITIAL_STORE_UI_STATE,
+  type PackEntry,
+  reduceStoreUi,
+  resolveStoreIntent,
+  type StoreUiState,
+} from "./interaction";
 
 export interface StoreViewProps {
   state: GameState;
   dispatch: (event: GameEvent) => void;
   onBack: () => void;
 }
-
-type StoreMode = "shop" | "pack";
-
-const EQUIP_SLOTS: readonly { slot: EquipmentSlotName; label: string }[] = [
-  { slot: "weapon", label: "Weapon" },
-  { slot: "armor", label: "Armor" },
-  { slot: "accessory1", label: "Accessory 1" },
-  { slot: "accessory2", label: "Accessory 2" },
-];
-
-type PackEntry =
-  | {
-      kind: "equipped";
-      slot: EquipmentSlotName;
-      label: string;
-      item: ItemInstance | null;
-    }
-  | { kind: "backpack"; item: ItemInstance };
 
 const STAT_KEYS = ["str", "agi", "vit", "int"] as const;
 
@@ -69,106 +56,74 @@ function deltaLine(delta: {
  * against the slot it would fill, and sell for a rarity/affix-scaled price.
  * Tab switches modes; Left/Right cycles which party member `pack` mode
  * targets (only shown once the party has more than one member); Esc returns
- * to the village overview.
+ * to the village overview. The mode/cursor state machine lives in the pure
+ * `reduceStoreUi` (ROG-45); this component only normalizes Ink's input,
+ * resolves an intent, applies the result, and dispatches the mapped event.
  */
 export function StoreView({ state, dispatch, onBack }: StoreViewProps) {
-  const [mode, setMode] = useState<StoreMode>("shop");
-  const [shopCursor, setShopCursor] = useState(0);
-  const [packCursor, setPackCursor] = useState(0);
-  const [memberIndex, setMemberIndex] = useState(0);
+  const [storeUi, setStoreUi] = useState<StoreUiState>(INITIAL_STORE_UI_STATE);
 
-  const clampedMemberIndex = Math.min(memberIndex, state.party.length - 1);
+  const clampedMemberIndex = Math.min(
+    storeUi.memberIndex,
+    state.party.length - 1,
+  );
   const member = state.party[clampedMemberIndex];
-
-  const packEntries: PackEntry[] = [
-    ...EQUIP_SLOTS.map((entry) => ({
-      kind: "equipped" as const,
-      slot: entry.slot,
-      label: entry.label,
-      item: member.equipment[entry.slot],
-    })),
-    ...state.items.map((item) => ({ kind: "backpack" as const, item })),
-  ];
-  const packIndex = Math.min(packCursor, packEntries.length - 1);
+  const packEntries = buildPackEntries(member, state.items);
+  const packIndex = Math.min(storeUi.packCursor, packEntries.length - 1);
   const selectedPack = packEntries[packIndex];
 
   useInput((input, key) => {
-    if (key.escape) {
-      onBack();
-      return;
-    }
-    if (key.tab) {
-      setMode((current) => (current === "shop" ? "pack" : "shop"));
-      setShopCursor(0);
-      setPackCursor(0);
-      return;
-    }
-    if (state.party.length > 1 && (key.leftArrow || key.rightArrow)) {
-      setMemberIndex((current) => {
-        const next = key.leftArrow
-          ? current - 1 + state.party.length
-          : current + 1;
-        return next % state.party.length;
-      });
-      setPackCursor(0);
-      return;
-    }
+    const keyName = normalizeInkKey(input, key);
+    if (!keyName) return;
+    const intent = resolveStoreIntent(storeUi.mode, keyName);
+    if (!intent) return;
 
-    if (mode === "shop") {
-      if (key.upArrow) {
-        setShopCursor((c) => (c + SHOP_ITEMS.length - 1) % SHOP_ITEMS.length);
-        return;
-      }
-      if (key.downArrow) {
-        setShopCursor((c) => (c + 1) % SHOP_ITEMS.length);
-        return;
-      }
-      const selected = SHOP_ITEMS[shopCursor];
-      if (!selected) return;
-      if (input === "b") {
-        dispatch({ type: "StoreBuy", itemId: selected.id, quantity: 1 });
-        return;
-      }
-      if (input === "s") {
-        dispatch({ type: "StoreSell", itemId: selected.id, quantity: 1 });
-      }
-      return;
-    }
+    const result = reduceStoreUi(storeUi, intent, {
+      partyLength: state.party.length,
+      memberId: member.id,
+      packEntries,
+    });
 
-    // mode === "pack"
-    if (key.upArrow) {
-      setPackCursor((c) => (c + packEntries.length - 1) % packEntries.length);
-      return;
-    }
-    if (key.downArrow) {
-      setPackCursor((c) => (c + 1) % packEntries.length);
-      return;
-    }
-    if (!selectedPack) return;
-    if (selectedPack.kind === "backpack") {
-      if (input === "e") {
+    switch (result.effect?.type) {
+      case "storeBuy":
+        dispatch({
+          type: "StoreBuy",
+          itemId: result.effect.itemId,
+          quantity: 1,
+        });
+        break;
+      case "storeSell":
+        dispatch({
+          type: "StoreSell",
+          itemId: result.effect.itemId,
+          quantity: 1,
+        });
+        break;
+      case "sellItem":
+        dispatch({ type: "SellItem", instanceId: result.effect.instanceId });
+        break;
+      case "equip":
         dispatch({
           type: "EquipItem",
-          instanceId: selectedPack.item.instanceId,
-          memberId: member.id,
+          instanceId: result.effect.instanceId,
+          memberId: result.effect.memberId,
         });
-        return;
-      }
-      if (input === "s") {
+        break;
+      case "unequip":
         dispatch({
-          type: "SellItem",
-          instanceId: selectedPack.item.instanceId,
+          type: "UnequipItem",
+          slot: result.effect.slot,
+          memberId: result.effect.memberId,
         });
-      }
-      return;
+        break;
+      case "back":
+        onBack();
+        break;
+      default:
+        break;
     }
-    if (input === "u") {
-      dispatch({
-        type: "UnequipItem",
-        slot: selectedPack.slot,
-        memberId: member.id,
-      });
-    }
+
+    setStoreUi(result.state);
   });
 
   const switchHint =
@@ -177,9 +132,9 @@ export function StoreView({ state, dispatch, onBack }: StoreViewProps) {
   return (
     <Screen
       state={state}
-      title={`Store - ${mode === "shop" ? "Shop" : "Backpack"}`}
+      title={`Store - ${storeUi.mode === "shop" ? "Shop" : "Backpack"}`}
       hint={
-        mode === "shop"
+        storeUi.mode === "shop"
           ? `Up/down to select, b to buy 1, s to sell 1, Tab for backpack, Esc to go back.${switchHint}`
           : `Up/down to select, e to equip, u to unequip, s to sell, Tab for shop, Esc to go back.${switchHint}`
       }
@@ -190,8 +145,8 @@ export function StoreView({ state, dispatch, onBack }: StoreViewProps) {
           {spdFrom(member)}
         </Text>
 
-        {mode === "shop" ? (
-          <ShopCatalog cursor={shopCursor} state={state} />
+        {storeUi.mode === "shop" ? (
+          <ShopCatalog cursor={storeUi.shopCursor} state={state} />
         ) : (
           <BackpackPanel
             entries={packEntries}

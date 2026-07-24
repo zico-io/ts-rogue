@@ -17,17 +17,44 @@ export const isMainMerge = (pullRequest: GitHubPullRequestEvent) => {
   );
 };
 
+// The Linear issue a merged PR closes, taken from the branch, title, or body.
+// ralph mode uses it to advance the enclosing issue group; standalone PRs
+// return null and skip the advance context.
+export const linearRefFromPullRequest = (
+  pullRequest: GitHubPullRequestEvent,
+): string | null => {
+  const { head, title, body } = pullRequest.raw as {
+    head?: { ref?: unknown };
+    title?: unknown;
+    body?: unknown;
+  };
+  const fields = [head?.ref, title, body];
+  for (const field of fields) {
+    if (typeof field !== "string") continue;
+    const match = field.match(/\bROG-\d+\b/i);
+    if (match) return match[0].toUpperCase();
+  }
+  return null;
+};
+
+const MAIN_MERGE_SYNCED =
+  "A pull request was merged into main. The sandbox checkout has already updated automatically; no manual repository sync is needed.";
+
+const ralphAdvanceContext = (ref: string) =>
+  `The merged pull request closes Linear issue ${ref}. If ${ref} is a sub-issue of a parent issue you are ralphing (an in-progress issue group), advance that group per the "Issue groups" instructions: confirm ${ref} is Done, then drive the next ready sub-issue. If ${ref} is a standalone issue, no further action is needed.`;
+
 export default githubChannel({
   credentials: connectGitHubCredentials("github/ts-rogue-eve-github"),
   // onSession already synced main; skip the channel's default PR-head checkout.
   events: { "turn.started": () => {} },
-  onPullRequest: (context, pullRequest) =>
-    isMainMerge(pullRequest)
-      ? {
-          auth: defaultGitHubAuth(context),
-          context: [
-            "A pull request was merged into main. The sandbox checkout has already updated automatically; no manual repository sync is needed.",
-          ],
-        }
-      : null,
+  onPullRequest: (context, pullRequest) => {
+    if (!isMainMerge(pullRequest)) return null;
+    const ref = linearRefFromPullRequest(pullRequest);
+    return {
+      auth: defaultGitHubAuth(context),
+      context: ref
+        ? [MAIN_MERGE_SYNCED, ralphAdvanceContext(ref)]
+        : [MAIN_MERGE_SYNCED],
+    };
+  },
 });

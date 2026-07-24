@@ -22,6 +22,9 @@
 import { DEFAULT_CLASS_ID, findClass } from "../../data/classes";
 import type { ItemInstance } from "../loot/types";
 
+/** Maximum number of members in the party (hero + up to three recruits). */
+export const MAX_PARTY = 4;
+
 /** An equipped item instance occupying a slot, or `null` when the slot is empty. */
 export type EquipmentSlot = ItemInstance | null;
 

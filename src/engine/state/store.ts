@@ -2,8 +2,13 @@ import { findClass } from "../../data/classes";
 import { chestLootFor, chestLootMessage } from "../../data/dungeons";
 import { findShopItem, sellPriceFor } from "../../data/shops";
 import { resolveBattleEvent, startBattle } from "../combat/resolution";
-import type { InventoryItem } from "../entities/party";
-import { createStartingHero } from "../entities/party";
+import type { InventoryItem, PartyMember } from "../entities/party";
+import { createStartingHero, MAX_PARTY } from "../entities/party";
+import {
+  generateRecruits,
+  recruitClassName,
+  recruitCost,
+} from "../entities/recruits";
 import { type EquipmentSlotName, equipTargetSlot } from "../loot/equipment";
 import { describeItem, itemSellPrice } from "../loot/items";
 import { rollChestLoot } from "../loot/resolution";
@@ -60,18 +65,21 @@ export interface NewGameOptions {
   permadeath?: boolean;
   /** Character class id for the starting hero; defaults to warrior when omitted. */
   classId?: string;
+  /** Player-chosen name for the starting hero; defaults to "Hero" when omitted. */
+  name?: string;
 }
 
 /** Build a fresh state tree for a new run from a seed, logging the seed. */
 export function newGame(seed: number, options?: NewGameOptions): GameState {
   const rng = new Rng(seed);
   const map = generateOverworldMap(seed);
-  return {
+  const base: GameState = {
     seed,
     rngState: rng.getState(),
     scene: "village",
     log: [entry(`Started new game with seed ${seed}`, "quest")],
-    party: [createStartingHero(options?.classId)],
+    party: [createStartingHero(options?.classId, "hero-1", options?.name)],
+    recruits: [],
     gold: 50,
     inventory: [],
     items: [],
@@ -81,6 +89,19 @@ export function newGame(seed: number, options?: NewGameOptions): GameState {
     battleState: null,
     flags: { permadeath: options?.permadeath ?? false, gameOver: false },
   };
+  // Populate the tavern immediately so a fresh run has recruits to hire.
+  return rollRecruits(base);
+}
+
+/**
+ * Reroll the tavern recruit pool from the current RNG stream (ROG-21). Called
+ * on new game and on inn rest (the chosen rotation cadence). Consumes RNG, so
+ * the advanced `rngState` is persisted for deterministic replays/saves.
+ */
+function rollRecruits(state: GameState): GameState {
+  const rng = new Rng(state.seed, state.rngState);
+  const recruits = generateRecruits(rng, state.party[0]?.level ?? 1);
+  return { ...state, recruits, rngState: rng.getState() };
 }
 
 /** Stack `quantity` of `itemId` onto `inventory`, merging existing stacks. */
@@ -107,7 +128,7 @@ function innHeal(state: GameState): GameState {
       log: [...state.log, entry("Not enough gold to rest at the inn")],
     };
   }
-  return {
+  const healed: GameState = {
     ...state,
     gold: state.gold - cost,
     party: state.party.map((member) => ({
@@ -117,6 +138,8 @@ function innHeal(state: GameState): GameState {
     })),
     log: [...state.log, entry(`Healed the party for ${cost} gold`)],
   };
+  // Resting is the tavern rotation cadence (ROG-21): fresh faces after each rest.
+  return rollRecruits(healed);
 }
 
 function storeBuy(
@@ -545,7 +568,7 @@ function unequipItem(
  * `createStartingHero`, capped at 4 party members.
  */
 function recruitMember(state: GameState, classId: string): GameState {
-  if (state.party.length >= 4) {
+  if (state.party.length >= MAX_PARTY) {
     return {
       ...state,
       log: [...state.log, entry("The party is already full")],
@@ -559,6 +582,77 @@ function recruitMember(state: GameState, classId: string): GameState {
     ...state,
     party: [...state.party, member],
     log: [...state.log, entry(`Recruited ${name} the ${classId}!`, "quest")],
+  };
+}
+
+/** Next party-unique member id (`member-<n>`), avoiding collisions after dismiss/rehire. */
+function nextMemberId(party: readonly PartyMember[]): string {
+  const maxSuffix = party.reduce((max, member) => {
+    const n = Number.parseInt(member.id.replace(/^\D+/, ""), 10);
+    return Number.isFinite(n) && n > max ? n : max;
+  }, 0);
+  return `member-${maxSuffix + 1}`;
+}
+
+/**
+ * `HireRecruit` reducer (ROG-21). Moves the pool recruit at `index` into the
+ * party for a level-scaled gold fee: blocked when the party is full or gold is
+ * short (logs and no-ops, mirroring `storeBuy`). The recruit gets a fresh
+ * party-unique id and is removed from the pool so it can't be hired twice.
+ */
+function hireRecruit(state: GameState, index: number): GameState {
+  const recruit = state.recruits[index];
+  if (!recruit) {
+    return { ...state, log: [...state.log, entry("No such recruit")] };
+  }
+  if (state.party.length >= MAX_PARTY) {
+    return {
+      ...state,
+      log: [...state.log, entry("The party is already full")],
+    };
+  }
+  const cost = recruitCost(recruit.level);
+  if (state.gold < cost) {
+    return {
+      ...state,
+      log: [...state.log, entry(`Not enough gold to hire ${recruit.name}`)],
+    };
+  }
+  const member: PartyMember = { ...recruit, id: nextMemberId(state.party) };
+  return {
+    ...state,
+    gold: state.gold - cost,
+    party: [...state.party, member],
+    recruits: state.recruits.filter((_, i) => i !== index),
+    log: [
+      ...state.log,
+      entry(
+        `Hired ${member.name} the ${recruitClassName(member.classId)} for ${cost} gold!`,
+        "quest",
+      ),
+    ],
+  };
+}
+
+/**
+ * `DismissMember` reducer (ROG-21). Removes a recruited member from the party.
+ * The hero (the first member) is protected and can never be dismissed.
+ */
+function dismissMember(state: GameState, memberId: string): GameState {
+  if (state.party[0]?.id === memberId) {
+    return {
+      ...state,
+      log: [...state.log, entry("You cannot dismiss the hero")],
+    };
+  }
+  const member = state.party.find((m) => m.id === memberId);
+  if (!member) {
+    return { ...state, log: [...state.log, entry("No such party member")] };
+  }
+  return {
+    ...state,
+    party: state.party.filter((m) => m.id !== memberId),
+    log: [...state.log, entry(`Dismissed ${member.name} from the party`)],
   };
 }
 
@@ -587,6 +681,7 @@ export function reduce(state: GameState, event: GameEvent): GameState {
       return newGame(event.seed, {
         permadeath: event.permadeath,
         classId: event.classId,
+        name: event.name,
       });
     case "ChangeScene":
       return { ...state, scene: event.scene };
@@ -609,6 +704,12 @@ export function reduce(state: GameState, event: GameEvent): GameState {
       return sellItem(state, event.instanceId);
     case "RecruitMember":
       return recruitMember(state, event.classId);
+    case "RefreshRecruits":
+      return rollRecruits(state);
+    case "HireRecruit":
+      return hireRecruit(state, event.index);
+    case "DismissMember":
+      return dismissMember(state, event.memberId);
     case "MoveOverworld":
       return moveOverworld(state, event.dx, event.dy);
     case "TurnDungeon":

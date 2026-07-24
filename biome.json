@@ -1,7 +1,13 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.5.4/schema.json",
   "files": {
-    "includes": ["src/**", "agent/**"]
+    "includes": [
+      "src/**",
+      "agent/**",
+      "!src/web/.next/**",
+      "!src/web/next-env.d.ts",
+      "!src/web/tsconfig.json"
+    ]
   },
   "formatter": {
     "enabled": true,
@@ -19,7 +25,7 @@
           "options": {
             "patterns": [
               {
-                "group": ["**/*.js"],
+                "group": ["**/*.js", "!pixi.js"],
                 "message": "Use extensionless imports in TypeScript"
               }
             ]
@@ -47,7 +53,72 @@
                     "message": "engine/ must not import from ui/ (PROJECT_PLAN Golden rule)"
                   },
                   {
-                    "group": ["**/*.js"],
+                    "group": ["**/*.js", "!pixi.js"],
+                    "message": "Use extensionless imports in TypeScript"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["src/web/**"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noNodejsModules": {
+              "level": "error",
+              "options": {}
+            }
+          },
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "ink": "src/web (the browser renderer) must not import ink (ROG-53 dual-renderer guardrail)"
+                },
+                "patterns": [
+                  {
+                    "group": ["**/*.js", "!pixi.js"],
+                    "message": "Use extensionless imports in TypeScript"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["src/app.tsx", "src/ui/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedGlobals": {
+              "level": "error",
+              "options": {
+                "deniedGlobals": {
+                  "window": "The terminal renderer (src/app.tsx, src/ui) must not touch the DOM (ROG-53 dual-renderer guardrail); that belongs in src/web.",
+                  "document": "The terminal renderer (src/app.tsx, src/ui) must not touch the DOM (ROG-53 dual-renderer guardrail); that belongs in src/web.",
+                  "navigator": "The terminal renderer (src/app.tsx, src/ui) must not touch the DOM (ROG-53 dual-renderer guardrail); that belongs in src/web.",
+                  "localStorage": "The terminal renderer (src/app.tsx, src/ui) must not touch the DOM (ROG-53 dual-renderer guardrail); that belongs in src/web.",
+                  "sessionStorage": "The terminal renderer (src/app.tsx, src/ui) must not touch the DOM (ROG-53 dual-renderer guardrail); that belongs in src/web.",
+                  "indexedDB": "The terminal renderer (src/app.tsx, src/ui) must not touch the DOM (ROG-53 dual-renderer guardrail); that belongs in src/web."
+                }
+              }
+            },
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "pixi.js": "The terminal renderer (src/app.tsx, src/ui) must not import pixi.js (ROG-53 dual-renderer guardrail); that belongs in src/web."
+                },
+                "patterns": [
+                  {
+                    "group": ["**/*.js", "!pixi.js"],
                     "message": "Use extensionless imports in TypeScript"
                   }
                 ]

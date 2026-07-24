@@ -22,6 +22,8 @@ export interface BattleEnemy {
   ascii: readonly string[];
   /** Copy of the monster's accent color; optional so older saves load (ROG-31). */
   color?: string;
+  /** Copy of the monster's browser sprite id; optional so older saves load (ROG-44). */
+  sprite?: string;
   xp: number;
   gold: number;
 }

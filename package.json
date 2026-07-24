@@ -17,8 +17,11 @@
     "game": "tsx src/app.tsx",
     "game:dev": "tsx --env-file-if-exists=.env.local src/app.tsx --dev",
     "play": "bash scripts/play.sh",
+    "play:web": "node scripts/play-web.mjs",
+    "web:build": "pnpm --filter @ts-rogue/web build",
+    "web:dev": "pnpm --filter @ts-rogue/web dev",
     "prepare": "git config core.hooksPath .githooks || true",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsgo --noEmit",
     "test:unit": "vitest run",
     "test": "pnpm test:unit",
     "lint": "biome ci src && biome lint agent",
@@ -30,7 +33,8 @@
     "ai": "^7.0.26",
     "eve": "^0.25.2",
     "ink": "^7",
-    "react": "^19",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
     "rot-js": "^2",
     "zod": "4.4.3"
   },
@@ -39,10 +43,14 @@
     "@changesets/cli": "^2.31.1",
     "@types/node": "^24.13.3",
     "@types/react": "^19",
+    "@types/react-dom": "^19.2.3",
+    "@typescript/native-preview": "7.0.0-dev.20260707.2",
+    "fake-indexeddb": "^6.2.5",
+    "playwright": "^1.50.0",
     "sandbox": "3.5.2",
     "sharp": "^0.35.3",
     "tsx": "^4",
-    "typescript": "^7",
+    "typescript": "^5.9.3",
     "vitest": "^4"
   }
 }

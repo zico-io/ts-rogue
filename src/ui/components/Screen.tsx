@@ -1,9 +1,11 @@
 import { Box, Text } from "ink";
 import { createContext, type ReactNode, useContext } from "react";
 import type { GameState } from "../../engine/state/types";
-import { bar, hpColor, mpColor, theme } from "../theme";
+import { buildChrome } from "../scene/chrome";
+import type { AnyNode } from "../scene/tree";
+import { bar, theme } from "../theme";
 import { MessageLog } from "./MessageLog";
-import { lineCount, useTerminalLayout } from "./MinSizeGuard";
+import { useTerminalLayout } from "./MinSizeGuard";
 
 export interface ScreenProps {
   state: GameState;
@@ -46,6 +48,12 @@ export function useScreenContent(): ScreenContent {
  * placement, height fill, and chrome are identical scene to scene. The content
  * region has a deterministic size (published through `useScreenContent`) so it
  * only reflows when the pane resizes, never when the footer or a child changes.
+ *
+ * This is the Ink interpreter (ROG-47) for the renderer-agnostic chrome tree
+ * `buildChrome` (`src/ui/scene/chrome.ts`) produces from `state` and the
+ * available size - 1 unit = 1 terminal cell here. The Pixi interpreter
+ * (`src/web/render/sceneView.ts`) walks the exact same tree, so the chrome's
+ * layout is defined once and only drawn twice.
  */
 export function Screen({
   state,
@@ -55,25 +63,17 @@ export function Screen({
   children,
 }: ScreenProps) {
   const { columns, rows } = useTerminalLayout();
-
-  // Panel chrome: title line (1 row), body box bottom border (1 row), and the
-  // body's left/right border + paddingX (4 cols). The footer stacks below the
-  // content: one PartyBar row per member plus a gold line, an optional hint,
-  // and an optional fixed-height log. Content takes whatever remains.
-  const innerWidth = Math.max(1, columns - 4);
-  const partyRows = state.party.length + 1;
-  const hintRows = hint ? lineCount(hint, innerWidth) : 0;
-  const logLines = showLog ? clamp(Math.round(rows * 0.22), 3, 8) : 0;
-  const logBoxRows = showLog ? logLines + 2 : 0;
-  const contentHeight = Math.max(
-    1,
-    rows - 2 - partyRows - hintRows - logBoxRows,
+  const { panel, content } = buildChrome(
+    state,
+    { width: columns, height: rows },
+    { title, hint, showLog },
   );
-  const content: ScreenContent = { width: innerWidth, height: contentHeight };
 
   return (
     <Box flexDirection="column" height={rows} width={columns}>
-      <Text color={theme.title}>{titledTop(title, columns)}</Text>
+      <Text color={theme.title}>
+        {titledTop(panel.title ?? title, columns)}
+      </Text>
       <Box
         borderStyle="single"
         borderTop={false}
@@ -82,27 +82,69 @@ export function Screen({
         flexGrow={1}
         paddingX={1}
       >
-        <Box flexDirection="column" height={contentHeight} overflow="hidden">
+        <Box flexDirection="column" height={content.height} overflow="hidden">
           <ScreenContentContext.Provider value={content}>
             {children}
           </ScreenContentContext.Provider>
         </Box>
-        <PartyBar state={state} />
-        {hint ? <Text color={theme.textMuted}>{hint}</Text> : null}
-        {showLog ? (
-          <MessageLog
-            messages={state.log}
-            height={logBoxRows}
-            width={innerWidth}
-          />
-        ) : null}
+        {panel.children.map((node) => renderNode(node, content.width))}
       </Box>
     </Box>
   );
 }
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(value, max));
+/**
+ * Walks one chrome node and its descendants into Ink primitives. Handles
+ * exactly the node kinds `buildChrome` produces (panel/stack/text/meter/log).
+ * `panel`/`stack` are containers and never draw anything themselves; `meter`
+ * keeps the terminal's glyph-bar rendering (`bar()`) rather than a graphical
+ * bar, per ROG-47's split - the Pixi interpreter draws real filled-rect
+ * meters instead.
+ */
+function renderNode(node: AnyNode, width: number): ReactNode {
+  switch (node.kind) {
+    case "panel":
+      return (
+        <Box key={node.key} flexDirection="column">
+          {node.children.map((child) => renderNode(child, width))}
+        </Box>
+      );
+    case "stack":
+      return (
+        <Box
+          key={node.key}
+          flexDirection={node.direction === "row" ? "row" : "column"}
+          gap={node.gap}
+        >
+          {node.children.map((child) => renderNode(child, width))}
+        </Box>
+      );
+    case "text":
+      return (
+        <Text key={node.key} color={node.color} bold={node.bold}>
+          {node.text}
+        </Text>
+      );
+    case "meter":
+      return (
+        <Text key={node.key} color={node.color}>
+          {bar(node.value, node.max, node.width)}
+        </Text>
+      );
+    case "log":
+      return (
+        <MessageLog
+          key={node.key}
+          messages={node.messages}
+          width={width}
+          height={node.maxLines + 2}
+        />
+      );
+    default:
+      // grid/sprite/menu: not produced by buildChrome; scene content renders
+      // through `children`, not through this tree.
+      return null;
+  }
 }
 
 /**
@@ -117,25 +159,4 @@ function titledTop(title: string, width: number): string {
   const head = `┌─${label}`; // ┌─ Title
   if (head.length + 1 >= w) return `┌${"─".repeat(w - 2)}┐`;
   return `${head}${"─".repeat(w - head.length - 1)}┐`;
-}
-
-/** Persistent footer vitals: one meter row per party member plus gold. */
-function PartyBar({ state }: { state: GameState }) {
-  return (
-    <Box flexDirection="column">
-      {state.party.map((member) => (
-        <Text key={member.id}>
-          {member.name.padEnd(8)} Lv{member.level} {"  "}
-          <Text color={hpColor(member.hp, member.maxHp)}>
-            HP {bar(member.hp, member.maxHp, 10)} {member.hp}/{member.maxHp}
-          </Text>
-          {"   "}
-          <Text color={mpColor(member.mp, member.maxMp)}>
-            MP {bar(member.mp, member.maxMp, 6)} {member.mp}/{member.maxMp}
-          </Text>
-        </Text>
-      ))}
-      <Text color={theme.gold}>Gold {state.gold}</Text>
-    </Box>
-  );
 }

@@ -1,3 +1,7 @@
+packages:
+  - "."
+  - "src/web"
+
 allowBuilds:
   esbuild: true
   sharp: false

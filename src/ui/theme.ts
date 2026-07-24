@@ -20,6 +20,12 @@ export const theme = {
   // Palette indigo rather than the gray ramp for the same 16-color reason.
   border: "#444f8d",
   borderFocus: "#e3aa3e",
+  // The void behind every scene's content - matches the terminal's own
+  // implicit black background (Ink never paints one) and the Pixi
+  // `Application`'s clear color (ROG-63), so a browser panel that doesn't
+  // fully cover its content region reads as dark, not as a bleed of
+  // `border`'s indigo.
+  background: "#000000",
   title: "#c6b4b1",
   // accent + states
   accent: "#e3aa3e",
@@ -92,4 +98,14 @@ export function bar(value: number, max: number, width: number): string {
   let filled = Math.round(ratio * width);
   if (value > 0 && filled === 0) filled = 1;
   return "█".repeat(filled) + "░".repeat(width - filled);
+}
+
+/**
+ * Packs a `#rrggbb` hex color string into the `0xRRGGBB` int Pixi's `Color`,
+ * tint, and fill APIs accept. The browser renderer reads theme tokens as hex
+ * strings (same as the terminal) and converts at the Pixi boundary here,
+ * instead of the theme module knowing anything about Pixi.
+ */
+export function toPixiColor(hex: string): number {
+  return Number.parseInt(hex.slice(1), 16);
 }

@@ -4,6 +4,7 @@ import type { FailureBoundary } from "../../lib/incidents";
 import { ChurchView } from "./village/ChurchView";
 import { InnView } from "./village/InnView";
 import { StoreView } from "./village/StoreView";
+import { TavernView } from "./village/TavernView";
 import type { VillageBuilding } from "./village/types";
 import { VillageOverview } from "./village/VillageOverview";
 
@@ -42,6 +43,8 @@ export function VillageScreen({
       );
     case "store":
       return <StoreView dispatch={dispatch} onBack={onBack} state={state} />;
+    case "tavern":
+      return <TavernView dispatch={dispatch} onBack={onBack} state={state} />;
     case null:
       return (
         <VillageOverview
