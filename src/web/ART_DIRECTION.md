@@ -48,7 +48,7 @@ Four global constraints every asset obeys, so the two sources read as one world:
    don't share the 8px grid, only the palette and lighting. Nearest-neighbor
    upscaling stays (`texture.source.scaleMode = "nearest"`); at 8px, dungeon
    raycaster walls read deliberately chunky - lean into it (§4). This is a
-   discrete follow-up step: it touches `TILE_SOURCES` (`src/ui/tiles/kitty.ts`),
+   discrete follow-up step: it touches `TILE_SOURCES` (`src/ui/tiles/sources.ts`),
    `ATLAS_FRAMES` and the grid math in `scripts/build-atlas.ts` (12x12 -> 8x8),
    and the `UNIT_PX` pitch in `src/web/render/sceneView.ts`.
 2. **One unified palette.** Every sprite - Minifantasy tiles *and* Aekashics
@@ -288,7 +288,7 @@ logic untouched:
 | Follow-up issue | Primary files |
 | --- | --- |
 | Palette evolution (§3) | `src/ui/theme.ts` (shared by both renderers - verify terminal still reads sanely) |
-| Atlas 12->8px migration (§2.1) | `src/ui/tiles/kitty.ts` (`TILE_SOURCES`), `scripts/build-atlas.ts` (`ATLAS_FRAMES`, grid math -> Minifantasy 8x8), regenerate `src/web/public/atlas/*` |
+| Atlas 12->8px migration (§2.1) | `src/ui/tiles/sources.ts` (`TILE_SOURCES`), `scripts/build-atlas.ts` (`ATLAS_FRAMES`, grid math -> Minifantasy 8x8), regenerate `src/web/public/atlas/*` |
 | New sprites (Minifantasy biomes/dungeon/UI; Aekashics battlers) | atlas pipeline for 8px tiles; battlers loaded as individual textures, `sprite` on `MonsterDef` in `src/data/monsters.ts` |
 | Navy windowskin + meters + bitmap font (§5) | `src/web/render/sceneView.ts`, `src/web/render/pixiDrawFactory.ts`, `bootGame.ts` (font load) |
 | Dungeon atmosphere/lighting/particles (§4) | `src/web/render/dungeonView.ts`, `src/web/render/pixiDungeonDrawFactory.ts` (geometry in `dungeonRaycast.ts` stays) |

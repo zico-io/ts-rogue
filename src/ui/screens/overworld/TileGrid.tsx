@@ -1,5 +1,4 @@
 import { Box, Text } from "ink";
-import { tileText } from "../../tiles/kitty";
 import type { Cell } from "./render";
 
 export interface TileGridProps {
@@ -7,12 +6,10 @@ export interface TileGridProps {
   /** Optional container bounds; clips any overflow so the grid never spills. */
   width?: number;
   height?: number;
-  /** Render cells as kitty-graphics tiles (2 columns per cell) when set. */
-  tiles?: boolean;
 }
 
 /** Renders pre-built rows of {@link Cell}s as a monospace grid. Presentational only. */
-export function TileGrid({ rows, width, height, tiles }: TileGridProps) {
+export function TileGrid({ rows, width, height }: TileGridProps) {
   const boxProps = {
     ...(width !== undefined ? { width } : {}),
     ...(height !== undefined ? { height, overflow: "hidden" as const } : {}),
@@ -21,15 +18,11 @@ export function TileGrid({ rows, width, height, tiles }: TileGridProps) {
     <Box flexDirection="column" {...boxProps}>
       {rows.map((row, y) => (
         <Box key={row[0]?.key ?? y}>
-          {row.map((cell) =>
-            tiles && cell.tile ? (
-              <Text key={cell.key}>{tileText(cell.tile)}</Text>
-            ) : (
-              <Text color={cell.color} key={cell.key}>
-                {cell.char}
-              </Text>
-            ),
-          )}
+          {row.map((cell) => (
+            <Text color={cell.color} key={cell.key}>
+              {cell.char}
+            </Text>
+          ))}
         </Box>
       ))}
     </Box>

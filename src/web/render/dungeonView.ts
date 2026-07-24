@@ -89,7 +89,7 @@ const FACING_OFFSET: Record<DungeonFacing, { dx: number; dy: number }> = {
   west: { dx: -0.35, dy: 0 },
 };
 
-/** Glyph -> minimap cell color, mirroring `DungeonScreen.tsx`'s local `MINIMAP_TILES` table. `undefined` (blank) draws nothing - unexplored. */
+/** Glyph -> minimap cell color for the glyphs `renderMinimap` (`dungeon/render.ts`) emits. `undefined` (blank) draws nothing - unexplored. */
 function minimapCellColor(
   glyph: string,
   ramp: readonly string[],

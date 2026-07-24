@@ -1,10 +1,9 @@
 /**
- * Pack the browser (Pixi) texture atlas from the Urizen sheet, reusing the
- * same tile coordinates as the terminal's kitty tileset
- * (`src/ui/tiles/kitty.ts`) so both renderers draw from one source of truth
- * (ROG-44). Unlike the terminal pipeline - per-tile PNGs, monster sprites
- * pre-scaled 8x for glyph cells - Pixi loads one packed atlas and scales
- * pixel art at render time with nearest-neighbor filtering.
+ * Pack the browser (Pixi) texture atlas from the Urizen sheet, using the
+ * tile-sheet coordinates in `src/ui/tiles/sources.ts` (`TILE_SOURCES`) as the
+ * single source of truth (ROG-44). Pixi loads one packed atlas and scales
+ * pixel art at render time with nearest-neighbor filtering. (The terminal
+ * renderer is pure ASCII and draws no tiles.)
  *
  * Frames pack at 8x8 (ROG-68) - the shared Minifantasy grid the hybrid asset
  * base (`src/web/ART_DIRECTION.md` §2.1) is migrating to - downsampled at
@@ -27,7 +26,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
-import { TILE_SOURCES, type TileName } from "../src/ui/tiles/kitty";
+import { TILE_SOURCES, type TileName } from "../src/ui/tiles/sources";
 
 const SHEET = fileURLToPath(
   new URL("../assets/urizen_onebit_tileset__v2d0.png", import.meta.url),

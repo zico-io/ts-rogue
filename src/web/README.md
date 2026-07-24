@@ -151,19 +151,17 @@ renderers.
 ## Art pipeline (ROG-44)
 
 Style: 12x12 pixel art from the [Urizen 1-bit tileset](../../assets/README.md)
-(`assets/urizen_onebit_tileset__v2d0.png`), the same source the terminal's
-kitty-graphics tileset uses (`src/ui/tiles/kitty.ts`). Colors come from the
-ROG-31 palette in `src/ui/theme.ts`; the art itself is monochrome pixel art
-tinted only by each monster's `color` in battle framing, not by the tile
-atlas.
+(`assets/urizen_onebit_tileset__v2d0.png`); the tile-sheet coordinates live in
+`src/ui/tiles/sources.ts` (`TILE_SOURCES`). Colors come from the ROG-31 palette
+in `src/ui/theme.ts`; the art itself is monochrome pixel art tinted only by
+each monster's `color` in battle framing, not by the tile atlas. (The terminal
+renderer is pure ASCII and uses none of this - only the browser draws tiles.)
 
 `scripts/build-atlas.ts` slices named tile coordinates out of the sheet and
 packs them into one Pixi spritesheet (`atlas.png` + `atlas.json`, hash
 format) under `public/atlas/`. Frames stay at native 12x12 - Pixi scales
 pixel art at render time with nearest-neighbor filtering
-(`texture.source.scaleMode = "nearest"`) instead of baking a pre-scaled
-sprite, unlike the terminal pipeline which pre-scales monster glyphs 8x for
-fixed-size kitty placements.
+(`texture.source.scaleMode = "nearest"`) instead of baking a pre-scaled sprite.
 
 `atlas.ts`'s `loadAtlas()` registers the bundle with `Assets.addBundle` and
 awaits `Assets.loadBundle`, returning a `Spritesheet` whose `textures` map is
@@ -173,8 +171,8 @@ keyed by frame name. `main.ts` looks sprites up by name, e.g.
 ### Adding a new sprite
 
 1. Pick (or add) the tile's `(col, row)` coordinate on the Urizen sheet and
-   add it to `TILE_SOURCES` in `src/ui/tiles/kitty.ts` if it is not already
-   there (the terminal and browser pipelines share this table).
+   add it to `TILE_SOURCES` in `src/ui/tiles/sources.ts` if it is not already
+   there.
 2. Add the same name to `ATLAS_FRAMES` in `scripts/build-atlas.ts`.
 3. Regenerate the atlas: `pnpm tsx scripts/build-atlas.ts`. This rewrites
    `public/atlas/atlas.png` and `atlas.json` - commit both.
@@ -284,8 +282,8 @@ is the thin real-Pixi adapter.
 
 `wall`/`floor`/`chest`/`stairsDown`/`boss` were added to `ATLAS_FRAMES` in
 `scripts/build-atlas.ts` for this scene (they already had tile coordinates
-in `src/ui/tiles/kitty.ts`'s `TILE_SOURCES`, shared with the terminal's
-kitty-graphics pipeline, just weren't packed into the browser atlas yet).
+in `src/ui/tiles/sources.ts`'s `TILE_SOURCES`, just weren't packed into the
+browser atlas yet).
 Regenerate the same way as any other atlas change: `pnpm tsx
 scripts/build-atlas.ts`, then commit the rewritten `public/atlas/atlas.png`
 + `atlas.json`.

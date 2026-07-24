@@ -17,7 +17,7 @@ import {
 } from "../../../engine/world/overworld";
 import type { OverworldMap, Point, Tile } from "../../../engine/world/types";
 import { theme } from "../../theme";
-import type { TileName } from "../../tiles/kitty";
+import type { TileName } from "../../tiles/sources";
 
 export interface TileGlyph {
   char: string;
@@ -26,7 +26,7 @@ export interface TileGlyph {
 
 export interface Cell extends TileGlyph {
   key: string;
-  /** Tileset name for kitty-graphics rendering; unset cells stay ASCII. */
+  /** Tile-sheet frame name for the browser (Pixi) renderer; the terminal ignores it. */
   tile?: TileName;
 }
 

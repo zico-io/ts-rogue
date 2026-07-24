@@ -11,9 +11,8 @@
  * resolves `/atlas/atlas.json`.
  *
  * Keys match `MonsterDef.sprite` ids in `src/data/monsters.ts`. The terminal
- * renderer is unaffected - it draws these same three monsters from the
- * Urizen-sourced `TILE_SOURCES` entries in `src/ui/tiles/kitty.ts`, keyed by
- * monster id rather than `MonsterDef.sprite`.
+ * renderer is unaffected - it is pure ASCII and draws every monster from the
+ * `ascii` art in `src/data/monsters.ts`.
  */
 import { Assets, type Texture } from "pixi.js";
 

@@ -8,7 +8,6 @@ import {
 import { Screen, useScreenContent } from "../components/Screen";
 import { normalizeInkKey } from "../hooks/normalizeInkKey";
 import { theme } from "../theme";
-import { tilesSupported } from "../tiles/kitty";
 import {
   type OverworldUiState,
   reduceOverworldUi,
@@ -92,12 +91,9 @@ function OverworldBody({ state }: { state: GameState }) {
   const minimapBoxWidth = minimapCols + MINIMAP_BOX_OVERHEAD_COLS;
   const minimapBoxHeight = minimapRows.length + MINIMAP_BOX_OVERHEAD_ROWS;
 
-  // Kitty-graphics tiles are 2 columns wide, so the viewport holds half as many.
-  const tiles = tilesSupported();
-  const tileCols = tiles ? 2 : 1;
   const viewportPaneWidth = Math.max(1, width - minimapBoxWidth - MINIMAP_GAP);
   const viewportRows = buildViewportRows(map, player, {
-    width: Math.floor(viewportPaneWidth / tileCols),
+    width: viewportPaneWidth,
     height: mainHeight,
   });
   const viewportCols = viewportRows[0]?.length ?? 0;
@@ -112,9 +108,8 @@ function OverworldBody({ state }: { state: GameState }) {
       >
         <TileGrid
           rows={viewportRows}
-          width={viewportCols * tileCols}
+          width={viewportCols}
           height={mainHeight}
-          tiles={tiles}
         />
         <Box
           borderStyle="single"
