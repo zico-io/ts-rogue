@@ -42,6 +42,7 @@ The tmux play harness also requires `tmux`.
 | Run the browser renderer locally | `pnpm web:dev` |
 | Drive a deterministic tmux session | `pnpm play start [seed] [cols] [rows]` |
 | Iterate with the game beside a pi assistant (on Eve's gateway/model) | `pnpm play dev [seed] [cols] [rows]` |
+| Run that same layout in a Vercel Sandbox instead of locally | `pnpm play:sandbox [seed] [cols] [rows]` |
 | Test a pull request in a Vercel Sandbox | `pnpm pr:sandbox <PR#>` |
 | Run the Eve agent locally | `pnpm eve:dev` |
 | Type-check | `pnpm typecheck` |
