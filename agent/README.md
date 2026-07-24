@@ -118,7 +118,14 @@ adds the [ponytail](https://github.com/DietrichGebert/ponytail) extension for
 `scripts/play.sh dev`'s interactive pi sessions. `instructions.md`'s Standing
 rules carry ponytail's YAGNI/minimal-diff ladder directly, so it governs the
 root's own decisions and the delegated coding child (both run the same
-instructions), not just pi.
+instructions), not just pi. Having the toolchain on `PATH` was not enough by
+itself (HAR-7): the root and child kept reaching only for the built-in
+`grep`/`glob`/`read_file` tools and skipping it, plus falling into silent or
+one-at-a-time tool calls despite the batching rule already existing.
+`instructions.md`'s Discipline section now explicitly calls out `ast-grep` for
+structural (syntax-aware) searches the built-in tools can't express, pairs
+every batch of tool calls with a short immediate reply instead of silence,
+and gives the batching rule a concrete example.
 
 This is already the same class of infrastructure `pnpm pr:sandbox`
 (`scripts/pr-sandbox.sh`) uses for human PR review - both are Vercel

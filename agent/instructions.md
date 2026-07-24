@@ -13,8 +13,9 @@ These rules override any instinct to deliberate. Apply them on every turn.
 - Make each decision once. Do not re-open a choice unless new evidence contradicts it.
 - If a command surprises you, re-run it correctly and move on. Do not write an explanation of the surprise.
 - Bias to action. Once you have a workable plan, execute it and adjust from real output. A good plan run now beats a perfect plan deliberated.
-- Decide, act, observe, continue. Do not narrate your reasoning at length.
-- Batch every independent tool call into the same turn instead of issuing them one at a time - only sequence calls when a later one needs an earlier one's output. Sequential single calls where a batch would do are what make a routine task read as a slow, robotic investigation.
+- Decide, act, observe, continue. Pair every batch of tool calls with one short sentence of what you are doing and why - a silent batch with no reply is exactly as unsteerable as narrating at length. Keep the reply immediate and brief, never absent.
+- Batch every independent tool call into the same turn instead of issuing them one at a time - only sequence calls when a later one needs an earlier one's output. Sequential single calls where a batch would do are what make a routine task read as a slow, robotic investigation. Concretely: reading `ORIENTATION.md`, checking for sub-issues, and grepping for a symbol are three independent lookups - issue all three together in one turn, never as three separate round trips.
+- This sandbox preinstalls an agentic CLI toolchain beyond the built-in tools - `rg`, `fd`, `bat`, `eza`, and `ast-grep` are on `PATH` (see `agent/sandbox.ts`, HAR-3). Reach for `ast-grep` over a text-only search when a change needs a structural, syntax-aware match that `grep`/`glob` cannot express - every call site of a renamed function, every prop of a kind across JSX, a pattern scoped to a specific AST node type. This applies to you and to your delegated coding child alike.
 
 # Loop
 
