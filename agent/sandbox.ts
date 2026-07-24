@@ -1,3 +1,6 @@
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+
 import { getToken } from "@vercel/connect";
 import {
   defineSandbox,
@@ -143,21 +146,38 @@ export function keepTokenFresh(
 const mintFreshPolicy = () =>
   withTimeout(githubNetworkPolicy(), TOKEN_MINT_TIMEOUT_MS);
 
+// Cache the bootstrap-baked node_modules across commits: key the snapshot on the
+// dependency lockfile, not the commit SHA. eve evaluates this at build time and
+// freezes it; combined with eve's automatic tracking of authored sandbox source,
+// the snapshot rebuilds only when pnpm-lock.yaml or this file (tool pins) changes,
+// and is reused otherwise. onSession re-fetches main, so source stays current.
+// Fall back to the commit SHA if the lockfile is unreadable, so a failed read
+// never silently serves stale modules.
+export function dependencyRevalidationKey(): string {
+  try {
+    const lock = readFileSync(new URL("../pnpm-lock.yaml", import.meta.url));
+    return `deps:${createHash("sha256").update(lock).digest("hex")}`;
+  } catch {
+    return process.env.VERCEL_GIT_COMMIT_SHA ?? "local";
+  }
+}
+
 export default defineSandbox({
   backend: vercel(),
-  revalidationKey: () => process.env.VERCEL_GIT_COMMIT_SHA ?? "local",
+  revalidationKey: dependencyRevalidationKey,
   async bootstrap({ use }) {
     const { policy } = await resolveStartupNetworkPolicy();
     const sandbox = await use({ networkPolicy: policy });
     const setup = await sandbox.run({
       command:
-        // tmux backs the terminal play harness (scripts/play.sh) and Playwright's
-        // chromium backs the web play harness (scripts/play-web.mjs), so the agent
-        // can drive and screenshot both renderers in-sandbox. Install the browser
-        // now, while the pre-warm network policy is open (a locked-down runtime
-        // policy can block the browser CDN). `|| true` keeps a locked-down image
-        // from failing the whole pre-warm if either install is unavailable.
-        "(sudo apt-get update && sudo apt-get install -y tmux || true) && git config --global --add safe.directory /workspace && git clone https://github.com/zico-io/ts-rogue.git . && corepack pnpm install --frozen-lockfile && (corepack pnpm exec playwright install --with-deps chromium || true)",
+        // tmux backs the terminal play harness (scripts/play.sh), pi backs its
+        // interactive `play dev` layout, and Playwright's chromium backs the web
+        // play harness (scripts/play-web.mjs), so the agent can drive and screenshot
+        // both renderers in-sandbox. Install these now, while the pre-warm network
+        // policy is open (a locked-down runtime policy can block the npm registry or
+        // browser CDN). `|| true` keeps a locked-down image from failing the whole
+        // pre-warm if any install is unavailable.
+        "(sudo apt-get update && sudo apt-get install -y tmux || true) && (npm install -g @earendil-works/pi-coding-agent@0.81.1 || true) && git config --global --add safe.directory /workspace && git clone https://github.com/zico-io/ts-rogue.git . && corepack pnpm install --frozen-lockfile && (corepack pnpm exec playwright install --with-deps chromium || true)",
     });
     if (setup.exitCode !== 0)
       throw new Error(setup.stderr || "Sandbox pre-warming failed");
