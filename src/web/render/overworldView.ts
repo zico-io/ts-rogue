@@ -140,7 +140,25 @@ export class OverworldSceneView {
       width: viewportCols,
       height: viewportRowsCount,
     });
-    this.drawViewport(viewportRows, tilePx, seenSprites);
+    // `viewportCols`/`viewportRowsCount` floor-divide, so a whole-tile
+    // remainder is always left over unless the area happens to be an exact
+    // multiple of `tilePx`. Split that remainder evenly on both edges
+    // instead of dumping it as one dead strip on the right/bottom (ROG-66).
+    const viewportOffsetX = Math.max(
+      0,
+      (viewportAreaWidth - viewportCols * tilePx) / 2,
+    );
+    const viewportOffsetY = Math.max(
+      0,
+      (contentHeight - viewportRowsCount * tilePx) / 2,
+    );
+    this.drawViewport(
+      viewportRows,
+      tilePx,
+      viewportOffsetX,
+      viewportOffsetY,
+      seenSprites,
+    );
     this.pruneStaleSprites(seenSprites);
 
     this.drawMinimap(
@@ -163,6 +181,8 @@ export class OverworldSceneView {
   private drawViewport(
     rows: Cell[][],
     tilePx: number,
+    offsetX: number,
+    offsetY: number,
     seen: Set<string>,
   ): void {
     for (const [rowIndex, row] of rows.entries()) {
@@ -173,7 +193,10 @@ export class OverworldSceneView {
           sprite = this.factory.createSprite();
           this.viewportSprites.set(cell.key, sprite);
         }
-        sprite.setPosition(colIndex * tilePx, rowIndex * tilePx);
+        sprite.setPosition(
+          offsetX + colIndex * tilePx,
+          offsetY + rowIndex * tilePx,
+        );
         sprite.setSize(tilePx, tilePx);
         const tile = cell.tile ?? "grass";
         sprite.setTexture(tile);
