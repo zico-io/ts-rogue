@@ -89,6 +89,7 @@ export function parseScreenshotToolingStatus(
 export function buildOrientationBrief(
   facts: GitFacts,
   screenshotTooling?: ScreenshotToolingStatus,
+  githubAuthed?: boolean,
 ): string {
   const lines = [
     "# Orientation brief",
@@ -105,6 +106,13 @@ export function buildOrientationBrief(
       screenshotTooling.available
         ? "- Screenshot tooling (`scripts/play-web.mjs`): available - a PR with a rendered UI/visual change must include a screenshot."
         : `- Screenshot tooling (\`scripts/play-web.mjs\`): unavailable (${screenshotTooling.reason}) - try it once for a UI-visual PR; if it still fails, say so explicitly in the PR and session update instead of omitting evidence.`,
+    );
+  }
+  if (typeof githubAuthed === "boolean") {
+    lines.push(
+      githubAuthed
+        ? "- GitHub auth: confirmed at session start - `git push` and GitHub API calls should work normally."
+        : "- GitHub auth: not confirmed at session start (the token service was slow or unavailable) - it keeps retrying automatically in the background and typically recovers within a minute. If a `git push` or GitHub API call fails early in the session, wait about a minute and retry once or twice before reporting a blocker; only escalate if it is still failing after those retries.",
     );
   }
   lines.push(

@@ -21,15 +21,21 @@ import {
 // before that so a session that outlasts one token can still push.
 const TOKEN_REFRESH_MS = 45 * 60 * 1000;
 // After the authed mint fails (or startup fell back to unauthenticated), retry
-// on a short cadence so push capability recovers within a couple of minutes of
-// the token service healing, instead of waiting a full refresh cycle.
-const TOKEN_RETRY_MS = 2 * 60 * 1000;
+// on a short cadence so push capability recovers within tens of seconds of the
+// token service healing, instead of an agent burning several minutes retrying
+// `git push` by hand against a still-unauthenticated policy (see HAR-5: a
+// session saw ~20 minutes of push/API failures because the old 2-minute retry
+// cadence checked far too infrequently during a startup-time credential blip).
+const TOKEN_RETRY_MS = 30 * 1000;
 // Bound every token mint so a slow/degraded token service cannot block session
 // startup or a refresh tick indefinitely.
 const TOKEN_MINT_TIMEOUT_MS = 10 * 1000;
 // Consecutive setNetworkPolicy failures tolerated before treating the sandbox as
-// gone - survives a transient blip (~10min at the retry cadence) without killing refresh.
-export const MAX_SET_POLICY_FAILURES = 5;
+// gone. Kept at the same ~10-minute total endurance as before (failures *
+// TOKEN_RETRY_MS), just checked more often now that TOKEN_RETRY_MS is shorter,
+// so recovery from a transient blip is faster without giving up on a longer
+// outage any sooner.
+export const MAX_SET_POLICY_FAILURES = 20;
 
 // Unauthenticated fallback: allow every host with no header injection. Public
 // clone/fetch and the npm registry still work; only authenticated `git push`
@@ -272,6 +278,7 @@ export default defineSandbox({
           content: buildOrientationBrief(
             parseGitFacts(facts.stdout),
             parseScreenshotToolingStatus(screenshotStatus.stdout),
+            authed,
           ),
         });
     } catch {

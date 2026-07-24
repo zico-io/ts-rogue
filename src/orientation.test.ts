@@ -111,4 +111,33 @@ describe("buildOrientationBrief", () => {
     });
     expect(brief).not.toContain("Screenshot tooling");
   });
+
+  it("reports confirmed GitHub auth as working normally", () => {
+    const brief = buildOrientationBrief(
+      { branch: "main", headSha: "abc1234", clean: true, recentCommits: [] },
+      undefined,
+      true,
+    );
+    expect(brief).toContain("GitHub auth: confirmed");
+  });
+
+  it("reports unconfirmed GitHub auth with retry-before-blocker guidance", () => {
+    const brief = buildOrientationBrief(
+      { branch: "main", headSha: "abc1234", clean: true, recentCommits: [] },
+      undefined,
+      false,
+    );
+    expect(brief).toContain("GitHub auth: not confirmed");
+    expect(brief).toContain("retry once or twice before reporting a blocker");
+  });
+
+  it("omits the GitHub auth line entirely when no status was supplied", () => {
+    const brief = buildOrientationBrief({
+      branch: "main",
+      headSha: "abc1234",
+      clean: true,
+      recentCommits: [],
+    });
+    expect(brief).not.toContain("GitHub auth");
+  });
 });
