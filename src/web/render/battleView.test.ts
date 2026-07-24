@@ -10,7 +10,7 @@ import type {
   BattleSpriteHandle,
   BattleTextHandle,
 } from "./battleView";
-import { BattleSceneView } from "./battleView";
+import { artPxFor, BattleSceneView } from "./battleView";
 
 interface FakeSprite extends BattleSpriteHandle {
   setPosition: ReturnType<typeof vi.fn<(x: number, y: number) => void>>;
@@ -126,6 +126,8 @@ function stateInBattle(enemies: BattleEnemy[]): GameState {
 }
 
 const SIZE = { width: 500, height: 400 };
+/** Enemy art scales with `SIZE` (ROG-66); compute the expected box size from the same formula the view uses instead of a hardcoded magic number. */
+const EXPECTED_ART_PX = artPxFor(SIZE);
 
 describe("BattleSceneView", () => {
   it("draws one sprite per living enemy, textured by its sprite id", () => {
@@ -148,10 +150,16 @@ describe("BattleSceneView", () => {
     expect(slimeSprite).toBeDefined();
     expect(goblinSprite).toBeDefined();
     expect(factory.rects.length).toBeGreaterThanOrEqual(0);
-    // Every sprite gets sized into the fixed art box (ROG-63); the real
-    // Pixi adapter fits/centers the native texture inside it.
-    expect(slimeSprite?.setSize).toHaveBeenCalledWith(72, 72);
-    expect(goblinSprite?.setSize).toHaveBeenCalledWith(72, 72);
+    // Every sprite gets sized into the art box scaled off SIZE (ROG-63,
+    // ROG-66); the real Pixi adapter fits/centers the native texture inside it.
+    expect(slimeSprite?.setSize).toHaveBeenCalledWith(
+      EXPECTED_ART_PX,
+      EXPECTED_ART_PX,
+    );
+    expect(goblinSprite?.setSize).toHaveBeenCalledWith(
+      EXPECTED_ART_PX,
+      EXPECTED_ART_PX,
+    );
   });
 
   it("falls back to a tinted rect (not a sprite) for an enemy with no sprite id", () => {
