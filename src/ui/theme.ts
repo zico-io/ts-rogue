@@ -27,6 +27,13 @@ export const theme = {
   // `border`'s indigo.
   background: "#000000",
   title: "#c6b4b1",
+  // JRPG windowskin fill (ROG-64, art direction §5) - the navy body behind the
+  // HUD chrome's beveled panel, replacing the old flat `background`/`border`
+  // combo there. `text` on this fill is ~11.9:1, well clear of the >=4.5:1
+  // body-text goal (art direction §7).
+  window: {
+    fill: "#1b2a63",
+  },
   // accent + states
   accent: "#e3aa3e",
   danger: "#e74343",

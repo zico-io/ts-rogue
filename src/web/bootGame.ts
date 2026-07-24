@@ -39,6 +39,7 @@ import { loadAtlas } from "./atlas";
 import { loadBattlerTextures } from "./battlers";
 import type { BootFlags } from "./boot";
 import { BrowserDevConsole } from "./devConsole";
+import { loadHudFont } from "./font";
 import { BrowserKeyboardManager } from "./input/keyboard";
 import { normalizeBrowserKey } from "./input/normalizeBrowserKey";
 import { BattleSceneView } from "./render/battleView";
@@ -258,6 +259,11 @@ export async function bootGame(
     autoDensity: true,
   });
   mount.appendChild(app.canvas);
+
+  // HUD bitmap pixel font (ROG-64) - installed before any scene chrome is
+  // built below so `createPixiDrawFactory`'s `createText` picks it up from
+  // the first render instead of flashing the monospace fallback in.
+  await loadHudFont();
 
   // `resizeTo: mount` only re-measures on a *window* `resize` event (see
   // Pixi's `ResizePlugin`) - it never observes `mount` itself, so a portal

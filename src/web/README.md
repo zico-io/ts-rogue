@@ -89,16 +89,28 @@ renderers.
 - `render/sceneView.ts` - `SceneChromeView` (ROG-47): the Pixi interpreter for
   the shared HUD chrome tree `buildChrome` (`src/ui/scene/chrome.ts`)
   produces - the same tree `src/ui/components/Screen.tsx` walks for the
-  terminal. Draws the panel border/title, real filled-rect HP/MP meters
-  (replacing the terminal's glyph bars), and the message log tail, keeping
-  every draw object keyed by `node.key` so a dispatch only updates what
-  changed instead of rebuilding the chrome. Framework-free (no `pixi.js`
-  import) behind a `DrawFactory` interface, so it's unit-tested in
-  `sceneView.test.ts` without a real WebGL/canvas context.
+  terminal. Draws the amber-bordered, beveled navy `window`-token panel
+  (ROG-64), real filled-rect HP/MP meters with a bevel + gloss line
+  (replacing the terminal's glyph bars), a title-divider hairline, and the
+  message log tail with a per-line age-fade, keeping every draw object keyed
+  by `node.key` so a dispatch only updates what changed instead of
+  rebuilding the chrome. Framework-free (no `pixi.js` import) behind a
+  `DrawFactory` interface, so it's unit-tested in `sceneView.test.ts`
+  without a real WebGL/canvas context.
 - `render/pixiDrawFactory.ts` - `createPixiDrawFactory`: the thin adapter that
   implements `sceneView.ts`'s `DrawFactory` with real Pixi `Graphics`/`Text`
-  objects added to a given container. Not unit-tested (thin Pixi glue, like
+  (or `BitmapText`, once `font.ts`'s HUD font is installed) objects added to
+  a given container. `createRect`'s `bevel`/`gloss` options derive their
+  highlight/shadow/gloss shades from the rect's own fill color at draw time
+  (ROG-64), so one primitive draws both the windowskin panel and any
+  dynamically-colored HP/MP meter. Not unit-tested (thin Pixi glue, like
   `atlas.ts`).
+- `font.ts` - `loadHudFont`/`isHudFontReady` (ROG-64): loads the vendored
+  Silkscreen pixel font (`public/fonts/`, OFL-1.1) via the `FontFace` API and
+  installs it as a Pixi `BitmapFont` (`HUD_FONT_FAMILY`) so HUD chrome text
+  is pre-rasterized and reads crisp at integer scale. Best-effort: a failed
+  load leaves `isHudFontReady()` false and `pixiDrawFactory.ts` falls back to
+  a canvas `Text` in `monospace`. Not unit-tested (thin Pixi/DOM glue).
 - `bootGame.ts` - exports `bootGame(mount, flags)`, which builds the initial
   `GameState`, wires a `GameStore`, initializes the Pixi `Application` into the
   given `mount` element, builds one `Container` per scene plus its
