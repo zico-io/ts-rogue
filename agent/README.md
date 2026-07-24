@@ -27,6 +27,14 @@ ordinary implementation to one coding child and retains review and external
 coordination. Agent Session activities carry progress and approval prompts
 without writing issue comments.
 
+`instructions.md` requires the root to send a `session_update` before its first
+other tool call and to batch independent read-only lookups (sub-issue checks,
+`ORIENTATION.md`, and similar) into a single turn. `session_update` is the only
+durable, top-level Linear activity - tool calls and reasoning relay as
+transient `action`/`thought` chips (see `tools/session_update.ts` and
+`hooks/child-relay.ts`) - so without an early message a long orientation or
+delegation shows only a wall of chips with nothing a human can react to.
+
 `onSession` can re-run mid-session (a new inbound Linear activity re-attaches
 the same sandbox); `SYNC_MAIN_COMMAND` only force-resyncs local `main` to
 `origin/main` when HEAD is already on `main`, so a reconnect can't silently
