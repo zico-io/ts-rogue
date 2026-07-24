@@ -57,10 +57,17 @@ export const theme = {
   },
   // overworld biomes + player
   biome: {
-    grass: "#5fae3b",
-    forest: "#21804c",
-    mountain: "#837d83",
-    water: "#23b4e9",
+    // Warmed/saturated a step (ROG-67 art direction §3/WEB-1) so the
+    // overworld reads sunlit rather than washed - contrast against the
+    // terminal's implicit black background only improves for all four
+    // (verified: grass 7.6->10.1:1, forest 4.3->5.4:1, mountain 5.2->6.3:1,
+    // water 8.8->10.8:1), so the terminal glyph renderer stays legible.
+    grass: "#6fc93f",
+    forest: "#2f9350",
+    // Was a flat gray; given a warm brownish cast so rock reads sunlit too
+    // instead of a washed-out neutral.
+    mountain: "#9c8a6e",
+    water: "#3dc8f5",
     village: "#fbc254",
     dungeonEntrance: "#ca7ef2",
     player: "#f2f2da",
@@ -74,11 +81,21 @@ export const theme = {
   gameOverGradient: ["#f9ab8f", "#fa7d66", "#e74343", "#b7383c", "#823439"],
 } as const;
 
-/** Per-dungeon first-person view ramps, index = depth band - 1 (far -> near). */
+/**
+ * Per-dungeon first-person view ramps, index = depth band - 1 (far -> near).
+ * Re-anchored (ROG-67 art direction §3/WEB-1) from the old teal/indigo/ember
+ * zone-tint trio to a torch-warm-near -> cool-dark-far depth fog: each ramp
+ * still opens on its own desaturated-dark identity hue at `MAX_DEPTH` (teal,
+ * indigo, ember) but now converges on a shared warm amber near the viewer,
+ * matching a single torchlight convention instead of three flat zone colors.
+ * Near-vs-far luminance contrast (art direction §7, >=3:1 target): dungeon-0
+ * ~7.9:1, dungeon-1 ~8.6:1, dungeon-2 ~8.8:1 (WCAG relative luminance,
+ * verified with a throwaway node script - see the PR description).
+ */
 export const DUNGEON_RAMPS: readonly (readonly string[])[] = [
-  ["#3a747a", "#419885", "#53c09f", "#87cead"], // dungeon-0: teal
-  ["#444f8d", "#5c60b8", "#817cd4", "#ab8ee4"], // dungeon-1: indigo
-  ["#823439", "#b7383c", "#e74343", "#fa7d66"], // dungeon-2: ember
+  ["#1c2b39", "#2c5a5f", "#5c9a7b", "#f3b45a"], // dungeon-0: teal -> torch amber
+  ["#232043", "#453f7a", "#8a6f9c", "#f5b563"], // dungeon-1: indigo -> torch amber
+  ["#2a1f22", "#5c2f2c", "#a94f3a", "#f9b355"], // dungeon-2: ember -> torch amber
 ];
 
 /** Ramp for a dungeon id of the form `dungeon-N`; unknown ids get ramp 0. */
