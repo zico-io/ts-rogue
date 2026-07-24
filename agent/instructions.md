@@ -14,6 +14,7 @@ These rules override any instinct to deliberate. Apply them on every turn.
 - If a command surprises you, re-run it correctly and move on. Do not write an explanation of the surprise.
 - Bias to action. Once you have a workable plan, execute it and adjust from real output. A good plan run now beats a perfect plan deliberated.
 - Decide, act, observe, continue. Do not narrate your reasoning at length.
+- Batch every independent tool call into the same turn instead of issuing them one at a time - only sequence calls when a later one needs an earlier one's output. Sequential single calls where a batch would do are what make a routine task read as a slow, robotic investigation.
 
 # Loop
 
@@ -23,9 +24,12 @@ Orient once, act, verify once, hand off. Do not loop back to re-orient or re-ver
 
 Your orientation is already assembled. Do not go looking for it.
 
+- Before your first tool call, send one `session_update` with status `started` that names the issue and your plan in a sentence or two. This is the only durable, top-level message in the Linear session - individual tool calls and reasoning show up as transient chips, not a message a human can react to. Without this first, a multi-tool-call orientation looks like silence followed by a wall of noise, and is impossible to steer.
 - The Linear session hands you the issue directly: identifier, title, description, acceptance criteria, suggested branch, and `agent_session_id`. That is your work packet. Do not search or list issues, and do not re-read the issue you were already given. Check once whether it has sub-issues; if it does, it is a group - follow `Issue groups (ralph mode)`.
 - `ORIENTATION.md` at the repository root is a pre-computed brief of settled repository state (current branch, HEAD, clean/dirty, recent commits, and that `main` is already synced). Read it once. Treat its facts as authoritative and do not re-derive them with git archaeology.
 - Do not read `AGENTS.md`, memory files, `PROJECT_PLAN.md`, git history, or a broad file inventory to orient. Everything you need to start is in this contract, the Linear packet, and `ORIENTATION.md`. Read task-specific files only when you are about to change or reason about them.
+- The sub-issue check, `ORIENTATION.md`, and any other read-only lookup you already know you need (for example, checking a group's sub-issue relations) are independent of each other - issue them together in one batched turn rather than as separate round trips. Orientation should be one or two tool-call turns, not ten minutes of one-at-a-time reads.
+- If orientation or delegation stretches past a few tool-call turns (a slow rebase, a wide search, a long-running child), send a `progress` session_update partway through with what you have found and what is next. A long silent stretch is what makes the agent feel unsteerable, independent of how fast the work itself is going.
 
 # Standing rules
 
@@ -95,4 +99,4 @@ If the `agent` tool is unavailable, you are the child. Trust the parent's packet
 - Require `pnpm check` before handoff. Require an end-to-end reproduction before any bug fix. To see and verify the game like a user, drive the terminal UI with `scripts/play.sh` and the web UI with `scripts/play-web.mjs` (screenshots the browser renderer).
 - **Screenshots are mandatory evidence, not optional polish, for any PR that changes rendered UI/visual output** (`src/web/render`, `src/ui` screens/components, `theme.ts`, `ART_DIRECTION.md`, or shipped art assets): capture at least one `scripts/play-web.mjs` screenshot (or a terminal capture for an Ink-only change) and get it in front of the reviewer - commit it under `docs/pr-assets/<issue-id>/` and link it from the PR body, since GitHub's API has no drag-drop image upload for a bot. `ORIENTATION.md` reports whether screenshot tooling is confirmed working in this sandbox; check that line once instead of discovering it by trial and error. If it reports unavailable, spend exactly one attempt fixing or working around it before falling back - and if it still fails, say so explicitly in both the PR body and the session update instead of silently shipping a visual change with no evidence.
 - Never expose credentials, delete project data, or take irreversible external actions without explicit human approval.
-- Report through native Agent Session activities, never issue comments, and update issue fields when status changes. Call `session_update` when work starts, after meaningful milestones, when blocked, at review, and before completion, with what changed, evidence, blockers, and the next action.
+- Report through native Agent Session activities, never issue comments, and update issue fields when status changes. Call `session_update` when work starts (before your first other tool call), after meaningful milestones, when a long stretch of work has produced no message yet, when blocked, at review, and before completion, with what changed, evidence, blockers, and the next action.
