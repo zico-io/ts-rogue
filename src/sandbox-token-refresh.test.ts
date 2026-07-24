@@ -2,10 +2,12 @@ import type { SandboxNetworkPolicy } from "eve/sandbox";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  buildBootstrapCommand,
   dependencyRevalidationKey,
   keepTokenFresh,
   MAX_SET_POLICY_FAILURES,
   resolveStartupNetworkPolicy,
+  SYNC_MAIN_COMMAND,
 } from "../agent/sandbox";
 
 describe("keepTokenFresh", () => {
@@ -180,5 +182,50 @@ describe("dependencyRevalidationKey", () => {
     // change deps hit the cached node_modules instead of a cold install.
     expect(key).toBe(dependencyRevalidationKey());
     expect(key).toMatch(/^deps:[0-9a-f]{64}$/);
+  });
+});
+
+describe("buildBootstrapCommand", () => {
+  it("repoints apt at https before any apt-get call (plain HTTP egress is blocked in-sandbox)", () => {
+    const command = buildBootstrapCommand();
+    const httpsFixIndex = command.indexOf("https://archive.ubuntu.com");
+    const firstAptGetIndex = command.indexOf("apt-get update");
+    expect(httpsFixIndex).toBeGreaterThan(-1);
+    expect(firstAptGetIndex).toBeGreaterThan(-1);
+    expect(httpsFixIndex).toBeLessThan(firstAptGetIndex);
+  });
+
+  it("verifies chromium actually launches instead of trusting the install step", () => {
+    const command = buildBootstrapCommand();
+    expect(command).toContain("playwright install --with-deps chromium");
+    expect(command).toContain("chromium.launch()");
+  });
+
+  it("records the screenshot-tooling verdict on both the success and failure path", () => {
+    const command = buildBootstrapCommand();
+    expect(command).toContain('"available":true');
+    expect(command).toContain('"available":false');
+    expect(command).toContain(".eve/screenshot-tooling.json");
+  });
+
+  it("never lets a failed screenshot-tooling install fail the whole bootstrap", () => {
+    // The chromium block is `(A && B && C) || fallback` - the closing paren
+    // right before `||` is what makes the whole group always exit 0, however
+    // A/B/C individually fare.
+    const command = buildBootstrapCommand();
+    expect(command).toMatch(/\)\s*\|\|\s*echo/);
+  });
+});
+
+describe("SYNC_MAIN_COMMAND", () => {
+  it("only force-resyncs main when HEAD is already on main", () => {
+    expect(SYNC_MAIN_COMMAND).toContain('"$CURRENT_BRANCH" = "main"');
+    expect(SYNC_MAIN_COMMAND).toContain("git checkout -B main FETCH_HEAD");
+  });
+
+  it("leaves a non-main branch in place instead of resyncing", () => {
+    expect(SYNC_MAIN_COMMAND).toContain(
+      "leaving it in place instead of resyncing",
+    );
   });
 });

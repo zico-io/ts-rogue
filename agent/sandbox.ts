@@ -13,6 +13,8 @@ import {
   buildOrientationBrief,
   GIT_FACTS_COMMAND,
   parseGitFacts,
+  parseScreenshotToolingStatus,
+  SCREENSHOT_STATUS_PATH,
 } from "./lib/orientation";
 
 // GitHub App installation tokens live ~1h; refresh the injected header well
@@ -162,33 +164,95 @@ export function dependencyRevalidationKey(): string {
   }
 }
 
+/**
+ * The base image's default `/etc/apt/sources.list.d/ubuntu.sources` points at
+ * `http://archive.ubuntu.com`/`http://security.ubuntu.com`; plain HTTP egress
+ * is blocked at the sandbox network layer (HTTPS is not), so every apt
+ * operation below used to silently no-op without this rewrite - which is
+ * exactly how `playwright install --with-deps` failed: the browser's shared
+ * libraries (`libglib-2.0.so.0` and friends) never installed, so
+ * `scripts/play-web.mjs`'s screenshots could never launch chromium, and
+ * nothing surfaced that until an agent tried to use it mid-task and burned a
+ * network-locked-down runtime session discovering it by hand.
+ */
+const USE_HTTPS_APT_MIRRORS_COMMAND =
+  "sudo sed -i 's#http://archive.ubuntu.com#https://archive.ubuntu.com#; s#http://security.ubuntu.com#https://security.ubuntu.com#' /etc/apt/sources.list.d/ubuntu.sources 2>/dev/null || true";
+
+/**
+ * Builds the sandbox pre-warm command: system packages, repo clone,
+ * dependency install, and the Playwright chromium `scripts/play-web.mjs`'s
+ * screenshots depend on. Exported (rather than inlined in `bootstrap` below)
+ * so its content - in particular, that it actually verifies chromium can
+ * launch instead of trusting the install step - is directly testable.
+ *
+ * The chromium install is **verified, not just attempted**: it used to
+ * silently swallow failures with a bare `|| true`, so a broken image kept
+ * failing the same way, invisibly, every session revalidation until an agent
+ * discovered it by hand mid-task. Failure is still non-fatal to the overall
+ * pre-warm (a locked-down image must not fail bootstrap outright), but it's
+ * now recorded to {@link SCREENSHOT_STATUS_PATH} either way, so `onSession`
+ * can fold a definitive answer into `ORIENTATION.md` instead of a session
+ * finding out the hard way.
+ */
+export function buildBootstrapCommand(): string {
+  const verifyChromiumLaunches = `node -e "require('playwright').chromium.launch().then(b=>b.close())"`;
+  const installScreenshotTooling = [
+    "mkdir -p /workspace/.eve",
+    `(corepack pnpm exec playwright install --with-deps chromium && ${verifyChromiumLaunches} && echo '{"available":true}' > ${SCREENSHOT_STATUS_PATH})`,
+    `|| echo '{"available":false,"reason":"playwright chromium failed to install or launch during sandbox bootstrap"}' > ${SCREENSHOT_STATUS_PATH}`,
+  ].join(" ");
+
+  return [
+    // tmux backs the terminal play harness (scripts/play.sh), pi backs its
+    // interactive `play dev` layout, and Playwright's chromium backs the web
+    // play harness (scripts/play-web.mjs), so the agent can drive and
+    // screenshot both renderers in-sandbox.
+    USE_HTTPS_APT_MIRRORS_COMMAND,
+    "(sudo apt-get update && sudo apt-get install -y tmux) || true",
+    "(npm install -g @earendil-works/pi-coding-agent@0.81.1 || true)",
+    "git config --global --add safe.directory /workspace",
+    "git clone https://github.com/zico-io/ts-rogue.git .",
+    "corepack pnpm install --frozen-lockfile",
+    installScreenshotTooling,
+  ].join(" && ");
+}
+
+/** Reads back the bootstrap-written screenshot-tooling status; always exits 0 (missing file reads as unavailable via `parseScreenshotToolingStatus`). */
+const READ_SCREENSHOT_STATUS_COMMAND = `cat ${SCREENSHOT_STATUS_PATH} 2>/dev/null || true`;
+
+/**
+ * Resyncs local `main` to `origin/main` - but only when HEAD is already on
+ * `main`. `onSession` can re-run mid-session (e.g. a new inbound Linear
+ * activity re-attaches the same sandbox), and unconditionally
+ * `git checkout -B main FETCH_HEAD` here used to discard whatever branch and
+ * commits the agent had checked out in between, with no warning, the moment
+ * the sandbox reconnected - including commits that hadn't been pushed yet
+ * (e.g. during a transient GitHub-auth outage). Once the agent has moved off
+ * `main` onto its own branch, this leaves it alone; the agent's own
+ * `git fetch origin main && git rebase origin/main` (see `instructions.md`)
+ * is how it picks up new upstream commits from there.
+ */
+export const SYNC_MAIN_COMMAND = [
+  "git fetch --depth 1 origin main",
+  'CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)"',
+  'if [ "$CURRENT_BRANCH" = "main" ]; then git checkout -B main FETCH_HEAD; ' +
+    "else echo \"onSession: HEAD is on '$CURRENT_BRANCH', not main - leaving it in place instead of resyncing\"; fi",
+].join(" && ");
+
 export default defineSandbox({
   backend: vercel(),
   revalidationKey: dependencyRevalidationKey,
   async bootstrap({ use }) {
     const { policy } = await resolveStartupNetworkPolicy();
     const sandbox = await use({ networkPolicy: policy });
-    const setup = await sandbox.run({
-      command:
-        // tmux backs the terminal play harness (scripts/play.sh), pi backs its
-        // interactive `play dev` layout, and Playwright's chromium backs the web
-        // play harness (scripts/play-web.mjs), so the agent can drive and screenshot
-        // both renderers in-sandbox. Install these now, while the pre-warm network
-        // policy is open (a locked-down runtime policy can block the npm registry or
-        // browser CDN). `|| true` keeps a locked-down image from failing the whole
-        // pre-warm if any install is unavailable.
-        "(sudo apt-get update && sudo apt-get install -y tmux || true) && (npm install -g @earendil-works/pi-coding-agent@0.81.1 || true) && git config --global --add safe.directory /workspace && git clone https://github.com/zico-io/ts-rogue.git . && corepack pnpm install --frozen-lockfile && (corepack pnpm exec playwright install --with-deps chromium || true)",
-    });
+    const setup = await sandbox.run({ command: buildBootstrapCommand() });
     if (setup.exitCode !== 0)
       throw new Error(setup.stderr || "Sandbox pre-warming failed");
   },
   async onSession({ use }) {
     const { policy, authed } = await resolveStartupNetworkPolicy();
     const sandbox = await use({ networkPolicy: policy });
-    const sync = await sandbox.run({
-      command:
-        "git fetch --depth 1 origin main && git checkout -B main FETCH_HEAD",
-    });
+    const sync = await sandbox.run({ command: SYNC_MAIN_COMMAND });
     if (sync.exitCode !== 0)
       throw new Error(sync.stderr || "Sandbox repository sync failed");
     // Pre-compute the orientation brief so the model reads settled repo state
@@ -196,10 +260,19 @@ export default defineSandbox({
     // model falls back to orienting by hand, so it must never fail the session.
     try {
       const facts = await sandbox.run({ command: GIT_FACTS_COMMAND });
+      // Screenshot tooling is a property of the baked image (written once at
+      // bootstrap), not of this session, so this just reads back that verdict
+      // rather than re-running the chromium-launch check per session.
+      const screenshotStatus = await sandbox.run({
+        command: READ_SCREENSHOT_STATUS_COMMAND,
+      });
       if (facts.exitCode === 0)
         await sandbox.writeTextFile({
           path: "ORIENTATION.md",
-          content: buildOrientationBrief(parseGitFacts(facts.stdout)),
+          content: buildOrientationBrief(
+            parseGitFacts(facts.stdout),
+            parseScreenshotToolingStatus(screenshotStatus.stdout),
+          ),
         });
     } catch {
       // Leave orientation to the model rather than failing startup over a brief.

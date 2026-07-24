@@ -14,7 +14,7 @@ pre-warmed Vercel Sandboxes.
 | [`hooks/`](hooks/) | Delegated-child activity relay |
 | [`tools/`](tools/) | Native Linear Agent Session progress updates |
 | [`sandbox.ts`](sandbox.ts) | Vercel Sandbox bootstrap, sync, `ORIENTATION.md` brief, network policy, and token refresh |
-| [`lib/orientation.ts`](lib/orientation.ts) | Builds the pre-computed orientation brief from git state |
+| [`lib/orientation.ts`](lib/orientation.ts) | Builds the pre-computed orientation brief from git state and screenshot-tooling status |
 
 Linear owns issue status, priority, and progress. GitHub pull requests remain the
 review and merge boundary. GitHub credentials are injected through the sandbox
@@ -26,6 +26,19 @@ writes an `ORIENTATION.md` brief of settled git state. The root then delegates
 ordinary implementation to one coding child and retains review and external
 coordination. Agent Session activities carry progress and approval prompts
 without writing issue comments.
+
+`onSession` can re-run mid-session (a new inbound Linear activity re-attaches
+the same sandbox); `SYNC_MAIN_COMMAND` only force-resyncs local `main` to
+`origin/main` when HEAD is already on `main`, so a reconnect can't silently
+discard an agent's in-progress feature branch or its not-yet-pushed commits.
+
+`ORIENTATION.md` also reports whether the sandbox's Playwright chromium
+(`scripts/play-web.mjs`'s screenshots) is confirmed working - `bootstrap`'s
+`buildBootstrapCommand` verifies the browser actually launches, not just that
+the install step ran, and records the verdict to a status file `onSession`
+folds into the brief. `instructions.md`'s contract requires a screenshot in
+any PR that changes rendered UI/visual output; this line is how the agent
+knows the tooling's state without discovering it by trial and error.
 
 When the assigned issue has sub-issues, the agent treats it as a group (ralph
 mode): it sequences the sub-issues by their Linear `blocks`/`blocked by`
