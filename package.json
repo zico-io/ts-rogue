@@ -12,6 +12,7 @@
   "scripts": {
     "changeset": "changeset",
     "check": "pnpm typecheck && pnpm test && pnpm lint",
+    "docs:lint": "tsx scripts/lint-memory.ts",
     "eve:dev": "eve dev --no-ui",
     "pr:sandbox": "bash scripts/pr-sandbox.sh",
     "game": "tsx src/app.tsx",

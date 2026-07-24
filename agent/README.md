@@ -13,15 +13,19 @@ pre-warmed Vercel Sandboxes.
 | [`connections/`](connections/) | Linear MCP connection and approval policy |
 | [`hooks/`](hooks/) | Delegated-child activity relay |
 | [`tools/`](tools/) | Native Linear Agent Session progress updates |
-| [`sandbox.ts`](sandbox.ts) | Vercel Sandbox bootstrap, sync, network policy, and token refresh |
+| [`sandbox.ts`](sandbox.ts) | Vercel Sandbox bootstrap, sync, `ORIENTATION.md` brief, network policy, and token refresh |
+| [`lib/orientation.ts`](lib/orientation.ts) | Builds the pre-computed orientation brief from git state |
 
 Linear owns issue status, priority, and progress. GitHub pull requests remain the
 review and merge boundary. GitHub credentials are injected through the sandbox
 network policy rather than exposed to the agent environment.
 
-The root agent performs bounded orientation, delegates ordinary implementation
-to one coding child, and retains review and external coordination. Agent Session
-activities carry progress and approval prompts without writing issue comments.
+Orientation is pre-computed rather than rediscovered: the standing contract lives
+in `instructions.md`, the Linear session supplies the issue packet, and `onSession`
+writes an `ORIENTATION.md` brief of settled git state. The root then delegates
+ordinary implementation to one coding child and retains review and external
+coordination. Agent Session activities carry progress and approval prompts
+without writing issue comments.
 
 When the assigned issue has sub-issues, the agent treats it as a group (ralph
 mode): it sequences the sub-issues by their Linear `blocks`/`blocked by`

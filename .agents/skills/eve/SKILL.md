@@ -11,17 +11,17 @@ subagents, and schedules are all files — and eve compiles and runs it.
 
 ## Source of truth
 
-The complete documentation ships inside the `eve` package. Do not rely on this
-skill for guidance — always read the bundled docs, which match the installed
-version exactly:
+When you are editing the eve harness itself (agent instructions, skills, tools,
+connections, channels, sandbox, subagents, schedules, or evals), read the bundled
+docs, which match the installed version exactly:
 
 ```
 node_modules/eve/docs/
 ```
 
-Start with `node_modules/eve/docs/README.md`. It contains the full
-index and recommended reading order. Before writing any eve code, read the
-relevant guide there first.
+Start with `node_modules/eve/docs/README.md` for the index and reading order, then
+read the relevant guide before writing eve code. This is for harness work only; an
+ordinary product task does not need the framework docs.
 
 If `eve` is not installed yet, install it (`npm install eve`) or scaffold a new
 agent with `npx eve init <agent-name>`, then read the bundled docs.
