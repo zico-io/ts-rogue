@@ -31,7 +31,7 @@ import type {
 } from "../../ui/scene/tree";
 import { theme, toPixiColor } from "../../ui/theme";
 
-/** Real pixels per chrome `Unit`. Chosen to read clearly at the atlas's native 8x8 tile scale (ROG-68; see `bootGame.ts`'s `PREVIEW_SCALE`), not tied to any specific font metric. */
+/** Real pixels per chrome `Unit`. Chosen to read clearly at the atlas's native 8x8 tile scale (ROG-68), not tied to any specific font metric. */
 export const UNIT_PX = 16;
 
 /** A positioned, destroyable draw primitive; every handle kind extends this. */
