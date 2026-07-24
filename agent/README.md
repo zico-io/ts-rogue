@@ -12,7 +12,7 @@ pre-warmed Vercel Sandboxes.
 | [`channels/`](channels/) | Eve, Linear, and GitHub session activity adapters |
 | [`connections/`](connections/) | Linear MCP connection and approval policy |
 | [`hooks/`](hooks/) | Delegated-child activity relay |
-| [`tools/`](tools/) | Native Linear Agent Session progress updates |
+| [`tools/`](tools/) | Native Linear Agent Session progress updates and the `web_search` override |
 | [`sandbox.ts`](sandbox.ts) | Vercel Sandbox bootstrap, sync, `ORIENTATION.md` brief, network policy, and token refresh |
 | [`lib/orientation.ts`](lib/orientation.ts) | Builds the pre-computed orientation brief from git state and screenshot-tooling status |
 
@@ -47,6 +47,16 @@ the install step ran, and records the verdict to a status file `onSession`
 folds into the brief. `instructions.md`'s contract requires a screenshot in
 any PR that changes rendered UI/visual output; this line is how the agent
 knows the tooling's state without discovering it by trial and error.
+
+`tools/web_search.ts` overrides the framework's default `web_search` tool
+(provider-managed, with no useful input schema of its own - see [eve's default
+harness docs](https://www.npmjs.com/package/eve)) with an Exa-backed
+implementation: it calls Exa's `/search` endpoint directly and normalizes the
+response to `{ searchId, results: [{ title, url, publishedDate, excerpt }] }`.
+This makes search quality and behavior consistent regardless of which model
+provider is active. It requires an `EXA_API_KEY` environment variable in the
+agent's app runtime (not the sandbox); without it the tool throws instead of
+returning provider-managed results.
 
 When the assigned issue has sub-issues, the agent treats it as a group (ralph
 mode): it sequences the sub-issues by their Linear `blocks`/`blocked by`
