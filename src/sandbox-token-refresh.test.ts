@@ -295,6 +295,19 @@ describe("buildBootstrapCommand", () => {
     const command = buildBootstrapCommand();
     expect(command).toMatch(/\)\s*\|\|\s*echo/);
   });
+
+  it("is syntactically valid bash (parses with `bash -n`)", () => {
+    // The content assertions above only check that pieces are present, not that
+    // the assembled string parses. A subshell joined to a command with a bare
+    // space (`mkdir … (…)` instead of `mkdir … && (…)`) is a syntax error that
+    // slips past substring checks but fails every deploy at sandbox prewarm.
+    // `bash -n` parses without executing, so this catches that class of bug.
+    expect(() =>
+      execFileSync("bash", ["-n", "-c", buildBootstrapCommand()], {
+        stdio: "pipe",
+      }),
+    ).not.toThrow();
+  });
 });
 
 describe("SYNC_MAIN_COMMAND", () => {
