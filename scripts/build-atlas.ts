@@ -1,66 +1,41 @@
 /**
- * Pack the browser (Pixi) texture atlas from the Urizen sheet, using the
- * tile-sheet coordinates in `src/ui/tiles/sources.ts` (`TILE_SOURCES`) as the
- * single source of truth (ROG-44). Pixi loads one packed atlas and scales
- * pixel art at render time with nearest-neighbor filtering. (The terminal
- * renderer is pure ASCII and draws no tiles.)
+ * Pack the browser (Pixi) texture atlas from the vendored Minifantasy sheets,
+ * using the per-frame rects in `src/ui/tiles/sources.ts` (`TILE_SOURCES`) as the
+ * single source of truth (ROG-68). Pixi loads one packed atlas and scales pixel
+ * art at render time with nearest-neighbor filtering. (The terminal renderer is
+ * pure ASCII and draws no tiles.)
  *
- * Frames pack at 8x8 (ROG-68) - the shared Minifantasy grid the hybrid asset
- * base (`src/web/ART_DIRECTION.md` §2.1) is migrating to - downsampled at
- * build time from the Urizen source, which is still native 12x12. This is an
- * interim step: no Minifantasy overworld/dungeon tile art was available to
- * import yet (see `assets/README.md`), so every frame below still comes from
- * Urizen; a follow-up ticket (ROG-62/ROG-65/ROG-69) swaps in real 8x8
- * Minifantasy sprites tile by tile without touching this grid math again.
+ * Frames pack at 8x8 - Minifantasy's native grid. Most frames crop an 8x8 tile
+ * straight through; a few (the 2-tile tree, the multi-tile buildings, the
+ * trimmed player sprite) crop a larger region and resize down to the 8x8 output
+ * so every atlas frame is one uniform cell.
  *
- * Battle monster sprites (slime/goblin/dungeon-guardian) are deliberately
- * NOT in `ATLAS_FRAMES` - they're a separate scale class loaded as individual
- * Aekashics textures (`src/web/battlers.ts`), not packed atlas tiles.
+ * Battle monster sprites are deliberately NOT in `TILE_SOURCES` - they're a
+ * separate scale class loaded as individual Aekashics textures
+ * (`src/web/battlers.ts`), not packed atlas tiles.
  *
  * Output: `src/web/public/atlas/atlas.png` + `atlas.json` (Pixi Spritesheet
  * hash format, https://pixijs.download/release/docs/spritesheet.Spritesheet.html).
  * Frame names match `TileName` ids.
  *
- * Run after changing ATLAS_FRAMES: pnpm tsx scripts/build-atlas.ts
+ * Run after changing TILE_SOURCES: pnpm tsx scripts/build-atlas.ts
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
-import { TILE_SOURCES, type TileName } from "../src/ui/tiles/sources";
+import { SHEETS, TILE_SOURCES, type TileName } from "../src/ui/tiles/sources";
 
-const SHEET = fileURLToPath(
-  new URL("../assets/urizen_onebit_tileset__v2d0.png", import.meta.url),
-);
+const SHEET_DIR = fileURLToPath(new URL("../assets/minifantasy/", import.meta.url));
 const OUT_DIR = fileURLToPath(
   new URL("../src/web/public/atlas/", import.meta.url),
 );
-/** Urizen source sheet's native tile size and pitch - unchanged, we crop the full tile then downsample. */
-const SOURCE_TILE = 12;
-const PITCH = 13;
-/** Shared Minifantasy atlas grid (ROG-68): every frame ships at this size regardless of source resolution. */
+/** Every frame ships at this size regardless of the source crop's resolution. */
 const OUTPUT_TILE = 8;
 /** Transparent gutter between packed frames so nearest-neighbor sampling never bleeds across a frame edge. */
 const PADDING = 1;
-const COLUMNS = 5;
+const COLUMNS = 4;
 
-/** First asset batch (ROG-44): overworld tiles, the player marker, and the dungeon-scene tile set. */
-const ATLAS_FRAMES: readonly TileName[] = [
-  "grass",
-  "forest",
-  "mountain",
-  "water",
-  "village",
-  "dungeonEntrance",
-  "player",
-  // Dungeon first-person scene (ROG-50): wall/floor tiles and the three
-  // billboarded feature markers (chest/stairs/boss), matching the TUI
-  // renderer's minimap glyphs and the FP raycaster's wall texture.
-  "wall",
-  "floor",
-  "chest",
-  "stairsDown",
-  "boss",
-];
+const ATLAS_FRAMES = Object.keys(TILE_SOURCES) as TileName[];
 
 interface AtlasFrame {
   frame: { x: number; y: number; w: number; h: number };
@@ -68,28 +43,12 @@ interface AtlasFrame {
   spriteSourceSize: { x: number; y: number; w: number; h: number };
 }
 
-/** Crops one tile at native 12x12, keys the sheet's pure-black background out as transparent, then downsamples to the shared 8x8 output grid. */
+/** Crops a frame's source rect and resizes it to the 8x8 output cell. */
 async function extractFrame(name: TileName): Promise<Buffer> {
-  const source = TILE_SOURCES[name];
-  const { data } = await sharp(SHEET)
-    .extract({
-      left: 1 + PITCH * source.col,
-      top: 1 + PITCH * source.row,
-      width: SOURCE_TILE,
-      height: SOURCE_TILE,
-    })
-    .ensureAlpha()
-    .raw()
-    .toBuffer({ resolveWithObject: true });
-  for (let i = 0; i < data.length; i += 4) {
-    if (data[i] === 0 && data[i + 1] === 0 && data[i + 2] === 0) {
-      data[i + 3] = 0;
-    }
-  }
-  return sharp(data, {
-    raw: { width: SOURCE_TILE, height: SOURCE_TILE, channels: 4 },
-  })
-    .resize(OUTPUT_TILE, OUTPUT_TILE, { kernel: "nearest" })
+  const src = TILE_SOURCES[name];
+  return sharp(`${SHEET_DIR}${SHEETS[src.sheet]}`)
+    .extract({ left: src.x, top: src.y, width: src.w, height: src.h })
+    .resize(OUTPUT_TILE, OUTPUT_TILE, { kernel: "nearest", fit: "fill" })
     .png()
     .toBuffer();
 }

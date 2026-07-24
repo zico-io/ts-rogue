@@ -150,12 +150,15 @@ renderers.
 
 ## Art pipeline (ROG-44)
 
-Style: 12x12 pixel art from the [Urizen 1-bit tileset](../../assets/README.md)
-(`assets/urizen_onebit_tileset__v2d0.png`); the tile-sheet coordinates live in
-`src/ui/tiles/sources.ts` (`TILE_SOURCES`). Colors come from the ROG-31 palette
-in `src/ui/theme.ts`; the art itself is monochrome pixel art tinted only by
-each monster's `color` in battle framing, not by the tile atlas. (The terminal
-renderer is pure ASCII and uses none of this - only the browser draws tiles.)
+Style: 8x8 full-color pixel art from the [Minifantasy packs](../../assets/README.md)
+(`assets/minifantasy/*.png`); each atlas frame's source rect lives in
+`src/ui/tiles/sources.ts` (`TILE_SOURCES`), packed by `scripts/build-atlas.ts`.
+Because the frames are already full-color, overworld tiles draw untinted (the
+old per-tile biome multiply-tint was a hack for the monochrome Urizen art and is
+gone). Battle monsters are a separate scale class - front-facing Aekashics
+battlers loaded as individual textures (`battlers.ts`), never packed into the
+atlas. (The terminal renderer is pure ASCII and uses none of this - only the
+browser draws tiles.)
 
 `scripts/build-atlas.ts` slices named tile coordinates out of the sheet and
 packs them into one Pixi spritesheet (`atlas.png` + `atlas.json`, hash
@@ -170,17 +173,17 @@ keyed by frame name. `main.ts` looks sprites up by name, e.g.
 
 ### Adding a new sprite
 
-1. Pick (or add) the tile's `(col, row)` coordinate on the Urizen sheet and
-   add it to `TILE_SOURCES` in `src/ui/tiles/sources.ts` if it is not already
-   there.
-2. Add the same name to `ATLAS_FRAMES` in `scripts/build-atlas.ts`.
-3. Regenerate the atlas: `pnpm tsx scripts/build-atlas.ts`. This rewrites
+1. Add an entry to `TILE_SOURCES` in `src/ui/tiles/sources.ts`: pick the source
+   `sheet` (one of `SHEETS`) and the frame's rect on it. Use the `at(sheet, col,
+   row)` helper for a plain 8x8 tile, or a raw `{x,y,w,h}` for an off-grid crop.
+   The atlas builder packs every `TILE_SOURCES` entry - no separate frame list.
+2. Regenerate the atlas: `pnpm tsx scripts/build-atlas.ts`. This rewrites
    `public/atlas/atlas.png` and `atlas.json` - commit both.
-4. For a monster, set `sprite: "<name>"` on its `MonsterDef` in
+3. For a monster, set `sprite: "<name>"` on its `MonsterDef` in
    `src/data/monsters.ts` (additive, alongside `ascii`; the terminal renderer
    keeps using `ascii` unchanged). It carries through to `BattleEnemy.sprite`
    in battle state automatically via `src/engine/combat/resolution.ts`.
-5. Look the texture up wherever it renders: `const sheet = await
+4. Look the texture up wherever it renders: `const sheet = await
    loadAtlas(); new Sprite(sheet.textures["<name>"])`, and set
    `texture.source.scaleMode = "nearest"` before scaling it up.
 

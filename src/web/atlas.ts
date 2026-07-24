@@ -1,8 +1,8 @@
 /**
  * Loads the packed browser texture atlas through Pixi's `Assets` loader
  * (ROG-44). The atlas (`public/atlas/atlas.png` + `atlas.json`) is generated
- * by `scripts/build-atlas.ts` from the Urizen sheet, using the tile-sheet
- * coordinates in `src/ui/tiles/sources.ts` (`TILE_SOURCES`).
+ * by `scripts/build-atlas.ts` from the vendored Minifantasy sheets, using the
+ * per-frame rects in `src/ui/tiles/sources.ts` (`TILE_SOURCES`).
  *
  * `public/` (Vite's default static dir, resolved from `vite.config.ts`'s
  * `root: "src/web"`) is served as-is in dev and copied verbatim into

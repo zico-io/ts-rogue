@@ -5,9 +5,10 @@ an implementation ticket: follow-up issues (palette evolution, the 12->16px
 atlas migration, per-scene reskins, dungeon atmosphere) build against it. A
 companion mood board renders the palette and per-scene composition visually.
 
-Today every scene draws the monochrome **Urizen 1-bit tileset** (12x12,
-`assets/urizen_onebit_tileset__v2d0.png`) tinted by the ROG-31 palette
-(`src/ui/theme.ts`). This document defines where we take it.
+The overworld and dungeon scenes now draw **Minifantasy** tiles (8x8,
+`assets/minifantasy/*.png`, ROG-68) packed into the browser atlas; battle
+monsters use Aekashics battlers. This document defines where we take it from
+here (palette grade, per-scene reskins, atmosphere, effects).
 
 ## 1. Vision / north star
 
@@ -42,15 +43,15 @@ carries the one place authorship differs.
 Four global constraints every asset obeys, so the two sources read as one world:
 
 1. **One base pixel density - 8x8 (Minifantasy).** The world/dungeon/UI atlas
-   adopts Minifantasy's native **8x8** grid (its Tiny Overworld packs go to 4x4;
-   avoid those for playfield tiles). Battlers are a separate scale class - large
+   uses Minifantasy's native **8x8** grid (done, ROG-68: the Tiny Overworld and
+   Dungeon packs are both 8x8). Battlers are a separate scale class - large
    front-view sprites loaded as individual textures, not atlas tiles - so they
    don't share the 8px grid, only the palette and lighting. Nearest-neighbor
    upscaling stays (`texture.source.scaleMode = "nearest"`); at 8px, dungeon
-   raycaster walls read deliberately chunky - lean into it (§4). This is a
-   discrete follow-up step: it touches `TILE_SOURCES` (`src/ui/tiles/sources.ts`),
-   `ATLAS_FRAMES` and the grid math in `scripts/build-atlas.ts` (12x12 -> 8x8),
-   and the `UNIT_PX` pitch in `src/web/render/sceneView.ts`.
+   raycaster walls read deliberately chunky - lean into it (§4). The atlas
+   pipeline lives in `TILE_SOURCES` (`src/ui/tiles/sources.ts`) and
+   `scripts/build-atlas.ts`, with the `UNIT_PX` pitch in
+   `src/web/render/sceneView.ts`.
 2. **One unified palette.** Every sprite - Minifantasy tiles *and* Aekashics
    battlers - is quantized/tinted toward the evolved ROG-31 ramp (§3) at import
    time. Off-palette source art is recolored, not left as-is; this is what makes
@@ -258,7 +259,7 @@ The portal chrome (ROG-54) letterboxes everything at 3:2; these layouts live
 Two sources, tinted to one §3 palette. Everything from the
 [Minifantasy Complete Bundle](https://itch.io/s/45421/minifantasy-complete-bundle)
 except the battle, which is Aekashics. Every pack's license is attributed in
-`assets/README.md` next to the existing Urizen CC-BY-4.0 entry.
+`assets/README.md`.
 
 | Need | Pack | Notes |
 | --- | --- | --- |
@@ -288,7 +289,7 @@ logic untouched:
 | Follow-up issue | Primary files |
 | --- | --- |
 | Palette evolution (§3) | `src/ui/theme.ts` (shared by both renderers - verify terminal still reads sanely) |
-| Atlas 12->8px migration (§2.1) | `src/ui/tiles/sources.ts` (`TILE_SOURCES`), `scripts/build-atlas.ts` (`ATLAS_FRAMES`, grid math -> Minifantasy 8x8), regenerate `src/web/public/atlas/*` |
+| Atlas frame reskins (§2.1, done: Minifantasy 8x8 base) | `src/ui/tiles/sources.ts` (`TILE_SOURCES`), `scripts/build-atlas.ts`, regenerate `src/web/public/atlas/*` |
 | New sprites (Minifantasy biomes/dungeon/UI; Aekashics battlers) | atlas pipeline for 8px tiles; battlers loaded as individual textures, `sprite` on `MonsterDef` in `src/data/monsters.ts` |
 | Navy windowskin + meters + bitmap font (§5) | `src/web/render/sceneView.ts`, `src/web/render/pixiDrawFactory.ts`, `bootGame.ts` (font load) |
 | Dungeon atmosphere/lighting/particles (§4) | `src/web/render/dungeonView.ts`, `src/web/render/pixiDungeonDrawFactory.ts` (geometry in `dungeonRaycast.ts` stays) |
