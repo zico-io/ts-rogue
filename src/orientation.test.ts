@@ -25,6 +25,8 @@ describe("parseGitFacts", () => {
         "3f43215 feat(ui): graphics overhaul",
         "910913e Multi-member party support",
       ],
+      upstream: null,
+      unpushedCount: 0,
     });
   });
 
@@ -32,6 +34,62 @@ describe("parseGitFacts", () => {
     const facts = parseGitFacts("main\nabc1234\ndirty\n");
     expect(facts.clean).toBe(false);
     expect(facts.recentCommits).toEqual([]);
+    expect(facts.upstream).toBeNull();
+    expect(facts.unpushedCount).toBe(0);
+  });
+
+  it("parses a tracked branch that is fully pushed (0 ahead)", () => {
+    const stdout = [
+      "nico/har-5-fix",
+      "abc1234",
+      "clean",
+      "---COMMITS---",
+      "abc1234 fix: thing",
+      "---UPSTREAM---",
+      "origin/nico/har-5-fix",
+      "---AHEAD---",
+      "0",
+    ].join("\n");
+
+    const facts = parseGitFacts(stdout);
+    expect(facts.upstream).toBe("origin/nico/har-5-fix");
+    expect(facts.unpushedCount).toBe(0);
+  });
+
+  it("parses a tracked branch with commits stranded ahead of its upstream", () => {
+    const stdout = [
+      "nico/har-5-fix",
+      "abc1234",
+      "dirty",
+      "---COMMITS---",
+      "abc1234 fix: thing",
+      "---UPSTREAM---",
+      "origin/nico/har-5-fix",
+      "---AHEAD---",
+      "2",
+    ].join("\n");
+
+    const facts = parseGitFacts(stdout);
+    expect(facts.upstream).toBe("origin/nico/har-5-fix");
+    expect(facts.unpushedCount).toBe(2);
+  });
+
+  it("parses a branch with no upstream (NONE) as null, ignoring any ahead count", () => {
+    const stdout = [
+      "nico/har-5-fix",
+      "abc1234",
+      "dirty",
+      "---COMMITS---",
+      "abc1234 fix: thing",
+      "---UPSTREAM---",
+      "NONE",
+      "---AHEAD---",
+      "0",
+    ].join("\n");
+
+    const facts = parseGitFacts(stdout);
+    expect(facts.upstream).toBeNull();
+    expect(facts.unpushedCount).toBe(0);
   });
 });
 
@@ -75,6 +133,8 @@ describe("buildOrientationBrief", () => {
       headSha: "abc1234",
       clean: true,
       recentCommits: ["abc1234 feat: thing"],
+      upstream: "origin/main",
+      unpushedCount: 0,
     });
 
     expect(brief).toContain("`main` at `abc1234`");
@@ -85,7 +145,14 @@ describe("buildOrientationBrief", () => {
 
   it("reports available screenshot tooling as a hard requirement for UI-visual PRs", () => {
     const brief = buildOrientationBrief(
-      { branch: "main", headSha: "abc1234", clean: true, recentCommits: [] },
+      {
+        branch: "main",
+        headSha: "abc1234",
+        clean: true,
+        recentCommits: [],
+        upstream: "origin/main",
+        unpushedCount: 0,
+      },
       { available: true },
     );
     expect(brief).toContain("Screenshot tooling");
@@ -95,7 +162,14 @@ describe("buildOrientationBrief", () => {
 
   it("reports unavailable screenshot tooling with its reason and the disclose-don't-omit instruction", () => {
     const brief = buildOrientationBrief(
-      { branch: "main", headSha: "abc1234", clean: true, recentCommits: [] },
+      {
+        branch: "main",
+        headSha: "abc1234",
+        clean: true,
+        recentCommits: [],
+        upstream: "origin/main",
+        unpushedCount: 0,
+      },
       { available: false, reason: "missing system libraries" },
     );
     expect(brief).toContain("unavailable (missing system libraries)");
@@ -108,13 +182,22 @@ describe("buildOrientationBrief", () => {
       headSha: "abc1234",
       clean: true,
       recentCommits: [],
+      upstream: "origin/main",
+      unpushedCount: 0,
     });
     expect(brief).not.toContain("Screenshot tooling");
   });
 
   it("reports confirmed GitHub auth as working normally", () => {
     const brief = buildOrientationBrief(
-      { branch: "main", headSha: "abc1234", clean: true, recentCommits: [] },
+      {
+        branch: "main",
+        headSha: "abc1234",
+        clean: true,
+        recentCommits: [],
+        upstream: "origin/main",
+        unpushedCount: 0,
+      },
       undefined,
       true,
     );
@@ -123,7 +206,14 @@ describe("buildOrientationBrief", () => {
 
   it("reports unconfirmed GitHub auth with retry-before-blocker guidance", () => {
     const brief = buildOrientationBrief(
-      { branch: "main", headSha: "abc1234", clean: true, recentCommits: [] },
+      {
+        branch: "main",
+        headSha: "abc1234",
+        clean: true,
+        recentCommits: [],
+        upstream: "origin/main",
+        unpushedCount: 0,
+      },
       undefined,
       false,
     );
@@ -137,7 +227,62 @@ describe("buildOrientationBrief", () => {
       headSha: "abc1234",
       clean: true,
       recentCommits: [],
+      upstream: "origin/main",
+      unpushedCount: 0,
     });
     expect(brief).not.toContain("GitHub auth");
+  });
+
+  it("never flags unpushed commits on main (SYNC_MAIN_COMMAND already keeps it current)", () => {
+    const brief = buildOrientationBrief({
+      branch: "main",
+      headSha: "abc1234",
+      clean: true,
+      recentCommits: [],
+      upstream: null,
+      unpushedCount: 5,
+    });
+    expect(brief).not.toContain("unpushed");
+    expect(brief).not.toContain("no upstream on origin yet");
+  });
+
+  it("flags a feature branch with no upstream yet and points at the fix", () => {
+    const brief = buildOrientationBrief({
+      branch: "nico/har-5-fix",
+      headSha: "abc1234",
+      clean: true,
+      recentCommits: [],
+      upstream: null,
+      unpushedCount: 0,
+    });
+    expect(brief).toContain("no upstream on origin yet");
+    expect(brief).toContain("git push -u origin nico/har-5-fix");
+  });
+
+  it("flags a feature branch with commits stranded ahead of its upstream", () => {
+    const brief = buildOrientationBrief({
+      branch: "nico/har-5-fix",
+      headSha: "abc1234",
+      clean: true,
+      recentCommits: [],
+      upstream: "origin/nico/har-5-fix",
+      unpushedCount: 3,
+    });
+    expect(brief).toContain("3 commit(s)");
+    expect(brief).toContain("not yet on `origin/nico/har-5-fix`");
+    expect(brief).toContain("recovery steps in `instructions.md`");
+  });
+
+  it("stays quiet about push state on a feature branch that's fully pushed", () => {
+    const brief = buildOrientationBrief({
+      branch: "nico/har-5-fix",
+      headSha: "abc1234",
+      clean: true,
+      recentCommits: [],
+      upstream: "origin/nico/har-5-fix",
+      unpushedCount: 0,
+    });
+    expect(brief).not.toContain("unpushed");
+    expect(brief).not.toContain("no upstream on origin yet");
   });
 });

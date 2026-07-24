@@ -40,6 +40,19 @@ the same sandbox); `SYNC_MAIN_COMMAND` only force-resyncs local `main` to
 `origin/main` when HEAD is already on `main`, so a reconnect can't silently
 discard an agent's in-progress feature branch or its not-yet-pushed commits.
 
+GitHub push access depends on a background-refreshed token (HAR-5): startup
+retries the mint a couple of times before falling back to an open,
+unauthenticated policy, and a refresh loop re-mints every 30s while degraded
+(45min once healthy), tolerating `MAX_SET_POLICY_FAILURES` consecutive
+failures before giving up. `ORIENTATION.md` reports whether auth was
+confirmed at session start, and once it is, `onSession` also auto-pushes any
+commits a prior session left stranded on the current branch
+(`AUTO_RECOVER_PUSH_COMMAND`) before the agent even starts. If push keeps
+failing anyway, `scripts/backup-unpushed-work.sh <issue-id>` patches up the
+unpushed commits so they survive even if this sandbox is discarded;
+`instructions.md` has the agent attach that patch to the Linear issue as a
+last resort before reporting the blocker.
+
 `ORIENTATION.md` also reports whether the sandbox's Playwright chromium
 (`scripts/play-web.mjs`'s screenshots) is confirmed working - `bootstrap`'s
 `buildBootstrapCommand` verifies the browser actually launches, not just that

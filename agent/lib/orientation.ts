@@ -9,33 +9,52 @@ export interface GitFacts {
   headSha: string;
   clean: boolean;
   recentCommits: string[];
+  /** Upstream tracking ref (e.g. `origin/nico/rog-1-thing`), or null if the branch has never been pushed. */
+  upstream: string | null;
+  /** Commits on HEAD not yet on `upstream`. Always 0 when `upstream` is null (there's no ahead/behind to compute). */
+  unpushedCount: number;
 }
 
 // One command emits the raw state as delimited lines; onSession runs it in the
-// sandbox and hands the stdout to parseGitFacts.
+// sandbox and hands the stdout to parseGitFacts. The upstream/ahead-count
+// section lets the orientation brief flag stranded local commits (see HAR-5:
+// a session whose push failed for an extended stretch needs this surfaced
+// automatically instead of discovered by hand).
 export const GIT_FACTS_COMMAND = [
   "git rev-parse --abbrev-ref HEAD",
   "git rev-parse --short HEAD",
   '([ -z "$(git status --porcelain)" ] && echo clean || echo dirty)',
   "echo ---COMMITS---",
   "git log --oneline -5",
+  "echo ---UPSTREAM---",
+  "git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null || echo NONE",
+  "echo ---AHEAD---",
+  "git rev-list --count @{u}..HEAD 2>/dev/null || echo 0",
 ].join(" && ");
 
 export function parseGitFacts(stdout: string): GitFacts {
-  const [head = "", commits = ""] = stdout.split("---COMMITS---");
+  const [head = "", afterHead = ""] = stdout.split("---COMMITS---");
+  const [commitsRaw = "", afterCommits = ""] = afterHead.split("---UPSTREAM---");
+  const [upstreamRaw = "", aheadRaw = ""] = afterCommits.split("---AHEAD---");
   const [branch = "", headSha = "", cleanFlag = ""] = head
     .trim()
     .split("\n")
     .map((line) => line.trim());
+  const upstreamValue = upstreamRaw.trim();
+  const upstream = upstreamValue === "" || upstreamValue === "NONE" ? null : upstreamValue;
+  const unpushedCount =
+    upstream === null ? 0 : Number.parseInt(aheadRaw.trim(), 10) || 0;
   return {
     branch,
     headSha,
     clean: cleanFlag === "clean",
-    recentCommits: commits
+    recentCommits: commitsRaw
       .trim()
       .split("\n")
       .map((line) => line.trim())
       .filter(Boolean),
+    upstream,
+    unpushedCount,
   };
 }
 
@@ -101,6 +120,17 @@ export function buildOrientationBrief(
     `- Working tree: ${facts.clean ? "clean" : "dirty"}`,
     "- `main` was synced from origin at session start.",
   ];
+  if (facts.branch !== "main") {
+    if (facts.upstream === null) {
+      lines.push(
+        `- This branch has no upstream on origin yet. If it has local commits from a prior session, push them now (\`git push -u origin ${facts.branch}\`) before doing new work - onSession already tried this automatically once GitHub auth was confirmed, so a still-missing upstream likely means that push failed.`,
+      );
+    } else if (facts.unpushedCount > 0) {
+      lines.push(
+        `- ${facts.unpushedCount} commit(s) on this branch are not yet on \`${facts.upstream}\` (the automatic push-on-session-start didn't clear them) - push now with \`git push\`; if it keeps failing, back the commits up per the git-push-failure recovery steps in \`instructions.md\` before reporting a blocker.`,
+      );
+    }
+  }
   if (screenshotTooling) {
     lines.push(
       screenshotTooling.available
