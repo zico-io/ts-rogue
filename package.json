@@ -17,6 +17,7 @@
     "pr:sandbox": "bash scripts/pr-sandbox.sh",
     "game": "tsx src/app.tsx",
     "game:dev": "tsx --env-file-if-exists=.env.local src/app.tsx --dev",
+    "game:watch": "tsx --watch --env-file-if-exists=.env.local src/app.tsx --dev",
     "play": "bash scripts/play.sh",
     "play:web": "node scripts/play-web.mjs",
     "web:build": "pnpm --filter @ts-rogue/web build",
