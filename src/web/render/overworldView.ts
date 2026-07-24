@@ -30,7 +30,7 @@ import {
   type Cell,
 } from "../../ui/screens/overworld/render";
 import { theme, toPixiColor } from "../../ui/theme";
-import type { TileName } from "../../ui/tiles/kitty";
+import type { TileName } from "../../ui/tiles/sources";
 import type { DrawHandle, RectHandle } from "./sceneView";
 
 /**

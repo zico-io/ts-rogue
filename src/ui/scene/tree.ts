@@ -64,7 +64,7 @@ export interface GridNode extends SceneNode {
 /** A single tile/sprite, with an ASCII fallback for renderers without image support. */
 export interface SpriteNode extends SceneNode {
   kind: "sprite";
-  /** Atlas/tile frame name - same id space as TILE_SOURCES (src/ui/tiles/kitty.ts) and MonsterDef.sprite. */
+  /** Atlas/tile frame name - same id space as TILE_SOURCES (src/ui/tiles/sources.ts) and MonsterDef.sprite. */
   tile?: string;
   fallback: { char: string; color: string };
   size: { width: Unit; height: Unit };

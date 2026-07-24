@@ -43,7 +43,6 @@ import {
 } from "./ui/screens/title/interaction";
 import { VillageScreen } from "./ui/screens/VillageScreen";
 import { theme } from "./ui/theme";
-import { initTiles } from "./ui/tiles/kitty";
 
 function App({
   store,
@@ -387,10 +386,6 @@ const rendered = failures.run("boot", true, () =>
     { alternateScreen: true },
   ),
 );
-// Kitty graphics storage is per-screen (Ghostty clears the alternate screen's
-// images on entry), so the tileset must be transmitted after Ink switches to
-// the alternate screen - i.e. after render(), not before.
-initTiles();
 if (!rendered.ok) {
   const display = pipeline.getFatal();
   if (display) render(<CrashScreen display={display} />);

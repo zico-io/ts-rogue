@@ -36,7 +36,7 @@ export interface PackOptions {
   gap?: number;
   /** Vertical gap between wrapped rows. */
   rowGap?: number;
-  /** Fixed art size in cells (kitty-graphics sprites) instead of ASCII art. */
+  /** Fixed art size in cells (browser sprites) instead of ASCII art. */
   artSize?: { width: number; height: number };
 }
 

@@ -9,7 +9,7 @@
  */
 
 import { Graphics, Sprite, type Spritesheet } from "pixi.js";
-import type { TileName } from "../../ui/tiles/kitty";
+import type { TileName } from "../../ui/tiles/sources";
 import type { OverworldDrawFactory, SpriteHandle } from "./overworldView";
 import type { RectHandle } from "./sceneView";
 

@@ -42,13 +42,8 @@ start)
   rows="${3:-40}"
   tmux kill-session -t "$SESSION" 2>/dev/null || true
   : >"$KEYLOG"
-  # Kitty-graphics tiles are off by default so capture-pane keeps seeing the
-  # ASCII glyphs; opt in with TSROGUE_TILES=1 (needs tmux allow-passthrough).
-  tiles_env="TSROGUE_NO_TILES=1"
-  [ "${TSROGUE_TILES:-}" = "1" ] && tiles_env=""
   tmux new-session -d -s "$SESSION" -x "$cols" -y "$rows" \
-    "TS_ROGUE_PLAY=1 $tiles_env pnpm game:dev --seed=$seed --fresh"
-  tmux set -t "$SESSION" allow-passthrough on
+    "TS_ROGUE_PLAY=1 pnpm game:dev --seed=$seed --fresh"
   echo "started session '$SESSION' (seed=$seed ${cols}x${rows}); give it a moment, then: scripts/play.sh frame"
   ;;
 dev)
@@ -71,13 +66,10 @@ Drive it by running scripts/play.sh key <tokens...> and read the screen with scr
 tmux key names: Up Down Left Right Enter Escape Tab Space; single characters send literally."
   tmux kill-session -t "$SESSION" 2>/dev/null || true
   : >"$KEYLOG"
-  tiles_env="TSROGUE_NO_TILES=1"
-  [ "${TSROGUE_TILES:-}" = "1" ] && tiles_env=""
   # pane 0: the live game under tsx --watch, so pi's code edits reload it. (`start`
   # stays unwatched: the agent play flow needs a stable, restart-free session.)
   tmux new-session -d -s "$SESSION" -x "$cols" -y "$rows" \
-    "TS_ROGUE_PLAY=1 $tiles_env pnpm game:watch --seed=$seed --fresh"
-  tmux set -t "$SESSION" allow-passthrough on
+    "TS_ROGUE_PLAY=1 pnpm game:watch --seed=$seed --fresh"
   tmux set -t "$SESSION" window-size manual # stable pane sizes for frame captures
   # pi's vercel-ai-gateway provider authenticates via AI_GATEWAY_API_KEY (env or a
   # stored `pi /login`). The project's VERCEL_OIDC_TOKEN lists models but 401s on

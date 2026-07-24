@@ -17,12 +17,6 @@ import { Screen, useScreenContent } from "../components/Screen";
 import { normalizeInkKey } from "../hooks/normalizeInkKey";
 import { theme } from "../theme";
 import {
-  hasTile,
-  SPRITE_CELLS,
-  spriteRows,
-  tilesSupported,
-} from "../tiles/kitty";
-import {
   ACTIONS,
   type BattleMode,
   type BattleUiState,
@@ -184,7 +178,6 @@ function BattleBody({
   // The framed viewport sits above the hero stat and turn-order lines.
   const viewportHeight = Math.max(1, height - 2);
 
-  const tiles = tilesSupported();
   const packed = packEnemyColumns(
     bs.enemies,
     aliveEnemies,
@@ -193,7 +186,6 @@ function BattleBody({
     {
       columns: Math.max(1, viewportWidth - 2),
       gap: ENEMY_GAP,
-      ...(tiles ? { artSize: SPRITE_CELLS } : {}),
     },
   );
 
@@ -210,7 +202,7 @@ function BattleBody({
           overflow="hidden"
         >
           <Box flexGrow={1} alignItems="center" justifyContent="center">
-            <EnemyField packed={packed} tiles={tiles} />
+            <EnemyField packed={packed} />
           </Box>
 
           {/* Floating command window, anchored bottom-left over the viewport
@@ -262,18 +254,7 @@ function BattleBody({
   );
 }
 
-/** Blank block the size of a sprite, keeping dead columns' layout stable. */
-const BLANK_SPRITE = Array.from({ length: SPRITE_CELLS.height }, () =>
-  " ".repeat(SPRITE_CELLS.width),
-).join("\n");
-
-function EnemyField({
-  packed,
-  tiles,
-}: {
-  packed: PackedEnemies;
-  tiles: boolean;
-}) {
+function EnemyField({ packed }: { packed: PackedEnemies }) {
   return (
     <Box flexDirection="column" gap={1}>
       {packed.rows.map((row, rowIndex) => (
@@ -289,17 +270,9 @@ function EnemyField({
               : col.selected
                 ? theme.accent
                 : (col.enemy.color ?? theme.text);
-            const spriteId =
-              tiles && hasTile(col.enemy.defId) ? col.enemy.defId : null;
             return (
               <Box key={col.enemy.id} flexDirection="column">
-                {spriteId ? (
-                  <Text>
-                    {col.dead ? BLANK_SPRITE : spriteRows(spriteId).join("\n")}
-                  </Text>
-                ) : (
-                  <Text color={color}>{col.enemy.ascii.join("\n")}</Text>
-                )}
+                <Text color={color}>{col.enemy.ascii.join("\n")}</Text>
                 <Text bold color={color}>
                   {col.nameLine}
                 </Text>
