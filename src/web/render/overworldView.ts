@@ -19,17 +19,31 @@
  * in maps keyed by stable strings and reused across `render()` calls, since
  * the tilemap redraws on every player step - unlike the village/title menus
  * in `main.ts`, this is not cheap to destroy-and-rebuild every frame.
+ *
+ * Viewport tiles also run through `overworldVariants.ts`'s neighbor-driven
+ * auto-tile stand-in (ROG-73): a water tile bordering land grows a
+ * shore-tinted fringe rect, and a mountain/forest/village/dungeonEntrance
+ * tile scales with its local density/position instead of always drawing at
+ * a fixed size - see that module's doc comment for why (no real autotile
+ * blob art is vendored yet).
  */
 
 import type { GameState } from "../../engine/state/types";
 import { ENCOUNTER_THRESHOLD } from "../../engine/world/overworld";
-import type { OverworldMap } from "../../engine/world/types";
+import type { OverworldMap, Tile } from "../../engine/world/types";
 import {
   buildMinimapRows,
   buildViewportRows,
   type Cell,
 } from "../../ui/screens/overworld/render";
 import { theme, toPixiColor } from "../../ui/theme";
+import {
+  clusterScale,
+  landmarkScale,
+  type Sides,
+  sameNeighborCount,
+  shoreSides,
+} from "../../ui/tiles/overworldVariants";
 import type { TileName } from "../../ui/tiles/sources";
 import type { DrawHandle, RectHandle } from "./sceneView";
 
@@ -46,7 +60,7 @@ export interface SpriteHandle extends DrawHandle {
   setTint(color: number): void;
 }
 
-/** Renderer boundary this view draws through: sprites for tiles, rects for meter/minimap chrome. */
+/** Renderer boundary this view draws through: sprites for tiles, rects for meter/minimap/shore chrome. */
 export interface OverworldDrawFactory {
   createSprite(): SpriteHandle;
   createRect(): RectHandle;
@@ -68,6 +82,13 @@ const MINIMAP_GAP_PX = 10;
 /** Encounter meter bar: height, and the gap separating it from the viewport above it. */
 const METER_HEIGHT_PX = 14;
 const METER_GAP_PX = 10;
+/** Fraction of a tile cell a shore fringe strip occupies on a water tile's land-adjacent edge(s) (ROG-73). */
+const SHORE_FRINGE_RATIO = 0.28;
+/** Terrain that scales with same-type neighbor density instead of drawing at a fixed size (ROG-73). */
+const DENSITY_SCALED_TILES = new Set<Tile>(["mountain", "forest"]);
+/** Terrain that gets a small deterministic per-instance size variation instead of a fixed size (ROG-73). */
+const LANDMARK_TILES = new Set<Tile>(["village", "dungeonEntrance"]);
+const SHORE_SIDE_NAMES = ["north", "east", "south", "west"] as const;
 
 /**
  * Draws the overworld's camera-follow tilemap, a whole-map minimap, and the
@@ -76,6 +97,7 @@ const METER_GAP_PX = 10;
  */
 export class OverworldSceneView {
   private readonly viewportSprites = new Map<string, SpriteHandle>();
+  private readonly shoreRects = new Map<string, RectHandle>();
   private readonly minimapRects = new Map<string, RectHandle>();
   private minimapBorder: RectHandle | undefined;
   private meterBackground: RectHandle | undefined;
@@ -120,6 +142,7 @@ export class OverworldSceneView {
     const minimapBoxX = Math.max(0, pixelSize.width - minimapBoxWidth);
 
     const seenSprites = new Set<string>();
+    const seenShoreRects = new Set<string>();
     const seenMinimapRects = new Set<string>();
 
     const viewportAreaWidth = Math.max(1, minimapBoxX - MINIMAP_GAP_PX);
@@ -142,13 +165,16 @@ export class OverworldSceneView {
       (contentHeight - viewportRowsCount * tilePx) / 2,
     );
     this.drawViewport(
+      map,
       viewportRows,
       tilePx,
       viewportOffsetX,
       viewportOffsetY,
       seenSprites,
+      seenShoreRects,
     );
     this.pruneStaleSprites(seenSprites);
+    this.pruneStaleShoreRects(seenShoreRects);
 
     this.drawMinimap(
       minimapRows,
@@ -168,31 +194,114 @@ export class OverworldSceneView {
   }
 
   private drawViewport(
+    map: OverworldMap,
     rows: Cell[][],
     tilePx: number,
     offsetX: number,
     offsetY: number,
-    seen: Set<string>,
+    seenSprites: Set<string>,
+    seenShoreRects: Set<string>,
   ): void {
     for (const [rowIndex, row] of rows.entries()) {
       for (const [colIndex, cell] of row.entries()) {
-        seen.add(cell.key);
+        seenSprites.add(cell.key);
         let sprite = this.viewportSprites.get(cell.key);
         if (!sprite) {
           sprite = this.factory.createSprite();
           this.viewportSprites.set(cell.key, sprite);
         }
-        sprite.setPosition(
-          offsetX + colIndex * tilePx,
-          offsetY + rowIndex * tilePx,
-        );
-        sprite.setSize(tilePx, tilePx);
+        const cellX = offsetX + colIndex * tilePx;
+        const cellY = offsetY + rowIndex * tilePx;
         const tile = cell.tile ?? "grass";
         sprite.setTexture(tile);
         // Minifantasy frames are full-color (ROG-68); no biome multiply-tint,
         // which was a hack for the old monochrome Urizen tiles.
         sprite.setTint(0xffffff);
+
+        // Scale by neighbor density/position (ROG-73) - never for the
+        // player's own marker, which always draws at a fixed size.
+        const terrain = map.tiles[cell.y]?.[cell.x];
+        const scale =
+          tile === "player" || terrain === undefined
+            ? 1
+            : this.terrainScale(map, terrain, cell.x, cell.y);
+        const size = tilePx * scale;
+        sprite.setPosition(
+          cellX - (size - tilePx) / 2,
+          cellY - (size - tilePx) / 2,
+        );
+        sprite.setSize(size, size);
+
+        this.drawShoreFringe(map, cell, cellX, cellY, tilePx, seenShoreRects);
       }
+    }
+  }
+
+  /** Neighbor-density scale for mountain/forest, per-instance scale for village/dungeonEntrance, 1 otherwise. */
+  private terrainScale(
+    map: OverworldMap,
+    terrain: Tile,
+    x: number,
+    y: number,
+  ): number {
+    if (DENSITY_SCALED_TILES.has(terrain)) {
+      return clusterScale(sameNeighborCount(map, x, y, terrain));
+    }
+    if (LANDMARK_TILES.has(terrain)) {
+      return landmarkScale(x, y);
+    }
+    return 1;
+  }
+
+  /** Draws a sand-tinted fringe rect on each land-adjacent side of a water tile (ROG-73's shore-edge stand-in). */
+  private drawShoreFringe(
+    map: OverworldMap,
+    cell: Cell,
+    cellX: number,
+    cellY: number,
+    tilePx: number,
+    seen: Set<string>,
+  ): void {
+    const sides = shoreSides(map, cell.x, cell.y);
+    const thickness = tilePx * SHORE_FRINGE_RATIO;
+    for (const side of SHORE_SIDE_NAMES) {
+      const key = `${cell.key}:shore:${side}`;
+      if (!sides[side]) continue;
+      seen.add(key);
+      let rect = this.shoreRects.get(key);
+      if (!rect) {
+        rect = this.factory.createRect();
+        this.shoreRects.set(key, rect);
+      }
+      rect.setColor(toPixiColor(theme.biome.shore));
+      const [x, y, width, height] = this.shoreRectBounds(
+        side,
+        cellX,
+        cellY,
+        tilePx,
+        thickness,
+      );
+      rect.setPosition(x, y);
+      rect.setSize(width, height);
+    }
+  }
+
+  private shoreRectBounds(
+    side: keyof Sides,
+    cellX: number,
+    cellY: number,
+    tilePx: number,
+    thickness: number,
+  ): [number, number, number, number] {
+    switch (side) {
+      case "north":
+        return [cellX, cellY, tilePx, thickness];
+      case "south":
+        return [cellX, cellY + tilePx - thickness, tilePx, thickness];
+      case "west":
+        return [cellX, cellY, thickness, tilePx];
+      case "east":
+        return [cellX + tilePx - thickness, cellY, thickness, tilePx];
     }
   }
 
@@ -201,6 +310,15 @@ export class OverworldSceneView {
       if (!seen.has(key)) {
         sprite.destroy();
         this.viewportSprites.delete(key);
+      }
+    }
+  }
+
+  private pruneStaleShoreRects(seen: Set<string>): void {
+    for (const [key, rect] of this.shoreRects) {
+      if (!seen.has(key)) {
+        rect.destroy();
+        this.shoreRects.delete(key);
       }
     }
   }

@@ -64,6 +64,9 @@ export const theme = {
     village: "#fbc254",
     dungeonEntrance: "#ca7ef2",
     player: "#f2f2da",
+    // Warm sand fringe drawn along a water tile's land-adjacent side(s)
+    // (ROG-73's shore-edge auto-tile stand-in - see `overworldVariants.ts`).
+    shore: "#d9b872",
   },
   // title logo gradient, one hex per logo line (pink -> purple)
   logoGradient: ["#ee99bf", "#cd67a8", "#ab4bab", "#8648b5", "#70388c"],

@@ -187,7 +187,32 @@ keyed by frame name. `main.ts` looks sprites up by name, e.g.
    loadAtlas(); new Sprite(sheet.textures["<name>"])`, and set
    `texture.source.scaleMode = "nearest"` before scaling it up.
 
+### Overworld terrain auto-tile stand-in (ROG-73)
+
+`render/overworldView.ts`'s `OverworldSceneView` does not draw every
+grass/water/mountain/forest/village/dungeonEntrance tile at a fixed size and
+texture - `src/ui/tiles/overworldVariants.ts` (pure, unit-tested in
+`overworldVariants.test.ts`) computes a neighbor-driven render variant per
+tile instead:
+
+- A **water** tile bordering land grows a sand-tinted (`theme.biome.shore`)
+  fringe rect on its land-adjacent side(s), a lightweight stand-in for a real
+  shore-edge autotile.
+- A **mountain**/**forest** tile scales up with its same-type orthogonal
+  neighbor count (`clusterScale`) - an isolated tile draws smaller, a dense
+  cluster draws larger, so density reads visually without new art.
+- A **village**/**dungeonEntrance** landmark gets a small per-instance size
+  variation (`landmarkScale`, hashed from its tile coordinate - never
+  `Math.random`, so a given map always renders identically) instead of every
+  instance drawing at the same size.
+
+This is a code-level "auto-tile" - the vendored `forgotten_plains.png` crop
+(`assets/README.md`) is a small preview swatch, not a full autotile blob
+sheet, so there is no new source art here; a real shore/corner tileset is a
+follow-up once that art is vendored.
+
 ## HUD chrome (ROG-47)
+
 
 The frame (bordered panel + title), party bar (HP/MP meters + gold), and
 message log around every scene are built once, framework-free, by
