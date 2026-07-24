@@ -2,6 +2,7 @@ import type { SandboxNetworkPolicy } from "eve/sandbox";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  dependencyRevalidationKey,
   keepTokenFresh,
   MAX_SET_POLICY_FAILURES,
   resolveStartupNetworkPolicy,
@@ -169,5 +170,15 @@ describe("resolveStartupNetworkPolicy", () => {
     expect(res.authed).toBe(false);
     expect(res.policy).toEqual({ allow: { "*": [] } });
     vi.useRealTimers();
+  });
+});
+
+describe("dependencyRevalidationKey", () => {
+  it("hashes the lockfile into a stable deps: key that snapshots reuse", () => {
+    const key = dependencyRevalidationKey();
+    // Reused snapshot key: same lockfile -> same key, so commits that don't
+    // change deps hit the cached node_modules instead of a cold install.
+    expect(key).toBe(dependencyRevalidationKey());
+    expect(key).toMatch(/^deps:[0-9a-f]{64}$/);
   });
 });
