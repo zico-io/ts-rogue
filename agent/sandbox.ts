@@ -241,10 +241,28 @@ export function buildBootstrapCommand(): string {
     // tmux backs the terminal play harness (scripts/play.sh), pi backs its
     // interactive `play dev` layout, and Playwright's chromium backs the web
     // play harness (scripts/play-web.mjs), so the agent can drive and
-    // screenshot both renderers in-sandbox.
+    // screenshot both renderers in-sandbox. ripgrep/fd-find/bat/eza are the
+    // agent-friendly replacements for grep/find/cat/ls (faster, .gitignore
+    // aware, better defaults - see HAR-3); ast-grep adds structural
+    // (syntax-tree) code search on top of them for refactors and call-site
+    // queries plain text search can't express.
     USE_HTTPS_APT_MIRRORS_COMMAND,
-    "(sudo apt-get update && sudo apt-get install -y tmux) || true",
+    "(sudo apt-get update && sudo apt-get install -y tmux ripgrep fd-find bat eza) || true",
+    // Debian/Ubuntu ship fd-find/bat under the `fdfind`/`batcat` binary names
+    // to avoid clashing with unrelated packages already named `fd`/`bat`;
+    // symlink the conventional names onto PATH so agents and scripts can
+    // invoke `fd`/`bat` directly instead of learning the distro rename.
+    "(sudo ln -sf /usr/bin/fdfind /usr/local/bin/fd || true)",
+    "(sudo ln -sf /usr/bin/batcat /usr/local/bin/bat || true)",
     "(npm install -g @earendil-works/pi-coding-agent@0.81.1 || true)",
+    // Ponytail is a YAGNI/minimal-diff ruleset for coding agents (see
+    // https://github.com/DietrichGebert/ponytail); `pi install` fetches it as
+    // an extension so pi's `play dev` sessions inherit the same
+    // lazy-senior-dev discipline this repo already partially adopted (the
+    // `ponytail:` comment convention for flagged simplifications, see
+    // instructions.md).
+    "(pi install git:github.com/DietrichGebert/ponytail || true)",
+    "(npm install -g @ast-grep/cli || true)",
     "git config --global --add safe.directory /workspace",
     "git clone https://github.com/zico-io/ts-rogue.git .",
     "corepack pnpm install --frozen-lockfile",
