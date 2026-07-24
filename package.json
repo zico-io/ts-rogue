@@ -19,6 +19,7 @@
     "game:dev": "tsx --env-file-if-exists=.env.local src/app.tsx --dev",
     "game:watch": "tsx --watch --env-file-if-exists=.env.local src/app.tsx --dev",
     "play": "bash scripts/play.sh",
+    "play:sandbox": "bash scripts/play-sandbox.sh",
     "play:web": "node scripts/play-web.mjs",
     "web:build": "pnpm --filter @ts-rogue/web build",
     "web:dev": "pnpm --filter @ts-rogue/web dev",
