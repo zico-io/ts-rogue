@@ -209,6 +209,13 @@ describe("buildBootstrapCommand", () => {
     expect(command).toContain("npm install -g @ast-grep/cli");
   });
 
+  it("installs the ponytail ruleset into pi (HAR-3)", () => {
+    const command = buildBootstrapCommand();
+    expect(command).toContain(
+      "pi install git:github.com/DietrichGebert/ponytail",
+    );
+  });
+
   it("symlinks fd/bat onto PATH under their conventional names", () => {
     // Debian/Ubuntu ship fd-find and bat as `fdfind`/`batcat` to avoid name
     // clashes with pre-existing packages, so agents typing `fd`/`bat` would

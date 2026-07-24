@@ -220,6 +220,13 @@ export function buildBootstrapCommand(): string {
     "(sudo ln -sf /usr/bin/fdfind /usr/local/bin/fd || true)",
     "(sudo ln -sf /usr/bin/batcat /usr/local/bin/bat || true)",
     "(npm install -g @earendil-works/pi-coding-agent@0.81.1 || true)",
+    // Ponytail is a YAGNI/minimal-diff ruleset for coding agents (see
+    // https://github.com/DietrichGebert/ponytail); `pi install` fetches it as
+    // an extension so pi's `play dev` sessions inherit the same
+    // lazy-senior-dev discipline this repo already partially adopted (the
+    // `ponytail:` comment convention for flagged simplifications, see
+    // instructions.md).
+    "(pi install git:github.com/DietrichGebert/ponytail || true)",
     "(npm install -g @ast-grep/cli || true)",
     "git config --global --add safe.directory /workspace",
     "git clone https://github.com/zico-io/ts-rogue.git .",
