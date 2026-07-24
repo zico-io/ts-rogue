@@ -47,7 +47,7 @@ export interface DrawHandle {
 
 /**
  * A positioned, texture-backed enemy sprite. `setSize` gives the real Pixi
- * adapter the square art box (see `ART_PX`) to fit the sprite's native
+ * adapter the square art box (see `artPxFor`) to fit the sprite's native
  * texture into, preserving aspect ratio - the three battler PNGs have
  * wildly different native sizes (`battlers.ts`), so the box, not the
  * texture's own pixel dimensions, is what stays consistent (ROG-63).
@@ -89,18 +89,29 @@ export interface PixelSize {
 }
 
 /**
- * Pixel size of the square art box each enemy's sprite/rect is drawn into.
- * Battlers are their own scale class from the 8x8 tile atlas (loaded
+ * Lower/upper bound on the square art box each enemy's sprite/rect is drawn
+ * into. Battlers are their own scale class from the 8x8 tile atlas (loaded
  * individually by `battlers.ts`, see `pixiBattleDrawFactory.ts`'s module
- * doc), so this is just a fixed slot size for the battle layout, not tied
- * to any tile pitch.
+ * doc), so this is just a slot size for the battle layout, not tied to any
+ * tile pitch.
  */
-const ART_PX = 72;
+const MIN_ART_PX = 72;
+const MAX_ART_PX = 144;
+/** Art box scales with the available battle-content height, not width - the menu strip below it is a fixed height, so height is the scarcer dimension (ROG-66: a bigger canvas should mean a bigger stage, not the same fixed-size icons adrift in more empty space). */
+const ART_HEIGHT_RATIO = 0.3;
+
+/** Derives the enemy art box size from the battle content area's pixel size. */
+export function artPxFor(pixelSize: PixelSize): number {
+  return Math.max(
+    MIN_ART_PX,
+    Math.min(MAX_ART_PX, Math.round(pixelSize.height * ART_HEIGHT_RATIO)),
+  );
+}
+
 const ENEMY_GAP_PX = 24;
 const ROW_GAP_PX = 16;
 const NAME_ROW_PX = 18;
 const HP_ROW_PX = 16;
-const COLUMN_HEIGHT_PX = ART_PX + NAME_ROW_PX + HP_ROW_PX;
 const FIELD_PADDING_PX = 16;
 /** Extra margin around the selected enemy's art for the target-mode highlight rect. */
 const HIGHLIGHT_PAD_PX = 6;
@@ -151,6 +162,9 @@ export class BattleSceneView {
   private readonly lastHp = new Map<string, number>();
   private floaters: Floater[] = [];
 
+  /** Current enemy art box size, recomputed from `pixelSize` at the top of every `render()` (ROG-66). */
+  private artPx = MIN_ART_PX;
+
   private targetHighlight: BattleRectHandle | undefined;
   private actorHeader: BattleTextHandle | undefined;
   private actorStatus: BattleTextHandle | undefined;
@@ -166,6 +180,8 @@ export class BattleSceneView {
   ): void {
     const bs = state.battleState;
     if (state.scene !== "battle" || !bs) return;
+
+    this.artPx = artPxFor(pixelSize);
 
     const actor: PartyMember =
       state.party.find((member) => member.id === bs.activeMemberId) ??
@@ -246,26 +262,36 @@ export class BattleSceneView {
       battleUi.mode === "target",
       battleUi.targetCursor,
       {
-        columns: Math.max(ART_PX, pixelSize.width - FIELD_PADDING_PX * 2),
+        columns: Math.max(this.artPx, pixelSize.width - FIELD_PADDING_PX * 2),
         gap: ENEMY_GAP_PX,
         rowGap: ROW_GAP_PX,
-        artSize: { width: ART_PX, height: ART_PX },
+        artSize: { width: this.artPx, height: this.artPx },
       },
     );
+
+    // Center the packed field horizontally in the available width instead of
+    // always hugging the left edge (ROG-66) - with only one or two enemies
+    // the field is much narrower than a big canvas, and a left-anchored
+    // field just moves the empty void from "everywhere" to "the right side".
+    const startX = Math.max(
+      FIELD_PADDING_PX,
+      (pixelSize.width - packed.fieldWidth) / 2,
+    );
+    const columnHeight = this.artPx + NAME_ROW_PX + HP_ROW_PX;
 
     const seen = new Set<string>();
     let selected: { x: number; y: number } | undefined;
 
     let y = FIELD_PADDING_PX;
     for (const row of packed.rows) {
-      let x = FIELD_PADDING_PX;
+      let x = startX;
       for (const col of row) {
         seen.add(col.enemy.id);
         this.drawEnemyColumn(col.enemy, col.selected, x, y);
         if (col.selected) selected = { x, y };
         x += col.width + ENEMY_GAP_PX;
       }
-      y += COLUMN_HEIGHT_PX + ROW_GAP_PX;
+      y += columnHeight + ROW_GAP_PX;
     }
 
     this.pruneEnemyHandles(seen);
@@ -278,7 +304,7 @@ export class BattleSceneView {
     x: number,
     y: number,
   ): void {
-    this.checkDamage(enemy.id, enemy.hp, x + ART_PX / 2, y);
+    this.checkDamage(enemy.id, enemy.hp, x + this.artPx / 2, y);
 
     const baseColor = toPixiColor(enemyDisplayColor(enemy, selected));
     this.normalTint.set(enemy.id, baseColor);
@@ -295,7 +321,7 @@ export class BattleSceneView {
     }
     name.setText(`${enemy.name}${enemy.hp <= 0 ? " (defeated)" : ""}`);
     name.setColor(tint);
-    name.setPosition(x, y + ART_PX);
+    name.setPosition(x, y + this.artPx);
 
     let hp = this.hpHandles.get(enemy.id);
     if (!hp) {
@@ -304,7 +330,7 @@ export class BattleSceneView {
     }
     hp.setText(`HP ${enemy.hp}/${enemy.maxHp}`);
     hp.setColor(tint);
-    hp.setPosition(x, y + ART_PX + NAME_ROW_PX);
+    hp.setPosition(x, y + this.artPx + NAME_ROW_PX);
   }
 
   /** Draws a real sprite when the atlas has one for `enemy.sprite`, else a tinted placeholder rect the same size. */
@@ -334,10 +360,10 @@ export class BattleSceneView {
     entry.handle.setPosition(x, y);
     if (entry.kind === "sprite") {
       entry.handle.setTexture(enemy.sprite as string);
-      entry.handle.setSize(ART_PX, ART_PX);
+      entry.handle.setSize(this.artPx, this.artPx);
       entry.handle.setTint(tint);
     } else {
-      entry.handle.setSize(ART_PX, ART_PX);
+      entry.handle.setSize(this.artPx, this.artPx);
       entry.handle.setColor(tint);
     }
   }
@@ -372,8 +398,8 @@ export class BattleSceneView {
       selected.y - HIGHLIGHT_PAD_PX,
     );
     this.targetHighlight.setSize(
-      ART_PX + HIGHLIGHT_PAD_PX * 2,
-      ART_PX + HIGHLIGHT_PAD_PX * 2,
+      this.artPx + HIGHLIGHT_PAD_PX * 2,
+      this.artPx + HIGHLIGHT_PAD_PX * 2,
     );
     this.targetHighlight.setColor(toPixiColor(theme.accent));
   }
