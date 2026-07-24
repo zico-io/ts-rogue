@@ -57,6 +57,16 @@ rules carry ponytail's YAGNI/minimal-diff ladder directly, so it governs the
 root's own decisions and the delegated coding child (both run the same
 instructions), not just pi.
 
+This is already the same class of infrastructure `pnpm pr:sandbox`
+(`scripts/pr-sandbox.sh`) uses for human PR review - both are Vercel
+Sandboxes - but they are two separate sandboxes for two separate jobs: this
+file's `defineSandbox` backs the automated agent session (root + its
+delegated `agent`-tool child, sharing one sandbox per session), while
+`pr:sandbox` provisions its own on-demand sandbox for a human to manually
+exercise a PR branch. The `agent` tool - not a `pi` subprocess - remains the
+coding-delegation path; it already inherits this sandbox's toolchain and
+`instructions.md`'s ponytail rules with no further wiring.
+
 When the assigned issue has sub-issues, the agent treats it as a group (ralph
 mode): it sequences the sub-issues by their Linear `blocks`/`blocked by`
 relations, priority, and `PROJECT_PLAN.md` phase, then drives one at a time,
