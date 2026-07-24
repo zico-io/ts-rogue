@@ -25,3 +25,6 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
+      # Warn-only: surfaces memory/SSOT drift on every PR without blocking the merge.
+      - run: pnpm docs:lint
+        continue-on-error: true

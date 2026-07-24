@@ -1,8 +1,16 @@
 # Product
 
-- The milestone proves a replayable village, overworld, dungeon, battle, loot, and village loop. <source: PROJECT_PLAN.md section 2, 2026-07-19>
-- TypeScript on Node.js 24+, Ink, rot.js, seeded randomness, and a central serializable reducer store are the runtime architecture. <source: package.json and src/engine/state, 2026-07-20>
-- Engine modules must not import UI modules. <source: PROJECT_PLAN.md section 1, 2026-07-19>
-- The first-person dungeon view renders perspective-projected wall faces and interactables as Braille wireframes. <source: src/ui/screens/dungeon/render.ts, 2026-07-20>
-- Work advances through phases 0 to 6, and each phase ends with a playable vertical slice. <source: PROJECT_PLAN.md section 3, 2026-07-19>
-- The first playable loop uses one hero; party expansion is deferred until the loop is proven. <source: PROJECT_PLAN.md section 10, 2026-07-19>
+Golden product SSOT: the distilled, current truth of *shipped* ts-rogue behavior.
+Upsert facts here (delete what shipped past); keep provenance and dates current.
+`pnpm docs:lint` reports drift.
+
+- ts-rogue is a replayable terminal dungeon crawler whose loop runs village, overworld, dungeon, battle, loot, and back to village. <source: PROJECT_PLAN.md and src/engine/world, 2026-07-23>
+- The runtime is TypeScript on Node.js 24+ with Ink for the terminal UI, rot.js for procedural generation, seeded randomness, and a central serializable reducer store. <source: package.json and src/engine/state/store.ts, 2026-07-23>
+- Engine modules must never import UI modules; the boundary is enforced by a biome rule. <source: biome.json and src/engine/README.md, 2026-07-23>
+- Play is party-based: a multi-member party fights in battle, not a single hero. <source: src/engine/state/types.ts and src/engine/combat/resolution.ts, 2026-07-23>
+- Characters have classes (warrior, rogue, wizard) that carry distinct skills and stats. <source: src/data/classes.ts and src/engine/combat/skills.ts, 2026-07-23>
+- Loot is generated from item bases, affixes, and monster-implicit pools rather than hand-authored drops. <source: src/engine/loot and src/data/itemBases.ts, 2026-07-23>
+- The first-person dungeon view renders perspective-projected wall faces and interactables as Braille wireframes. <source: src/ui/screens/dungeon/render.ts, 2026-07-23>
+- The terminal UI ships a visual identity: a shared theme-token palette and an image tileset overlay. <source: src/ui/README.md and src/ui/tiles, 2026-07-23>
+- Game state persists to a serializable save so runs resume across sessions. <source: src/persistence/save.ts, 2026-07-23>
+- Linear owns issue status and priority; durable product truth lives in the repository. <source: CONTRIBUTING.md, 2026-07-23>

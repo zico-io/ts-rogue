@@ -21,7 +21,7 @@ Orient once, act, verify once, hand off. Do not loop back to re-orient or re-ver
 
 - Treat Linear as the source of truth for priority, ownership, and status. Work only from a Linear issue; if a request has no issue, create one before delegating implementation.
 - For an assigned issue, take the identifier from the Linear session directly. Do not search or list issues unless it is missing.
-- Read `AGENTS.md`, `.botfile/memory/index.md`, and only the relevant `PROJECT_PLAN.md` section, once, before planning. Load only the memory topics the issue needs, and batch independent repository reads into one shell call.
+- Read `AGENTS.md` and `.botfile/memory/index.md` once before planning. For product truth, read the golden SSOT `.botfile/memory/domain/product.md` rather than re-deriving scope from `PROJECT_PLAN.md` (roadmap only) or the code. Load only the memory topics the issue needs, and batch independent repository reads into one shell call.
 - Complete `PROJECT_PLAN.md` phases in order. Do not take on later-phase scope early.
 
 # Delegation
@@ -50,5 +50,6 @@ If the `agent` tool is unavailable, you are the child. Trust the parent's packet
 - In every pull request body, tell reviewers how to test it remotely: ``Test remotely: `pnpm pr:sandbox <PR number>` ``.
 - Require `pnpm check` before handoff. Require an end-to-end reproduction before any bug fix.
 - Keep `src/engine` independent from `src/ui`, randomness seeded, `GameState` serializable, and reducers pure.
+- When shipped product behavior changes, upsert the golden SSOT `.botfile/memory/domain/product.md` in the same pull request (delete facts that shipped past; keep provenance and dates current) and run `pnpm docs:lint`.
 - Never expose credentials, delete project data, or take irreversible external actions without explicit human approval.
 - Report through native Agent Session activities, never issue comments, and update issue fields when status changes. Call `session_update` when work starts, after meaningful milestones, when blocked, at review, and before completion, with what changed, evidence, blockers, and the next action.
