@@ -101,6 +101,16 @@ folds into the brief. `instructions.md`'s contract requires a screenshot in
 any PR that changes rendered UI/visual output; this line is how the agent
 knows the tooling's state without discovering it by trial and error.
 
+`instructions.md` (HAR-6) also requires that screenshot to travel with the
+PR's changeset, not just its body: when a UI-visual PR also carries a
+`pnpm changeset` file (release-facing behavior), the agent embeds the same
+committed `docs/pr-assets/<issue-id>/` screenshot as a Markdown image inside
+that changeset. A PR body link is visible to a human reviewer but is not part
+of the changeset's content, so it would otherwise be lost the moment
+`pnpm version-packages` folds the changeset into `CHANGELOG.md` - embedding it
+in the changeset itself is what carries the visual evidence into the
+changelog.
+
 `buildBootstrapCommand` also installs the agent-facing CLI toolchain (HAR-3):
 `ripgrep`, `fd`, `bat`, `eza`, and `ast-grep` are on `PATH` in every session's
 sandbox (the root and its coding child share that sandbox), and `pi install`
