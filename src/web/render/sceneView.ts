@@ -54,9 +54,17 @@ export interface TextHandle extends DrawHandle {
   readonly height: number;
 }
 
+/** Optional decoration a `RectHandle` can draw around its own fill color - see `pixiDrawFactory.ts`. */
+export interface RectOptions {
+  /** Lighter top/left edge + darker bottom/right edge, derived from the fill color (ROG-64 windowskin bevel). */
+  bevel?: boolean;
+  /** Translucent white band across the top portion, for the meter fill's gloss line. */
+  gloss?: boolean;
+}
+
 /** Renderer boundary: produces the draw primitives `SceneChromeView` positions and mutates. */
 export interface DrawFactory {
-  createRect(): RectHandle;
+  createRect(options?: RectOptions): RectHandle;
   createText(initialText: string): TextHandle;
 }
 
@@ -80,16 +88,33 @@ const PANEL_PADDING_PX = UNIT_PX;
  * the terminal's own implicit black behind it; the Pixi border rect below
  * is a full-bleed fill instead (no stroke API on `RectHandle`), so a second,
  * inset `background` rect covers everything but this margin - otherwise
- * every pixel a scene's content doesn't cover reads as `theme.border`'s
- * bright indigo instead of the dark interior the TUI's border implies
- * (ROG-63).
+ * every pixel a scene's content doesn't cover reads as the border's amber
+ * frame color instead of the navy `window` fill the windowskin implies
+ * (ROG-63/ROG-64).
  */
 const BORDER_THICKNESS_PX = 3;
+/** Thickness of the hairline separating the title row from the body, part of the ROG-64 typography pass. */
+const TITLE_DIVIDER_HEIGHT_PX = 1;
+/** How far a log line's per-kind color fades toward the window fill by the time it's the oldest visible line (ROG-64). */
+const LOG_AGE_FADE_MAX = 0.35;
 
 /** One HP/MP meter's two rect handles. */
 interface MeterHandles {
   background: RectHandle;
   fill: RectHandle;
+}
+
+/** Blends `hex` toward `towardHex` by `amount` (0 = `hex` unchanged, 1 = fully `towardHex`), packed as a Pixi color int. */
+function mixColor(hex: string, towardHex: string, amount: number): number {
+  const from = toPixiColor(hex);
+  const to = toPixiColor(towardHex);
+  const t = Math.max(0, Math.min(1, amount));
+  const mix = (shift: number) => {
+    const a = (from >> shift) & 0xff;
+    const b = (to >> shift) & 0xff;
+    return Math.round(a + (b - a) * t);
+  };
+  return (mix(16) << 16) | (mix(8) << 8) | mix(0);
 }
 
 /**
@@ -100,6 +125,7 @@ interface MeterHandles {
 export class SceneChromeView {
   private border: RectHandle | undefined;
   private background: RectHandle | undefined;
+  private titleDivider: RectHandle | undefined;
   private title: TextHandle | undefined;
   private readonly texts = new Map<string, TextHandle>();
   private readonly meters = new Map<string, MeterHandles>();
@@ -126,23 +152,42 @@ export class SceneChromeView {
     this.seenMeterKeys = new Set();
     this.seenLogKeys = new Set();
 
+    // Amber windowskin frame (ROG-64, art direction §5) - the outer ring
+    // `background` insets away from, replacing the old flat indigo border.
     if (!this.border) this.border = this.factory.createRect();
     this.border.setPosition(0, 0);
     this.border.setSize(pixelSize.width, pixelSize.height);
-    this.border.setColor(toPixiColor(theme.border));
+    this.border.setColor(toPixiColor(theme.borderFocus));
 
-    if (!this.background) this.background = this.factory.createRect();
+    // The navy window body itself, beveled so it reads as a lit console
+    // panel rather than a flat fill.
+    if (!this.background)
+      this.background = this.factory.createRect({ bevel: true });
     this.background.setPosition(BORDER_THICKNESS_PX, BORDER_THICKNESS_PX);
     this.background.setSize(
       Math.max(0, pixelSize.width - BORDER_THICKNESS_PX * 2),
       Math.max(0, pixelSize.height - BORDER_THICKNESS_PX * 2),
     );
-    this.background.setColor(toPixiColor(theme.background));
+    this.background.setColor(toPixiColor(theme.window.fill));
 
     if (!this.title) this.title = this.factory.createText(panel.title ?? "");
     this.title.setText(panel.title ?? "");
     this.title.setColor(toPixiColor(theme.title));
     this.title.setPosition(PANEL_PADDING_PX, 0);
+
+    // Hairline separating the title from the body - a small typography/
+    // hierarchy cue (ROG-64) that fits inside the title row's existing
+    // height budget, so it never perturbs `buildChrome`'s row math.
+    if (!this.titleDivider) this.titleDivider = this.factory.createRect();
+    this.titleDivider.setPosition(
+      PANEL_PADDING_PX,
+      ROW_HEIGHT_PX - TITLE_DIVIDER_HEIGHT_PX,
+    );
+    this.titleDivider.setSize(
+      Math.max(0, content.width * UNIT_PX),
+      TITLE_DIVIDER_HEIGHT_PX,
+    );
+    this.titleDivider.setColor(toPixiColor(theme.borderFocus));
 
     const contentRect: ContentRect = {
       x: PANEL_PADDING_PX,
@@ -237,8 +282,8 @@ export class SceneChromeView {
     let handles = this.meters.get(node.key);
     if (!handles) {
       handles = {
-        background: this.factory.createRect(),
-        fill: this.factory.createRect(),
+        background: this.factory.createRect({ bevel: true }),
+        fill: this.factory.createRect({ bevel: true, gloss: true }),
       };
       this.meters.set(node.key, handles);
     }
@@ -271,7 +316,17 @@ export class SceneChromeView {
         this.logLines.set(key, handle);
       }
       handle.setText(message.text);
-      handle.setColor(toPixiColor(theme.msg[message.kind]));
+      // Faint age-fade (ROG-64): the oldest visible line fades toward the
+      // window fill, the newest stays at full color, so the log reads as a
+      // stream rather than a wall of same-weight text.
+      const age = visible.length > 1 ? 1 - index / (visible.length - 1) : 0;
+      handle.setColor(
+        mixColor(
+          theme.msg[message.kind],
+          theme.window.fill,
+          age * LOG_AGE_FADE_MAX,
+        ),
+      );
       handle.setPosition(x, y + index * ROW_HEIGHT_PX);
     }
     return Math.max(node.maxLines, visible.length) * ROW_HEIGHT_PX;

@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { newGame } from "../../engine/state/store";
 import { entry } from "../../engine/state/types";
-import type { DrawFactory, RectHandle, TextHandle } from "./sceneView";
+import type {
+  DrawFactory,
+  RectHandle,
+  RectOptions,
+  TextHandle,
+} from "./sceneView";
 import { SceneChromeView, UNIT_PX } from "./sceneView";
 
 interface FakeRect extends RectHandle {
@@ -9,10 +14,12 @@ interface FakeRect extends RectHandle {
   setColor: ReturnType<typeof vi.fn<(color: number) => void>>;
   setPosition: ReturnType<typeof vi.fn<(x: number, y: number) => void>>;
   destroy: ReturnType<typeof vi.fn<() => void>>;
+  options: RectOptions;
 }
 
 interface FakeText extends TextHandle {
   setText: ReturnType<typeof vi.fn<(text: string) => void>>;
+  setColor: ReturnType<typeof vi.fn<(color: number) => void>>;
   destroy: ReturnType<typeof vi.fn<() => void>>;
 }
 
@@ -32,13 +39,14 @@ function fakeFactory(): FakeFactory {
     texts,
     createRectCalls: 0,
     createTextCalls: 0,
-    createRect(): RectHandle {
+    createRect(options: RectOptions = {}): RectHandle {
       factory.createRectCalls += 1;
       const handle: FakeRect = {
         setPosition: vi.fn(),
         setSize: vi.fn(),
         setColor: vi.fn(),
         destroy: vi.fn(),
+        options,
       };
       rects.push(handle);
       return handle;
@@ -121,14 +129,14 @@ describe("SceneChromeView", () => {
     expect(hpValueText).toBeDefined();
   });
 
-  it("creates two rect handles (background + fill) per meter, plus the border and panel-background rects", () => {
+  it("creates two rect handles (background + fill) per meter, plus the border, panel-background, and title-divider rects", () => {
     const factory = fakeFactory();
     const view = new SceneChromeView(factory);
     const state = newGame(1);
     view.render(state, SIZE, { title: "Village" });
-    // border rect + panel background rect + (background, fill) per member for HP and MP
-    // = 2 + party.length * 4
-    expect(factory.rects.length).toBe(2 + state.party.length * 4);
+    // border rect + panel background rect + title divider rect + (background, fill) per member for HP and MP
+    // = 3 + party.length * 4
+    expect(factory.rects.length).toBe(3 + state.party.length * 4);
   });
 
   it("sizes a meter's fill rect proportionally to value/max", () => {
@@ -140,12 +148,35 @@ describe("SceneChromeView", () => {
       party: [{ ...state.party[0], hp: state.party[0].maxHp / 2 }],
     };
     view.render(halfHp, SIZE, { title: "Village" });
-    // rects order: [border, panel-background, hp-bg, hp-fill, mp-bg, mp-fill]
-    const hpBgWidth = factory.rects[2].setSize.mock.calls.at(-1)?.[0] as number;
-    const hpFillWidth = factory.rects[3].setSize.mock.calls.at(
+    // rects order: [border, panel-background, title-divider, hp-bg, hp-fill, mp-bg, mp-fill]
+    const hpBgWidth = factory.rects[3].setSize.mock.calls.at(-1)?.[0] as number;
+    const hpFillWidth = factory.rects[4].setSize.mock.calls.at(
       -1,
     )?.[0] as number;
     expect(hpFillWidth).toBeCloseTo(hpBgWidth * 0.5, 0);
+  });
+
+  it("draws the panel background beveled and the border flat (ROG-64 windowskin)", () => {
+    const factory = fakeFactory();
+    const view = new SceneChromeView(factory);
+    const state = newGame(1);
+    view.render(state, SIZE, { title: "Village" });
+    const [border, background] = factory.rects;
+    expect(border.options.bevel).not.toBe(true);
+    expect(background.options.bevel).toBe(true);
+  });
+
+  it("draws meter fills beveled with a gloss line, and meter backgrounds beveled without one", () => {
+    const factory = fakeFactory();
+    const view = new SceneChromeView(factory);
+    const state = newGame(1);
+    view.render(state, SIZE, { title: "Village" });
+    // rects order: [border, panel-background, title-divider, hp-bg, hp-fill, ...]
+    const [, , , hpBackground, hpFill] = factory.rects;
+    expect(hpBackground.options.bevel).toBe(true);
+    expect(hpBackground.options.gloss).not.toBe(true);
+    expect(hpFill.options.bevel).toBe(true);
+    expect(hpFill.options.gloss).toBe(true);
   });
 
   it("keys log lines by absolute message position and destroys handles that scroll out of view", () => {
@@ -179,11 +210,35 @@ describe("SceneChromeView", () => {
     expect(factory.texts.length).toBeGreaterThanOrEqual(textCountAfterFirst);
   });
 
+  it("fades the oldest visible log line's color more than the newest (age-fade)", () => {
+    const factory = fakeFactory();
+    const view = new SceneChromeView(factory);
+    const state = newGame(1);
+    // SIZE is tall enough that all 4 lines stay within maxLines (unlike the
+    // scroll-out test above's small canvas), so both ends are still visible.
+    const withLogs = {
+      ...state,
+      log: Array.from({ length: 4 }, (_, i) => entry(`line ${i}`, "system")),
+    };
+    view.render(withLogs, SIZE, { title: "Village" });
+    const oldest = factory.texts.find((t) =>
+      t.setText.mock.calls.some((call) => call[0] === "line 0"),
+    );
+    const newest = factory.texts.find((t) =>
+      t.setText.mock.calls.some((call) => call[0] === "line 3"),
+    );
+    expect(oldest).toBeDefined();
+    expect(newest).toBeDefined();
+    const oldestColor = oldest?.setColor.mock.calls.at(-1)?.[0];
+    const newestColor = newest?.setColor.mock.calls.at(-1)?.[0];
+    expect(oldestColor).not.toBe(newestColor);
+  });
+
   it("omits meter rects entirely when the party is empty", () => {
     const factory = fakeFactory();
     const view = new SceneChromeView(factory);
     const state = { ...newGame(1), party: [] };
     view.render(state, SIZE, { title: "Village" });
-    expect(factory.rects.length).toBe(2); // border + panel background only
+    expect(factory.rects.length).toBe(3); // border + panel background + title divider only
   });
 });
