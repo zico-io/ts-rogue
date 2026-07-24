@@ -40,6 +40,7 @@ Your orientation is already assembled. Do not go looking for it.
 - **Conventions:** no em dashes (use a plain hyphen); never add an agent as a commit or pull-request co-author; keep TypeScript relative imports extensionless (never `.js` specifiers); regenerate generated files from their source rather than hand-editing.
 - **Changesets:** add one with `pnpm changeset` for release-facing behavior; documentation, tests, and internal refactors do not need one.
 - Update each affected subsystem `README.md` in the same pull request when shipped behavior changes.
+- **Code style (ponytail, HAR-3):** before writing code, climb this ladder and stop at the first rung that holds: does this need to exist at all (YAGNI); does it already exist in this codebase (reuse it, don't rewrite it); does the stdlib do it; does a native platform feature cover it; does an already-installed dependency solve it; can this be one line; only then, the minimum that works. Never skip input validation at trust boundaries, data-loss handling, security, or accessibility to climb it faster. A bug report names a symptom - grep every caller of the function you touch and fix the shared function once, not just the path the ticket names. Mark a deliberate simplification that knowingly cuts a real corner (a naive scan, a narrowed edge case) with a `ponytail:` comment naming the ceiling and the upgrade path, as this file already does.
 
 # Issue groups (ralph mode)
 

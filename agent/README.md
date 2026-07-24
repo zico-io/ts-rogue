@@ -48,6 +48,15 @@ folds into the brief. `instructions.md`'s contract requires a screenshot in
 any PR that changes rendered UI/visual output; this line is how the agent
 knows the tooling's state without discovering it by trial and error.
 
+`buildBootstrapCommand` also installs the agent-facing CLI toolchain (HAR-3):
+`ripgrep`, `fd`, `bat`, `eza`, and `ast-grep` are on `PATH` in every session's
+sandbox (the root and its coding child share that sandbox), and `pi install`
+adds the [ponytail](https://github.com/DietrichGebert/ponytail) extension for
+`scripts/play.sh dev`'s interactive pi sessions. `instructions.md`'s Standing
+rules carry ponytail's YAGNI/minimal-diff ladder directly, so it governs the
+root's own decisions and the delegated coding child (both run the same
+instructions), not just pi.
+
 When the assigned issue has sub-issues, the agent treats it as a group (ralph
 mode): it sequences the sub-issues by their Linear `blocks`/`blocked by`
 relations, priority, and `PROJECT_PLAN.md` phase, then drives one at a time,
