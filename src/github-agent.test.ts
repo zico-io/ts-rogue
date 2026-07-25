@@ -9,6 +9,8 @@ import {
   isBotMentioned,
   isMainMerge,
   linearRefFromPullRequest,
+  onAuthorizationCompleted,
+  onAuthorizationRequired,
   onComment,
   onMessageCompleted,
   onPullRequest,
@@ -372,5 +374,110 @@ describe("GitHub agent events", () => {
     );
 
     expect(posted).toEqual([]);
+  });
+});
+
+describe("authorization events surface the OAuth challenge (HAR-33)", () => {
+  // Without these handlers a user-scoped connection challenge on a
+  // GitHub-dispatched turn parks the turn invisibly - the silent merge-wake
+  // stall. GitHub has no auth signal, so the challenge is a thread comment.
+  const fakeChannel = () => {
+    const posted: string[] = [];
+    return {
+      posted,
+      channel: {
+        thread: {
+          post: async (body: string) => {
+            posted.push(body);
+            return {
+              htmlUrl: undefined,
+              id: 0,
+              raw: undefined,
+              url: undefined,
+            };
+          },
+        },
+      } as unknown as Parameters<typeof onAuthorizationRequired>[1],
+    };
+  };
+  const sessionCtx = {} as Parameters<typeof onAuthorizationRequired>[2];
+
+  it("posts the challenge URL as a thread comment", async () => {
+    const { channel, posted } = fakeChannel();
+
+    await onAuthorizationRequired(
+      {
+        authorization: {
+          displayName: "Linear MCP",
+          url: "https://example.com/oauth",
+        },
+        description: "Authorize the linear connection",
+        name: "linear",
+      } as Parameters<typeof onAuthorizationRequired>[0],
+      channel,
+      sessionCtx,
+    );
+
+    expect(posted).toHaveLength(1);
+    expect(posted[0]).toContain("I need Linear MCP connected");
+    expect(posted[0]).toContain(
+      "[Authorize Linear MCP](https://example.com/oauth)",
+    );
+  });
+
+  it("title-cases the connection name and includes instructions and code for URL-less flows", async () => {
+    const { channel, posted } = fakeChannel();
+
+    await onAuthorizationRequired(
+      {
+        authorization: {
+          instructions: "Approve the sign-in request on your phone.",
+          userCode: "ABCD-1234",
+        },
+        description: "Authorize the vercel connection",
+        name: "vercel",
+      } as Parameters<typeof onAuthorizationRequired>[0],
+      channel,
+      sessionCtx,
+    );
+
+    expect(posted[0]).toContain("I need Vercel connected");
+    expect(posted[0]).toContain("Approve the sign-in request on your phone.");
+    expect(posted[0]).toContain("Code: `ABCD-1234`");
+    expect(posted[0]).not.toContain("](");
+  });
+
+  it("posts a resuming note once authorization completes", async () => {
+    const { channel, posted } = fakeChannel();
+
+    await onAuthorizationCompleted(
+      {
+        authorization: { displayName: "Linear MCP" },
+        name: "linear",
+        outcome: "authorized",
+      } as Parameters<typeof onAuthorizationCompleted>[0],
+      channel,
+      sessionCtx,
+    );
+
+    expect(posted).toEqual(["Connected to Linear MCP. Resuming."]);
+  });
+
+  it("reports a non-authorized outcome with its reason", async () => {
+    const { channel, posted } = fakeChannel();
+
+    await onAuthorizationCompleted(
+      {
+        name: "linear",
+        outcome: "timed-out",
+        reason: "challenge expired",
+      } as Parameters<typeof onAuthorizationCompleted>[0],
+      channel,
+      sessionCtx,
+    );
+
+    expect(posted).toEqual([
+      "Authorization for Linear timed out: challenge expired",
+    ]);
   });
 });
