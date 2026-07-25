@@ -11,7 +11,7 @@ pre-warmed Vercel Sandboxes.
 | [`instructions.md`](instructions.md) | Runtime operating and delegation contract |
 | [`channels/`](channels/) | Eve, Linear, and GitHub session activity adapters |
 | [`connections/`](connections/) | Linear MCP connection and approval policy |
-| [`hooks/`](hooks/) | Delegated-child activity relay |
+| [`hooks/`](hooks/) | Delegated-child activity relay and delegation working indicator |
 | [`tools/`](tools/) | Native Linear Agent Session progress updates |
 | [`sandbox.ts`](sandbox.ts) | Vercel Sandbox bootstrap, sync, `ORIENTATION.md` brief, network policy, and token refresh |
 | [`lib/orientation.ts`](lib/orientation.ts) | Builds the pre-computed orientation brief from git state and screenshot-tooling status |
@@ -26,6 +26,22 @@ writes an `ORIENTATION.md` brief of settled git state. The root then delegates
 ordinary implementation to one coding child and retains review and external
 coordination. Agent Session activities carry progress and approval prompts
 without writing issue comments.
+
+While a delegated child works, the session shows a single live status slot
+rather than a growing wall of chips: `hooks/delegation-indicator.ts` posts an
+ephemeral "working" thought the moment a child session starts (the channel
+adapter's event vocabulary has no `subagent.called`, so this lives in a hook),
+and `hooks/child-relay.ts` relays the child's action/reasoning chips with
+`ephemeral: true` - Linear displays an ephemeral activity only until the next
+activity replaces it. What persists is deliberate: the child's final narration
+(the handoff record) and durable `session_update`s. Those child updates are
+also role-coerced in code (`tools/session_update.ts`): a child's
+`started`/`review`/`completed` becomes `progress` with a `[<issue>]` prefix,
+because ENG-2's thread showed a child "Completed" while nothing was pushed,
+then "Started" again - the session appeared to finish and restart. No local
+eval can cover the delegation path (it needs a live sandbox child, and the
+ralph e2e fixture deliberately runs with a blank `agent_session_id`), so
+coverage is unit tests plus contract text.
 
 `instructions.md` requires the root to send a `session_update` before its first
 other tool call and to batch independent read-only lookups (sub-issue checks,
@@ -103,6 +119,16 @@ Limits, by design:
   ran). A cancelled mid-git-operation state is a general risk of any
   interruption (crash, redeploy, cancel), not something specific to this
   feature, so no new git-recovery mechanism was added for it.
+- A cancel that lands while the root is awaiting a delegated child also drops
+  the child's returned result from durable history - eve never synthesizes
+  tool results for a cancelled turn. The ENG-2 incident (HAR-11) chained this
+  with a false "the child produced nothing" verification into re-delegating
+  finished work three times. The recovery is contractual, not mechanical:
+  `instructions.md` now requires git-first grounding (`git status` +
+  `git log --oneline main..HEAD`) after every child return and at the start
+  of every resumed turn, because a child's commits are local until the root
+  pushes and the branch - not the conversation - is the record of what is
+  done. Instant steering was deliberately kept over fold-in delivery.
 
 The built-in `linearChannel()` doesn't export everything it's built from:
 `eve/channels/linear`'s barrel omits `verifyLinearRequest` and

@@ -9,7 +9,10 @@
 - Preserve `instructions.md`'s early `session_update` and tool-call-batching rules: the root must post a durable message before its first other tool call and batch independent read-only lookups into one turn, so a multi-call orientation is never silent noise in Linear.
 - Eve's messages describe the work and its status, never the contract's own mechanics (orientation lookups, sub-issue checks, delegation, batching, `pnpm check`). Those sentences surface to the reader verbatim, so keep the message rules as terse imperatives and hold design rationale in `README.md`, not the runtime prompt - reintroducing parrotable meta-language next to a message rule is how process text leaks into user-facing updates. Guarded by `evals/message-substance.eval.ts`.
 - Treat `.botfile/memory/domain/product.md` as the golden product SSOT: upsert it in the same PR when shipped behavior changes, and keep it clean under `pnpm docs:lint`.
-- Report progress through native Agent Session activities, not issue comments.
+- Report progress through native Agent Session activities, not issue comments. A UI-visual PR's final `review`/`completed` update embeds the screenshot evidence through Linear's upload flow - raw GitHub links do not render for this private repository.
+- Git-first grounding: every resumed turn and every child-return check trusts branch state over conversational claims (a child's commits are local until the root pushes). The exact commands live in `instructions.md`; keep them there - the ENG-2 trip-over came from a report being "verified" without git.
+- Child `session_update`s never carry session-level statuses: `tools/session_update.ts` coerces `started`/`review`/`completed` to `progress` (with an issue prefix) in child sessions. Keep the coercion in code, not just prompt.
+- Child activity chips and the delegation indicator are ephemeral by design (a live "currently doing" slot, not a log); only the child's final narration and durable `session_update`s persist. Do not "fix" the disappearing chips back into permanent ones.
 - Keep startup useful when GitHub token minting fails and retry refreshes without blocking sessions.
 - Test channel transforms, hooks, tools, model routing, and sandbox lifecycle changes.
 - Update `README.md` when the agent architecture or development workflow changes.
