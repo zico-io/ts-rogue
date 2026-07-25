@@ -123,20 +123,38 @@ export const isBotMentioned = (
   );
 };
 
+// A pull-request review comment is a finding - actionable feedback tied to a
+// code location - only the first time it appears in its thread. GitHub fires
+// the same `pull_request_review_comment` webhook for every later reply in
+// that thread too (its raw payload carries `in_reply_to_id` once it is a
+// reply; eve's normalized `GitHubComment` drops that field, so it is read
+// off `comment.raw` directly, the same way `onPullRequest` above reads
+// `pullRequest.raw` for fields the normalized event omits). Replies are
+// conversation about a finding already surfaced, not a new one, so they
+// should not spin up another turn.
+const isNewReviewFinding = (comment: GitHubComment): boolean => {
+  const raw = comment.raw as { in_reply_to_id?: unknown };
+  return raw.in_reply_to_id === undefined || raw.in_reply_to_id === null;
+};
+
 export const onComment = (
   ctx: GitHubInboundContext,
   comment: GitHubComment,
 ) => {
   // Inline pull-request review comments - the shape both a human review and
-  // ponytail's own auto-review (above) post - wake the agent unconditionally:
-  // feedback left during a review is a request to act on, not a chat message
-  // that needs an explicit @mention to be seen. Ordinary issue/PR discussion
-  // comments keep requiring one, matching eve's built-in behavior.
+  // ponytail's own auto-review (above) post - wake the agent unconditionally
+  // when they are a new finding: feedback left during a review is a request
+  // to act on, not a chat message that needs an explicit @mention to be
+  // seen. A reply within an already-open review thread is not a new finding
+  // and is skipped. Ordinary issue/PR discussion comments keep requiring a
+  // mention, matching eve's built-in behavior.
   if (ctx.conversation.kind === "review_thread") {
-    return {
-      auth: defaultGitHubAuth(ctx),
-      context: [REVIEW_FEEDBACK_CONTEXT],
-    };
+    return isNewReviewFinding(comment)
+      ? {
+          auth: defaultGitHubAuth(ctx),
+          context: [REVIEW_FEEDBACK_CONTEXT],
+        }
+      : null;
   }
   return isBotMentioned(comment.body, process.env.GITHUB_APP_SLUG)
     ? { auth: defaultGitHubAuth(ctx) }

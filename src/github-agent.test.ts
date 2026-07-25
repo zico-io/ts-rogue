@@ -61,12 +61,15 @@ const fakeContext = (
     },
   }) as unknown as GitHubInboundContext;
 
-const fakeComment = (body: string): GitHubComment => ({
+const fakeComment = (
+  body: string,
+  raw: GitHubComment["raw"] = {},
+): GitHubComment => ({
   author: undefined,
   body,
   htmlUrl: undefined,
   id: 1,
-  raw: {},
+  raw,
   url: undefined,
 });
 
@@ -159,7 +162,7 @@ describe("GitHub agent events", () => {
     expect(isBotMentioned("hey @ts-rogue-eve", undefined)).toBe(false);
   });
 
-  it("dispatches review-thread comments unconditionally, without a mention", () => {
+  it("dispatches a review thread's new finding unconditionally, without a mention", () => {
     const result = onComment(
       fakeContext("review_thread"),
       fakeComment("this looks off, please fix"),
@@ -169,6 +172,15 @@ describe("GitHub agent events", () => {
     expect(result?.context).toEqual([
       expect.stringContaining("PR review-feedback turns"),
     ]);
+  });
+
+  it("skips a reply within an already-open review thread", () => {
+    const result = onComment(
+      fakeContext("review_thread"),
+      fakeComment("thanks, fixed", { in_reply_to_id: 1 }),
+    );
+
+    expect(result).toBeNull();
   });
 
   it("still requires a mention for ordinary issue/PR discussion comments", () => {

@@ -333,8 +333,8 @@ verified webhook route - out of scope for this change.
 Before HAR-16, `onComment` was unset, so eve's built-in mention gate applied
 to every comment kind: review feedback sat unanswered unless a human
 remembered to type `@ts-rogue-eve` in the review. `channels/github.ts` now
-supplies its own `onComment`, dispatching unconditionally when
-`ctx.conversation.kind === "review_thread"` (an inline review comment) while
+supplies its own `onComment`, dispatching when `ctx.conversation.kind ===
+"review_thread"` (an inline review comment) and it is a new finding, while
 reimplementing the mention check (`isBotMentioned`) for every other comment
 kind, since providing `onComment` replaces eve's built-in gate entirely
 rather than layering on top of it. The reimplementation is scoped to the
@@ -347,6 +347,14 @@ precedent, the reimplemented pieces are not part of eve's public
 `defaults.js`; `inbound.js`'s `extractGitHubCommentTrigger` and
 `shouldDispatchGitHubComment` have no public subpath), so this is ported from
 the installed package's own de-minified source rather than guessed at.
+
+"New finding" excludes replies within an already-open review thread: GitHub
+fires the same `pull_request_review_comment` webhook for every later reply
+in a thread, and a reply is conversation about a finding already surfaced,
+not a fresh one that needs its own turn. The webhook payload marks a reply
+with `in_reply_to_id`; eve's normalized `GitHubComment` drops that field, so
+`isNewReviewFinding` reads it off `comment.raw` directly, the same escape
+hatch `onPullRequest` already uses for fields the normalized event omits.
 
 The dispatched turn carries a short context string pointing at
 `instructions.md`'s new "PR review-feedback turns" section rather than
