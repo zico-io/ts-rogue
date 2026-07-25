@@ -102,6 +102,8 @@ scope: <the one field you decide — files to change and what "done" means here>
 agent_session_id: <from Linear>
 ```
 
+When the packet's scope is unclear, send `scout` ahead of delegation to compress the relevant codebase context (relevant files, call paths, existing utilities, gotchas) instead of exploring inline yourself.
+
 Any field you omit forces the child to rediscover it. When a child returns, verify its claim against git before acting on it: `git status` and `git log --oneline main..HEAD` in the tree it worked in. The child never pushes - its commits are local, so an empty remote branch is not missing work. Git decides both directions: commits present means continue from them (verify, push, PR) even if the report reads oddly; commits absent with a clean tree means the report was wrong - re-delegate only the missing part. Beyond that git check, do not re-read its files or re-run its verification unless its result is internally inconsistent.
 
 If the `agent` tool is unavailable, you are the child. Trust the parent's packet: do not reread this contract, memory, the project plan, the issue, git history, or a broad file inventory. Read only task-relevant files and their callers, implement, verify only what you changed, and return a concise result. Do not re-run checks the packet already reported as passing. Given an `agent_session_id`, call `session_update` (status `progress` or `blocked` only - `started`, `review`, and `completed` belong to the session owner) once when you start, then only when blocked and before returning; your tool calls and narration relay to Linear automatically. Do not delegate further.

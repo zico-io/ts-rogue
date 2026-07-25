@@ -17,6 +17,7 @@ pre-warmed Vercel Sandboxes.
 | [`sandbox.ts`](sandbox.ts) | Root's Vercel Sandbox: bootstrap, sync, `ORIENTATION.md` brief, network policy, and token refresh |
 | [`lib/orientation.ts`](lib/orientation.ts) | Builds the pre-computed orientation brief from git state and screenshot-tooling status |
 | [`lib/sandbox.ts`](lib/sandbox.ts) | Shared sandbox-provisioning recipe (repo checkout, toolchain, GitHub auth levels, screenshot toggle) composed by the root and future subagents |
+| [`subagents/scout/`](subagents/scout/) | Read-only codebase-recon subagent: locates files, call paths, and utilities, and returns compressed context for a delegation packet |
 
 Linear owns issue status, priority, and progress. GitHub pull requests remain the
 review and merge boundary. GitHub credentials are injected through the sandbox
@@ -318,6 +319,24 @@ delegated `agent`-tool child, sharing one sandbox per session), while
 exercise a PR branch. The `agent` tool - not a `pi` subprocess - remains the
 coding-delegation path; it already inherits this sandbox's toolchain and
 `instructions.md`'s ponytail rules with no further wiring.
+
+### Scout subagent (HAR-27)
+
+`agent/subagents/scout/` is the first declared subagent under the HAR-27..30
+line the shared sandbox recipe was built for. It composes
+`buildSandboxDefinition({ gitAuthLevel: "none" })` for its whole `sandbox.ts`
+(no GitHub token ever minted; it only reads the repo state bootstrap already
+cloned), carries its own `instructions.md` rather than inheriting the root's
+(a declared subagent inherits nothing but its own authored slots, per
+`node_modules/eve/docs/subagents.mdx`), and has no `tools/`, `connections/`,
+or `skills/` of its own - it relies entirely on the built-in bash/read/grep/
+glob tools every session already gets. Its role is to run ahead of a
+delegation whose scope isn't yet clear, trade its own context budget for
+locating relevant files, call paths, reusable utilities, and invariants/
+gotchas, and hand back a compressed summary (capped at roughly 200 lines) sized
+to drop directly into the coding child's packet, instead of the root exploring
+inline itself. `instructions.md`'s Delegation section now names it as the tool
+to reach for in that situation.
 
 ### Sizing gate and issue groups (ralph mode)
 
