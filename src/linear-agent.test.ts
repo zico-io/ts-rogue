@@ -29,6 +29,17 @@ describe("Linear agent interaction", () => {
     expect(parseAgentSessionId("no session id here")).toBeNull();
   });
 
+  it("resolves Linear MCP auth as the agent itself, with no interactive consent flow", () => {
+    // HAR-33: user-scoped interactive OAuth bound the grant to the inbound
+    // principal, so ralph merge-wake turns (GitHub sender, never authorized)
+    // parked forever on a consent flow no one could see. App-scoped auth is
+    // getToken-only - eve never runs a consent flow for it.
+    const auth = linearConnection.auth as Record<string, unknown>;
+    expect(typeof auth.getToken).toBe("function");
+    expect(auth.startAuthorization).toBeUndefined();
+    expect(auth.completeAuthorization).toBeUndefined();
+  });
+
   it("keeps progress out of issue comments", () => {
     // The allow-list is the guard now: session posts must flow through the
     // authored session_update/handoff tools, so no comment/write tool beyond

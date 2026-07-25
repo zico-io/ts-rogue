@@ -1,6 +1,7 @@
 import { connectGitHubCredentials } from "@vercel/connect/eve";
 import {
   defaultGitHubAuth,
+  type GitHubChannelEvents,
   type GitHubComment,
   type GitHubEventContext,
   type GitHubInboundContext,
@@ -238,6 +239,58 @@ export const onMessageCompleted = async (
   }
 };
 
+// --- Connection authorization ----------------------------------------------
+// Port of the Linear channel's authorization surfacing (HAR-31) to this
+// channel (HAR-33): eve's GitHub defaults implement no `authorization.*`
+// handlers either, so when a user-scoped `connect(...)` connection needed
+// OAuth on a GitHub-dispatched turn (a merge wake, a review-feedback turn),
+// eve parked the turn and the event was dropped - no PR comment, no error,
+// a silently stalled turn. GitHub has no native auth signal like Linear's
+// "Link account" elicitation, so the challenge posts as a plain thread
+// comment carrying the authorization link. This is visibility, not the
+// merge-wake fix itself - that is the Linear MCP connection going app-scoped
+// in `connections/linear.ts`.
+
+// Mirror of the Linear channel's fallback: title-case the connection scope
+// name ("linear" -> "Linear") when the challenge carries no displayName.
+// Duplicated (2 lines) rather than imported so this file stays disjoint from
+// channels/linear.ts.
+const connectionDisplayName = (name: string): string =>
+  name.replace(/[-_/]+/gu, " ").replace(/\b\p{L}/gu, (c) => c.toUpperCase());
+
+export const onAuthorizationRequired: NonNullable<
+  GitHubChannelEvents["authorization.required"]
+> = async (data, channel) => {
+  const challenge = data.authorization;
+  const displayName =
+    challenge?.displayName ?? connectionDisplayName(data.name);
+  await channel.thread.post(
+    [
+      `I need ${displayName} connected before I can continue.`,
+      ...(challenge?.instructions ? ["", challenge.instructions] : []),
+      ...(challenge?.userCode ? ["", `Code: \`${challenge.userCode}\``] : []),
+      ...(challenge?.url
+        ? ["", `[Authorize ${displayName}](${challenge.url})`]
+        : []),
+    ].join("\n"),
+  );
+};
+
+export const onAuthorizationCompleted: NonNullable<
+  GitHubChannelEvents["authorization.completed"]
+> = async (data, channel) => {
+  const displayName =
+    data.authorization?.displayName ?? connectionDisplayName(data.name);
+  if (data.outcome === "authorized") {
+    await channel.thread.post(`Connected to ${displayName}. Resuming.`);
+    return;
+  }
+  const outcome = data.outcome === "timed-out" ? "timed out" : data.outcome;
+  await channel.thread.post(
+    `Authorization for ${displayName} ${outcome}${data.reason ? `: ${data.reason}` : "."}`,
+  );
+};
+
 export const onPullRequest = (
   context: GitHubInboundContext,
   pullRequest: GitHubPullRequestEvent,
@@ -302,6 +355,8 @@ export default githubChannel({
     // onSession already synced main; skip the channel's default PR-head checkout.
     "turn.started": () => {},
     "message.completed": onMessageCompleted,
+    "authorization.required": onAuthorizationRequired,
+    "authorization.completed": onAuthorizationCompleted,
   },
   onComment,
   onPullRequest,

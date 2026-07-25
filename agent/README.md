@@ -379,6 +379,38 @@ treats a `save_issue` call naming the ready sub-issue as driving it, which
 covers the `delegate` update half of a hand-off without needing to distinguish
 it from the `handoff` tool call that carries the context.
 
+### Unattended Linear access and GitHub auth surfacing (HAR-33)
+
+The merge-wake turn above runs on the GitHub channel under whatever principal
+merged the pull request - and it must read Linear (confirm the sub-issue Done,
+recompute readiness) through the Linear MCP connection. When that connection
+was user-scoped interactive OAuth (`connect("mcp.linear.app/ts-rogue-eve-mcp")`),
+the grant was bound to the inbound principal: a GitHub sender who had never
+authorized it parked the turn on `authorization.required`, and because eve's
+GitHub defaults (unlike this repo's Linear channel since HAR-31) implement no
+`authorization.*` handlers, the park was invisible - no PR comment, no error,
+no log. Every ralph merge-advance turn stalled this way; issue groups never
+advanced past their first merged sub-issue.
+
+Two changes, both in this repo:
+
+- [`connections/linear.ts`](connections/linear.ts) resolves the Linear MCP
+  connection app-scoped:
+  `connect({ connector: "linear/ts-rogue-eve", principalType: "app" })` - the
+  same Linear agent-app token the channel and authored tools already use
+  unattended, in the exact shape eve's auth guide prescribes for acting as the
+  agent itself. No consent flow exists for app-scoped auth, so merge wakes,
+  schedules, and any other unattended turn reach Linear without a human in the
+  loop. (Linear writes are attributed to the agent app rather than the
+  delegating user, which is what agent-driven `save_issue` calls should read
+  as anyway.)
+- [`channels/github.ts`](channels/github.ts) ports HAR-31's
+  `authorization.required`/`authorization.completed` handlers so any future
+  user-scoped challenge on a GitHub-dispatched turn (the Vercel MCP connection
+  is still user-scoped) posts the authorization link as a thread comment
+  instead of parking silently. GitHub has no native auth signal like Linear's
+  "Link account" elicitation, so a plain comment is the whole affordance.
+
 ### Handoff to a fresh session (HAR-12, HAR-15)
 
 HAR-12 asked for eve's own token-quota HITL (a continue/stop prompt raised
