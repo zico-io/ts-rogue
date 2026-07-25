@@ -91,6 +91,11 @@ function compareBySortKey(
   }
 }
 
+/** Wraps `current + delta` into `[0, length)`. Shared modulo-cursor math for the gear section's `packCursor` and the consumables section's `consumableCursor`. */
+function cycleIndex(current: number, delta: -1 | 1, length: number): number {
+  return (current + delta + length) % length;
+}
+
 export interface InventoryUiState {
   section: InventorySection;
   memberIndex: number;
@@ -222,9 +227,11 @@ export function reduceInventoryUi(
       return {
         state: {
           ...state,
-          consumableCursor:
-            (state.consumableCursor + ctx.consumables.length - 1) %
+          consumableCursor: cycleIndex(
+            state.consumableCursor,
+            -1,
             ctx.consumables.length,
+          ),
         },
       };
     }
@@ -232,8 +239,11 @@ export function reduceInventoryUi(
       return {
         state: {
           ...state,
-          consumableCursor:
-            (state.consumableCursor + 1) % ctx.consumables.length,
+          consumableCursor: cycleIndex(
+            state.consumableCursor,
+            1,
+            ctx.consumables.length,
+          ),
         },
       };
     }
@@ -264,9 +274,7 @@ export function reduceInventoryUi(
     return {
       state: {
         ...state,
-        packCursor:
-          (state.packCursor + ctx.packEntries.length - 1) %
-          ctx.packEntries.length,
+        packCursor: cycleIndex(state.packCursor, -1, ctx.packEntries.length),
         inspecting: false,
       },
     };
@@ -275,7 +283,7 @@ export function reduceInventoryUi(
     return {
       state: {
         ...state,
-        packCursor: (state.packCursor + 1) % ctx.packEntries.length,
+        packCursor: cycleIndex(state.packCursor, 1, ctx.packEntries.length),
         inspecting: false,
       },
     };
