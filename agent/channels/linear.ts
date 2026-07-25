@@ -33,6 +33,8 @@ import {
   updateLinearAgentSession,
 } from "eve/channels/linear";
 
+import { listLiveAgentSessions } from "../lib/live-sessions";
+
 // Hand-rolled port of eve's built-in `linearChannel()` (see
 // `node_modules/eve/dist/src/public/channels/linear/linearChannel.js`),
 // reimplemented via `defineChannel` so the agent-session dispatch path can
@@ -50,11 +52,12 @@ import {
 // only from genuinely public primitives (`signLinearWebhookBody`,
 // `node:crypto`, `createLinearAgentActivity`/`renderLinearInputRequests`,
 // and global `fetch`) - see `verifyInboundSignature`,
-// `createLinearDefaultEvents`, and `attachLinearInboundImages`. Two actual
+// `createLinearDefaultEvents`, and `attachLinearInboundImages`. Three actual
 // behavior changes from the built-in: the unconditional `cancel()` before
-// `send()` in `dispatchAgentSession`, and the `authorization.*` handlers
+// `send()` in `dispatchAgentSession`, the `authorization.*` handlers
 // the built-in defaults lack entirely - see the banner above
-// `connectionDisplayName`. See `agent/README.md` for what this does and
+// `connectionDisplayName` - and the duplicate-session guard in
+// `guardedOnAgentSession`. See `agent/README.md` for what this does and
 // does not cover.
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
@@ -831,7 +834,59 @@ function createLinearDefaultEvents(options: {
   };
 }
 
-// THE ONE BEHAVIOR CHANGE vs. the built-in `linearChannel()`: cancel any
+// --- Duplicate-session guard ---------------------------------------------
+// One live Agent Session per issue. Linear happily creates a second session
+// on an issue that already has one live (assigning the agent as delegate
+// while a handoff session runs is exactly how HAR-26 got two sessions, two
+// sandboxes, and two coding children on the same work). Sessions the agent
+// created itself (creator == app user, i.e. the `handoff` tool) are exempt:
+// the tool already pre-checks at creation, and guarding them here would
+// decline every self-continuation successor, whose predecessor is still
+// live when the successor's `created` webhook arrives. The `!= null` check
+// is load-bearing - both ids are optional on the webhook ref, and
+// `undefined === undefined` would exempt everything. Oldest-createdAt wins
+// so two near-simultaneous sessions cannot both decline each other, and
+// every failure path (missing issueId, GraphQL error) fails open: a flaky
+// pre-check must never leave a legitimate session silently undispatched.
+
+const agentCredentials = connectLinearCredentials("linear/ts-rogue-eve");
+
+export const guardedOnAgentSession: NonNullable<
+  LinearChannelConfig["onAgentSession"]
+> = async (ctx, event) => {
+  const base = defaultOnAgentSession(ctx, event);
+  if (base === null || event.action !== "created") return base;
+  const session = event.agentSession;
+  if (session.creatorId != null && session.creatorId === session.appUserId) {
+    return base;
+  }
+  const issueId = session.issueId ?? session.issue?.id;
+  if (issueId == null) return base;
+  let live: Awaited<ReturnType<typeof listLiveAgentSessions>>;
+  try {
+    live = await listLiveAgentSessions({
+      credentials: agentCredentials,
+      issueId,
+    });
+  } catch {
+    return base;
+  }
+  // `live` is sorted oldest first; only sessions strictly older than this
+  // one block it. If this session is missing from the query (replication
+  // lag), treat it as newest - every live session blocks.
+  const selfIndex = live.findIndex((candidate) => candidate.id === session.id);
+  const blocker = (selfIndex === -1 ? live : live.slice(0, selfIndex)).find(
+    (candidate) => candidate.id !== session.id,
+  );
+  if (blocker === undefined) return base;
+  await ctx.linear.createActivity({
+    body: `An agent session is already live on this issue${blocker.url ? `: ${blocker.url}` : ""}. Follow the work there - this duplicate session will not start.`,
+    type: "response",
+  });
+  return null;
+};
+
+// THE FIRST BEHAVIOR CHANGE vs. the built-in `linearChannel()`: cancel any
 // turn already running on this session before dispatching the new message,
 // instead of letting the new message fold into the next turn. `cancel()` is
 // a documented no-op ("no_active_turn") when nothing is running, so calling
@@ -989,8 +1044,9 @@ function linearChannel(config: LinearChannelConfig = {}): LinearChannel {
 }
 
 export default linearChannel({
-  credentials: connectLinearCredentials("linear/ts-rogue-eve"),
+  credentials: agentCredentials,
   events: {
     "action.result": syncAgentPlanFromTodoTool,
   },
+  onAgentSession: guardedOnAgentSession,
 });

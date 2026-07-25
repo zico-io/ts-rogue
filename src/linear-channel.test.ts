@@ -36,6 +36,10 @@ vi.mock("eve/channels", () => ({
 }));
 
 vi.mock("eve/channels/linear", () => ({
+  // The duplicate-session guard's live-session pre-check (via
+  // `agent/lib/live-sessions`). Defaults to "no sessions on the issue" so
+  // the dispatch tests below exercise the pass-through path.
+  callLinearGraphQL: vi.fn(async () => ({})),
   createLinearAgentActivity: vi.fn(async () => ({ id: "a", success: true })),
   createLinearAgentSessionOnComment: vi.fn(async () => ({ id: "sess-new" })),
   createLinearAgentSessionOnIssue: vi.fn(async () => ({ id: "sess-new" })),
@@ -66,6 +70,7 @@ const {
   stateFromAgentSession,
 } = await import("../agent/channels/linear");
 const {
+  callLinearGraphQL,
   createLinearAgentActivity,
   linearInputRequestSignal,
   messageFromLinearAgentSessionEvent,
@@ -217,6 +222,128 @@ describe("agent/channels/linear (cancel-before-send)", () => {
     expect(response.status).toBe(401);
     expect(cancelMock).not.toHaveBeenCalled();
     expect(sendMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("duplicate created-session guard", () => {
+  const reset = () => {
+    order.length = 0;
+    cancelMock.mockClear();
+    sendMock.mockClear();
+    waitUntilTasks.length = 0;
+    vi.mocked(callLinearGraphQL).mockClear();
+    vi.mocked(createLinearAgentActivity).mockClear();
+  };
+
+  const liveSessions = (nodes: readonly unknown[]) => ({
+    issue: { agentSessions: { nodes } },
+  });
+
+  it("declines a created session when an older session is already live on the issue", async () => {
+    reset();
+    vi.mocked(callLinearGraphQL).mockResolvedValueOnce(
+      liveSessions([
+        {
+          id: "sess-0",
+          status: "active",
+          createdAt: "2026-07-25T10:00:00.000Z",
+          url: "https://linear.app/sess-0",
+        },
+        {
+          id: "sess-1",
+          status: "pending",
+          createdAt: "2026-07-25T11:00:00.000Z",
+          url: "https://linear.app/sess-1",
+        },
+      ]),
+    );
+
+    await invoke(createdEvent);
+
+    expect(cancelMock).not.toHaveBeenCalled();
+    expect(sendMock).not.toHaveBeenCalled();
+    const activity = vi
+      .mocked(createLinearAgentActivity)
+      .mock.calls.at(-1)?.[0].activity;
+    expect(activity).toMatchObject({
+      agentSessionId: "sess-1",
+      content: { type: "response" },
+    });
+    expect((activity?.content as { body?: string })?.body).toContain(
+      "https://linear.app/sess-0",
+    );
+  });
+
+  it("dispatches when the created session is the oldest live one", async () => {
+    reset();
+    vi.mocked(callLinearGraphQL).mockResolvedValueOnce(
+      liveSessions([
+        {
+          id: "sess-1",
+          status: "pending",
+          createdAt: "2026-07-25T10:00:00.000Z",
+          url: "https://linear.app/sess-1",
+        },
+        {
+          id: "sess-9",
+          status: "pending",
+          createdAt: "2026-07-25T11:00:00.000Z",
+          url: "https://linear.app/sess-9",
+        },
+      ]),
+    );
+
+    await invoke(createdEvent);
+
+    expect(order).toEqual(["cancel", "send"]);
+  });
+
+  it("exempts agent-created sessions (handoff successors) without querying", async () => {
+    reset();
+
+    await invoke({
+      ...createdEvent,
+      agentSession: {
+        ...agentSession,
+        appUserId: "app-user-1",
+        creatorId: "app-user-1",
+      },
+    });
+
+    expect(callLinearGraphQL).not.toHaveBeenCalled();
+    expect(order).toEqual(["cancel", "send"]);
+  });
+
+  it("never guards prompted events", async () => {
+    reset();
+
+    await invoke(promptedEvent);
+
+    expect(callLinearGraphQL).not.toHaveBeenCalled();
+    expect(order).toEqual(["cancel", "send"]);
+  });
+
+  it("fails open when the live-session query errors", async () => {
+    reset();
+    vi.mocked(callLinearGraphQL).mockRejectedValueOnce(
+      new Error("Linear is down"),
+    );
+
+    await invoke(createdEvent);
+
+    expect(order).toEqual(["cancel", "send"]);
+  });
+
+  it("fails open when the session carries no issue id", async () => {
+    reset();
+
+    await invoke({
+      ...createdEvent,
+      agentSession: { ...agentSession, issue: null, issueId: null },
+    });
+
+    expect(callLinearGraphQL).not.toHaveBeenCalled();
+    expect(order).toEqual(["cancel", "send"]);
   });
 });
 

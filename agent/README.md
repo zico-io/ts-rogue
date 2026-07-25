@@ -420,6 +420,45 @@ framing now lives entirely in the model-authored `brief`, which differs by
 caller: a continuation packet for self-handoff, a predecessor's shipped
 context for a dependency unlock).
 
+### One live session per issue (duplicate-delegation guard)
+
+Two live Agent Sessions on one issue means two sandboxes, two branches, and
+two coding children racing on the same work - exactly what happened on HAR-26
+when a human assigned the agent as the issue's delegate while a
+handoff-created session was already running. Linear itself keeps no such
+invariant, and eve keys sessions by Agent Session id, not issue, so the guard
+is two-sided here, with `lib/live-sessions.ts` (`listLiveAgentSessions`, a
+`callLinearGraphQL` query for the issue's non-terminal sessions - `pending`/
+`active`/`awaitingInput` count as live; `complete`/`error`/`stale` do not) as
+the shared pre-check:
+
+- **At creation** - `tools/handoff.ts` refuses to create the comment or the
+  session when the issue already has another live session, returning
+  `alreadyLive` with that session's id and URL so the model reports instead
+  of duplicating. The caller's own session is excluded (its id rides in the
+  dispatch-auth attributes `defaultLinearAuth` stamps, the same side channel
+  HAR-24's review-only flag uses), since self-continuation hands off the very
+  issue the caller is still live on.
+- **At dispatch** - `channels/linear.ts` (`guardedOnAgentSession`, the third
+  behavior change vs. the built-in channel) declines a `created` webhook for
+  an issue that already has an older live session: it posts one `response`
+  activity pointing at the live session (a `response` is how sessions
+  conclude in Linear's protocol, so the duplicate lands `complete` instead of
+  stuck `pending` - `AgentSessionUpdateInput` has no status field to set
+  directly) and returns `null` so no eve session spins up. Agent-created
+  sessions (`creatorId === appUserId`) are exempt: the handoff tool already
+  gated them, and guarding them here would decline every self-continuation
+  successor, whose predecessor is still live when the successor's `created`
+  webhook arrives. Oldest `createdAt` wins, so two near-simultaneous
+  sessions cannot both decline each other.
+
+Both sides fail open (missing issue id, GraphQL failure): a flaky pre-check
+must never block a legitimate delegation or leave a fresh session silently
+undispatched. `prompted` events are never guarded - re-prompting an existing
+session is an explicit human act. Residual gap: the agent assigning itself as
+delegate via a bare `save_issue` bypasses both guards; `instructions.md`
+already mandates `handoff` over bare delegate assignment.
+
 ### Review-feedback turns (HAR-16)
 
 `channels/github.ts` already dispatches an in-repo ponytail auto-review when a
