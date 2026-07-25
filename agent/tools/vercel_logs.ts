@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   requireProjectId,
   requireVercelCredentials,
+  toNdjsonToolResult,
   vercelNdjson,
 } from "../lib/vercel-api";
 
@@ -89,10 +90,6 @@ export default defineTool({
         timeoutMs: input.timeoutMs,
       },
     );
-    return {
-      entries: result.lines,
-      count: result.lines.length,
-      truncated: result.truncated,
-    };
+    return toNdjsonToolResult(result);
   },
 });

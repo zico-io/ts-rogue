@@ -161,6 +161,23 @@ export interface NdjsonReadResult<T> {
   readonly truncated: boolean;
 }
 
+export interface NdjsonToolResult<T> {
+  readonly entries: T[];
+  readonly count: number;
+  readonly truncated: boolean;
+}
+
+/** Shared tool-result shape for every `vercel_*` tool that reads a bounded NDJSON stream (runtime logs, command logs). */
+export function toNdjsonToolResult<T>(
+  result: NdjsonReadResult<T>,
+): NdjsonToolResult<T> {
+  return {
+    entries: result.lines,
+    count: result.lines.length,
+    truncated: result.truncated,
+  };
+}
+
 /**
  * Reads a newline-delimited JSON response body, bounded by `maxLines` and,
  * when given, `signal`. The runtime-logs and command-logs endpoints are
