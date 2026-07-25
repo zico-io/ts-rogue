@@ -66,12 +66,27 @@ const ponytailReviewContext = (
   prNumber: number,
   baseRef: string,
   headRef: string,
-) =>
-  `Ponytail-review pull request #${prNumber} in zico-io/ts-rogue. This is a review-only turn (see "PR review turns"): review and post, nothing else.
-
+  // Set only for a re-review triggered by a push to an already-reviewed PR
+  // (`synchronize`): the head sha the *previous* review covered, taken from
+  // the webhook payload's own `before` field. Scoping the diff to just what
+  // changed since then avoids re-flagging - and re-posting findings on -
+  // lines a prior review already passed judgment on.
+  reReviewSinceSha: string | null,
+) => {
+  const fetchCmd = reReviewSinceSha
+    ? `git fetch origin ${reReviewSinceSha} ${headRef}`
+    : `git fetch origin ${baseRef} ${headRef}`;
+  const diffCmd = reReviewSinceSha
+    ? `git diff ${reReviewSinceSha}...origin/${headRef}`
+    : `git diff origin/${baseRef}...origin/${headRef}`;
+  const scopeNote = reReviewSinceSha
+    ? `\nThis is a re-review triggered by a new push, not the PR's first review. Review ONLY the diff introduced since the last review (${reReviewSinceSha} to the new head) - do not re-review or re-report on parts of the PR a prior review already covered. If fetching ${reReviewSinceSha} fails (a rebase or force-push can make an old commit unreachable), fall back to the full origin/${baseRef}...origin/${headRef} diff instead.\n`
+    : "";
+  return `Ponytail-review pull request #${prNumber} in zico-io/ts-rogue. This is a review-only turn (see "PR review turns"): review and post, nothing else.
+${scopeNote}
 Get the diff (the working tree is on main; fetch the PR's refs):
-  git fetch origin ${baseRef} ${headRef}
-  git diff origin/${baseRef}...origin/${headRef}
+  ${fetchCmd}
+  ${diffCmd}
 Read a changed file's full context with \`git show origin/${headRef}:<path>\` when a lens needs it.
 
 Apply two lenses in one pass.
@@ -92,6 +107,7 @@ Post the findings as ONE pull-request review via curl. Each finding's line MUST 
   JSON
   curl -sS -X POST -H "Accept: application/vnd.github+json" https://api.github.com/repos/zico-io/ts-rogue/pulls/${prNumber}/reviews -d @/tmp/review.json
 <summary> is exactly one line: \`net: -<N> lines, <M> convention fixes.\` when you found something, or \`net: clean. Ship.\` when you did not (post it with an empty comments array). Do not post any other comment, summary, or confirmation - the review posted via curl above is the only reply this turn produces. Then stop.`;
+};
 
 // Context for a turn woken by review feedback landing on a pull request (see
 // "PR review-feedback turns" in instructions.md for the full contract). Kept
@@ -250,6 +266,7 @@ export const onPullRequest = (
       draft?: boolean;
       head?: { ref?: string };
       base?: { ref?: string };
+      before?: string;
     };
     // Event-time draft flag, not a live fetch: a PR opened as a draft then
     // marked ready fires both events; gating on the payload's own draft flag
@@ -258,10 +275,21 @@ export const onPullRequest = (
     const head = raw.head?.ref;
     if (!head) return null;
     const base = raw.base?.ref ?? "main";
+    // `before` is only meaningful on `synchronize` (the sha the previous
+    // review saw); GitHub also omits it once in a while (e.g. a synthetic
+    // replay), in which case ponytailReviewContext falls back to the full
+    // base...head diff.
+    const reReviewSinceSha =
+      pullRequest.action === "synchronize" && raw.before ? raw.before : null;
     return {
       auth: reviewOnlyAuth(context),
       context: [
-        ponytailReviewContext(pullRequest.pullRequestNumber, base, head),
+        ponytailReviewContext(
+          pullRequest.pullRequestNumber,
+          base,
+          head,
+          reReviewSinceSha,
+        ),
       ],
     };
   }

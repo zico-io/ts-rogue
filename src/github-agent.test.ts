@@ -224,6 +224,53 @@ describe("GitHub agent events", () => {
     expect(result?.auth?.attributes[REVIEW_ONLY_TURN_ATTRIBUTE]).toBe("true");
   });
 
+  it("scopes a re-review's diff to just what changed since the last review", () => {
+    const result = onPullRequest(
+      fakeContext("pull_request"),
+      fakeOpenPr({
+        action: "synchronize",
+        raw: {
+          base: { ref: "main" },
+          head: { ref: "feat/thing" },
+          before: "sha-from-last-review",
+        },
+      }),
+    );
+
+    const context = result?.context?.[0] ?? "";
+    expect(context).toContain(
+      "git diff sha-from-last-review...origin/feat/thing",
+    );
+    expect(context).toContain(
+      "Review ONLY the diff introduced since the last review",
+    );
+    // The full base diff must not be the one instructed for a re-review.
+    expect(context).not.toContain("git diff origin/main...origin/feat/thing");
+  });
+
+  it("falls back to the full PR diff on the initial review (opened), not a since-last-review diff", () => {
+    const result = onPullRequest(fakeContext("pull_request"), fakeOpenPr());
+
+    const context = result?.context?.[0] ?? "";
+    expect(context).toContain("git diff origin/main...origin/feat/thing");
+    expect(context).not.toContain(
+      "Review ONLY the diff introduced since the last review",
+    );
+  });
+
+  it("falls back to the full PR diff for a synchronize event missing `before`", () => {
+    const result = onPullRequest(
+      fakeContext("pull_request"),
+      fakeOpenPr({ action: "synchronize" }),
+    );
+
+    const context = result?.context?.[0] ?? "";
+    expect(context).toContain("git diff origin/main...origin/feat/thing");
+    expect(context).not.toContain(
+      "Review ONLY the diff introduced since the last review",
+    );
+  });
+
   it("skips auto-review for a draft pull request", () => {
     expect(
       onPullRequest(
