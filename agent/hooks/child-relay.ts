@@ -1,7 +1,7 @@
 import { connectLinearCredentials } from "@vercel/connect/eve";
 import { createLinearAgentActivity } from "eve/channels/linear";
 import { defineState } from "eve/context";
-import { defineHook } from "eve/hooks";
+import { defineHook, type HookContext } from "eve/hooks";
 
 import { toolLabel } from "../lib/tool-label";
 
@@ -9,23 +9,57 @@ import { toolLabel } from "../lib/tool-label";
 // never reaches the Linear channel. This hook is a copy of the root's hooks
 // running inside the child, so it sees the child's own events and relays them to
 // the same Linear Agent Session as they happen.
+//
+// The same hook also runs in the ROOT session, where it has one job: the
+// moment a turn requests a `subagent-call`, persist the Linear agent session
+// id to a file in the shared sandbox (children share the root's sandbox).
+// That makes the child's session-id handoff deterministic instead of relying
+// on the model to copy `agent_session_id` into the delegation prose - the
+// failure mode that left ENG-2's ephemeral chip frozen for a whole child run.
+// Hook handlers are awaited before the runtime dispatches the children, so
+// the file exists before any child event fires.
+//
+// (A `subagent.called` hook would be the natural trigger, but eve never
+// dispatches that event to authored hooks or channel adapters despite
+// declaring it in the hook vocabulary - verified against eve's dist:
+// dispatch-runtime-actions-step writes it to the stream and calls only the
+// framework channel adapter, and defineChannel filters authored event maps
+// through an allowlist without it. Hence the actions.requested trigger.)
 
 const credentials = connectLinearCredentials("linear/ts-rogue-eve");
 
+// linearContinuationToken() format; a token without it (e.g. a merge-woken
+// GitHub session) has no Linear agent session to post to.
+const LINEAR_CONTINUATION_PREFIX = "agent-session:";
+
+/** Shared-sandbox handoff file: root writes the Linear agent session id, children read it. */
+export const SESSION_ID_FILE = "/workspace/.eve/linear-agent-session";
+
 // Fresh per child session; captures the Linear agent session id and the
 // delegated issue identifier from the text the parent hands the child (ctx
-// exposes no Linear id of its own).
+// exposes no Linear id of its own). `sandboxChecked`/`warnedDark` latch the
+// one-time handoff-file fallback and its diagnostic warning.
 const relay = defineState<{
   agentSessionId: string | null;
   issueId: string | null;
-}>("ts-rogue.child-relay", () => ({ agentSessionId: null, issueId: null }));
+  sandboxChecked: boolean;
+  warnedDark: boolean;
+}>("ts-rogue.child-relay", () => ({
+  agentSessionId: null,
+  issueId: null,
+  sandboxChecked: false,
+  warnedDark: false,
+}));
+
+const errorMessage = (err: unknown): string =>
+  err instanceof Error ? err.message : String(err);
 
 // The parent's delegation text carries the Linear session id in the framework
 // context block (`agent_session_id: <id>`) or however the parent phrases it.
 export const parseAgentSessionId = (text: string): string | null =>
   text.match(/agent_session_id["`\s:=]+([\w-]+)/)?.[1] ?? null;
 
-// The delegation packet leads with `issue: <identifier> — <title>`. Ralph mode
+// The delegation packet leads with `issue: <identifier> - <title>`. Ralph mode
 // runs several children against one Linear session at once, so each relayed
 // activity is prefixed with its issue to stay attributable.
 export const parseIssueId = (text: string): string | null =>
@@ -49,20 +83,63 @@ type ActivityContent = Parameters<
   typeof createLinearAgentActivity
 >[0]["activity"]["content"];
 
-// Prefix relayed content with the child's issue so parallel children posting
-// into the same session stay tellable apart.
-const withIssuePrefix = (
-  content: ActivityContent,
-  issueId: string | null,
-): ActivityContent => {
-  if (!issueId) return content;
-  if ("body" in content) {
-    return { ...content, body: `[${issueId}] ${content.body}` };
+// Root side of the handoff: persist the Linear agent session id where the
+// children this batch is about to spawn can read it. Idempotent and cheap
+// (one small file write per delegation batch); observe-only, so failures
+// warn instead of failing the turn.
+const persistSessionIdForChildren = async (
+  actions: readonly { kind: string }[],
+  ctx: HookContext,
+) => {
+  const token = ctx.channel?.continuationToken;
+  if (!token?.startsWith(LINEAR_CONTINUATION_PREFIX)) return;
+  if (!actions.some((action) => action.kind === "subagent-call")) return;
+  try {
+    const sandbox = await ctx.getSandbox();
+    await sandbox.writeTextFile({
+      path: SESSION_ID_FILE,
+      content: token.slice(LINEAR_CONTINUATION_PREFIX.length),
+    });
+  } catch (err) {
+    console.warn(
+      "child-relay: persisting the Linear session id for children failed:",
+      errorMessage(err),
+    );
   }
-  if ("action" in content) {
-    return { ...content, action: `[${issueId}] ${content.action}` };
+};
+
+// Child side of the handoff: when the delegation prose carried no
+// `agent_session_id`, fall back to the file the root wrote. Checked once -
+// the root's write completes before any child event fires, so a missing file
+// means this child has no Linear session to relay to (e.g. a non-Linear
+// wake), and the one-time warning makes a dark relay diagnosable instead of
+// silent.
+const ensureAgentSessionId = async (ctx: HookContext) => {
+  const state = relay.get();
+  if (state.agentSessionId || state.sandboxChecked) return;
+  relay.update((s) => ({ ...s, sandboxChecked: true }));
+  try {
+    const sandbox = await ctx.getSandbox();
+    const read = await sandbox.run({
+      command: `cat ${SESSION_ID_FILE} 2>/dev/null || true`,
+    });
+    const id = read.stdout.trim();
+    if (id) {
+      relay.update((s) => ({ ...s, agentSessionId: s.agentSessionId ?? id }));
+      return;
+    }
+  } catch (err) {
+    console.warn(
+      "child-relay: reading the Linear session id handoff file failed:",
+      errorMessage(err),
+    );
   }
-  return content;
+  if (!relay.get().agentSessionId && !relay.get().warnedDark) {
+    relay.update((s) => ({ ...s, warnedDark: true }));
+    console.warn(
+      "child-relay: no Linear agent session id (delegation text lacked agent_session_id and no handoff file) - this child's activity will not stream to Linear",
+    );
+  }
 };
 
 // Working chips post as ephemeral: Linear shows an ephemeral activity only
@@ -85,9 +162,31 @@ const post = async (
         ephemeral: options.ephemeral,
       },
     });
-  } catch {
-    // Observe-only: a Linear hiccup must never fail the child's turn.
+  } catch (err) {
+    // Observe-only: a Linear hiccup must never fail the child's turn - but
+    // say so, or a relay that never posts is indistinguishable from one that
+    // was never wired (HAR-11's first production outing was exactly that).
+    console.warn(
+      "child-relay: posting a Linear activity failed:",
+      errorMessage(err),
+    );
   }
+};
+
+// Prefix relayed content with the child's issue so parallel children posting
+// into the same session stay tellable apart.
+const withIssuePrefix = (
+  content: ActivityContent,
+  issueId: string | null,
+): ActivityContent => {
+  if (!issueId) return content;
+  if ("body" in content) {
+    return { ...content, body: `[${issueId}] ${content.body}` };
+  }
+  if ("action" in content) {
+    return { ...content, action: `[${issueId}] ${content.action}` };
+  }
+  return content;
 };
 
 const MAX_PARAMETER = 300;
@@ -97,9 +196,14 @@ export default defineHook({
     async "message.received"(event, ctx) {
       if (!ctx.session.parent) return;
       capturePacketFacts(event.data.message);
+      await ensureAgentSessionId(ctx);
     },
     async "actions.requested"(event, ctx) {
-      if (!ctx.session.parent) return;
+      if (!ctx.session.parent) {
+        await persistSessionIdForChildren(event.data.actions, ctx);
+        return;
+      }
+      await ensureAgentSessionId(ctx);
       for (const action of event.data.actions) {
         if (action.kind !== "tool-call") continue;
         if (action.toolName.endsWith("session_update")) {
