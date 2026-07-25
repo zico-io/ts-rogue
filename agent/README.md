@@ -222,15 +222,30 @@ When the assigned issue has sub-issues - pre-existing or just created from an
 approved breakdown - the agent treats it as a group (ralph mode): it sequences
 them by their Linear `blocks`/`blocked by` relations, priority, and
 `PROJECT_PLAN.md` phase, then hands off every ready sub-issue at once (capped
-at three in flight) instead of driving any of them itself (HAR-15). A
-hand-off is one `save_issue` call setting the sub-issue's `delegate` to
-`ts-rogue-eve` - the same Linear mechanism that starts an Agent Session for
-any human-assigned issue - so each ready sub-issue gets its own independent
-session, its own sandbox, its own branch, its own coding child, and its own
-pull request, driven end to end under this same `instructions.md` contract
-exactly as an ordinary single-issue task. The session that fanned work out
-does no git and runs no coding child for a sub-issue itself; it only lists,
-orders, and hands off, then stops.
+at three in flight) instead of driving any of them itself (HAR-15). Readiness
+is recomputed from Linear immediately before each hand-off, not trusted from
+the plan posted earlier in the turn, so a sub-issue whose blocker hasn't
+actually finished never gets a session started for it.
+
+A hand-off reuses `tools/handoff.ts` (see "Self-handoff on long sessions"
+below) rather than a bare `save_issue` delegate assignment: it posts a Linear
+comment on the sub-issue carrying a brief of what its `blocked by`
+predecessor(s) just shipped - their PR, key decisions, anything that changes
+this sub-issue's approach - and anchors a fresh Agent Session to that comment
+with `createLinearAgentSessionOnComment`. Neither `AgentSessionCreateOnIssue`
+nor `AgentSessionCreateOnComment` takes a free-text field of its own (see the
+tool's comments), so a comment is the only way to seed a fresh session with
+anything beyond its bare issue packet - the same reason `tools/handoff.ts` was
+built for self-continuation in the first place, which is why HAR-15 reuses it
+here instead of adding a second, near-identical mechanism. The agent also sets
+the sub-issue's `delegate` to `ts-rogue-eve` with `save_issue` alongside the
+hand-off, so Linear's own assignment reflects who is driving it. Each ready
+sub-issue then gets its own independent session, its own sandbox, its own
+branch, its own coding child, and its own pull request, driven end to end
+under this same `instructions.md` contract exactly as an ordinary single-issue
+task. The session that fanned work out does no git and runs no coding child
+for a sub-issue itself; it only lists, orders, hands off with context, and
+stops.
 
 This replaces an earlier design where the parent kept every sub-issue's branch
 in a `.worktrees/<id>` git worktree inside its own single sandbox and drove
@@ -252,15 +267,16 @@ from it each turn - and the merge that advances the group is still the
 existing `isMainMerge` signal in [`channels/github.ts`](channels/github.ts),
 which tags the merged issue's identifier so the session it wakes knows which
 group to advance: confirm that sub-issue Done, then hand off every newly ready
-sibling the same way. The sequencing and hand-off contract lives in
-[`instructions.md`](instructions.md); the local `evals/scoping.eval.ts` guards
-the sizing gate (a large synthetic ticket must park with a breakdown and zero
-implementation), and `evals/ralph` still guards group sequencing end to end -
-its `drivesIssue` assertion already treats a `save_issue` call naming the
-ready sub-issue as driving it, so the hand-off eval needed no change for
-HAR-15.
+sibling the same way, carrying forward what that merge just shipped. The
+sequencing and hand-off contract lives in [`instructions.md`](instructions.md);
+the local `evals/scoping.eval.ts` guards the sizing gate (a large synthetic
+ticket must park with a breakdown and zero implementation), and `evals/ralph`
+still guards group sequencing end to end - its `drivesIssue` assertion already
+treats a `save_issue` call naming the ready sub-issue as driving it, which
+covers the `delegate` update half of a hand-off without needing to distinguish
+it from the `handoff` tool call that carries the context.
 
-### Self-handoff on long sessions (HAR-12)
+### Handoff to a fresh session (HAR-12, HAR-15)
 
 HAR-12 asked for eve's own token-quota HITL (a continue/stop prompt raised
 when a session crosses its configured `maxInputTokensPerSession`/
@@ -289,6 +305,17 @@ human-initiated session, so no extra dispatch wiring was needed.
 that has been running unusually long - a deep delegation chain or a slow
 implementation - rather than treating quota exhaustion as something that
 happens to it.
+
+HAR-15 reuses the same tool and mutation chain for a second purpose: handing a
+now-ready sub-issue off to its own fresh session in ralph mode, carrying
+forward the context (what its predecessor shipped, and why) that a bare
+`save_issue` delegate assignment could not deliver. The tool already took an
+arbitrary `issueId`, not "the current issue" specifically, so nothing about
+`tools/handoff.ts` itself needed to change beyond broadening its description
+and de-specializing the fixed comment header (the "why this session exists"
+framing now lives entirely in the model-authored `brief`, which differs by
+caller: a continuation packet for self-handoff, a predecessor's shipped
+context for a dependency unlock).
 
 ## Development
 

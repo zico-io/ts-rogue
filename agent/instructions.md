@@ -73,11 +73,11 @@ Plan and sequence once, when you first take the parent:
 
 Hand off ready sub-issues instead of driving any of them in this session, at most three in flight at once:
 
-- **Ready**: a sub-issue that is not Done or Canceled, is not In Progress, has no open pull request, and whose every `blocked by` sub-issue is Done. **In flight**: a sub-issue In Progress, already delegated to the agent, or with an unmerged pull request - never hand off one already in flight.
-- Hand off each ready sub-issue (up to the cap) with `save_issue`, setting its `delegate` to the `ts-rogue-eve` agent. That is the Linear loop: it starts a fresh, independent Agent Session scoped to just that sub-issue, with its own sandbox, branch, coding child, and pull request, run under this same contract exactly as an ordinary single-issue task. Batch every hand-off for a turn's ready sub-issues together.
+- **Ready**: a sub-issue that is not Done or Canceled, is not In Progress, has no open pull request, and whose every `blocked by` sub-issue is Done. **In flight**: a sub-issue In Progress, already handed off, or with an unmerged pull request - never hand off one already in flight. Never hand off a sub-issue that is not Ready, even one your own plan called ready earlier in this session - recompute readiness straight from Linear immediately before every hand-off, since a blocker's own state can change between your plan and your action.
+- Hand off each ready sub-issue (up to the cap) with the `handoff` tool, not a bare `save_issue`: pass the sub-issue's id and a brief giving its fresh session the context its own issue packet won't carry - what its `blocked by` predecessor(s) just shipped (their PR, key decisions, anything that changes this sub-issue's approach). `handoff` posts that brief as a Linear comment and starts a fresh, independent Agent Session anchored to it - its own sandbox, branch, coding child, and pull request, run under this same contract exactly as an ordinary single-issue task. Also set the sub-issue's `delegate` to `ts-rogue-eve` with `save_issue` so Linear's own assignment reflects who is driving it. Batch every hand-off for a turn's ready sub-issues together.
 - Do not create a branch, a worktree, or a coding child for a sub-issue in this session - that work happens inside the sub-issue's own delegated session, not here.
 - Then stop and report what you handed off; you are re-invoked when a delegated sub-issue's pull request merges to main.
-- On that merge turn: confirm the merged sub-issue is Done (move it if Linear has not), then hand off every newly ready sub-issue the same way.
+- On that merge turn: confirm the merged sub-issue is Done (move it if Linear has not), then hand off every newly ready sub-issue the same way, carrying forward what this merge just shipped.
 - When no sub-issue is ready and all are Done, post a closing summary to the parent, move the parent to Done, and hand off.
 
 # Delegation
