@@ -11,7 +11,7 @@ pre-warmed Vercel Sandboxes.
 | [`instructions.md`](instructions.md) | Runtime operating and delegation contract |
 | [`channels/`](channels/) | Eve, Linear, and GitHub session activity adapters |
 | [`connections/`](connections/) | Linear MCP connection and approval policy |
-| [`hooks/`](hooks/) | Delegated-child activity relay |
+| [`hooks/`](hooks/) | Delegated-child activity relay and turn-start sandbox prewarm |
 | [`tools/`](tools/) | Native Linear Agent Session progress updates |
 | [`sandbox.ts`](sandbox.ts) | Vercel Sandbox bootstrap, sync, `ORIENTATION.md` brief, network policy, and token refresh |
 | [`lib/orientation.ts`](lib/orientation.ts) | Builds the pre-computed orientation brief from git state and screenshot-tooling status |
@@ -26,6 +26,17 @@ writes an `ORIENTATION.md` brief of settled git state. The root then delegates
 ordinary implementation to one coding child and retains review and external
 coordination. Agent Session activities carry progress and approval prompts
 without writing issue comments.
+
+The sandbox itself is created lazily by eve, on the first sandbox-touching
+tool call - which would land mid-orientation and make the model (and the
+coding children delegated after it, which share the root's sandbox) sit
+through the full cold start serially. `hooks/prewarm-sandbox.ts` kicks the
+same memoized creation at `turn.started`, fire-and-forget, so template
+restore and `onSession`'s repo sync run concurrently with the model's first
+inference and the first `ORIENTATION.md` read awaits an already-in-flight
+handle. The kick must never be awaited in the hook: handlers run in the
+turn's emit path, so awaiting there would serialize the cold start in front
+of the model call instead of overlapping it.
 
 `instructions.md` requires the root to send a `session_update` before its first
 other tool call and to batch independent read-only lookups (sub-issue checks,

@@ -11,5 +11,6 @@
 - Treat `.botfile/memory/domain/product.md` as the golden product SSOT: upsert it in the same PR when shipped behavior changes, and keep it clean under `pnpm docs:lint`.
 - Report progress through native Agent Session activities, not issue comments.
 - Keep startup useful when GitHub token minting fails and retry refreshes without blocking sessions.
+- Keep the `turn.started` sandbox prewarm fire-and-forget: awaiting `getSandbox()` in a hook serializes the cold start in front of the model call instead of overlapping it.
 - Test channel transforms, hooks, tools, model routing, and sandbox lifecycle changes.
 - Update `README.md` when the agent architecture or development workflow changes.
