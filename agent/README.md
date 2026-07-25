@@ -12,7 +12,7 @@ pre-warmed Vercel Sandboxes.
 | [`channels/`](channels/) | Eve, Linear, and GitHub session activity adapters |
 | [`connections/`](connections/) | Linear MCP connection and approval policy |
 | [`hooks/`](hooks/) | Delegated-child activity relay, delegation working indicator, and turn-start sandbox prewarm |
-| [`tools/`](tools/) | Native Linear Agent Session progress updates |
+| [`tools/`](tools/) | Native Linear Agent Session progress updates and proactive self-handoff to a fresh session |
 | [`sandbox.ts`](sandbox.ts) | Vercel Sandbox bootstrap, sync, `ORIENTATION.md` brief, network policy, and token refresh |
 | [`lib/orientation.ts`](lib/orientation.ts) | Builds the pre-computed orientation brief from git state and screenshot-tooling status |
 
@@ -251,6 +251,36 @@ contract lives in [`instructions.md`](instructions.md); the local
 `evals/scoping.eval.ts` guards the gate (a large synthetic ticket must park
 with a breakdown and zero implementation), and `evals/ralph` still guards
 group sequencing end to end.
+
+### Self-handoff on long sessions (HAR-12)
+
+HAR-12 asked for eve's own token-quota HITL (a continue/stop prompt raised
+when a session crosses its configured `maxInputTokensPerSession`/
+`maxOutputTokensPerSession`) to auto-compact and continue instead. That
+prompt, the quota check, and the budget-reset logic all live inside the `eve`
+package's harness internals (`session-limit-enforcement`/
+`session-limit-continuation`); no released version exposes a config, hook, or
+channel-event API that lets this repo override or auto-answer it, and
+`agent/hooks/*` are deliberately observe-only (see above), so they cannot
+resolve a pending input request either.
+
+`tools/handoff.ts` sidesteps the problem instead of solving it upstream: it
+gives the root agent a way to voluntarily end its own session before ever
+reaching that quota, rather than waiting to be asked. Calling it posts the
+model-authored `brief` (a continuation packet - what's done, evidence, what's
+left, the next action) as a Linear comment via a hand-rolled `commentCreate`
+mutation (not in `eve/channels/linear`'s public barrel, so it's built against
+the barrel's public `callLinearGraphQL` transport the same way
+`channels/linear.ts` hand-rolls other de-minified pieces), then calls the
+barrel-exported `createLinearAgentSessionOnComment` to anchor a brand-new
+Agent Session to that comment. The new session gets its own empty context
+window and its own fresh token quota; eve's existing webhook delivery to
+`channels/linear.ts` picks up its `created` event the same way it would for a
+human-initiated session, so no extra dispatch wiring was needed.
+`instructions.md` tells the root to reach for this proactively on a session
+that has been running unusually long - a large ralph-mode group or a deep
+delegation chain - rather than treating quota exhaustion as something that
+happens to it.
 
 ## Development
 
