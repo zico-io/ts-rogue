@@ -16,3 +16,4 @@ dist/
 /src/web/.next/
 /src/web/next-env.d.ts
 /.worktrees/
+/ORIENTATION.md

@@ -16,9 +16,12 @@ const credentials = connectLinearCredentials("linear/ts-rogue-eve");
 // therefore the only way to deliver a custom brief into a fresh session, not
 // a side channel this tool invented - every human-initiated Agent Session
 // already starts the same way, from a comment. This header just makes the
-// comment read as deliberate handoff plumbing rather than a stray note.
-const HANDOFF_COMMENT_HEADER =
-  "**Agent handoff**\n\nSeeding a fresh Agent Session so this issue keeps moving with an empty context window and a fresh token quota, instead of running into a token-quota limit in this session.\n\n---\n\n";
+// comment read as deliberate handoff plumbing rather than a stray note. Kept
+// generic (not framed as self-continuation-only) because this tool also seeds
+// a ready sub-issue's fresh session in ralph mode (HAR-15) - the specific
+// framing (why this session is starting, what came before) belongs in the
+// model-authored `brief`, not this fixed header.
+const HANDOFF_COMMENT_HEADER = "**Agent handoff**\n\n---\n\n";
 
 /**
  * Posts a Linear comment and returns its id.
@@ -65,7 +68,7 @@ export const createLinearComment = async (input: {
 
 export default defineTool({
   description:
-    "Hand off the current issue to a brand-new Linear Agent Session with an empty context window and a fresh token quota. Call this when the current session has been running long enough to risk hitting its own token-quota limit - a long ralph-mode group session or a deep delegation chain - instead of waiting for eve's own continue/stop prompt. `brief` must be a full continuation packet, written so a fresh agent with zero conversation history can resume without re-reading anything: what the issue asked for, what is already done (with evidence - commits, PR state, test results), what is left, and the exact next action. After calling this tool, end your own turn immediately; do not keep working in this session.",
+    "Hand off a Linear issue to a brand-new Agent Session with an empty context window and its own fresh token quota, seeded by a comment carrying `brief`. Two uses: (1) Self-continuation - the current session has run long enough to risk hitting its own token-quota limit. Pass the current issue's id and a full continuation packet (what's done with evidence, what's left, the exact next action), then end your own turn immediately after calling it. (2) Ralph-mode dependency unlock - a sub-issue just became ready because its blocker(s) merged. Pass that sub-issue's id and a brief carrying context its own issue packet won't have: what the predecessor(s) shipped (their PR), and any decisions or gotchas that affect this sub-issue's approach. Use this instead of a bare delegate assignment so the new session starts informed, not blind. Either way, `brief` must let a fresh agent with zero conversation history proceed without re-reading anything.",
   inputSchema: z.object({
     issueId: z.string().min(1),
     brief: z.string().min(1).max(8000),
