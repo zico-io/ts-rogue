@@ -11,7 +11,7 @@ pre-warmed Vercel Sandboxes.
 | [`instructions.md`](instructions.md) | Runtime operating and delegation contract |
 | [`channels/`](channels/) | Eve, Linear, and GitHub session activity adapters |
 | [`connections/`](connections/) | Linear MCP connection and approval policy |
-| [`hooks/`](hooks/) | Delegated-child activity relay and delegation working indicator |
+| [`hooks/`](hooks/) | Delegated-child activity relay, delegation working indicator, and turn-start sandbox prewarm |
 | [`tools/`](tools/) | Native Linear Agent Session progress updates |
 | [`sandbox.ts`](sandbox.ts) | Vercel Sandbox bootstrap, sync, `ORIENTATION.md` brief, network policy, and token refresh |
 | [`lib/orientation.ts`](lib/orientation.ts) | Builds the pre-computed orientation brief from git state and screenshot-tooling status |
@@ -26,6 +26,17 @@ writes an `ORIENTATION.md` brief of settled git state. The root then delegates
 ordinary implementation to one coding child and retains review and external
 coordination. Agent Session activities carry progress and approval prompts
 without writing issue comments.
+
+The sandbox itself is created lazily by eve, on the first sandbox-touching
+tool call - which would land mid-orientation and make the model (and the
+coding children delegated after it, which share the root's sandbox) sit
+through the full cold start serially. `hooks/prewarm-sandbox.ts` kicks the
+same memoized creation at `turn.started`, fire-and-forget, so template
+restore and `onSession`'s repo sync run concurrently with the model's first
+inference and the first `ORIENTATION.md` read awaits an already-in-flight
+handle. The kick must never be awaited in the hook: handlers run in the
+turn's emit path, so awaiting there would serialize the cold start in front
+of the model call instead of overlapping it.
 
 While a delegated child works, the session shows a single live status slot
 rather than a growing wall of chips: `hooks/delegation-indicator.ts` posts an
@@ -54,6 +65,15 @@ early message and the one-sentence reply the root pairs with each tool batch are
 both surfaced to the reader: `channels/linear.ts`'s `message.completed` handler
 lifts the first line of a tool-batch turn straight into a Linear `thought`, and
 `session_update` posts as a durable `response`.
+
+The mid-session update triggers are mechanical rather than judgment-based
+("post when it stretches long" let the ROG-65 session run its coding child for
+minutes behind a lone `started` message): the batch that starts implementation
+must carry a `progress` update with the scoped cut, and three tool-call
+batches without a `session_update` force one in the next batch. No eval guards
+this yet - the local evals stop before delegation and the ralph e2e fixture
+deliberately runs with a blank `agent_session_id`, so it would take a live
+Linear session to observe.
 
 Because those sentences reach the reader verbatim, `instructions.md` keeps its
 message rules as terse imperatives and holds the design rationale (the
