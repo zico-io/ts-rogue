@@ -51,7 +51,7 @@ const MAIN_MERGE_SYNCED =
   "A pull request was merged into main. The sandbox checkout has already updated automatically; no manual repository sync is needed.";
 
 const ralphAdvanceContext = (ref: string) =>
-  `The merged pull request closes Linear issue ${ref}. If ${ref} is a sub-issue of a parent issue you are ralphing (an in-progress issue group), advance that group per the "Issue groups" instructions: confirm ${ref} is Done, then claim and drive every newly ready sub-issue. If ${ref} is a standalone issue, no further action is needed.`;
+  `The merged pull request closes Linear issue ${ref}. If ${ref} is a sub-issue of a parent issue you are ralphing (an in-progress issue group), advance that group per the "Issue groups" instructions: confirm ${ref} is Done, then hand off every newly ready sub-issue to the agent via Linear. If ${ref} is a standalone issue, no further action is needed.`;
 
 // The two-lens ponytail review, inlined as a review turn's context. Ported from
 // bask/fleet's PONYTAIL_REVIEW_PROMPT and retargeted to ts-rogue's contract and

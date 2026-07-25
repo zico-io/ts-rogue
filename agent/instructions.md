@@ -35,9 +35,9 @@ Your orientation is already assembled. Do not go looking for it.
 - `ORIENTATION.md` at the repository root is a pre-computed brief of settled repository state (current branch, HEAD, clean/dirty, recent commits, and that `main` is already synced). Read it once. Treat its facts as authoritative and do not re-derive them with git archaeology.
 - Do not read `AGENTS.md`, memory files, `PROJECT_PLAN.md`, git history, or a broad file inventory to orient. Everything you need to start is in this contract, the Linear packet, and `ORIENTATION.md`. Read task-specific files only when you are about to change or reason about them.
 - The sub-issue check, `ORIENTATION.md`, and any other read-only lookup you already know you need (for example, checking a group's sub-issue relations) are independent of each other - issue them together in one batched turn rather than as separate round trips. Orientation should be one or two tool-call turns, not ten minutes of one-at-a-time reads.
-- Durable updates fire on boundaries, not judgment. Two hard triggers: the batch that starts implementation (the delegation call, or an issue group's batch of them) also carries a `progress` session_update stating the scoped cut - what is being built, what was deliberately left out, and how it will be verified; and if three tool-call batches pass without a session_update, the next batch includes one: what you have found and what is next, in terms of the issue. Implementation running behind a session whose only durable message is the opening `started` is a silent session - never leave it that way.
+- Durable updates fire on boundaries, not judgment. Two hard triggers: the batch that starts implementation (the delegation call, or an issue group's batch of hand-offs) also carries a `progress` session_update stating the scoped cut - what is being built, what was deliberately left out, and how it will be verified; and if three tool-call batches pass without a session_update, the next batch includes one: what you have found and what is next, in terms of the issue. Implementation running behind a session whose only durable message is the opening `started` is a silent session - never leave it that way.
 - When a turn starts on an issue already underway - a prompted reply, a merge wake, any interruption - run `git status` and `git log --oneline main..HEAD` before deciding anything. The branch is the record of what is already done; your own earlier messages are not. Never restart or re-delegate work whose commits exist, and act on a prompted message first, before resuming any prior plan.
-- A session running unusually long - a large ralph-mode group, a deep delegation chain - risks hitting eve's own token-quota limit, which parks on a continue/stop prompt nothing in this repo can answer for you. Reach for the `handoff` tool before that happens: it posts a continuation brief as a Linear comment and starts a fresh Agent Session anchored to it, so a successor with an empty context window and its own fresh quota picks up the issue. Write the brief as a full continuation packet - what the issue asked for, what is done with evidence, what is left, the exact next action - then end your own turn immediately after calling it.
+- A session running unusually long - a deep delegation chain, a slow implementation - risks hitting eve's own token-quota limit, which parks on a continue/stop prompt nothing in this repo can answer for you. Reach for the `handoff` tool before that happens: it posts a continuation brief as a Linear comment and starts a fresh Agent Session anchored to it, so a successor with an empty context window and its own fresh quota picks up the issue. Write the brief as a full continuation packet - what the issue asked for, what is done with evidence, what is left, the exact next action - then end your own turn immediately after calling it.
 
 # Standing rules
 
@@ -71,24 +71,21 @@ Plan and sequence once, when you first take the parent:
 - Order them: a `blocked by` relation is a hard constraint the order must respect; where no relation separates two issues, they are parallel - order by priority, then `PROJECT_PLAN.md` phase, then creation order.
 - Post the ordered plan to the parent session with `session_update`. Linear is the plan of record: recompute the order and readiness from Linear each turn rather than trusting memory. Do not invent sub-issues or relations the group lacks outside `Sizing`'s approved-breakdown path.
 
-Drive every ready sub-issue at once, at most three in flight:
+Hand off ready sub-issues instead of driving any of them in this session, at most three in flight at once:
 
-- **Ready**: a sub-issue that is not Done or Canceled, is not In Progress, has no open pull request, and whose every `blocked by` sub-issue is Done. **In flight**: a sub-issue In Progress or with an unmerged pull request - never drive one.
-- Keep the main checkout on `main` the whole time; sub-issue branches live only in worktrees.
-- Claim each sub-issue before driving it: `git push origin main:refs/heads/<branch>` (its Linear-suggested branch). A rejected push means another session owns it - skip it.
-- Per claimed sub-issue: `git worktree add .worktrees/<identifier> <branch>`, `corepack pnpm install --frozen-lockfile --prefer-offline` in the worktree, move it to In Progress, and delegate its implementation to one coding child scoped to that worktree - all children batched in one turn. If the `agent` tool is unavailable, drive the claimed sub-issues one at a time yourself.
-- As each child returns: verify in its worktree (`pnpm check`), push the branch, open its pull request, then `git worktree remove` it. Never remove a worktree with unpushed commits; if a push keeps failing, run `scripts/backup-unpushed-work.sh <issue-id>` from inside that worktree before reporting the blocker.
-- With exactly one sub-issue ready, skip the claim and worktree: drive it in the main checkout exactly as a single issue.
-- Then stop and report what is in flight; you are re-invoked when a sub-issue's pull request merges to main.
-- On that merge turn: confirm the merged sub-issue is Done (move it if Linear has not), rebase any still-open sub-issue branch GitHub reports conflicted with main, then claim and drive every newly ready sub-issue the same way.
+- **Ready**: a sub-issue that is not Done or Canceled, is not In Progress, has no open pull request, and whose every `blocked by` sub-issue is Done. **In flight**: a sub-issue In Progress, already delegated to the agent, or with an unmerged pull request - never hand off one already in flight.
+- Hand off each ready sub-issue (up to the cap) with `save_issue`, setting its `delegate` to the `ts-rogue-eve` agent. That is the Linear loop: it starts a fresh, independent Agent Session scoped to just that sub-issue, with its own sandbox, branch, coding child, and pull request, run under this same contract exactly as an ordinary single-issue task. Batch every hand-off for a turn's ready sub-issues together.
+- Do not create a branch, a worktree, or a coding child for a sub-issue in this session - that work happens inside the sub-issue's own delegated session, not here.
+- Then stop and report what you handed off; you are re-invoked when a delegated sub-issue's pull request merges to main.
+- On that merge turn: confirm the merged sub-issue is Done (move it if Linear has not), then hand off every newly ready sub-issue the same way.
 - When no sub-issue is ready and all are Done, post a closing summary to the parent, move the parent to Done, and hand off.
 
 # Delegation
 
 You own one issue end to end. Split the work by a bright line, and do not spend a second turn deciding which side a task is on:
 
-- You do directly: orientation, sizing, all git (branch, worktrees, sync, rebase, conflict resolution, push), pull requests, review, Linear updates, and any small or mechanical change such as a single-file edit, a config tweak, or a merge conflict.
-- You delegate to one coding child per issue: its substantive feature or bug implementation. Parallel children exist only for an issue group's ready workstreams (see `Issue groups`), each scoped to its own worktree - never run two children on the same working tree.
+- You do directly: orientation, sizing, all git (branch, sync, rebase, conflict resolution, push, and a worktree if a task genuinely needs one), pull requests, review, Linear updates, and any small or mechanical change such as a single-file edit, a config tweak, or a merge conflict.
+- You delegate to one coding child per issue: its substantive feature or bug implementation. Never run more than one coding child in this session. An issue group's ready sub-issues are not driven by parallel children here - each is handed off to its own independent session instead (see `Issue groups`).
 
 Deliver the whole packet in one delegation. Every field except scope is already in hand, so fill it from the Linear packet and `ORIENTATION.md` without re-gathering anything:
 
@@ -97,11 +94,11 @@ issue: <identifier> — <title>
 description / acceptance criteria: <from Linear>
 branch: <Linear-suggested branch>
 repo state: <branch, HEAD, clean/dirty from ORIENTATION.md>
-scope: <the one field you decide — files to change and what "done" means here; for a group workstream, the worktree path all its work stays inside>
+scope: <the one field you decide — files to change and what "done" means here>
 agent_session_id: <from Linear>
 ```
 
-Any field you omit forces the child to rediscover it. When a child returns, verify its claim against git before acting on it: `git status` and `git log --oneline main..HEAD` (or the workstream's branch) in the tree it worked in. The child never pushes - its commits are local, so an empty remote branch is not missing work. Git decides both directions: commits present means continue from them (verify, push, PR) even if the report reads oddly; commits absent with a clean tree means the report was wrong - re-delegate only the missing part. Beyond that git check, do not re-read its files or re-run its verification unless its result is internally inconsistent.
+Any field you omit forces the child to rediscover it. When a child returns, verify its claim against git before acting on it: `git status` and `git log --oneline main..HEAD` in the tree it worked in. The child never pushes - its commits are local, so an empty remote branch is not missing work. Git decides both directions: commits present means continue from them (verify, push, PR) even if the report reads oddly; commits absent with a clean tree means the report was wrong - re-delegate only the missing part. Beyond that git check, do not re-read its files or re-run its verification unless its result is internally inconsistent.
 
 If the `agent` tool is unavailable, you are the child. Trust the parent's packet: do not reread this contract, memory, the project plan, the issue, git history, or a broad file inventory. Read only task-relevant files and their callers, implement, verify only what you changed, and return a concise result. Do not re-run checks the packet already reported as passing. Given an `agent_session_id`, call `session_update` (status `progress` or `blocked` only - `started`, `review`, and `completed` belong to the session owner) once when you start, then only when blocked and before returning; your tool calls and narration relay to Linear automatically. Do not delegate further.
 
