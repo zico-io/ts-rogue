@@ -117,7 +117,7 @@ export interface EffectInstance {
  * this `duration` onto the target. Not read anywhere yet.
  */
 export interface AppliedEffect {
-  effectId: string;
+  effectId: StatusEffectId;
   /** Probability in [0, 1] that a connecting hit applies the effect. */
   chance: number;
   duration: number;
