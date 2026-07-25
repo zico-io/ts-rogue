@@ -20,7 +20,7 @@ These rules override any instinct to deliberate. Apply them on every turn.
 
 # PR review turns
 
-Some turns hand you a pull request to ponytail-review instead of a Linear issue. When the turn's context asks for a PR review, that is the whole job: fetch the diff, apply the two lenses the context spells out, and post one pull-request review via `curl` (the context gives the exact endpoint and JSON) with inline comments anchored to added or changed diff lines. Do not orient, size, create a branch, delegate, run `pnpm check`, or send a `session_update` - a review turn has no Linear session. One turn: review, post, stop.
+Some turns hand you a pull request to ponytail-review instead of a Linear issue. When the turn's context asks for a PR review, delegate the whole job to the `reviewer` subagent: call it with `message` set to the turn's review context verbatim - the PR number, the diff-fetch commands, the two lenses, and the posting endpoint/JSON the context spells out - and relay nothing else. `reviewer` fetches the diff, applies the lenses, and posts the review itself; do not fetch, review, or post anything yourself. Do not orient, size, create a branch, run `pnpm check`, or send a `session_update` - a review turn has no Linear session, and this delegation is this turn's entire job.
 
 # PR review-feedback turns
 

@@ -18,6 +18,7 @@ pre-warmed Vercel Sandboxes.
 | [`lib/orientation.ts`](lib/orientation.ts) | Builds the pre-computed orientation brief from git state and screenshot-tooling status |
 | [`lib/sandbox.ts`](lib/sandbox.ts) | Shared sandbox-provisioning recipe (repo checkout, toolchain, GitHub auth levels, screenshot toggle) composed by the root and future subagents |
 | [`subagents/scout/`](subagents/scout/) | Read-only codebase-recon subagent: locates files, call paths, and utilities, and returns compressed context for a delegation packet |
+| [`subagents/reviewer/`](subagents/reviewer/) | Declared specialist: ponytail-reviews one pull request and posts the GitHub review itself |
 
 Linear owns issue status, priority, and progress. GitHub pull requests remain the
 review and merge boundary. GitHub credentials are injected through the sandbox
@@ -337,6 +338,32 @@ gotchas, and hand back a compressed summary (capped at roughly 200 lines) sized
 to drop directly into the coding child's packet, instead of the root exploring
 inline itself. `instructions.md`'s Delegation section now names it as the tool
 to reach for in that situation.
+
+### Reviewer subagent (HAR-28)
+
+`agent/subagents/reviewer/` is a declared specialist built on the
+HAR-26 sandbox recipe: its own `agent.ts` (`anthropic/claude-sonnet-5`), its
+own `instructions.md` carrying the full ponytail review contract (fetch the
+diff, apply the over-engineering and conventions/stack-idioms lenses, post
+one GitHub pull-request review via `curl` with inline comments anchored to
+added or changed diff lines), and a one-line `sandbox.ts` composing
+`buildSandboxDefinition({ gitAuthLevel: "read-only" })` - enough GitHub auth
+to fetch a diff and POST a review, never push. Declared subagents inherit
+nothing from the root, so this instructions.md is a complete copy of the
+lens/posting procedure `channels/github.ts`'s `ponytailReviewContext` already
+builds per-PR, not a reference to it.
+
+The root's own "PR review turns" section in `instructions.md` no longer does
+the review inline: it now delegates the whole job to `reviewer`, passing the
+turn's review context (PR number, diff-fetch commands, the two lenses, the
+posting endpoint/JSON) as the subagent's `message` and relaying nothing else
+back. `channels/github.ts`'s `onPullRequest` is unchanged - it still builds
+that context string and dispatches a review-only turn exactly as before;
+only what the root *does* with that turn changed. This is what unlocks a
+Workflow fan-out reviewing several open pull requests in parallel
+(`Promise.all(prs.map((n) => tools.reviewer({ message: ... })))`), which a
+bare copy of the root (the built-in `agent` tool) cannot do on its own since
+every copy carries the full root contract instead of a lean review-only one.
 
 ### Sizing gate and issue groups (ralph mode)
 
