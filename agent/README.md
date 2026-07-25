@@ -50,6 +50,15 @@ both surfaced to the reader: `channels/linear.ts`'s `message.completed` handler
 lifts the first line of a tool-batch turn straight into a Linear `thought`, and
 `session_update` posts as a durable `response`.
 
+The mid-session update triggers are mechanical rather than judgment-based
+("post when it stretches long" let the ROG-65 session run its coding child for
+minutes behind a lone `started` message): the batch that starts implementation
+must carry a `progress` update with the scoped cut, and three tool-call
+batches without a `session_update` force one in the next batch. No eval guards
+this yet - the local evals stop before delegation and the ralph e2e fixture
+deliberately runs with a blank `agent_session_id`, so it would take a live
+Linear session to observe.
+
 Because those sentences reach the reader verbatim, `instructions.md` keeps its
 message rules as terse imperatives and holds the design rationale (the
 durable-vs-transient mechanics above, the "an early message anchors the session"
