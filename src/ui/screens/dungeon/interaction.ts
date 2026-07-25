@@ -1,16 +1,19 @@
 /**
  * Dungeon input handling (ROG-45; extracted from `DungeonScreen.tsx`'s
- * inline `useInput` closure). Like the overworld, the dungeon has no local
- * UI state - every key press dispatches straight through to the engine -
- * so `DungeonUiState` is a unit type and `reduceDungeonUi` only ever
- * produces an effect.
+ * inline `useInput` closure). ENG-1 adds a confirm step to the evac (`<`)
+ * key: pressing it does not exit immediately, it opens a confirm prompt
+ * (`confirmingExit: true`) that only Enter/y or Escape/n resolve, so the
+ * dungeon menu/hotkey + confirm flow the issue asks for lives entirely in
+ * this pure reducer rather than the screen component.
  */
 
 import type { StepDirection, TurnDirection } from "../../../engine/state/types";
 import type { Intent, Keymap, KeyName } from "../../scene/input";
 
-/** No local UI state; kept as a record so `reduceDungeonUi` still returns `{ state }`. */
-export type DungeonUiState = Record<string, never>;
+/** `confirmingExit` is true while the evac confirm prompt is open. */
+export interface DungeonUiState {
+  confirmingExit?: boolean;
+}
 
 export type DungeonUiEffect =
   | { type: "step"; direction: StepDirection }
@@ -43,9 +46,24 @@ const dungeonKeymap: Keymap = {
   "char:<": { kind: "exitDungeon" },
 };
 
-/** Resolves the `Intent` for a key press in the dungeon. */
-export function resolveDungeonIntent(key: KeyName): Intent | undefined {
-  return dungeonKeymap[key];
+/** Resolves against the confirm prompt's tiny keymap while it is open. */
+const confirmExitKeymap: Keymap = {
+  enter: { kind: "confirm" },
+  "char:y": { kind: "confirm" },
+  escape: { kind: "cancel" },
+  "char:n": { kind: "cancel" },
+};
+
+/**
+ * Resolves the `Intent` for a key press in the dungeon. While the evac
+ * confirm prompt is open, only the confirm keymap applies (Enter/y to
+ * confirm, Escape/n to cancel); otherwise the normal dungeon keymap applies.
+ */
+export function resolveDungeonIntent(
+  key: KeyName,
+  confirmingExit: boolean,
+): Intent | undefined {
+  return confirmingExit ? confirmExitKeymap[key] : dungeonKeymap[key];
 }
 
 /** Pure transition function for the dungeon: it only ever emits effects. */
@@ -53,6 +71,16 @@ export function reduceDungeonUi(
   state: DungeonUiState,
   intent: Intent,
 ): DungeonUiResult {
+  if (state.confirmingExit) {
+    if (intent.kind === "confirm") {
+      return { state: {}, effect: { type: "exit" } };
+    }
+    if (intent.kind === "cancel") {
+      return { state: {} };
+    }
+    return { state };
+  }
+
   switch (intent.kind) {
     case "stepForward":
       return { state, effect: { type: "step", direction: "forward" } };
@@ -67,7 +95,7 @@ export function reduceDungeonUi(
     case "descend":
       return { state, effect: { type: "descend" } };
     case "exitDungeon":
-      return { state, effect: { type: "exit" } };
+      return { state: { confirmingExit: true } };
     default:
       return { state };
   }

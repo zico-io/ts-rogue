@@ -6,9 +6,10 @@ external I/O.
 ## Runtime flow
 
 `src/app.tsx` loads a save or creates a seeded run, then routes the title,
-village, overworld, dungeon, battle, game-over, crash, and developer-console
-screens. Gameplay scenes share `components/Screen.tsx`, which owns the bordered
-frame, party status, controls hint, and message log.
+village, overworld, dungeon, battle, game-over, crash, developer-console, and
+fast-travel picker (`ZoomScreen`) screens. Gameplay scenes share
+`components/Screen.tsx`, which owns the bordered frame, party status, controls
+hint, and message log.
 
 The layout responds to terminal resize events. Below 64 columns by 24 rows it
 shows a minimum-size message. Pure render helpers size maps, first-person
@@ -48,12 +49,13 @@ pure darks downsample to invisible ANSI black; that is why `border` and
 
 | Context | Controls |
 | --- | --- |
-| Global | `q` or Ctrl+C exits; backtick switches the developer console in dev mode |
+| Global | `q` or Ctrl+C exits; backtick switches the developer console in dev mode; `z` opens fast travel from the overworld/village |
 | New game | Up/Down and Enter select a class, then Normal or Permadeath mode; Esc returns to class selection |
 | Village | Up/Down and Enter select; `i`, `c`, `s`, `o` open buildings or leave; Esc returns |
 | Overworld | Arrows or `h`, `j`, `k`, `l` move; Esc returns to the village |
-| Dungeon | Arrows, WASD, or HJKL move and turn; `o` opens; Enter or `>` descends; `<` exits |
+| Dungeon | Arrows, WASD, or HJKL move and turn; `o` opens; Enter or `>` descends; `<` opens an evac confirm (y/n or Enter/Esc) |
 | Battle | Up/Down selects an action; Enter confirms; Esc cancels targeting |
+| Fast travel | Up/Down selects a discovered waypoint; Enter travels; Esc cancels |
 
 The store view uses Tab to switch between shop and backpack modes. Backpack
 actions equip, unequip, compare, and sell generated items.

@@ -135,7 +135,14 @@ export class DungeonSceneView {
 
   constructor(private readonly factory: DungeonDrawFactory) {}
 
-  render(ds: DungeonState, pixelSize: PixelSize): void {
+  /**
+   * `confirmingExit` (ENG-1) mirrors the Ink `DungeonScreen`'s evac confirm
+   * prompt: when true, the status line shows the "Evac to the entrance?"
+   * prompt instead of the facing/reachedBoss/cleared readout. The keyboard
+   * manager's `dungeon.confirmingExit` (same shared `DungeonUiState` the Ink
+   * screen uses) is the source of truth; this view only draws it.
+   */
+  render(ds: DungeonState, pixelSize: PixelSize, confirmingExit = false): void {
     const camera = poseFromState(ds);
     const columns = castWallColumns(ds, camera, pixelSize);
     const billboards = castBillboards(ds, camera, pixelSize, columns);
@@ -145,7 +152,7 @@ export class DungeonSceneView {
     this.drawColumns(columns, ramp);
     this.drawBillboards(billboards, ramp);
     this.drawMinimap(ds, ramp, pixelSize);
-    this.drawStatus(ds, pixelSize);
+    this.drawStatus(ds, pixelSize, confirmingExit);
   }
 
   private drawSky(pixelSize: PixelSize, ramp: readonly string[]): void {
@@ -310,14 +317,25 @@ export class DungeonSceneView {
     this.facingMark.setColor(toPixiColor(theme.accent));
   }
 
-  private drawStatus(ds: DungeonState, pixelSize: PixelSize): void {
-    const parts = [`Facing ${ds.facing}`];
-    if (ds.reachedBoss) parts.push("boss room reached");
-    if (ds.cleared) parts.push("dungeon cleared");
+  private drawStatus(
+    ds: DungeonState,
+    pixelSize: PixelSize,
+    confirmingExit: boolean,
+  ): void {
+    const text = confirmingExit
+      ? "Evac to the entrance? [y/n]"
+      : (() => {
+          const parts = [`Facing ${ds.facing}`];
+          if (ds.reachedBoss) parts.push("boss room reached");
+          if (ds.cleared) parts.push("dungeon cleared");
+          return parts.join(" | ");
+        })();
 
     if (!this.statusText) this.statusText = this.factory.createText("");
-    this.statusText.setText(parts.join(" | "));
-    this.statusText.setColor(toPixiColor(theme.textMuted));
+    this.statusText.setText(text);
+    this.statusText.setColor(
+      confirmingExit ? toPixiColor(theme.accent) : toPixiColor(theme.textMuted),
+    );
     this.statusText.setPosition(
       STATUS_TEXT_MARGIN_PX,
       pixelSize.height - this.statusText.height - STATUS_TEXT_MARGIN_PX,

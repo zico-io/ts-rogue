@@ -2,8 +2,13 @@ import "fake-indexeddb/auto";
 import { describe, expect, it, vi } from "vitest";
 import { startBattle } from "../../engine/combat/resolution";
 import { Rng } from "../../engine/rng/rng";
-import { GameStore, newGame } from "../../engine/state/store";
+import { GameStore, newGame, reduce } from "../../engine/state/store";
 import type { GameState } from "../../engine/state/types";
+import {
+  generateOverworldMap,
+  isPassable,
+  tileAt,
+} from "../../engine/world/overworld";
 import { BrowserKeyboardManager } from "./keyboard";
 
 function key(k: string) {
@@ -16,6 +21,39 @@ function storeAt(
 ) {
   const base = newGame(1);
   return new GameStore({ ...base, scene, ...overrides });
+}
+
+/** A real store with an active dungeon (floor 1 of entrance 0), for evac tests. */
+function dungeonStore(): GameStore {
+  const seed = 1;
+  const map = generateOverworldMap(seed);
+  const entrance = map.dungeonEntrances[0];
+  const deltas: Array<{ dx: -1 | 0 | 1; dy: -1 | 0 | 1 }> = [
+    { dx: 1, dy: 0 },
+    { dx: -1, dy: 0 },
+    { dx: 0, dy: 1 },
+    { dx: 0, dy: -1 },
+  ];
+  for (const { dx, dy } of deltas) {
+    const from = { x: entrance.x - dx, y: entrance.y - dy };
+    if (
+      from.x < 0 ||
+      from.x >= map.width ||
+      from.y < 0 ||
+      from.y >= map.height
+    ) {
+      continue;
+    }
+    if (!isPassable(tileAt(map, from))) continue;
+    const before: GameState = {
+      ...newGame(seed),
+      scene: "overworld",
+      worldState: { player: from, encounterMeter: 0 },
+    };
+    const entered = reduce(before, { type: "MoveOverworld", dx, dy });
+    if (entered.scene === "dungeon") return new GameStore(entered);
+  }
+  throw new Error("no passable approach found for dungeon entrance 0");
 }
 
 describe("BrowserKeyboardManager - global bindings", () => {
@@ -98,6 +136,76 @@ describe("BrowserKeyboardManager - dungeon", () => {
     manager.handleKeyDown(key("ArrowUp"));
 
     expect(store.getState()).toBe(before);
+  });
+
+  it("< opens an evac confirm prompt instead of exiting immediately, y confirms it", () => {
+    const store = dungeonStore();
+    const manager = new BrowserKeyboardManager(store, () => {});
+
+    manager.handleKeyDown(key("<"));
+    expect(store.getState().scene).toBe("dungeon");
+    expect(manager.getState().dungeon.confirmingExit).toBe(true);
+
+    manager.handleKeyDown(key("y"));
+    expect(store.getState().scene).toBe("overworld");
+    expect(manager.getState().dungeon.confirmingExit).toBeUndefined();
+  });
+
+  it("< then n cancels the evac confirm prompt without exiting", () => {
+    const store = dungeonStore();
+    const manager = new BrowserKeyboardManager(store, () => {});
+
+    manager.handleKeyDown(key("<"));
+    manager.handleKeyDown(key("n"));
+
+    expect(store.getState().scene).toBe("dungeon");
+    expect(manager.getState().dungeon.confirmingExit).toBeUndefined();
+  });
+});
+
+describe("BrowserKeyboardManager - Zoom fast travel (ENG-1)", () => {
+  it("z opens the picker from the overworld, Enter travels to the highlighted waypoint, then closes", () => {
+    const store = storeAt("overworld");
+    const manager = new BrowserKeyboardManager(store, () => {});
+
+    manager.handleKeyDown(key("z"));
+    expect(manager.getState().zoom.open).toBe(true);
+
+    manager.handleKeyDown(key("Enter"));
+    expect(manager.getState().zoom.open).toBe(false);
+    expect(store.getState().scene).toBe("village");
+  });
+
+  it("z is ignored from the dungeon (evac first)", () => {
+    const store = storeAt("dungeon");
+    const manager = new BrowserKeyboardManager(store, () => {});
+
+    manager.handleKeyDown(key("z"));
+
+    expect(manager.getState().zoom.open).toBe(false);
+  });
+
+  it("Escape closes the picker without dispatching Zoom", () => {
+    const store = storeAt("overworld");
+    const manager = new BrowserKeyboardManager(store, () => {});
+    manager.handleKeyDown(key("z"));
+    const before = store.getState();
+
+    manager.handleKeyDown(key("Escape"));
+
+    expect(manager.getState().zoom.open).toBe(false);
+    expect(store.getState()).toBe(before);
+  });
+
+  it("digits don't leak through to change scene while the picker is open", () => {
+    const store = storeAt("overworld");
+    const manager = new BrowserKeyboardManager(store, () => {});
+    manager.handleKeyDown(key("z"));
+
+    manager.handleKeyDown(key("1"));
+
+    expect(store.getState().scene).toBe("overworld");
+    expect(manager.getState().zoom.open).toBe(true);
   });
 });
 
