@@ -457,6 +457,23 @@ export async function bootGame(
 
   let overworldView: OverworldSceneView | undefined;
 
+  // Reduced-motion (ROG-65): the overworld's ambient drift (leaf/firefly
+  // particles) and marker-pulse/water-shimmer breathing all freeze when the
+  // OS requests reduced motion - checked once here (the DOM API the
+  // framework-free `OverworldSceneView` never touches) and kept live via the
+  // media query's own `change` event.
+  const reducedMotionQuery = window.matchMedia(
+    "(prefers-reduced-motion: reduce)",
+  );
+  const applyReducedMotion = (reduced: boolean) =>
+    overworldView?.setReducedMotion(reduced);
+  const handleReducedMotionChange = (event: MediaQueryListEvent) =>
+    applyReducedMotion(event.matches);
+  reducedMotionQuery.addEventListener("change", handleReducedMotionChange);
+  disposers.push(() =>
+    reducedMotionQuery.removeEventListener("change", handleReducedMotionChange),
+  );
+
   /** Loads the atlas (safe to call again; see `loadAtlas`'s doc comment) and builds the overworld's Pixi draw factory/view. */
   async function setupOverworldView(): Promise<void> {
     const sheet = await loadAtlas();
@@ -465,12 +482,17 @@ export async function bootGame(
       sheet,
     );
     overworldView = new OverworldSceneView(factory);
+    applyReducedMotion(reducedMotionQuery.matches);
   }
   try {
     await setupOverworldView();
   } catch (error) {
     store.reportFailure("overworld-view", error, true);
   }
+  // Ages the overworld's marker-pulse/water-shimmer alpha and ambient
+  // leaf/firefly particle drift every real animation frame (ROG-65), the
+  // same shape as `battleView.ts`'s `tick`; a no-op before the view exists.
+  app.ticker.add((ticker) => overworldView?.tick(ticker.deltaMS));
 
   let battleView: BattleSceneView | undefined;
 
