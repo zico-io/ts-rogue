@@ -307,7 +307,16 @@ sub-issue plan of PR-sized workstreams first. The proposed breakdown posts as a
 `input.requested`/`session.waiting` protocol, not by prompt discipline, and
 `channels/linear.ts` already renders the elicitation (with Linear's native
 select signal via `linearInputRequestSignal`; since eve 0.27 the runtime, not
-the channel, matches the human's reply to the pending input request). Only
+the channel, matches the human's reply to the pending input request). HAR-17
+tracked a further-back regression: eve's Linear channel used to append a
+base64 `<!-- eve-input:... -->` tracking blob straight into that visible
+message body, leaking a technical token into every elicitation a human saw
+(a `#99` attempt hand-rolled the fix by moving that payload into
+`signalMetadata`, but eve's own 0.27 upgrade later fixed this upstream -
+`renderLinearInputRequests` now renders clean prompt/option text and reply
+matching moved server-side - which is why `#99` closed unmerged);
+`src/linear-channel.test.ts`'s `input.requested elicitation (HAR-17)` suite
+now locks in that the posted body carries no marker text. Only
 after approval does the agent create the
 sub-issues over the Linear MCP (`save_issue` with `parentId` and `blockedBy`
 relations), which turns the ticket into an ordinary issue group.
