@@ -17,6 +17,9 @@ export const globalKeymap: Keymap = {
   "`": { kind: "toggleConsole" },
   q: { kind: "quit" },
   "ctrl+c": { kind: "quit" },
+  // ENG-1: opens the fast-travel picker. Handlers gate this to the
+  // overworld/village scenes themselves (evac first inside a dungeon).
+  "char:z": { kind: "openZoom" },
 };
 
 /** Resolves the global `Intent` bound to a key press, if any. */

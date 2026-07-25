@@ -3,33 +3,59 @@ import { reduceDungeonUi, resolveDungeonIntent } from "./interaction";
 
 describe("resolveDungeonIntent", () => {
   it("maps arrows/hjkl/wasd to step/turn intents", () => {
-    expect(resolveDungeonIntent("up")).toEqual({ kind: "stepForward" });
-    expect(resolveDungeonIntent("k")).toEqual({ kind: "stepForward" });
-    expect(resolveDungeonIntent("char:w")).toEqual({ kind: "stepForward" });
+    expect(resolveDungeonIntent("up", false)).toEqual({ kind: "stepForward" });
+    expect(resolveDungeonIntent("k", false)).toEqual({ kind: "stepForward" });
+    expect(resolveDungeonIntent("char:w", false)).toEqual({
+      kind: "stepForward",
+    });
 
-    expect(resolveDungeonIntent("down")).toEqual({ kind: "stepBack" });
-    expect(resolveDungeonIntent("j")).toEqual({ kind: "stepBack" });
-    expect(resolveDungeonIntent("char:s")).toEqual({ kind: "stepBack" });
+    expect(resolveDungeonIntent("down", false)).toEqual({ kind: "stepBack" });
+    expect(resolveDungeonIntent("j", false)).toEqual({ kind: "stepBack" });
+    expect(resolveDungeonIntent("char:s", false)).toEqual({
+      kind: "stepBack",
+    });
 
-    expect(resolveDungeonIntent("left")).toEqual({ kind: "turnLeft" });
-    expect(resolveDungeonIntent("h")).toEqual({ kind: "turnLeft" });
-    expect(resolveDungeonIntent("char:a")).toEqual({ kind: "turnLeft" });
+    expect(resolveDungeonIntent("left", false)).toEqual({ kind: "turnLeft" });
+    expect(resolveDungeonIntent("h", false)).toEqual({ kind: "turnLeft" });
+    expect(resolveDungeonIntent("char:a", false)).toEqual({
+      kind: "turnLeft",
+    });
 
-    expect(resolveDungeonIntent("right")).toEqual({ kind: "turnRight" });
-    expect(resolveDungeonIntent("l")).toEqual({ kind: "turnRight" });
-    expect(resolveDungeonIntent("char:d")).toEqual({ kind: "turnRight" });
+    expect(resolveDungeonIntent("right", false)).toEqual({
+      kind: "turnRight",
+    });
+    expect(resolveDungeonIntent("l", false)).toEqual({ kind: "turnRight" });
+    expect(resolveDungeonIntent("char:d", false)).toEqual({
+      kind: "turnRight",
+    });
   });
 
-  it("maps o/>/Enter/< to openChest/descend/exit", () => {
-    expect(resolveDungeonIntent("char:o")).toEqual({ kind: "openChest" });
-    expect(resolveDungeonIntent("char:>")).toEqual({ kind: "descend" });
-    expect(resolveDungeonIntent("enter")).toEqual({ kind: "descend" });
-    expect(resolveDungeonIntent("char:<")).toEqual({ kind: "exitDungeon" });
+  it("maps o/>/Enter/< to openChest/descend/exitDungeon", () => {
+    expect(resolveDungeonIntent("char:o", false)).toEqual({
+      kind: "openChest",
+    });
+    expect(resolveDungeonIntent("char:>", false)).toEqual({
+      kind: "descend",
+    });
+    expect(resolveDungeonIntent("enter", false)).toEqual({ kind: "descend" });
+    expect(resolveDungeonIntent("char:<", false)).toEqual({
+      kind: "exitDungeon",
+    });
   });
 
   it("ignores unbound keys", () => {
-    expect(resolveDungeonIntent("escape")).toBeUndefined();
-    expect(resolveDungeonIntent("tab")).toBeUndefined();
+    expect(resolveDungeonIntent("escape", false)).toBeUndefined();
+    expect(resolveDungeonIntent("tab", false)).toBeUndefined();
+  });
+
+  it("resolves only the confirm keymap while the evac confirm prompt is open", () => {
+    expect(resolveDungeonIntent("enter", true)).toEqual({ kind: "confirm" });
+    expect(resolveDungeonIntent("char:y", true)).toEqual({ kind: "confirm" });
+    expect(resolveDungeonIntent("escape", true)).toEqual({ kind: "cancel" });
+    expect(resolveDungeonIntent("char:n", true)).toEqual({ kind: "cancel" });
+    // Normal dungeon keys don't resolve while the prompt is open.
+    expect(resolveDungeonIntent("up", true)).toBeUndefined();
+    expect(resolveDungeonIntent("char:<", true)).toBeUndefined();
   });
 });
 
@@ -56,15 +82,12 @@ describe("reduceDungeonUi", () => {
     });
   });
 
-  it("maps openChest/descend/exitDungeon to their effects", () => {
+  it("maps openChest/descend to their effects", () => {
     expect(reduceDungeonUi({}, { kind: "openChest" }).effect).toEqual({
       type: "openChest",
     });
     expect(reduceDungeonUi({}, { kind: "descend" }).effect).toEqual({
       type: "descend",
-    });
-    expect(reduceDungeonUi({}, { kind: "exitDungeon" }).effect).toEqual({
-      type: "exit",
     });
   });
 
@@ -72,5 +95,32 @@ describe("reduceDungeonUi", () => {
     const result = reduceDungeonUi({}, { kind: "confirm" });
     expect(result.effect).toBeUndefined();
     expect(result.state).toEqual({});
+  });
+
+  it("exitDungeon opens the confirm prompt without an effect", () => {
+    const result = reduceDungeonUi({}, { kind: "exitDungeon" });
+    expect(result.effect).toBeUndefined();
+    expect(result.state).toEqual({ confirmingExit: true });
+  });
+
+  it("confirming the prompt emits the exit effect and resets state", () => {
+    const opened = reduceDungeonUi({}, { kind: "exitDungeon" });
+    const confirmed = reduceDungeonUi(opened.state, { kind: "confirm" });
+    expect(confirmed.effect).toEqual({ type: "exit" });
+    expect(confirmed.state).toEqual({});
+  });
+
+  it("cancelling the prompt emits no effect and resets state", () => {
+    const opened = reduceDungeonUi({}, { kind: "exitDungeon" });
+    const cancelled = reduceDungeonUi(opened.state, { kind: "cancel" });
+    expect(cancelled.effect).toBeUndefined();
+    expect(cancelled.state).toEqual({});
+  });
+
+  it("ignores unrelated intents while the confirm prompt is open", () => {
+    const opened = reduceDungeonUi({}, { kind: "exitDungeon" });
+    const result = reduceDungeonUi(opened.state, { kind: "stepForward" });
+    expect(result.effect).toBeUndefined();
+    expect(result.state).toEqual({ confirmingExit: true });
   });
 });

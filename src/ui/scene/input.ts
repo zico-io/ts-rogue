@@ -42,6 +42,9 @@ export type Intent =
   | { kind: "changeScene"; scene: Scene }
   | { kind: "toggleConsole" }
   | { kind: "quit" }
+  // ENG-1: opens the fast-travel picker from the overworld/village (blocked
+  // inside a dungeon/battle - evac first, enforced by the caller's gating).
+  | { kind: "openZoom" }
   | { kind: "type"; char: string }
   | { kind: "backspace" }
   // Dungeon: forward/back are relative to facing (not an absolute

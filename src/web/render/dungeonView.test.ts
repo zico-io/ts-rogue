@@ -237,4 +237,28 @@ describe("DungeonSceneView", () => {
     );
     expect(view).toBeDefined();
   });
+
+  it("shows the evac confirm prompt instead of the facing status line when confirmingExit is true (ENG-1)", () => {
+    const { factory } = createFakeFactory();
+    const seenTexts: string[] = [];
+    const wrapped: DungeonDrawFactory = {
+      ...factory,
+      createText(initial: string) {
+        const handle = fakeText(initial);
+        return {
+          ...handle,
+          setText(value: string) {
+            seenTexts.push(value);
+            handle.setText(value);
+          },
+        };
+      },
+    };
+    const view = new DungeonSceneView(wrapped);
+    const ds = buildState(buildRoomLayout(5, 5), { x: 2, y: 2 });
+
+    view.render(ds, { width: 100, height: 100 }, true);
+
+    expect(seenTexts.at(-1)).toBe("Evac to the entrance? [y/n]");
+  });
 });

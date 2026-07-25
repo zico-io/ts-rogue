@@ -35,6 +35,12 @@ import {
 } from "../world/overworld";
 import type { DungeonFeature, DungeonState } from "../world/types";
 import {
+  activateWaypoint,
+  dungeonWaypointId,
+  findWaypoint,
+  VILLAGE_WAYPOINT_ID,
+} from "../world/waypoints";
+import {
   attempt,
   createGameIncident,
   DEBUG_JOURNAL_LIMIT,
@@ -84,6 +90,7 @@ export function newGame(seed: number, options?: NewGameOptions): GameState {
     inventory: [],
     items: [],
     nextItemId: 1,
+    activatedWaypoints: activateWaypoint([], VILLAGE_WAYPOINT_ID),
     worldState: createInitialWorldState(map),
     dungeonState: null,
     battleState: null,
@@ -254,12 +261,13 @@ function moveOverworld(
     const entranceIndex = map.dungeonEntrances.findIndex(
       (point) => point.x === target.x && point.y === target.y,
     );
-    const dungeonId = `dungeon-${entranceIndex}`;
+    const dungeonId = dungeonWaypointId(entranceIndex);
     return {
       ...state,
       scene: "dungeon",
       worldState: { ...state.worldState, player: target },
       dungeonState: createInitialDungeonState(state.seed, dungeonId, 1),
+      activatedWaypoints: activateWaypoint(state.activatedWaypoints, dungeonId),
       log: [...state.log, entry("You descend into the dungeon", "quest")],
     };
   }
@@ -458,13 +466,16 @@ function descendStairs(state: GameState): GameState {
 }
 
 /**
- * `ExitDungeon` reducer (Phase 6, ROG-12). Leaves the active dungeon and
- * returns the party to the overworld at the dungeon entrance tile (which is
- * where `worldState.player` was left when the party entered). Clears
- * `dungeonState` and any lingering `battleState`, and resets the overworld
- * encounter meter so re-entering the overworld does not ambush the party
- * immediately. This is the dedicated exit path that prevents the dungeon
- * from being a dead-end after clearing a floor or defeating the boss.
+ * `ExitDungeon` reducer (Phase 6, ROG-12; ENG-1 "evac"). Leaves the active
+ * dungeon and returns the party to the overworld at the dungeon entrance
+ * tile (which is where `worldState.player` was left when the party
+ * entered). Clears `dungeonState` and any lingering `battleState`. This used
+ * to also reset the overworld encounter meter as a "welcome back" grace;
+ * ENG-1 deliberately removes that reset so evac (and `Zoom`, which reuses
+ * the same no-encounter-reset contract) never grants a free danger-
+ * accumulator reset - the meter carries over unchanged. This is the
+ * dedicated exit path that prevents the dungeon from being a dead-end after
+ * clearing a floor or defeating the boss.
  */
 function exitDungeon(state: GameState): GameState {
   const ds = state.dungeonState;
@@ -472,10 +483,53 @@ function exitDungeon(state: GameState): GameState {
   return {
     ...state,
     scene: "overworld",
-    worldState: { ...state.worldState, encounterMeter: 0 },
+    worldState: { ...state.worldState },
     dungeonState: null,
     battleState: null,
     log: [...state.log, entry("You emerge from the dungeon", "quest")],
+  };
+}
+
+/**
+ * `Zoom` reducer (ENG-1 "fast travel"). Teleports the party to a landmark it
+ * has already activated this run, from the overworld or village only -
+ * inside a dungeon or battle the player must evac first. Deterministic: it
+ * never touches `rngState`, `encounterMeter`, `dungeonState`, or
+ * `battleState`, so it cannot itself trigger an encounter or grant a free
+ * danger-accumulator reset.
+ */
+function zoom(state: GameState, waypointId: string): GameState {
+  if (state.scene === "dungeon" || state.scene === "battle") {
+    return {
+      ...state,
+      log: [...state.log, entry("Evac the dungeon before fast-traveling")],
+    };
+  }
+  if (!state.activatedWaypoints.includes(waypointId)) {
+    return {
+      ...state,
+      log: [
+        ...state.log,
+        entry("That destination has not been discovered yet"),
+      ],
+    };
+  }
+  const map = generateOverworldMap(state.seed);
+  const waypoint = findWaypoint(map, waypointId);
+  if (!waypoint) {
+    return {
+      ...state,
+      log: [
+        ...state.log,
+        entry("That destination has not been discovered yet"),
+      ],
+    };
+  }
+  return {
+    ...state,
+    scene: waypoint.kind === "village" ? "village" : "overworld",
+    worldState: { ...state.worldState, player: { ...waypoint.point } },
+    log: [...state.log, entry(`You fast-travel to ${waypoint.label}`, "quest")],
   };
 }
 
@@ -722,6 +776,8 @@ export function reduce(state: GameState, event: GameEvent): GameState {
       return descendStairs(state);
     case "ExitDungeon":
       return exitDungeon(state);
+    case "Zoom":
+      return zoom(state, event.waypointId);
     case "BattleAttack":
     case "BattleSkill":
     case "BattleItem":

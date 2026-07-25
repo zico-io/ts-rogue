@@ -60,6 +60,13 @@ export interface GameState {
   items: ItemInstance[];
   /** Next unique item instance id; stamped onto rolled loot deterministically. */
   nextItemId: number;
+  /**
+   * Ids from `world/waypoints.ts`'s registry (ENG-1 fast travel). Activates
+   * on first visit, save/load-safe (a plain string array round-trips through
+   * JSON with the rest of the tree), and resets to just the village waypoint
+   * on a new run.
+   */
+  activatedWaypoints: readonly string[];
   worldState: WorldState;
   /** `null` until the party enters a dungeon entrance on the overworld. */
   dungeonState: DungeonState | null;
@@ -89,7 +96,9 @@ export type StepDirection = "forward" | "back";
  * action targets) and `RecruitMember` (dev-console party growth ahead of the
  * ROG-21 tavern recruiting UI). ROG-21 adds the tavern events: `RefreshRecruits`
  * (roll the recruit pool), `HireRecruit` (pay to add a pool recruit to the
- * party), and `DismissMember` (remove a non-hero member).
+ * party), and `DismissMember` (remove a non-hero member). ENG-1 adds `Zoom`
+ * (fast travel to a landmark the party has already activated this run);
+ * it is blocked while inside a dungeon or battle - evac first.
  */
 export type GameEvent =
   | {
@@ -117,4 +126,5 @@ export type GameEvent =
   | { type: "OpenChest" }
   | { type: "DescendStairs" }
   | { type: "ExitDungeon" }
+  | { type: "Zoom"; waypointId: string }
   | BattleEvent;

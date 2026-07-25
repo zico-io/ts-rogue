@@ -3,7 +3,10 @@ import { describe, expect, it } from "vitest";
 import { codingWorkerModel } from "../agent/agent";
 import linearConnection from "../agent/connections/linear";
 import { parseAgentSessionId } from "../agent/hooks/child-relay";
-import { sessionUpdateActivity } from "../agent/tools/session_update";
+import {
+  forSessionRole,
+  sessionUpdateActivity,
+} from "../agent/tools/session_update";
 
 describe("Linear agent interaction", () => {
   it("routes only delegated sessions to the coding worker model", () => {
@@ -28,6 +31,25 @@ describe("Linear agent interaction", () => {
 
   it("keeps progress out of issue comments", () => {
     expect(linearConnection.tools).toEqual({ block: ["save_comment"] });
+  });
+
+  it("keeps session-level statuses for the session owner only", () => {
+    // A child's "completed"/"started" read as the whole session finishing or
+    // restarting (ENG-2, HAR-11), so child updates are downgraded to progress
+    // and prefixed with their delegated issue; blocked keeps its urgency.
+    expect(
+      forSessionRole({ message: "done", status: "completed" }, true, "ENG-2"),
+    ).toEqual({ message: "[ENG-2] done", status: "progress" });
+    expect(
+      forSessionRole({ message: "kickoff", status: "started" }, true, null),
+    ).toEqual({ message: "kickoff", status: "progress" });
+    expect(
+      forSessionRole({ message: "stuck", status: "blocked" }, true, "ENG-2"),
+    ).toEqual({ message: "[ENG-2] stuck", status: "blocked" });
+    // The root passes through untouched.
+    expect(
+      forSessionRole({ message: "m", status: "completed" }, false, "ENG-2"),
+    ).toEqual({ message: "m", status: "completed" });
   });
 
   it("preserves rich Markdown in Agent Session updates", () => {

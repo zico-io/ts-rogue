@@ -14,3 +14,4 @@ Upsert facts here (delete what shipped past); keep provenance and dates current.
 - The terminal UI ships a visual identity: a shared theme-token palette and an image tileset overlay. <source: src/ui/README.md and src/ui/tiles, 2026-07-23>
 - Game state persists to a serializable save so runs resume across sessions. <source: src/persistence/save.ts, 2026-07-23>
 - Linear owns issue status and priority; durable product truth lives in the repository. <source: CONTRIBUTING.md, 2026-07-23>
+- The overworld/village support fast travel: evac exits any dungeon (outside battle) to the overworld on the entrance tile with dungeon progress untouched, and zoom teleports between landmarks (village, dungeon entrances) already visited this run; neither triggers an encounter or resets the overworld danger meter. <source: src/engine/world/waypoints.ts and src/engine/state/store.ts, 2026-07-25>
