@@ -401,6 +401,19 @@ describe("buildBootstrapCommand", () => {
       }),
     ).not.toThrow();
   });
+  it("uses in-place git init/remote/fetch/reset instead of git clone (HAR-34)", () => {
+    // HAR-34 replaced `git clone https://github.com/zico-io/ts-rogue.git .`
+    // (which required /workspace to be empty) with a four-step in-place
+    // checkout sequence that tolerates a pre-populated /workspace.
+    const command = buildBootstrapCommand();
+    expect(command).toContain("git init -q -b main .");
+    expect(command).toContain("git remote add origin");
+    expect(command).toContain("git reset --hard origin/main");
+    // The old clone command must NOT appear.
+    expect(command).not.toContain(
+      "git clone https://github.com/zico-io/ts-rogue.git .",
+    );
+  });
 });
 
 describe("SYNC_MAIN_COMMAND", () => {
