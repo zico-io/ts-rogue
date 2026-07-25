@@ -42,6 +42,9 @@ const capturePacketFacts = (text: string) => {
   }
 };
 
+/** The delegated issue this child is working, for other child-scoped surfaces (tools/session_update prefixes with it). */
+export const relayIssueId = (): string | null => relay.get().issueId;
+
 type ActivityContent = Parameters<
   typeof createLinearAgentActivity
 >[0]["activity"]["content"];
@@ -62,13 +65,25 @@ const withIssuePrefix = (
   return content;
 };
 
-const post = async (content: ActivityContent) => {
+// Working chips post as ephemeral: Linear shows an ephemeral activity only
+// until the next activity arrives, so the session carries a single live
+// "what the child is doing right now" slot instead of a growing wall of
+// chips. The child's final report (message.completed) stays non-ephemeral so
+// the handoff summary survives in the thread.
+const post = async (
+  content: ActivityContent,
+  options: { ephemeral?: boolean } = {},
+) => {
   const { agentSessionId, issueId } = relay.get();
   if (!agentSessionId) return;
   try {
     await createLinearAgentActivity({
       credentials,
-      activity: { agentSessionId, content: withIssuePrefix(content, issueId) },
+      activity: {
+        agentSessionId,
+        content: withIssuePrefix(content, issueId),
+        ephemeral: options.ephemeral,
+      },
     });
   } catch {
     // Observe-only: a Linear hiccup must never fail the child's turn.
@@ -96,20 +111,24 @@ export default defineHook({
           continue; // session_update already posts its own activity
         }
         const parameter = JSON.stringify(action.input);
-        await post({
-          type: "action",
-          action: toolLabel(action.toolName),
-          parameter:
-            parameter.length > MAX_PARAMETER
-              ? `${parameter.slice(0, MAX_PARAMETER)}…`
-              : parameter,
-        });
+        await post(
+          {
+            type: "action",
+            action: toolLabel(action.toolName),
+            parameter:
+              parameter.length > MAX_PARAMETER
+                ? `${parameter.slice(0, MAX_PARAMETER)}…`
+                : parameter,
+          },
+          { ephemeral: true },
+        );
       }
     },
     async "reasoning.completed"(event, ctx) {
       if (!ctx.session.parent) return;
       const reasoning = event.data.reasoning?.trim();
-      if (reasoning) await post({ type: "thought", body: reasoning });
+      if (reasoning)
+        await post({ type: "thought", body: reasoning }, { ephemeral: true });
     },
     async "message.completed"(event, ctx) {
       if (!ctx.session.parent) return;

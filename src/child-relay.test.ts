@@ -101,6 +101,31 @@ describe("child-relay hook", () => {
     });
   });
 
+  it("posts working chips as ephemeral but keeps the final narration durable", async () => {
+    stateBox.value = { agentSessionId: "sess-5" };
+    await events["actions.requested"](
+      toolCall("edit_file", { path: "src/x.ts" }),
+      child,
+    );
+    await events["reasoning.completed"](
+      { data: { reasoning: "planning the edit" } },
+      child,
+    );
+    await events["message.completed"](
+      { data: { message: "handoff report" } },
+      child,
+    );
+
+    // Action and reasoning chips are a live ticker: each ephemeral activity is
+    // replaced by the next one, so the session shows one "currently doing"
+    // slot. The child's completed message is the handoff record and stays.
+    expect(createActivity.mock.calls[0]?.[0].activity.ephemeral).toBe(true);
+    expect(createActivity.mock.calls[1]?.[0].activity.ephemeral).toBe(true);
+    expect(
+      createActivity.mock.calls[2]?.[0].activity.ephemeral,
+    ).toBeUndefined();
+  });
+
   it("prefixes relayed activity with the delegated issue once the packet names it", async () => {
     await events["message.received"](
       {
