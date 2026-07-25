@@ -12,6 +12,7 @@ import {
   LINEAR_CHANNEL_DEFAULT_ROUTE,
   type LinearAgentSessionEvent,
   type LinearAgentSessionRef,
+  type LinearAgentSessionUpdateInput,
   type LinearChannel,
   type LinearChannelConfig,
   type LinearChannelContext,
@@ -553,6 +554,77 @@ function postActivity(
   });
 }
 
+// --- Agent Plan sync (HAR-22) ------------------------------------------------
+// Linear's Agent Plan preview (technology preview - see
+// https://linear.app/developers/agent-interaction#agent-plans) renders a
+// session-level checklist from `AgentSession.plan`, a full-replacement JSON
+// array of `{content, status}` maintained via `agentSessionUpdate`. eve's own
+// `todo` framework tool (already enabled by default - see
+// `eve/dist/src/runtime/framework-tools/todo.js`) already gives this agent a
+// durable per-session task list; this just mirrors that list into Linear's
+// plan on every `action.result` for the `todo` tool so the checklist shows up
+// natively in the Linear UI instead of only in chat activity.
+
+const TODO_STATUS_TO_LINEAR_PLAN_STATUS: Record<
+  string,
+  "pending" | "inProgress" | "completed" | "canceled"
+> = {
+  cancelled: "canceled",
+  completed: "completed",
+  in_progress: "inProgress",
+  pending: "pending",
+};
+
+interface LinearPlanEntry {
+  readonly content: string;
+  readonly status: "pending" | "inProgress" | "completed" | "canceled";
+}
+
+// The todo tool's output shape (`{ counts, todos: [{content, priority,
+// status}] }`) is internal to eve (`runtime/framework-tools/todo.js`), not
+// part of its public API surface, so this reads it defensively off the
+// untyped action-result JSON instead of importing an internal type.
+export function planFromTodoToolOutput(
+  output: unknown,
+): readonly LinearPlanEntry[] | null {
+  if (!isPlainObject(output) || !Array.isArray(output.todos)) return null;
+  const entries: LinearPlanEntry[] = [];
+  for (const todo of output.todos) {
+    if (!isPlainObject(todo)) continue;
+    const status =
+      typeof todo.status === "string"
+        ? TODO_STATUS_TO_LINEAR_PLAN_STATUS[todo.status]
+        : undefined;
+    if (typeof todo.content !== "string" || status === undefined) continue;
+    entries.push({ content: todo.content, status });
+  }
+  return entries;
+}
+
+const syncAgentPlanFromTodoTool: NonNullable<
+  LinearChannelEvents["action.result"]
+> = async (data, channel) => {
+  if (data.status !== "completed") return;
+  const { result } = data;
+  if (
+    result.kind !== "tool-result" ||
+    result.toolName !== "todo" ||
+    result.isError
+  ) {
+    return;
+  }
+  const plan = planFromTodoToolOutput(result.output);
+  if (plan === null || plan.length === 0) return;
+  await channel.linear.updateSession({
+    // Linear's `AgentSessionUpdateInput.plan` GraphQL field is the `JSONObject`
+    // scalar, which Linear's own Agent Plans docs show fed a bare JSON array
+    // (`plan: [{content, status}, ...]`); eve's local `LinearAgentSessionUpdateInput`
+    // type narrows that to a keyed `JsonObject`, so this casts around eve's
+    // stricter type rather than the actual wire contract.
+    plan: plan as unknown as LinearAgentSessionUpdateInput["plan"],
+  });
+};
+
 function createLinearDefaultEvents(options: {
   readonly api?: LinearChannelConfig["api"];
   readonly credentials?: LinearChannelConfig["credentials"];
@@ -820,4 +892,7 @@ function linearChannel(config: LinearChannelConfig = {}): LinearChannel {
 
 export default linearChannel({
   credentials: connectLinearCredentials("linear/ts-rogue-eve"),
+  events: {
+    "action.result": syncAgentPlanFromTodoTool,
+  },
 });

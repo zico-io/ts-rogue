@@ -61,11 +61,15 @@ vi.mock("eve/channels/linear", () => ({
 const {
   default: channel,
   attachLinearInboundImages,
+  planFromTodoToolOutput,
   resolveReceiveSession,
   stateFromAgentSession,
 } = await import("../agent/channels/linear");
-const { createLinearAgentActivity, messageFromLinearAgentSessionEvent } =
-  await import("eve/channels/linear");
+const {
+  createLinearAgentActivity,
+  messageFromLinearAgentSessionEvent,
+  updateLinearAgentSession,
+} = await import("eve/channels/linear");
 
 // biome-ignore lint/suspicious/noExplicitAny: reaching into the mocked channel shape for tests
 const route = (channel as any).routes[0] as {
@@ -483,5 +487,113 @@ describe("resolveReceiveSession", () => {
     await expect(resolveReceiveSession({} as any, {})).rejects.toThrow(
       "linearChannel().receive requires target.agentSessionId, issueId, or commentId.",
     );
+  });
+});
+
+describe("planFromTodoToolOutput", () => {
+  it("maps todo tool output into Linear plan entries", () => {
+    expect(
+      planFromTodoToolOutput({
+        counts: {
+          cancelled: 1,
+          completed: 1,
+          in_progress: 1,
+          pending: 1,
+          total: 4,
+        },
+        todos: [
+          {
+            content: "Read orientation",
+            priority: "high",
+            status: "completed",
+          },
+          {
+            content: "Implement change",
+            priority: "high",
+            status: "in_progress",
+          },
+          { content: "Open PR", priority: "medium", status: "pending" },
+          { content: "Skip this", priority: "low", status: "cancelled" },
+        ],
+      }),
+    ).toEqual([
+      { content: "Read orientation", status: "completed" },
+      { content: "Implement change", status: "inProgress" },
+      { content: "Open PR", status: "pending" },
+      { content: "Skip this", status: "canceled" },
+    ]);
+  });
+
+  it("drops malformed entries and returns null for a non-object output", () => {
+    expect(
+      planFromTodoToolOutput({
+        todos: [
+          { content: "ok", status: "pending" },
+          { content: 42, status: "pending" },
+          { content: "bad status", status: "unknown" },
+        ],
+      }),
+    ).toEqual([{ content: "ok", status: "pending" }]);
+    expect(planFromTodoToolOutput("not an object")).toBeNull();
+    expect(planFromTodoToolOutput({})).toBeNull();
+  });
+});
+
+describe("action.result plan sync", () => {
+  const postActionResult = async (data: unknown) => {
+    vi.mocked(updateLinearAgentSession).mockClear();
+    // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handler directly
+    await (channel as any).events["action.result"](data, {
+      linear: {
+        updateSession: (update: unknown) =>
+          updateLinearAgentSession({ id: "sess-1", update } as never),
+      },
+      state: { agentSessionId: "sess-1" },
+    });
+    return vi.mocked(updateLinearAgentSession).mock.calls[0]?.[0];
+  };
+
+  it("pushes the todo tool's list into the session's Linear plan", async () => {
+    const call = await postActionResult({
+      status: "completed",
+      result: {
+        kind: "tool-result",
+        toolName: "todo",
+        output: {
+          todos: [
+            { content: "Ship it", priority: "high", status: "in_progress" },
+          ],
+        },
+      },
+    });
+    expect(call).toMatchObject({
+      id: "sess-1",
+      update: { plan: [{ content: "Ship it", status: "inProgress" }] },
+    });
+  });
+
+  it("ignores action results for tools other than todo", async () => {
+    await postActionResult({
+      status: "completed",
+      result: { kind: "tool-result", toolName: "bash", output: {} },
+    });
+    expect(updateLinearAgentSession).not.toHaveBeenCalled();
+  });
+
+  it("ignores a failed or errored todo call", async () => {
+    await postActionResult({
+      status: "failed",
+      result: { kind: "tool-result", toolName: "todo", output: { todos: [] } },
+    });
+    await postActionResult({
+      status: "completed",
+      result: {
+        kind: "tool-result",
+        toolName: "todo",
+        isError: true,
+        output: { todos: [] },
+      },
+    });
+    expect(updateLinearAgentSession).not.toHaveBeenCalled();
   });
 });
