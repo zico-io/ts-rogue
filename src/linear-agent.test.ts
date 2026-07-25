@@ -30,7 +30,16 @@ describe("Linear agent interaction", () => {
   });
 
   it("keeps progress out of issue comments", () => {
-    expect(linearConnection.tools).toEqual({ block: ["save_comment"] });
+    // The allow-list is the guard now: session posts must flow through the
+    // authored session_update/handoff tools, so no comment/write tool beyond
+    // save_issue may be discoverable.
+    const tools = linearConnection.tools as { allow: string[] };
+    expect(tools.allow).not.toContain("save_comment");
+    expect(tools.allow).toContain("save_issue");
+    const writes = tools.allow.filter(
+      (name) => !/^(get_|list_|search_)/.test(name),
+    );
+    expect(writes).toEqual(["save_issue"]);
   });
 
   it("keeps session-level statuses for the session owner only", () => {
