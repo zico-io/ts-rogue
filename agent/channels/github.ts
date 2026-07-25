@@ -51,20 +51,80 @@ const MAIN_MERGE_SYNCED =
   "A pull request was merged into main. The sandbox checkout has already updated automatically; no manual repository sync is needed.";
 
 const ralphAdvanceContext = (ref: string) =>
-  `The merged pull request closes Linear issue ${ref}. If ${ref} is a sub-issue of a parent issue you are ralphing (an in-progress issue group), advance that group per the "Issue groups" instructions: confirm ${ref} is Done, then claim and drive every newly ready sub-issue. If ${ref} is a standalone issue, no further action is needed.`;
+  `The merged pull request closes Linear issue ${ref}. If ${ref} is a sub-issue of a parent issue you are ralphing (an in-progress issue group), advance that group per the "Issue groups" instructions: confirm ${ref} is Done, then hand off every newly ready sub-issue to the agent via Linear. If ${ref} is a standalone issue, no further action is needed.`;
+
+// The two-lens ponytail review, inlined as a review turn's context. Ported from
+// bask/fleet's PONYTAIL_REVIEW_PROMPT and retargeted to ts-rogue's contract and
+// its native GitHub-over-curl posting (gh is not installed; auth is injected at
+// the network boundary). Findings must anchor to added/changed diff lines or
+// GitHub rejects the whole review.
+const ponytailReviewContext = (
+  prNumber: number,
+  baseRef: string,
+  headRef: string,
+) =>
+  `Ponytail-review pull request #${prNumber} in zico-io/ts-rogue. This is a review-only turn (see "PR review turns"): review and post, nothing else.
+
+Get the diff (the working tree is on main; fetch the PR's refs):
+  git fetch origin ${baseRef} ${headRef}
+  git diff origin/${baseRef}...origin/${headRef}
+Read a changed file's full context with \`git show origin/${headRef}:<path>\` when a lens needs it.
+
+Apply two lenses in one pass.
+
+LENS 1 - over-engineering (every changed file):
+Unnecessary complexity: reinvented standard library, unneeded dependencies, speculative abstractions, dead flexibility, boilerplate, one-implementation interfaces, config for values that never change.
+Tags: delete: / stdlib: / native: / yagni: / shrink:
+
+LENS 2 - conventions & stack idioms (per file, only where it fits):
+- Repo conventions: skim AGENTS.md, biome.json, tsconfig.json, then flag violations of the project's OWN conventions - no em dashes, extensionless relative imports (never a .js specifier), src/engine kept independent from src/ui, GameState JSON-serializable, reducers pure and side-effect-free on rejected actions, every random outcome routed through seeded RNG. Do NOT flag anything \`biome\` or \`tsgo\` already catch - CI owns formatting and type errors. Tag: convention:
+- TypeScript (.ts/.tsx): \`any\` where \`unknown\` fits, missing \`import type\`, stringly-typed code that should be a union, non-null \`!\` hiding a real nullable. Tag: ts:
+
+Out of scope: correctness, security, and logic bugs - a separate reviewer and a human own those. Report only; apply no fixes.
+
+Post the findings as ONE pull-request review via curl. Each finding's line MUST be a line the diff ADDS or CHANGES (a line the diff shows with a leading +); a comment on any other line makes GitHub reject the entire review. Auth is injected at the network boundary - do NOT add an Authorization header. Write the body to a file (to avoid shell-quoting issues) and post it exactly once:
+  cat > /tmp/review.json <<'JSON'
+  {"event":"COMMENT","body":"<summary>","comments":[{"path":"<file>","line":<line>,"side":"RIGHT","body":"<tag> <what>. <fix>."}]}
+  JSON
+  curl -sS -X POST -H "Accept: application/vnd.github+json" https://api.github.com/repos/zico-io/ts-rogue/pulls/${prNumber}/reviews -d @/tmp/review.json
+<summary> is exactly one line: \`net: -<N> lines, <M> convention fixes.\` when you found something, or \`net: clean. Ship.\` when you did not (post it with an empty comments array). Then stop.`;
 
 export default githubChannel({
   credentials: connectGitHubCredentials("github/ts-rogue-eve-github"),
   // onSession already synced main; skip the channel's default PR-head checkout.
   events: { "turn.started": () => {} },
   onPullRequest: (context, pullRequest) => {
-    if (!isMainMerge(pullRequest)) return null;
-    const ref = linearRefFromPullRequest(pullRequest);
-    return {
-      auth: defaultGitHubAuth(context),
-      context: ref
-        ? [MAIN_MERGE_SYNCED, ralphAdvanceContext(ref)]
-        : [MAIN_MERGE_SYNCED],
-    };
+    if (isMainMerge(pullRequest)) {
+      const ref = linearRefFromPullRequest(pullRequest);
+      return {
+        auth: defaultGitHubAuth(context),
+        context: ref
+          ? [MAIN_MERGE_SYNCED, ralphAdvanceContext(ref)]
+          : [MAIN_MERGE_SYNCED],
+      };
+    }
+    // Auto ponytail-review on newly opened / newly ready pull requests.
+    if (
+      pullRequest.action === "opened" ||
+      pullRequest.action === "ready_for_review"
+    ) {
+      const raw = pullRequest.raw as {
+        draft?: boolean;
+        head?: { ref?: string };
+        base?: { ref?: string };
+      };
+      // Event-time draft flag, not a live fetch: a PR opened as a draft then
+      // marked ready fires both events; gating on the payload's own draft flag
+      // reviews exactly once (a ready_for_review payload is never a draft).
+      if (raw.draft === true) return null;
+      const head = raw.head?.ref;
+      if (!head) return null;
+      const base = raw.base?.ref ?? "main";
+      return {
+        auth: defaultGitHubAuth(context),
+        context: [ponytailReviewContext(pullRequest.pullRequestNumber, base, head)],
+      };
+    }
+    return null;
   },
 });

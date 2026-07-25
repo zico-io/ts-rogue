@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   describeItem,
+  itemAffixLines,
   itemAffixValueSum,
   itemBaseSlot,
   itemSellPrice,
@@ -94,5 +95,21 @@ describe("itemStatLine", () => {
       "+7 STR +16 VIT +6 INT (implicit: of the Guardian +10 VIT)",
     );
     expect(itemStatLine(RUSTY)).toBe("+1 STR");
+  });
+});
+
+describe("itemAffixLines", () => {
+  it("lists one line per implicit, prefix, and suffix in that order", () => {
+    expect(itemAffixLines(BULWARK)).toEqual([
+      "Implicit: of the Guardian +10 VIT",
+      "Prefix: Vicious +5 STR",
+      "Prefix: Clever +3 INT",
+      "Suffix: of Might +2 STR",
+      "Suffix: of Sorcery +3 INT",
+    ]);
+  });
+
+  it("returns an empty list for an item with no affixes", () => {
+    expect(itemAffixLines(RUSTY)).toEqual([]);
   });
 });

@@ -342,6 +342,22 @@ describe("buildBootstrapCommand", () => {
     expect(command).toContain("npm install -g @ast-grep/cli");
   });
 
+  it("installs the gh CLI and seeds a placeholder auth config (HAR-14)", () => {
+    // gh replaces curl + the GitHub REST API for PR operations, so it must
+    // be installed and willing to run without a real credential ever
+    // landing in the sandbox - the network-boundary broker (see
+    // githubNetworkPolicy) supplies the real one at the firewall.
+    const command = buildBootstrapCommand();
+    expect(command).toContain(
+      "apt-get install -y tmux ripgrep fd-find bat eza gh",
+    );
+    expect(command).toContain('mkdir -p "$HOME/.config/gh"');
+    expect(command).toContain("$HOME/.config/gh/hosts.yml");
+    expect(command).toContain(
+      "oauth_token: placeholder-overwritten-by-network-broker",
+    );
+  });
+
   it("installs the ponytail ruleset into pi (HAR-3)", () => {
     const command = buildBootstrapCommand();
     expect(command).toContain(

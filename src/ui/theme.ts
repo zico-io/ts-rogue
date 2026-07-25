@@ -74,6 +74,12 @@ export const theme = {
     // Warm sand fringe drawn along a water tile's land-adjacent side(s)
     // (ROG-73's shore-edge auto-tile stand-in - see `overworldVariants.ts`).
     shore: "#d9b872",
+    // Ambient scene-treatment tokens (ROG-65): drifting leaf/firefly
+    // particles and the sparse water-glint blobs `overworldView.ts` draws
+    // over the tilemap - see that module's doc comment for the mechanism.
+    leaf: "#c98a3f",
+    firefly: "#f6e27a",
+    shimmer: "#d9fbff",
   },
   // title logo gradient, one hex per logo line (pink -> purple)
   logoGradient: ["#ee99bf", "#cd67a8", "#ab4bab", "#8648b5", "#70388c"],

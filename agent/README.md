@@ -11,8 +11,8 @@ pre-warmed Vercel Sandboxes.
 | [`instructions.md`](instructions.md) | Runtime operating and delegation contract |
 | [`channels/`](channels/) | Eve, Linear, and GitHub session activity adapters |
 | [`connections/`](connections/) | Linear MCP connection and approval policy |
-| [`hooks/`](hooks/) | Delegated-child activity relay, delegation working indicator, and turn-start sandbox prewarm |
-| [`tools/`](tools/) | Native Linear Agent Session progress updates |
+| [`hooks/`](hooks/) | Delegated-child activity relay (including the ephemeral working indicator) and turn-start sandbox prewarm |
+| [`tools/`](tools/) | Native Linear Agent Session progress updates and proactive self-handoff to a fresh session |
 | [`sandbox.ts`](sandbox.ts) | Vercel Sandbox bootstrap, sync, `ORIENTATION.md` brief, network policy, and token refresh |
 | [`lib/orientation.ts`](lib/orientation.ts) | Builds the pre-computed orientation brief from git state and screenshot-tooling status |
 
@@ -29,7 +29,7 @@ without writing issue comments.
 
 The sandbox itself is created lazily by eve, on the first sandbox-touching
 tool call - which would land mid-orientation and make the model (and the
-coding children delegated after it, which share the root's sandbox) sit
+coding child delegated after it, which shares the root's sandbox) sit
 through the full cold start serially. `hooks/prewarm-sandbox.ts` kicks the
 same memoized creation at `turn.started`, fire-and-forget, so template
 restore and `onSession`'s repo sync run concurrently with the model's first
@@ -39,20 +39,19 @@ turn's emit path, so awaiting there would serialize the cold start in front
 of the model call instead of overlapping it.
 
 While a delegated child works, the session shows a single live status slot
-rather than a growing wall of chips: `hooks/delegation-indicator.ts` posts an
+rather than a growing wall of chips: `hooks/child-relay.ts` posts an
 ephemeral "working" thought the moment a child session starts (the channel
 adapter's event vocabulary has no `subagent.called`, so this lives in a hook),
-and `hooks/child-relay.ts` relays the child's action/reasoning chips with
-`ephemeral: true` - Linear displays an ephemeral activity only until the next
-activity replaces it. What persists is deliberate: the child's final narration
-(the handoff record) and durable `session_update`s. Those child updates are
-also role-coerced in code (`tools/session_update.ts`): a child's
-`started`/`review`/`completed` becomes `progress` with a `[<issue>]` prefix,
-because ENG-2's thread showed a child "Completed" while nothing was pushed,
-then "Started" again - the session appeared to finish and restart. No local
-eval can cover the delegation path (it needs a live sandbox child, and the
-ralph e2e fixture deliberately runs with a blank `agent_session_id`), so
-coverage is unit tests plus contract text.
+and relays the child's action/reasoning chips with `ephemeral: true` - Linear
+displays an ephemeral activity only until the next activity replaces it. What
+persists is deliberate: the child's final narration (the handoff record) and
+durable `session_update`s. Those child updates are also role-coerced in code
+(`tools/session_update.ts`): a child's `started`/`review`/`completed` becomes
+`progress` with a `[<issue>]` prefix, because ENG-2's thread showed a child
+"Completed" while nothing was pushed, then "Started" again - the session
+appeared to finish and restart. No local eval can cover the delegation path
+(it needs a live sandbox child, and the ralph e2e fixture deliberately runs
+with a blank `agent_session_id`), so coverage is unit tests plus contract text.
 
 `instructions.md` requires the root to send a `session_update` before its first
 other tool call and to batch independent read-only lookups (sub-issue checks,
@@ -222,35 +221,101 @@ relations), which turns the ticket into an ordinary issue group.
 When the assigned issue has sub-issues - pre-existing or just created from an
 approved breakdown - the agent treats it as a group (ralph mode): it sequences
 them by their Linear `blocks`/`blocked by` relations, priority, and
-`PROJECT_PLAN.md` phase, then drives **every ready sub-issue at once (capped at
-three)** rather than one at a time. Parallelism happens inside the session's
-single sandbox: the main checkout stays pinned to `main` (so `onSession`'s
-`SYNC_MAIN_COMMAND` and `AUTO_RECOVER_PUSH_COMMAND` keep working on re-attach),
-and each ready sub-issue gets an atomic branch-ref claim
-(`git push origin main:refs/heads/<branch>` - a rejected push means another
-woken session owns it, which de-races near-simultaneous merges), a git worktree
-under `.worktrees/<id>`, and one coding child scoped to that worktree, all
-children batched in one turn. This model was chosen over the alternative of
-assigning each sub-issue to Eve so Linear spawns an independent session per
-workstream: one sandbox means one toolchain bootstrap, no cross-sandbox
-divergence, and the parent session keeps a single narrative thread. The cost is
-that worktree branches are invisible to the current-branch recovery checks, so
-the orientation brief (`lib/orientation.ts`) lists leftover worktrees and the
-contract forbids removing one with unpushed commits.
+`PROJECT_PLAN.md` phase, then hands off every ready sub-issue at once (capped
+at three in flight) instead of driving any of them itself (HAR-15). Readiness
+is recomputed from Linear immediately before each hand-off, not trusted from
+the plan posted earlier in the turn, so a sub-issue whose blocker hasn't
+actually finished never gets a session started for it.
+
+A hand-off reuses `tools/handoff.ts` (see "Self-handoff on long sessions"
+below) rather than a bare `save_issue` delegate assignment: it posts a Linear
+comment on the sub-issue carrying a brief of what its `blocked by`
+predecessor(s) just shipped - their PR, key decisions, anything that changes
+this sub-issue's approach - and anchors a fresh Agent Session to that comment
+with `createLinearAgentSessionOnComment`. Neither `AgentSessionCreateOnIssue`
+nor `AgentSessionCreateOnComment` takes a free-text field of its own (see the
+tool's comments), so a comment is the only way to seed a fresh session with
+anything beyond its bare issue packet - the same reason `tools/handoff.ts` was
+built for self-continuation in the first place, which is why HAR-15 reuses it
+here instead of adding a second, near-identical mechanism. The agent also sets
+the sub-issue's `delegate` to `ts-rogue-eve` with `save_issue` alongside the
+hand-off, so Linear's own assignment reflects who is driving it. Each ready
+sub-issue then gets its own independent session, its own sandbox, its own
+branch, its own coding child, and its own pull request, driven end to end
+under this same `instructions.md` contract exactly as an ordinary single-issue
+task. The session that fanned work out does no git and runs no coding child
+for a sub-issue itself; it only lists, orders, hands off with context, and
+stops.
+
+This replaces an earlier design where the parent kept every sub-issue's branch
+in a `.worktrees/<id>` git worktree inside its own single sandbox and drove
+each with a batched built-in `agent`-tool child, claiming it first with an
+atomic `git push origin main:refs/heads/<branch>` to de-race a concurrently
+woken session. That model's appeal was one sandbox, one toolchain bootstrap,
+and a single narrative thread; its cost was that the parent alone carried all
+of that git bookkeeping (claim races, worktree cleanup, per-worktree unpushed-
+commit recovery), and worktree branches were invisible to the current-branch
+recovery checks that assume one branch per sandbox. Handing sub-issues to
+independently triggered sessions instead gives each one the same real sandbox
+isolation every other session already gets, at the cost of the parent's single
+narrative thread: advancing the group after a merge is now something whichever
+session owns the merged sub-issue does on its own next turn, not something the
+original parent session does centrally.
 
 Linear is the only cross-session store - order and readiness are recomputed
-from it each turn - and the merge that advances the group is the existing
-`isMainMerge` signal in [`channels/github.ts`](channels/github.ts), which tags
-the merged issue's identifier so the woken session knows which group to
-advance. Known limitation, inherited from serial ralph: a merge-woken session
-is a GitHub-channel session with no Linear `agent_session_id`, so children it
-delegates have no Linear activity relay. Because several children can now post
-into one Linear session concurrently, `hooks/child-relay.ts` prefixes each
-relayed activity with the child's issue identifier. The sequencing and loop
-contract lives in [`instructions.md`](instructions.md); the local
-`evals/scoping.eval.ts` guards the gate (a large synthetic ticket must park
-with a breakdown and zero implementation), and `evals/ralph` still guards
-group sequencing end to end.
+from it each turn - and the merge that advances the group is still the
+existing `isMainMerge` signal in [`channels/github.ts`](channels/github.ts),
+which tags the merged issue's identifier so the session it wakes knows which
+group to advance: confirm that sub-issue Done, then hand off every newly ready
+sibling the same way, carrying forward what that merge just shipped. The
+sequencing and hand-off contract lives in [`instructions.md`](instructions.md);
+the local `evals/scoping.eval.ts` guards the sizing gate (a large synthetic
+ticket must park with a breakdown and zero implementation), and `evals/ralph`
+still guards group sequencing end to end - its `drivesIssue` assertion already
+treats a `save_issue` call naming the ready sub-issue as driving it, which
+covers the `delegate` update half of a hand-off without needing to distinguish
+it from the `handoff` tool call that carries the context.
+
+### Handoff to a fresh session (HAR-12, HAR-15)
+
+HAR-12 asked for eve's own token-quota HITL (a continue/stop prompt raised
+when a session crosses its configured `maxInputTokensPerSession`/
+`maxOutputTokensPerSession`) to auto-compact and continue instead. That
+prompt, the quota check, and the budget-reset logic all live inside the `eve`
+package's harness internals (`session-limit-enforcement`/
+`session-limit-continuation`); no released version exposes a config, hook, or
+channel-event API that lets this repo override or auto-answer it, and
+`agent/hooks/*` are deliberately observe-only (see above), so they cannot
+resolve a pending input request either.
+
+`tools/handoff.ts` sidesteps the problem instead of solving it upstream: it
+gives the root agent a way to voluntarily end its own session before ever
+reaching that quota, rather than waiting to be asked. Calling it posts the
+model-authored `brief` (a continuation packet - what's done, evidence, what's
+left, the next action) as a Linear comment via a hand-rolled `commentCreate`
+mutation (not in `eve/channels/linear`'s public barrel, so it's built against
+the barrel's public `callLinearGraphQL` transport the same way
+`channels/linear.ts` hand-rolls other de-minified pieces), then calls the
+barrel-exported `createLinearAgentSessionOnComment` to anchor a brand-new
+Agent Session to that comment. The new session gets its own empty context
+window and its own fresh token quota; eve's existing webhook delivery to
+`channels/linear.ts` picks up its `created` event the same way it would for a
+human-initiated session, so no extra dispatch wiring was needed.
+`instructions.md` tells the root to reach for this proactively on a session
+that has been running unusually long - a deep delegation chain or a slow
+implementation - rather than treating quota exhaustion as something that
+happens to it.
+
+HAR-15 reuses the same tool and mutation chain for a second purpose: handing a
+now-ready sub-issue off to its own fresh session in ralph mode, carrying
+forward the context (what its predecessor shipped, and why) that a bare
+`save_issue` delegate assignment could not deliver. The tool already took an
+arbitrary `issueId`, not "the current issue" specifically, so nothing about
+`tools/handoff.ts` itself needed to change beyond broadening its description
+and de-specializing the fixed comment header (the "why this session exists"
+framing now lives entirely in the model-authored `brief`, which differs by
+caller: a continuation packet for self-handoff, a predecessor's shipped
+context for a dependency unlock).
 
 ## Development
 
@@ -265,7 +330,7 @@ suite. Run `pnpm test:unit` or the complete `pnpm check` before handoff.
 
 Ralph mode has an end-to-end eval in [`evals/ralph`](../evals/ralph) that drives
 the real agent against a dedicated Linear group and asserts it sequences and
-drives the ready sub-issue first. It skips unless the fixture is set; run it
+hands off the ready sub-issue first. It skips unless the fixture is set; run it
 against a sandbox-reachable target:
 
 ```bash

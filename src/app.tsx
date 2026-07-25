@@ -33,6 +33,7 @@ import { CrashScreen } from "./ui/screens/CrashScreen";
 import { DevConsole } from "./ui/screens/DevConsole";
 import { DungeonScreen } from "./ui/screens/DungeonScreen";
 import { GameOverScreen } from "./ui/screens/GameOverScreen";
+import { InventoryScreen } from "./ui/screens/InventoryScreen";
 import { OverworldScreen } from "./ui/screens/OverworldScreen";
 import { SettingsScreen } from "./ui/screens/SettingsScreen";
 import { TitleScreen } from "./ui/screens/TitleScreen";
@@ -76,6 +77,7 @@ function App({
   });
   const [consoleOpen, setConsoleOpen] = useState(false);
   const [zoomOpen, setZoomOpen] = useState(false);
+  const [inventoryOpen, setInventoryOpen] = useState(false);
   const [consoleOutput, setConsoleOutput] = useState<string[]>([]);
   const [fatal, setFatal] = useState<IncidentDisplay | undefined>(() =>
     pipeline.getFatal(),
@@ -173,9 +175,20 @@ function App({
           setZoomOpen(true);
         }
       }
+      if (intent.kind === "openInventory") {
+        if (state.scene !== "battle") {
+          setInventoryOpen(true);
+        }
+      }
     },
     {
-      isActive: !fatal && started && !consoleOpen && !gameOver && !zoomOpen,
+      isActive:
+        !fatal &&
+        started &&
+        !consoleOpen &&
+        !gameOver &&
+        !zoomOpen &&
+        !inventoryOpen,
     },
   );
 
@@ -250,6 +263,14 @@ function App({
       <ZoomScreen
         dispatch={dispatch}
         onClose={() => setZoomOpen(false)}
+        state={state}
+      />
+    );
+  } else if (inventoryOpen) {
+    content = (
+      <InventoryScreen
+        dispatch={dispatch}
+        onClose={() => setInventoryOpen(false)}
         state={state}
       />
     );

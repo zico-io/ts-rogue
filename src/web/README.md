@@ -238,6 +238,26 @@ without a way to visually verify the result, so it isn't vendored here. A
 real shore/corner bitmask tileset is a follow-up once that's needed; this
 ships with the sheets already vendored instead.
 
+### Overworld scene atmosphere (ROG-65)
+
+On top of the tilemap above, `OverworldSceneView` draws a second layer of
+purely decorative treatment through a `createBlob()` primitive (a filled
+ellipse, distinct from `createRect()` so it never disturbs the meter/minimap
+rect ordering `overworldView.test.ts` counts on): a soft ground-shadow blob
+under every mountain/forest/village/dungeonEntrance prop and the player
+marker; a breathing glow halo behind village/dungeonEntrance markers; a
+sparse, deterministically hash-selected subset of visible water tiles
+glinting with a shimmer blob; and a small fixed-size pool (about a dozen) of
+screen-space leaf/firefly particles that drift within the viewport, keyed to
+whichever biomes are currently visible. All of it is time-driven by
+`tick(deltaMs)`, wired once to the Pixi `Ticker` in `bootGame.ts` (the same
+shape as `battleView.ts`'s `tick`), and fully stops - not just slows - when
+`setReducedMotion(true)` is set from `bootGame.ts`'s
+`prefers-reduced-motion` check. No `Math.random` anywhere: every
+particle/shimmer/pulse's phase or position variety comes from the same
+`Math.imul`-based hash `overworldVariants.ts` uses, so a render is always
+reproducible.
+
 ## HUD chrome (ROG-47)
 
 

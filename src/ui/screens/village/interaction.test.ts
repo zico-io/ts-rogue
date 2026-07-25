@@ -189,10 +189,10 @@ describe("resolveStoreIntent", () => {
     expect(resolveStoreIntent("shop", "char:e")).toBeUndefined();
   });
 
-  it("pack mode binds e/u/s to equip/unequip/sell", () => {
-    expect(resolveStoreIntent("pack", "char:e")).toEqual({ kind: "equip" });
-    expect(resolveStoreIntent("pack", "char:u")).toEqual({ kind: "unequip" });
+  it("pack mode binds s to sell only (equip/unequip moved to the Inventory screen)", () => {
     expect(resolveStoreIntent("pack", "char:s")).toEqual({ kind: "sell" });
+    expect(resolveStoreIntent("pack", "char:e")).toBeUndefined();
+    expect(resolveStoreIntent("pack", "char:u")).toBeUndefined();
     expect(resolveStoreIntent("pack", "char:b")).toBeUndefined();
   });
 
@@ -270,22 +270,11 @@ describe("reduceStoreUi", () => {
     expect(sell.effect).toEqual({ type: "storeSell", itemId: "potion" });
   });
 
-  it("pack mode equips/sells a backpack entry", () => {
+  it("pack mode sells a backpack entry, and no longer equips/unequips (see inventory/interaction.test.ts)", () => {
     const member = createStartingHero();
     const backpackItem = item({ instanceId: "sword-1" });
     const entries = buildPackEntries(member, [backpackItem]);
     const ctx = storeCtx({ packEntries: entries, memberId: member.id });
-
-    const equip = reduceStoreUi(
-      storeState({ mode: "pack", packCursor: 4 }),
-      { kind: "equip" },
-      ctx,
-    );
-    expect(equip.effect).toEqual({
-      type: "equip",
-      instanceId: "sword-1",
-      memberId: member.id,
-    });
 
     const sell = reduceStoreUi(
       storeState({ mode: "pack", packCursor: 4 }),
@@ -293,23 +282,20 @@ describe("reduceStoreUi", () => {
       ctx,
     );
     expect(sell.effect).toEqual({ type: "sellItem", instanceId: "sword-1" });
-  });
 
-  it("pack mode unequips an equipped slot even when empty", () => {
-    const member = createStartingHero();
-    const entries = buildPackEntries(member, []);
-    const ctx = storeCtx({ packEntries: entries, memberId: member.id });
+    const equip = reduceStoreUi(
+      storeState({ mode: "pack", packCursor: 4 }),
+      { kind: "equip" },
+      ctx,
+    );
+    expect(equip.effect).toBeUndefined();
 
-    const result = reduceStoreUi(
+    const unequip = reduceStoreUi(
       storeState({ mode: "pack", packCursor: 0 }),
       { kind: "unequip" },
       ctx,
     );
-    expect(result.effect).toEqual({
-      type: "unequip",
-      slot: "weapon",
-      memberId: member.id,
-    });
+    expect(unequip.effect).toBeUndefined();
   });
 });
 

@@ -1,4 +1,5 @@
 import type { Scene } from "../state/types";
+import type { EffectInstance } from "./statusEffects";
 
 /** Core four-stat block shared by party members and monsters. */
 export interface CoreStats {
@@ -26,6 +27,12 @@ export interface BattleEnemy {
   sprite?: string;
   xp: number;
   gold: number;
+  /**
+   * Active status effects on this enemy (ENG-10 data model only). Optional so
+   * older saves without the field load unchanged; nothing ticks, applies, or
+   * cures these yet - that lands in ENG-11+.
+   */
+  effects?: EffectInstance[];
 }
 
 export type BattleStatus = "ongoing" | "won" | "lost" | "fled";
@@ -45,7 +52,9 @@ export type BattleStatus = "ongoing" | "won" | "lost" | "fled";
  * lets several party members each take their own turn without changing the
  * "one command per dispatch" UI contract. Member HP/MP are not duplicated
  * here - they live on `state.party` and are read/written by the combat
- * reducer - so a save/reload never disagrees.
+ * reducer - so a save/reload never disagrees. ENG-10 mirrors that convention
+ * for status effects: a party member's active effects live on the member
+ * itself (`PartyMember.effects` in `src/engine/entities/party.ts`), not here.
  */
 export interface BattleState {
   enemies: BattleEnemy[];
