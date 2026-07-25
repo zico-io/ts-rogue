@@ -1,6 +1,8 @@
 import { connectGitHubCredentials } from "@vercel/connect/eve";
 import {
   defaultGitHubAuth,
+  type GitHubComment,
+  type GitHubInboundContext,
   type GitHubPullRequestEvent,
   githubChannel,
 } from "eve/channels/github";
@@ -89,10 +91,63 @@ Post the findings as ONE pull-request review via curl. Each finding's line MUST 
   curl -sS -X POST -H "Accept: application/vnd.github+json" https://api.github.com/repos/zico-io/ts-rogue/pulls/${prNumber}/reviews -d @/tmp/review.json
 <summary> is exactly one line: \`net: -<N> lines, <M> convention fixes.\` when you found something, or \`net: clean. Ship.\` when you did not (post it with an empty comments array). Then stop.`;
 
+// Context for a turn woken by review feedback landing on a pull request (see
+// "PR review-feedback turns" in instructions.md for the full contract). Kept
+// short and pointed at that section rather than repeated here, matching how
+// ponytailReviewContext above points back at "PR review turns" instead of
+// inlining its own procedure.
+const REVIEW_FEEDBACK_CONTEXT =
+  'Reviewer feedback landed on this pull request (see the comment above). This is a PR review-feedback turn (see "PR review-feedback turns" in the contract): validate it, then either fix the code or reply - nothing else.';
+
+const escapeRegExp = (value: string) =>
+  value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+
+// Mirrors the @mention check eve's own built-in `onComment` gate uses
+// (`extractGitHubCommentTrigger` in `dist/.../channels/github/inbound.js`),
+// reimplemented here because supplying `onComment` below replaces that
+// built-in gate entirely rather than layering on top of it (see eve's github
+// channel docs), and `eve/channels/github`'s public barrel exports only
+// `defaultGitHubAuth` from that module - not the mention helper itself
+// (confirmed against the package's own `exports` map: `inbound`/`defaults`
+// have no public subpath, only the top-level `./channels/github` entry
+// point). The bot-authored/self-comment loop guard needs no reimplementation
+// here - eve applies that before ever calling `onComment`.
+export const isBotMentioned = (
+  body: string,
+  botName: string | undefined,
+): boolean => {
+  const name = botName?.trim();
+  if (!name) return false;
+  return new RegExp(`@${escapeRegExp(name)}(?=$|[^A-Za-z0-9_-])`, "iu").test(
+    body,
+  );
+};
+
+export const onComment = (
+  ctx: GitHubInboundContext,
+  comment: GitHubComment,
+) => {
+  // Inline pull-request review comments - the shape both a human review and
+  // ponytail's own auto-review (above) post - wake the agent unconditionally:
+  // feedback left during a review is a request to act on, not a chat message
+  // that needs an explicit @mention to be seen. Ordinary issue/PR discussion
+  // comments keep requiring one, matching eve's built-in behavior.
+  if (ctx.conversation.kind === "review_thread") {
+    return {
+      auth: defaultGitHubAuth(ctx),
+      context: [REVIEW_FEEDBACK_CONTEXT],
+    };
+  }
+  return isBotMentioned(comment.body, process.env.GITHUB_APP_SLUG)
+    ? { auth: defaultGitHubAuth(ctx) }
+    : null;
+};
+
 export default githubChannel({
   credentials: connectGitHubCredentials("github/ts-rogue-eve-github"),
   // onSession already synced main; skip the channel's default PR-head checkout.
   events: { "turn.started": () => {} },
+  onComment,
   onPullRequest: (context, pullRequest) => {
     if (isMainMerge(pullRequest)) {
       const ref = linearRefFromPullRequest(pullRequest);
@@ -122,7 +177,9 @@ export default githubChannel({
       const base = raw.base?.ref ?? "main";
       return {
         auth: defaultGitHubAuth(context),
-        context: [ponytailReviewContext(pullRequest.pullRequestNumber, base, head)],
+        context: [
+          ponytailReviewContext(pullRequest.pullRequestNumber, base, head),
+        ],
       };
     }
     return null;
