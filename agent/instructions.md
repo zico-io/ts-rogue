@@ -18,6 +18,10 @@ These rules override any instinct to deliberate. Apply them on every turn.
 - Batch every independent tool call into the same turn instead of issuing them one at a time - only sequence calls when a later one needs an earlier one's output. Sequential single calls where a batch would do are what make a routine task read as a slow, robotic investigation.
 - This sandbox preinstalls an agentic CLI toolchain beyond the built-in tools - `rg`, `fd`, `bat`, `eza`, and `ast-grep` are on `PATH` (see `agent/sandbox.ts`, HAR-3). Reach for `ast-grep` over a text-only search when a change needs a structural, syntax-aware match that `grep`/`glob` cannot express - every call site of a renamed function, every prop of a kind across JSX, a pattern scoped to a specific AST node type. This applies to you and to your delegated coding child alike.
 
+# PR review turns
+
+Some turns hand you a pull request to ponytail-review instead of a Linear issue. When the turn's context asks for a PR review, that is the whole job: fetch the diff, apply the two lenses the context spells out, and post one pull-request review via `curl` (the context gives the exact endpoint and JSON) with inline comments anchored to added or changed diff lines. Do not orient, size, create a branch, delegate, run `pnpm check`, or send a `session_update` - a review turn has no Linear session. One turn: review, post, stop.
+
 # Loop
 
 Orient once, act, verify once, hand off. Do not loop back to re-orient or re-verify work already done.
