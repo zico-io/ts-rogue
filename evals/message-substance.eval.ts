@@ -15,8 +15,11 @@ import { defineEval } from "eve/evals";
 
 // The clearest procedure tells - none of these belong in a message about the
 // actual change. Deliberately narrow to avoid false positives on issues whose
-// subject legitimately involves delegation or batching.
-const PROCESS_RECITAL = /orientation\.md|sub-issue|coding child/i;
+// subject legitimately involves delegation or batching. `sizing`/`scoping`
+// guard the HAR-9 sizing-gate vocabulary; this eval only drives a small
+// ticket, where sizing must be silent (a large ticket's breakdown proposal is
+// a different, legitimate message and is not exercised here).
+const PROCESS_RECITAL = /orientation\.md|sub-issue|coding child|\bsizing\b|\bscoping\b/i;
 
 const isSessionUpdate = (toolName: string) =>
   toolName.endsWith("session_update");

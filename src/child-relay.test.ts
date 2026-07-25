@@ -101,6 +101,26 @@ describe("child-relay hook", () => {
     });
   });
 
+  it("prefixes relayed activity with the delegated issue once the packet names it", async () => {
+    await events["message.received"](
+      {
+        data: {
+          message:
+            "issue: rog-12 — Tavern rework\nagent_session_id: sess-4\nbranch: nico/rog-12-tavern-rework",
+        },
+      },
+      child,
+    );
+    await events["actions.requested"](
+      toolCall("edit_file", { path: "src/x.ts" }),
+      child,
+    );
+    await events["message.completed"]({ data: { message: "done" } }, child);
+
+    expect(contentOf(0).action).toBe("[ROG-12] Edit file");
+    expect(contentOf(1).body).toBe("[ROG-12] done");
+  });
+
   it("stays silent until the session id is known", async () => {
     await events["actions.requested"](
       toolCall("edit_file", { path: "a" }),

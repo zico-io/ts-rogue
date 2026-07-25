@@ -12,35 +12,63 @@ import { toolLabel } from "../lib/tool-label";
 
 const credentials = connectLinearCredentials("linear/ts-rogue-eve");
 
-// Fresh per child session; captures the Linear agent session id from the text the
-// parent hands the child (ctx exposes no Linear id of its own).
-const relay = defineState<{ agentSessionId: string | null }>(
-  "ts-rogue.child-relay",
-  () => ({ agentSessionId: null }),
-);
+// Fresh per child session; captures the Linear agent session id and the
+// delegated issue identifier from the text the parent hands the child (ctx
+// exposes no Linear id of its own).
+const relay = defineState<{
+  agentSessionId: string | null;
+  issueId: string | null;
+}>("ts-rogue.child-relay", () => ({ agentSessionId: null, issueId: null }));
 
 // The parent's delegation text carries the Linear session id in the framework
 // context block (`agent_session_id: <id>`) or however the parent phrases it.
 export const parseAgentSessionId = (text: string): string | null =>
   text.match(/agent_session_id["`\s:=]+([\w-]+)/)?.[1] ?? null;
 
-const captureAgentSessionId = (text: string) => {
-  if (relay.get().agentSessionId) return;
-  const id = parseAgentSessionId(text);
-  if (id) relay.update((s) => ({ ...s, agentSessionId: id }));
+// The delegation packet leads with `issue: <identifier> — <title>`. Ralph mode
+// runs several children against one Linear session at once, so each relayed
+// activity is prefixed with its issue to stay attributable.
+export const parseIssueId = (text: string): string | null =>
+  text
+    .match(/\bissue["`\s:=]+([A-Za-z][A-Za-z0-9]*-\d+)\b/)?.[1]
+    ?.toUpperCase() ?? null;
+
+const capturePacketFacts = (text: string) => {
+  const state = relay.get();
+  const agentSessionId = state.agentSessionId ?? parseAgentSessionId(text);
+  const issueId = state.issueId ?? parseIssueId(text);
+  if (agentSessionId !== state.agentSessionId || issueId !== state.issueId) {
+    relay.update((s) => ({ ...s, agentSessionId, issueId }));
+  }
 };
 
-const post = async (
-  content: Parameters<
-    typeof createLinearAgentActivity
-  >[0]["activity"]["content"],
-) => {
-  const { agentSessionId } = relay.get();
+type ActivityContent = Parameters<
+  typeof createLinearAgentActivity
+>[0]["activity"]["content"];
+
+// Prefix relayed content with the child's issue so parallel children posting
+// into the same session stay tellable apart.
+const withIssuePrefix = (
+  content: ActivityContent,
+  issueId: string | null,
+): ActivityContent => {
+  if (!issueId) return content;
+  if ("body" in content) {
+    return { ...content, body: `[${issueId}] ${content.body}` };
+  }
+  if ("action" in content) {
+    return { ...content, action: `[${issueId}] ${content.action}` };
+  }
+  return content;
+};
+
+const post = async (content: ActivityContent) => {
+  const { agentSessionId, issueId } = relay.get();
   if (!agentSessionId) return;
   try {
     await createLinearAgentActivity({
       credentials,
-      activity: { agentSessionId, content },
+      activity: { agentSessionId, content: withIssuePrefix(content, issueId) },
     });
   } catch {
     // Observe-only: a Linear hiccup must never fail the child's turn.
@@ -53,7 +81,7 @@ export default defineHook({
   events: {
     async "message.received"(event, ctx) {
       if (!ctx.session.parent) return;
-      captureAgentSessionId(event.data.message);
+      capturePacketFacts(event.data.message);
     },
     async "actions.requested"(event, ctx) {
       if (!ctx.session.parent) return;

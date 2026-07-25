@@ -58,7 +58,9 @@ export const drivesIssue = (node: unknown, id: string): boolean => {
   const s = JSON.stringify(node ?? "");
   if (!new RegExp(`\\b${id}\\b`, "i").test(s)) return false;
   return (
-    /(checkout\s+-b|switch\s+-c|git\s+branch|git\s+switch)/i.test(s) ||
+    /(checkout\s+-b|switch\s+-c|git\s+branch|git\s+switch|worktree\s+add)/i.test(
+      s,
+    ) ||
     /"kind"\s*:\s*"(delegate|subagent)"|"toolName"\s*:\s*"agent"/i.test(s) ||
     /save_issue|update[_-]?issue/i.test(s)
   );

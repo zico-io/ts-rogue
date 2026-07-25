@@ -27,7 +27,34 @@ describe("parseGitFacts", () => {
       ],
       upstream: null,
       unpushedCount: 0,
+      worktrees: [],
     });
+  });
+
+  it("lists linked worktrees, excluding the main checkout", () => {
+    const stdout = [
+      "main",
+      "abc1234",
+      "clean",
+      "---COMMITS---",
+      "abc1234 fix: thing",
+      "---UPSTREAM---",
+      "origin/main",
+      "---AHEAD---",
+      "0",
+      "---WORKTREES---",
+      "worktree /workspace",
+      "HEAD abc1234abc1234",
+      "branch refs/heads/main",
+      "",
+      "worktree /workspace/.worktrees/ROG-12",
+      "HEAD def5678def5678",
+      "branch refs/heads/nico/rog-12-thing",
+    ].join("\n");
+
+    expect(parseGitFacts(stdout).worktrees).toEqual([
+      "/workspace/.worktrees/ROG-12",
+    ]);
   });
 
   it("reports a dirty tree and tolerates a truncated (no-commits) output", () => {
@@ -271,6 +298,34 @@ describe("buildOrientationBrief", () => {
     expect(brief).toContain("3 commit(s)");
     expect(brief).toContain("not yet on `origin/nico/har-5-fix`");
     expect(brief).toContain("recovery steps in `instructions.md`");
+  });
+
+  it("surfaces leftover worktrees with push-before-remove guidance", () => {
+    const brief = buildOrientationBrief({
+      branch: "main",
+      headSha: "abc1234",
+      clean: true,
+      recentCommits: [],
+      upstream: "origin/main",
+      unpushedCount: 0,
+      worktrees: ["/workspace/.worktrees/ROG-12"],
+    });
+    expect(brief).toContain("Leftover worktrees");
+    expect(brief).toContain("/workspace/.worktrees/ROG-12");
+    expect(brief).toContain("git worktree remove");
+  });
+
+  it("omits the worktree line when none are left behind", () => {
+    const brief = buildOrientationBrief({
+      branch: "main",
+      headSha: "abc1234",
+      clean: true,
+      recentCommits: [],
+      upstream: "origin/main",
+      unpushedCount: 0,
+      worktrees: [],
+    });
+    expect(brief).not.toContain("worktree");
   });
 
   it("stays quiet about push state on a feature branch that's fully pushed", () => {

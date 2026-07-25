@@ -157,15 +157,54 @@ exercise a PR branch. The `agent` tool - not a `pi` subprocess - remains the
 coding-delegation path; it already inherits this sandbox's toolchain and
 `instructions.md`'s ponytail rules with no further wiring.
 
-When the assigned issue has sub-issues, the agent treats it as a group (ralph
-mode): it sequences the sub-issues by their Linear `blocks`/`blocked by`
-relations, priority, and `PROJECT_PLAN.md` phase, then drives one at a time,
-advancing to the next only after the current sub-issue's pull request merges to
-main. Linear is the only cross-session store - order and readiness are recomputed
+### Sizing gate and issue groups (ralph mode)
+
+HAR-9 added a sizing gate in front of implementation. ENG-1 showed the failure
+mode it prevents: a multi-deliverable ticket delegated whole to one coding
+child burned a 38M-token session across several restarts. The gate is a
+judgment over the issue packet alone (no new orientation reads, per
+`AGENTS.md`): an issue that cannot land as one reviewable PR is broken into a
+sub-issue plan of PR-sized workstreams first. The proposed breakdown posts as a
+`review` session_update and then parks the turn on eve's built-in
+`ask_question` tool - the stop before approval is enforced by the runtime's
+`input.requested`/`session.waiting` protocol, not by prompt discipline, and
+`channels/linear.ts` already renders the elicitation and resolves the human's
+reply (`resolvePromptResponses`). Only after approval does the agent create the
+sub-issues over the Linear MCP (`save_issue` with `parentId` and `blockedBy`
+relations), which turns the ticket into an ordinary issue group.
+
+When the assigned issue has sub-issues - pre-existing or just created from an
+approved breakdown - the agent treats it as a group (ralph mode): it sequences
+them by their Linear `blocks`/`blocked by` relations, priority, and
+`PROJECT_PLAN.md` phase, then drives **every ready sub-issue at once (capped at
+three)** rather than one at a time. Parallelism happens inside the session's
+single sandbox: the main checkout stays pinned to `main` (so `onSession`'s
+`SYNC_MAIN_COMMAND` and `AUTO_RECOVER_PUSH_COMMAND` keep working on re-attach),
+and each ready sub-issue gets an atomic branch-ref claim
+(`git push origin main:refs/heads/<branch>` - a rejected push means another
+woken session owns it, which de-races near-simultaneous merges), a git worktree
+under `.worktrees/<id>`, and one coding child scoped to that worktree, all
+children batched in one turn. This model was chosen over the alternative of
+assigning each sub-issue to Eve so Linear spawns an independent session per
+workstream: one sandbox means one toolchain bootstrap, no cross-sandbox
+divergence, and the parent session keeps a single narrative thread. The cost is
+that worktree branches are invisible to the current-branch recovery checks, so
+the orientation brief (`lib/orientation.ts`) lists leftover worktrees and the
+contract forbids removing one with unpushed commits.
+
+Linear is the only cross-session store - order and readiness are recomputed
 from it each turn - and the merge that advances the group is the existing
 `isMainMerge` signal in [`channels/github.ts`](channels/github.ts), which tags
-the merged issue's identifier so the woken session knows which group to advance.
-The sequencing and loop contract lives in [`instructions.md`](instructions.md).
+the merged issue's identifier so the woken session knows which group to
+advance. Known limitation, inherited from serial ralph: a merge-woken session
+is a GitHub-channel session with no Linear `agent_session_id`, so children it
+delegates have no Linear activity relay. Because several children can now post
+into one Linear session concurrently, `hooks/child-relay.ts` prefixes each
+relayed activity with the child's issue identifier. The sequencing and loop
+contract lives in [`instructions.md`](instructions.md); the local
+`evals/scoping.eval.ts` guards the gate (a large synthetic ticket must park
+with a breakdown and zero implementation), and `evals/ralph` still guards
+group sequencing end to end.
 
 ## Development
 
