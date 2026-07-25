@@ -469,20 +469,6 @@ export class BrowserKeyboardManager {
           instanceId: result.effect.instanceId,
         });
         break;
-      case "equip":
-        this.store.dispatch({
-          type: "EquipItem",
-          instanceId: result.effect.instanceId,
-          memberId: result.effect.memberId,
-        });
-        break;
-      case "unequip":
-        this.store.dispatch({
-          type: "UnequipItem",
-          slot: result.effect.slot,
-          memberId: result.effect.memberId,
-        });
-        break;
       default:
         break;
     }

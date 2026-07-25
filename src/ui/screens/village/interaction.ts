@@ -208,12 +208,14 @@ export interface StoreUiContext {
   packEntries: readonly PackEntry[];
 }
 
+// ENG-3: the Store's own keymap no longer emits `equip`/`unequip` - gear
+// management moved to the dedicated Inventory screen (`screens/inventory`),
+// which imports the shared `buildPackEntries`/`EQUIP_SLOTS`/`PackEntry`
+// below directly rather than through this effect union.
 export type StoreUiEffect =
   | { type: "storeBuy"; itemId: string }
   | { type: "storeSell"; itemId: string }
   | { type: "sellItem"; instanceId: string }
-  | { type: "equip"; instanceId: string; memberId: string }
-  | { type: "unequip"; slot: EquipmentSlotName; memberId: string }
   | { type: "back" };
 
 export interface StoreUiResult {
@@ -236,10 +238,10 @@ const storeShopKeymap: Keymap = {
   "char:s": { kind: "sell" },
 };
 
+// ENG-3: equip/unequip moved to the dedicated Inventory screen; the
+// Store's backpack mode is sell-only now that gear management lives there.
 const storePackKeymap: Keymap = {
   ...storeCommonKeymap,
-  "char:e": { kind: "equip" },
-  "char:u": { kind: "unequip" },
   "char:s": { kind: "sell" },
 };
 
@@ -329,33 +331,10 @@ export function reduceStoreUi(
   const packIndex = Math.min(state.packCursor, ctx.packEntries.length - 1);
   const selected = ctx.packEntries[packIndex];
   if (!selected) return { state };
-  if (selected.kind === "backpack") {
-    if (intent.kind === "equip") {
-      return {
-        state,
-        effect: {
-          type: "equip",
-          instanceId: selected.item.instanceId,
-          memberId: ctx.memberId,
-        },
-      };
-    }
-    if (intent.kind === "sell") {
-      return {
-        state,
-        effect: { type: "sellItem", instanceId: selected.item.instanceId },
-      };
-    }
-    return { state };
-  }
-  if (intent.kind === "unequip") {
+  if (selected.kind === "backpack" && intent.kind === "sell") {
     return {
       state,
-      effect: {
-        type: "unequip",
-        slot: selected.slot,
-        memberId: ctx.memberId,
-      },
+      effect: { type: "sellItem", instanceId: selected.item.instanceId },
     };
   }
   return { state };

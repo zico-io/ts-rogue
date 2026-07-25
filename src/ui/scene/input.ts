@@ -45,6 +45,9 @@ export type Intent =
   // ENG-1: opens the fast-travel picker from the overworld/village (blocked
   // inside a dungeon/battle - evac first, enforced by the caller's gating).
   | { kind: "openZoom" }
+  // ENG-3: opens the dedicated inventory screen from anywhere outside battle
+  // (village, overworld, dungeon - enforced by the caller's gating).
+  | { kind: "openInventory" }
   | { kind: "type"; char: string }
   | { kind: "backspace" }
   // Dungeon: forward/back are relative to facing (not an absolute
@@ -55,13 +58,16 @@ export type Intent =
   | { kind: "openChest" }
   | { kind: "descend" }
   | { kind: "exitDungeon" }
-  // Village store/tavern: Tab flips a view's two-mode split.
+  // Village store/tavern, inventory: Tab flips/cycles a view's modes/sections.
   | { kind: "switchMode" }
   // Village store: buy/sell a shop item, equip/unequip a backpack item into
   // a party member's slot (sell is shared between the shop's stackable
   // items and the pack's generated items; the reducer disambiguates by mode).
   | { kind: "buy" | "sell" }
   | { kind: "equip" | "unequip" }
+  // Inventory screen gear section: cycles the backpack sort key (rarity ->
+  // ilvl -> slot -> value -> rarity...).
+  | { kind: "cycleSort" }
   // Village tavern: hire a recruit, dismiss a party member, and the
   // dismiss-confirmation's yes/no answer (distinct from the generic
   // `confirm`/`cancel` used for cursor selection and Escape).

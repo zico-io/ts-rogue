@@ -8,7 +8,13 @@
 
 import { findAffix } from "../../data/affixes";
 import { findItemBase } from "../../data/itemBases";
-import type { ItemInstance, ItemSlot, ItemStats, Rarity } from "./types";
+import type {
+  ItemInstance,
+  ItemSlot,
+  ItemStats,
+  Rarity,
+  RolledAffix,
+} from "./types";
 
 /** Display label per rarity (used in log lines and the store panel). */
 export const RARITY_LABEL: Record<Rarity, string> = {
@@ -108,4 +114,34 @@ export function itemStatLine(item: ItemInstance): string {
     }
   }
   return line;
+}
+
+/** One inspect line for a single rolled/implicit affix, e.g. "Prefix: Vicious +5 STR". */
+function affixLine(label: string, affix: RolledAffix): string | undefined {
+  const def = findAffix(affix.affixId);
+  if (!def) return undefined;
+  return `${label}: ${def.name} +${affix.value} ${def.stat.toUpperCase()}`;
+}
+
+/**
+ * Full affix breakdown for the inventory inspect view (ENG-3): one line per
+ * implicit/prefix/suffix, in that order, naming the affix and its rolled
+ * value - unlike {@link itemStatLine}'s compact summed-stat line, every roll
+ * gets its own line here.
+ */
+export function itemAffixLines(item: ItemInstance): string[] {
+  const lines: string[] = [];
+  if (item.implicit) {
+    const line = affixLine("Implicit", item.implicit);
+    if (line) lines.push(line);
+  }
+  for (const prefix of item.prefixes) {
+    const line = affixLine("Prefix", prefix);
+    if (line) lines.push(line);
+  }
+  for (const suffix of item.suffixes) {
+    const line = affixLine("Suffix", suffix);
+    if (line) lines.push(line);
+  }
+  return lines;
 }
