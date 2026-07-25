@@ -17,9 +17,16 @@
  * in `src/data/classes.ts`. `createStartingHero(classId)` builds a member from
  * a ClassDef instead of hardcoded values; old saves without a `classId` are
  * backfilled to the default class (`warrior`) on load.
+ *
+ * ENG-10 (status + element data model): `effects` mirrors how HP/MP already
+ * live on the member rather than a battle-scoped copy - a member's active
+ * status effects (poison, stun, etc.) live here too, optional so existing
+ * saves without the field round-trip unchanged. Nothing applies, ticks, or
+ * cures these yet; that lands in ENG-11+.
  */
 
 import { DEFAULT_CLASS_ID, findClass } from "../../data/classes";
+import type { EffectInstance } from "../combat/statusEffects";
 import type { ItemInstance } from "../loot/types";
 
 /** Maximum number of members in the party (hero + up to three recruits). */
@@ -55,6 +62,8 @@ export interface PartyMember {
   mp: number;
   maxMp: number;
   equipment: PartyMemberEquipment;
+  /** Active status effects on this member; optional so older saves load unchanged. */
+  effects?: EffectInstance[];
 }
 
 /** An owned, unequipped stack of consumable items (potions, antidotes). */

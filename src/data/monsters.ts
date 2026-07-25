@@ -18,7 +18,14 @@
  * ROG-44: monsters with a browser battle sprite carry an optional `sprite`
  * atlas frame id alongside `ascii`; the terminal renderer keeps using `ascii`
  * unchanged.
+ *
+ * ENG-10 (status + element data model): a monster's basic attack carries an
+ * optional `attackElement` (defaults to `physical` when omitted) and an
+ * optional `attackApplies` list of status effects it may inflict on hit.
+ * Resolution wiring that reads either field is out of scope for ENG-10.
  */
+
+import type { AppliedEffect, Element } from "../engine/combat/statusEffects";
 
 export interface MonsterStats {
   str: number;
@@ -47,6 +54,10 @@ export interface MonsterDef {
   ascii: readonly string[];
   /** Accent color (hex) tinting this monster's battle art (ROG-31). */
   color: string;
+  /** Basic attack's damage element; defaults to `physical` when omitted. */
+  attackElement?: Element;
+  /** Status effects this monster's basic attack may inflict on hit; omitted means none. */
+  attackApplies?: AppliedEffect[];
   /**
    * Browser sprite id (ROG-44): a frame name in the Pixi atlas built by
    * `scripts/build-atlas.ts` (`src/web/atlas.ts` loads it, `src/web/main.ts`
