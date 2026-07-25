@@ -216,7 +216,7 @@ const splitCommentBody = (body: string): readonly string[] => {
   for (let i = 0; i < body.length; i += GITHUB_COMMENT_BODY_MAX_LENGTH) {
     chunks.push(body.slice(i, i + GITHUB_COMMENT_BODY_MAX_LENGTH));
   }
-  return chunks.length > 0 ? chunks : [body];
+  return chunks;
 };
 
 // Posts a completed assistant message as a GitHub comment, mirroring eve's
