@@ -233,9 +233,13 @@ export function buildBootstrapCommand(): string {
   const verifyChromiumLaunches = `node -e "require('playwright').chromium.launch().then(b=>b.close())"`;
   const installScreenshotTooling = [
     "mkdir -p /workspace/.eve",
-    `(corepack pnpm exec playwright install --with-deps chromium && ${verifyChromiumLaunches} && echo '{"available":true}' > ${SCREENSHOT_STATUS_PATH})`,
-    `|| echo '{"available":false,"reason":"playwright chromium failed to install or launch during sandbox bootstrap"}' > ${SCREENSHOT_STATUS_PATH}`,
-  ].join(" ");
+    // The `(…) || echo` probe-with-fallback is one shell clause, so it stays a
+    // single element; joining with " && " below keeps a real operator between
+    // `mkdir` and the subshell. A bare-space join here produced
+    // `mkdir -p /workspace/.eve (…)` - a subshell juxtaposed to a command with
+    // no operator - which is a bash syntax error that failed every deploy.
+    `(corepack pnpm exec playwright install --with-deps chromium && ${verifyChromiumLaunches} && echo '{"available":true}' > ${SCREENSHOT_STATUS_PATH}) || echo '{"available":false,"reason":"playwright chromium failed to install or launch during sandbox bootstrap"}' > ${SCREENSHOT_STATUS_PATH}`,
+  ].join(" && ");
 
   return [
     // tmux backs the terminal play harness (scripts/play.sh), pi backs its
