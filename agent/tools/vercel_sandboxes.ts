@@ -70,54 +70,98 @@ export interface VercelGetSessionResponse {
   }>;
 }
 
+// Anthropic requires a top-level `type: "object"` input schema, so the
+// union can't be the inputSchema itself - it stays as the strict runtime
+// parser while a flat object schema is what the model sees.
+const inputVariants = z.union([
+  z.object({
+    resource: z.literal("sandbox"),
+    action: z.literal("list"),
+    project: z.string().min(1).optional(),
+    status: z.enum(["running", "stopping", "stopped"]).optional(),
+    namePrefix: z.string().min(1).optional(),
+    tags: z.string().min(1).optional(),
+    limit: z.number().int().min(1).max(50).optional(),
+    cursor: z.string().min(1).optional(),
+    sortBy: z
+      .enum(["createdAt", "name", "statusUpdatedAt", "currentSnapshotId"])
+      .optional(),
+    sortOrder: z.enum(["asc", "desc"]).optional(),
+  }),
+  z.object({
+    resource: z.literal("sandbox"),
+    action: z.literal("get"),
+    name: z.string().min(1),
+    projectId: z.string().min(1).optional(),
+  }),
+  z.object({
+    resource: z.literal("session"),
+    action: z.literal("list"),
+    project: z.string().min(1).optional(),
+    name: z.string().min(1).optional(),
+    limit: z.number().int().min(1).max(50).optional(),
+    cursor: z.string().min(1).optional(),
+    sortOrder: z.enum(["asc", "desc"]).optional(),
+  }),
+  z.object({
+    resource: z.literal("session"),
+    action: z.literal("get"),
+    sessionId: z.string().min(1),
+  }),
+]);
+
 export default defineTool({
   description:
     'List or inspect Vercel Sandboxes and their sessions, to triage a stuck or failed sandbox. `resource: "sandbox", action: "list"` finds sandboxes by project/status/name-prefix/tag; `resource: "sandbox", action: "get"` looks up one by name, including its current session and routes. `resource: "session", action: "list"` / `"get"` inspect a session directly by id, including its status (pending/running/failed/aborted/stopped/stopping) and resource config. Read-only: this never stops, resumes, or mutates anything.',
-  inputSchema: z.union([
-    z.object({
-      resource: z.literal("sandbox"),
-      action: z.literal("list"),
-      project: z.string().min(1).optional(),
-      status: z.enum(["running", "stopping", "stopped"]).optional(),
-      namePrefix: z.string().min(1).optional(),
-      tags: z
-        .string()
-        .min(1)
-        .optional()
-        .describe("Single `key:value` tag filter."),
-      limit: z.number().int().min(1).max(50).optional(),
-      cursor: z.string().min(1).optional(),
-      sortBy: z
-        .enum(["createdAt", "name", "statusUpdatedAt", "currentSnapshotId"])
-        .optional(),
-      sortOrder: z.enum(["asc", "desc"]).optional(),
-    }),
-    z.object({
-      resource: z.literal("sandbox"),
-      action: z.literal("get"),
-      name: z.string().min(1),
-      projectId: z.string().min(1).optional(),
-    }),
-    z.object({
-      resource: z.literal("session"),
-      action: z.literal("list"),
-      project: z.string().min(1).optional(),
-      name: z
-        .string()
-        .min(1)
-        .optional()
-        .describe("Filter to sessions of one sandbox name."),
-      limit: z.number().int().min(1).max(50).optional(),
-      cursor: z.string().min(1).optional(),
-      sortOrder: z.enum(["asc", "desc"]).optional(),
-    }),
-    z.object({
-      resource: z.literal("session"),
-      action: z.literal("get"),
-      sessionId: z.string().min(1),
-    }),
-  ]),
-  async execute(input) {
+  inputSchema: z.object({
+    resource: z.enum(["sandbox", "session"]),
+    action: z.enum(["list", "get"]),
+    project: z
+      .string()
+      .min(1)
+      .optional()
+      .describe('`action: "list"` only: filter by project.'),
+    status: z
+      .enum(["running", "stopping", "stopped"])
+      .optional()
+      .describe('Sandbox `action: "list"` only.'),
+    namePrefix: z
+      .string()
+      .min(1)
+      .optional()
+      .describe('Sandbox `action: "list"` only.'),
+    tags: z
+      .string()
+      .min(1)
+      .optional()
+      .describe('Sandbox `action: "list"` only: single `key:value` tag filter.'),
+    limit: z.number().int().min(1).max(50).optional(),
+    cursor: z.string().min(1).optional(),
+    sortBy: z
+      .enum(["createdAt", "name", "statusUpdatedAt", "currentSnapshotId"])
+      .optional()
+      .describe('Sandbox `action: "list"` only.'),
+    sortOrder: z.enum(["asc", "desc"]).optional(),
+    name: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        'Sandbox name. Required for sandbox `action: "get"`; on session `action: "list"` it filters to one sandbox\'s sessions.',
+      ),
+    projectId: z
+      .string()
+      .min(1)
+      .optional()
+      .describe('Sandbox `action: "get"` only.'),
+    sessionId: z
+      .string()
+      .min(1)
+      .optional()
+      .describe('Required for session `action: "get"`.'),
+  }),
+  async execute(rawInput) {
+    const input = inputVariants.parse(rawInput);
     const credentials = requireVercelCredentials();
 
     if (input.resource === "sandbox" && input.action === "list") {

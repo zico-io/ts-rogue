@@ -236,8 +236,10 @@ sub-issue plan of PR-sized workstreams first. The proposed breakdown posts as a
 `review` session_update and then parks the turn on eve's built-in
 `ask_question` tool - the stop before approval is enforced by the runtime's
 `input.requested`/`session.waiting` protocol, not by prompt discipline, and
-`channels/linear.ts` already renders the elicitation and resolves the human's
-reply (`resolvePromptResponses`). Only after approval does the agent create the
+`channels/linear.ts` already renders the elicitation (with Linear's native
+select signal via `linearInputRequestSignal`; since eve 0.27 the runtime, not
+the channel, matches the human's reply to the pending input request). Only
+after approval does the agent create the
 sub-issues over the Linear MCP (`save_issue` with `parentId` and `blockedBy`
 relations), which turns the ticket into an ordinary issue group.
 

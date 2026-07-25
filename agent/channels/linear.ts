@@ -21,11 +21,11 @@ import {
   type LinearReceiveTarget,
   type LinearWebhookSecret,
   linearContinuationToken,
+  linearInputRequestSignal,
   listLinearAgentSessionActivities,
   messageFromLinearAgentSessionEvent,
   parseLinearWebhookEvent,
   renderLinearInputRequests,
-  resolveLinearPromptInputResponses,
   signLinearWebhookBody,
   updateLinearAgentSession,
 } from "eve/channels/linear";
@@ -240,30 +240,6 @@ export function stateFromAgentSession(
   };
 }
 
-async function resolvePromptResponses(input: {
-  readonly body: string;
-  readonly config: LinearChannelConfig;
-  readonly event: LinearAgentSessionEvent;
-}) {
-  try {
-    return resolveLinearPromptInputResponses({
-      activities: await listLinearAgentSessionActivities({
-        api: input.config.api,
-        credentials: input.config.credentials,
-        agentSessionId: input.event.agentSession.id,
-        last: 20,
-      }),
-      body: input.body,
-    });
-  } catch (error) {
-    console.warn(
-      "linear HITL activity lookup failed - treating prompt as a message",
-      error,
-    );
-    return [];
-  }
-}
-
 export async function resolveReceiveSession(
   target: LinearReceiveTarget,
   config: LinearChannelConfig,
@@ -389,7 +365,9 @@ function postActivity(
   content: Parameters<
     typeof createLinearAgentActivity
   >[0]["activity"]["content"],
-  activityOptions: { readonly ephemeral?: boolean } = {},
+  activityOptions: {
+    readonly ephemeral?: boolean;
+  } & ReturnType<typeof linearInputRequestSignal> = {},
 ) {
   return createLinearAgentActivity({
     api: options.api,
@@ -398,6 +376,8 @@ function postActivity(
       agentSessionId: requireAgentSessionId(channel.state.agentSessionId),
       content,
       ephemeral: activityOptions.ephemeral,
+      signal: activityOptions.signal,
+      signalMetadata: activityOptions.signalMetadata,
     },
   });
 }
@@ -456,10 +436,15 @@ function createLinearDefaultEvents(options: {
       }
     },
     async "input.requested"(data, channel) {
-      await postActivity(channel, options, {
-        body: renderLinearInputRequests(data.requests),
-        type: "elicitation",
-      });
+      await postActivity(
+        channel,
+        options,
+        {
+          body: renderLinearInputRequests(data.requests),
+          type: "elicitation",
+        },
+        linearInputRequestSignal(data.requests),
+      );
     },
     async "message.completed"(data, channel) {
       if (data.finishReason === "tool-calls") {
@@ -531,12 +516,6 @@ async function dispatchAgentSession(input: {
   const result = await onAgentSession(ctx, event);
   if (result === null) return;
 
-  const body = event.agentActivity?.body;
-  const inputResponses =
-    event.action === "prompted" && body !== undefined
-      ? await resolvePromptResponses({ body, config, event })
-      : [];
-
   const continuationToken = linearContinuationToken(event.agentSession.id);
 
   await cancel({ continuationToken });
@@ -548,7 +527,6 @@ async function dispatchAgentSession(input: {
         ...event.previousComments,
         ...(result.context ?? []),
       ],
-      inputResponses,
       message: messageFromLinearAgentSessionEvent(event),
     },
     {
