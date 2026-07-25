@@ -53,6 +53,44 @@ export const sessionUpdateActivity = ({
   type: "response" as const,
 });
 
+const firstNonEmptyLine = (value: string): string | undefined => {
+  for (const line of value.split(/\r?\n/u)) {
+    const trimmed = line.trim();
+    if (trimmed.length > 0) return trimmed;
+  }
+  return undefined;
+};
+
+const MAX_WORKING_PARAMETER = 120;
+
+/**
+ * The ephemeral "Working" chip chased after a still-working update, or null
+ * when the update legitimately ends the work. Linear derives session state
+ * from the last emitted activity, and a `response` means "work completed" -
+ * so a durable `started`/`progress` update alone flips the session to
+ * Finished while work (a delegated coding child, the root's own next steps)
+ * is still running. An ephemeral `action` re-signals `active` and is
+ * replaced by whatever activity comes next. `blocked`/`review`/`completed`
+ * post no chip: they hand control to a human, so "working" would be a lie.
+ */
+export const workingActivity = ({
+  message,
+  status,
+}: {
+  message: string;
+  status: SessionUpdateStatus;
+}) =>
+  status === "started" || status === "progress"
+    ? {
+        type: "action" as const,
+        action: "Working",
+        parameter: (firstNonEmptyLine(message) ?? "").slice(
+          0,
+          MAX_WORKING_PARAMETER,
+        ),
+      }
+    : null;
+
 /** Root updates pass through untouched; a child's are downgraded to progress/blocked and prefixed with its delegated issue (mirroring the child-relay chip prefix) so parallel children stay attributable. */
 export const forSessionRole = (
   input: { message: string; status: SessionUpdateStatus },
@@ -88,6 +126,26 @@ export default defineTool({
         content: sessionUpdateActivity(update),
       },
     });
+    // Fail-open: the durable update above is the deliverable; a failed chip
+    // must not error the tool (a retry would post the update twice).
+    const working = workingActivity(update);
+    if (working !== null) {
+      try {
+        await createLinearAgentActivity({
+          api,
+          credentials,
+          activity: {
+            agentSessionId: input.agentSessionId,
+            content: working,
+            ephemeral: true,
+          },
+        });
+      } catch (error) {
+        console.warn("session_update: working chip failed (fail-open)", {
+          error,
+        });
+      }
+    }
     return { delivered: true };
   },
 });

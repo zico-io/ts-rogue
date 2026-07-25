@@ -114,7 +114,16 @@ other tool call and to batch independent read-only lookups (sub-issue checks,
 durable, top-level Linear activity - tool calls and reasoning relay as
 transient `action`/`thought` chips (see `tools/session_update.ts` and
 `hooks/child-relay.ts`) - so without an early message a long orientation or
-delegation shows only a wall of chips with nothing a human can react to. That
+delegation shows only a wall of chips with nothing a human can react to.
+Durable updates post as `response`, and Linear derives session state from the
+last emitted activity - a `response` means "work completed", so a mid-work
+`started`/`progress` update alone flipped the session to Finished while the
+delegated child was still running. `session_update` therefore chases every
+still-working update with an ephemeral `action` chip ("Working") that
+re-signals `active` and is replaced by whatever activity comes next;
+`blocked`/`review`/`completed` post no chip, since they hand control to a
+human (`workingActivity` in `tools/session_update.ts`). A child's coerced
+statuses get the chip too - a child finishing means the root continues. That
 early message and the one-sentence reply the root pairs with each tool batch are
 both surfaced to the reader: `channels/linear.ts`'s `message.completed` handler
 lifts the first line of a tool-batch turn straight into a Linear `thought`, and

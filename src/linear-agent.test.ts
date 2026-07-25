@@ -6,6 +6,7 @@ import { parseAgentSessionId } from "../agent/hooks/child-relay";
 import {
   forSessionRole,
   sessionUpdateActivity,
+  workingActivity,
 } from "../agent/tools/session_update";
 
 describe("Linear agent interaction", () => {
@@ -70,6 +71,39 @@ describe("Linear agent interaction", () => {
     expect(
       forSessionRole({ message: "m", status: "completed" }, false, "ENG-2"),
     ).toEqual({ message: "m", status: "completed" });
+  });
+
+  it("chases still-working updates with an ephemeral Working chip, never terminal ones", () => {
+    // Linear derives session state from the last emitted activity and a
+    // `response` means "work completed" - without the chip, a mid-work
+    // Progress update showed the session as Finished while the delegated
+    // coding child was still running.
+    expect(
+      workingActivity({
+        message: "Delegating the edit now.\n\nDetails follow.",
+        status: "progress",
+      }),
+    ).toEqual({
+      type: "action",
+      action: "Working",
+      parameter: "Delegating the edit now.",
+    });
+    expect(workingActivity({ message: "kickoff", status: "started" })).toEqual({
+      type: "action",
+      action: "Working",
+      parameter: "kickoff",
+    });
+    // Terminal or human-handoff statuses must leave the durable response as
+    // the last activity so the session state reflects reality.
+    expect(workingActivity({ message: "m", status: "completed" })).toBeNull();
+    expect(workingActivity({ message: "m", status: "review" })).toBeNull();
+    expect(workingActivity({ message: "m", status: "blocked" })).toBeNull();
+  });
+
+  it("truncates the Working chip parameter to a chip-sized line", () => {
+    const long = "x".repeat(500);
+    const chip = workingActivity({ message: long, status: "progress" });
+    expect(chip?.parameter).toHaveLength(120);
   });
 
   it("preserves rich Markdown in Agent Session updates", () => {
