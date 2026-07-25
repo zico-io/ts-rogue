@@ -6,6 +6,7 @@
 - Keep orientation pre-computed: `instructions.md` carries the standing rules, and `onSession` writes the `ORIENTATION.md` brief so the root reads settled state instead of rediscovering it. Do not reintroduce runtime "read AGENTS.md / memory / PROJECT_PLAN" orientation directives.
 - Preserve single-child delegation for ordinary work.
 - Preserve `instructions.md`'s early `session_update` and tool-call-batching rules: the root must post a durable message before its first other tool call and batch independent read-only lookups into one turn, so a multi-call orientation is never silent noise in Linear.
+- Eve's messages describe the work and its status, never the contract's own mechanics (orientation lookups, sub-issue checks, delegation, batching, `pnpm check`). Those sentences surface to the reader verbatim, so keep the message rules as terse imperatives and hold design rationale in `README.md`, not the runtime prompt - reintroducing parrotable meta-language next to a message rule is how process text leaks into user-facing updates. Guarded by `evals/message-substance.eval.ts`.
 - Treat `.botfile/memory/domain/product.md` as the golden product SSOT: upsert it in the same PR when shipped behavior changes, and keep it clean under `pnpm docs:lint`.
 - Report progress through native Agent Session activities, not issue comments.
 - Keep startup useful when GitHub token minting fails and retry refreshes without blocking sessions.
