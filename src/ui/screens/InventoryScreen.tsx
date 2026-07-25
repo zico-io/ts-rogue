@@ -9,6 +9,7 @@ import {
   itemSellPrice,
   itemStatLine,
 } from "../../engine/loot/items";
+import type { ItemInstance } from "../../engine/loot/types";
 import type { GameEvent, GameState } from "../../engine/state/types";
 import { Screen } from "../components/Screen";
 import { normalizeInkKey } from "../hooks/normalizeInkKey";
@@ -19,6 +20,7 @@ import {
   type InventoryUiState,
   reduceInventoryUi,
   resolveInventoryIntent,
+  type SortKey,
   sortPackEntries,
 } from "./inventory/interaction";
 import {
@@ -154,7 +156,7 @@ interface GearSectionProps {
   member: GameState["party"][number];
   selected: PackEntry | undefined;
   inspecting: boolean;
-  sortKey: string;
+  sortKey: SortKey;
 }
 
 function GearSection({
@@ -227,19 +229,28 @@ function GearSection({
           Select a backpack item to compare against its slot.
         </Text>
       )}
-      {inspecting && inspectedItem && (
-        <Box flexDirection="column">
-          <Text color={theme.accent}>Affixes:</Text>
-          {itemAffixLines(inspectedItem).length === 0 ? (
-            <Text color={theme.textMuted}>(no affixes)</Text>
-          ) : (
-            itemAffixLines(inspectedItem).map((line) => (
-              <Text color={theme.text} key={line}>
-                {line}
-              </Text>
-            ))
-          )}
-        </Box>
+      {inspecting && inspectedItem && <InspectPanel item={inspectedItem} />}
+    </Box>
+  );
+}
+
+interface InspectPanelProps {
+  item: ItemInstance;
+}
+
+function InspectPanel({ item }: InspectPanelProps) {
+  const lines = itemAffixLines(item);
+  return (
+    <Box flexDirection="column">
+      <Text color={theme.accent}>Affixes:</Text>
+      {lines.length === 0 ? (
+        <Text color={theme.textMuted}>(no affixes)</Text>
+      ) : (
+        lines.map((line) => (
+          <Text color={theme.text} key={line}>
+            {line}
+          </Text>
+        ))
       )}
     </Box>
   );

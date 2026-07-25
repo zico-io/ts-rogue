@@ -208,16 +208,14 @@ export interface StoreUiContext {
   packEntries: readonly PackEntry[];
 }
 
-// ENG-3: the Store's own keymap no longer emits `equip`/`unequip` (gear
-// management moved to the dedicated Inventory screen, `screens/inventory`) -
-// the variants stay in the union because `buildPackEntries`/`EQUIP_SLOTS`/
-// `PackEntry` here are still the shared source the Inventory screen imports.
+// ENG-3: the Store's own keymap no longer emits `equip`/`unequip` - gear
+// management moved to the dedicated Inventory screen (`screens/inventory`),
+// which imports the shared `buildPackEntries`/`EQUIP_SLOTS`/`PackEntry`
+// below directly rather than through this effect union.
 export type StoreUiEffect =
   | { type: "storeBuy"; itemId: string }
   | { type: "storeSell"; itemId: string }
   | { type: "sellItem"; instanceId: string }
-  | { type: "equip"; instanceId: string; memberId: string }
-  | { type: "unequip"; slot: EquipmentSlotName; memberId: string }
   | { type: "back" };
 
 export interface StoreUiResult {
