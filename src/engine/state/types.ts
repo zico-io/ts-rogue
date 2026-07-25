@@ -1,5 +1,7 @@
 import type { BattleEvent, BattleState } from "../combat/types";
 import type { InventoryItem, PartyMember } from "../entities/party";
+import type { LootFilterSettings } from "../loot/lootFilter";
+import type { PendingLootTriage } from "../loot/pickup";
 import type { EquipmentSlotName, ItemInstance } from "../loot/types";
 import type { RngState } from "../rng/rng";
 import type { DungeonState, WorldState } from "../world/types";
@@ -43,7 +45,11 @@ export interface GameFlags {
  * Phase 6 (ROG-12) adds `flags` (run-level permadeath and game-over flags).
  * ROG-17 adds `classId` on each `PartyMember` (the chosen character class).
  * ROG-20 makes `party` support up to 4 members that each act and get targeted
- * in battle.
+ * in battle. ENG-2 adds `stash` (unlimited village gear storage, separate
+ * from the capped field backpack in `items`), `lootFilter` (auto-dismantle
+ * settings for field drops), and `pendingLootTriage` (a drop that overflowed
+ * the field backpack cap and needs a swap-or-dismantle decision before either
+ * backpack changes further).
  */
 export interface GameState {
   seed: number;
@@ -56,10 +62,16 @@ export interface GameState {
   gold: number;
   /** Owned, unequipped stacks of consumable items (potions, antidotes). */
   inventory: InventoryItem[];
-  /** Owned, unequipped generated equipment instances (affix-bearing loot). */
+  /** Owned, unequipped generated equipment instances (affix-bearing loot), capped at `FIELD_BACKPACK_CAP` in the field. */
   items: ItemInstance[];
+  /** Unlimited village storage for generated equipment (ENG-2); moved to/from `items` via Deposit/WithdrawItem. */
+  stash: ItemInstance[];
   /** Next unique item instance id; stamped onto rolled loot deterministically. */
   nextItemId: number;
+  /** Auto-dismantle settings applied to every new field drop (ENG-2). */
+  lootFilter: LootFilterSettings;
+  /** A drop that overflowed the field backpack cap, awaiting a swap-or-dismantle decision (ENG-2). */
+  pendingLootTriage: PendingLootTriage | null;
   /**
    * Ids from `world/waypoints.ts`'s registry (ENG-1 fast travel). Activates
    * on first visit, save/load-safe (a plain string array round-trips through
@@ -98,7 +110,12 @@ export type StepDirection = "forward" | "back";
  * (roll the recruit pool), `HireRecruit` (pay to add a pool recruit to the
  * party), and `DismissMember` (remove a non-hero member). ENG-1 adds `Zoom`
  * (fast travel to a landmark the party has already activated this run);
- * it is blocked while inside a dungeon or battle - evac first.
+ * it is blocked while inside a dungeon or battle - evac first. ENG-2 adds the
+ * Inventory system's events: `DepositItem`/`WithdrawItem` (move gear between
+ * the field backpack and the village stash), `SetLootFilter` (replace the
+ * auto-dismantle settings wholesale), `ResolveLootTriage` (answer a pending
+ * swap-or-dismantle prompt), and `UseFieldItem` (consume a heal item outside
+ * battle; battle item use keeps going through `BattleItem`).
  */
 export type GameEvent =
   | {
@@ -116,6 +133,12 @@ export type GameEvent =
   | { type: "EquipItem"; instanceId: string; memberId: string }
   | { type: "UnequipItem"; slot: EquipmentSlotName; memberId: string }
   | { type: "SellItem"; instanceId: string }
+  | { type: "DepositItem"; instanceId: string }
+  | { type: "WithdrawItem"; instanceId: string }
+  | { type: "SetLootFilter"; filter: LootFilterSettings }
+  | { type: "ResolveLootTriage"; action: "dismantleDrop" }
+  | { type: "ResolveLootTriage"; action: "swap"; instanceId: string }
+  | { type: "UseFieldItem"; itemId: string; memberId: string }
   | { type: "RecruitMember"; classId: string }
   | { type: "RefreshRecruits" }
   | { type: "HireRecruit"; index: number }

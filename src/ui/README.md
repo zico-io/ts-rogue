@@ -6,8 +6,9 @@ external I/O.
 ## Runtime flow
 
 `src/app.tsx` loads a save or creates a seeded run, then routes the title,
-village, overworld, dungeon, battle, game-over, crash, developer-console, and
-fast-travel picker (`ZoomScreen`) screens. Gameplay scenes share
+village, overworld, dungeon, battle, game-over, crash, developer-console,
+fast-travel picker (`ZoomScreen`), Inventory screen (`InventoryScreen`), and
+loot triage prompt (`LootTriageScreen`) screens. Gameplay scenes share
 `components/Screen.tsx`, which owns the bordered frame, party status, controls
 hint, and message log.
 
@@ -49,16 +50,22 @@ pure darks downsample to invisible ANSI black; that is why `border` and
 
 | Context | Controls |
 | --- | --- |
-| Global | `q` or Ctrl+C exits; backtick switches the developer console in dev mode; `z` opens fast travel from the overworld/village |
+| Global | `q` or Ctrl+C exits; backtick switches the developer console in dev mode; `z` opens fast travel from the overworld/village; `v` opens the Inventory screen from the village/overworld/dungeon |
 | New game | Up/Down and Enter select a class, then Normal or Permadeath mode; Esc returns to class selection |
-| Village | Up/Down and Enter select; `i`, `c`, `s`, `o` open buildings or leave; Esc returns |
+| Village | Up/Down and Enter select; `i`, `c`, `s`, `t`, `x`, `o` open buildings or leave; Esc returns |
 | Overworld | Arrows or `h`, `j`, `k`, `l` move; Esc returns to the village |
 | Dungeon | Arrows, WASD, or HJKL move and turn; `o` opens; Enter or `>` descends; `<` opens an evac confirm (y/n or Enter/Esc) |
 | Battle | Up/Down selects an action; Enter confirms; Esc cancels targeting |
 | Fast travel | Up/Down selects a discovered waypoint; Enter travels; Esc cancels |
 
-The store view uses Tab to switch between shop and backpack modes. Backpack
-actions equip, unequip, compare, and sell generated items.
+The store view uses Tab to switch between shop and backpack modes. The
+backpack mode only sells generated items now - equip, unequip, sort, and
+full-affix inspect moved to the dedicated Inventory screen (`v`), which also
+covers consumable field use, gold, and the loot filter settings pane. The
+village stash (`x`) mirrors the Store's Tab split: backpack mode deposits
+from the field backpack, stash mode withdraws (refused once the field
+backpack is at its cap). A drop that overflows the field backpack cap opens
+a mandatory swap-or-dismantle prompt before any other backpack action.
 
 The class selection offers Warrior, Rogue, and Wizard. Battle skill menus show
 only the selected class's known skills, and restarting after permadeath keeps

@@ -34,8 +34,11 @@ import { DEFAULT_CLASS_ID, findClass } from "../../data/classes";
 import { findMonster, MONSTERS, type MonsterDef } from "../../data/monsters";
 import { findShopItem } from "../../data/shops";
 import type { InventoryItem, PartyMember } from "../entities/party";
+import { consumeItem, healAmount, isHealItem } from "../loot/consumables";
 import { effectiveStats } from "../loot/equipment";
+import { maxPartyLevel } from "../loot/inventory";
 import { describeItem } from "../loot/items";
+import { applyLootPickup } from "../loot/pickup";
 import { rollVictoryLoot } from "../loot/resolution";
 import type { ItemInstance } from "../loot/types";
 import { Rng, type RngState } from "../rng/rng";
@@ -89,12 +92,6 @@ export const FLEE_MAX = 0.9;
 /** Level-up curve: xp needed to advance from `level` to `level + 1`. */
 export const XP_BASE = 10;
 export const XP_GROWTH = 1.5;
-
-/** Battle healing items and how much HP they restore. */
-export const BATTLE_ITEM_HEAL: Readonly<Record<string, number>> = {
-  potion: 30,
-  "hi-potion": 99,
-};
 
 /* -------------------------------------------------------------------------- */
 /* Derived stats                                                              */
@@ -389,14 +386,6 @@ export function startBattle(
 /* Battle items                                                               */
 /* -------------------------------------------------------------------------- */
 
-export function isBattleHealItem(itemId: string): boolean {
-  return itemId in BATTLE_ITEM_HEAL;
-}
-
-export function battleItemHealAmount(itemId: string): number {
-  return BATTLE_ITEM_HEAL[itemId] ?? 0;
-}
-
 /* -------------------------------------------------------------------------- */
 /* Round resolution                                                           */
 /* -------------------------------------------------------------------------- */
@@ -425,20 +414,6 @@ function villageWorldState(seed: number): WorldState {
   return createInitialWorldState(generateOverworldMap(seed));
 }
 
-function consumeItem(
-  inventory: readonly InventoryItem[],
-  itemId: string,
-): InventoryItem[] {
-  const owned = inventory.find((entry) => entry.itemId === itemId);
-  if (!owned) return [...inventory];
-  const remaining = owned.quantity - 1;
-  return remaining > 0
-    ? inventory.map((entry) =>
-        entry.itemId === itemId ? { ...entry, quantity: remaining } : entry,
-      )
-    : inventory.filter((entry) => entry.itemId !== itemId);
-}
-
 function validateCommand(
   command: Command,
   actor: PartyMember,
@@ -454,7 +429,7 @@ function validateCommand(
     }
     case "item": {
       const owned = inventory.find((entry) => entry.itemId === command.itemId);
-      return !!owned && owned.quantity > 0 && isBattleHealItem(command.itemId);
+      return !!owned && owned.quantity > 0 && isHealItem(command.itemId);
     }
     case "defend":
       return true;
@@ -558,7 +533,7 @@ function applyMemberCommand(
       break;
     }
     case "item": {
-      const heal = battleItemHealAmount(command.itemId);
+      const heal = healAmount(command.itemId);
       if (heal > 0) {
         actor.hp = Math.min(actor.maxHp, actor.hp + heal);
         itemUsed = command.itemId;
@@ -712,13 +687,30 @@ function finalizeWon(
       entry("The dungeon guardian falls. The dungeon is cleared!", "quest"),
     );
   }
-  const lootLogs = loot.map((item) =>
+  const pickup = applyLootPickup(
+    state.items,
+    loot,
+    state.lootFilter,
+    maxPartyLevel(finalParty),
+  );
+  const lootLogs = pickup.kept.map((item) =>
     entry(`Looted ${describeItem(item)}!`, "loot"),
   );
+  // ponytail: a log-line summary is the loot toast for now - `MessageLog`
+  // colors a whole line by `LogKind`, not per-substring, so it can't
+  // rarity-color each item within one line. A dedicated rarity-swatched
+  // toast widget is the upgrade path if this needs richer visuals later.
+  if (pickup.dismantled.length > 0 || pickup.pendingLootTriage) {
+    lootLogs.push(
+      entry(
+        `Loot: kept ${pickup.kept.length}, dismantled ${pickup.dismantled.length} -> ${pickup.gold}g`,
+        "loot",
+      ),
+    );
+  }
   const inventory = itemUsed
     ? consumeItem(state.inventory, itemUsed)
     : state.inventory;
-  const items = loot.length ? [...state.items, ...loot] : state.items;
   const clearedDungeon = clearEncounter(state.dungeonState);
   const dungeonState =
     clearedDungeon && wasBossVictory
@@ -729,9 +721,10 @@ function finalizeWon(
     rngState,
     scene: bs.returnScene,
     party: finalParty,
-    gold: state.gold + goldGain,
+    gold: state.gold + goldGain + pickup.gold,
     inventory,
-    items,
+    items: pickup.items,
+    pendingLootTriage: pickup.pendingLootTriage,
     nextItemId,
     dungeonState,
     battleState: null,

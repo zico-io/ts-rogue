@@ -9,8 +9,15 @@ import {
   recruitClassName,
   recruitCost,
 } from "../entities/recruits";
+import { consumeItem, healAmount, isHealItem } from "../loot/consumables";
 import { type EquipmentSlotName, equipTargetSlot } from "../loot/equipment";
+import { FIELD_BACKPACK_CAP, maxPartyLevel } from "../loot/inventory";
 import { describeItem, itemSellPrice } from "../loot/items";
+import {
+  DEFAULT_LOOT_FILTER,
+  type LootFilterSettings,
+} from "../loot/lootFilter";
+import { applyLootPickup } from "../loot/pickup";
 import { rollChestLoot } from "../loot/resolution";
 import { Rng } from "../rng/rng";
 import {
@@ -89,7 +96,10 @@ export function newGame(seed: number, options?: NewGameOptions): GameState {
     gold: 50,
     inventory: [],
     items: [],
+    stash: [],
     nextItemId: 1,
+    lootFilter: DEFAULT_LOOT_FILTER,
+    pendingLootTriage: null,
     activatedWaypoints: activateWaypoint([], VILLAGE_WAYPOINT_ID),
     worldState: createInitialWorldState(map),
     dungeonState: null,
@@ -417,22 +427,39 @@ function openChest(state: GameState): GameState {
   // floor's chest loot table, routed through the seeded RNG so saves agree.
   const rng = new Rng(state.seed, state.rngState);
   const chest = rollChestLoot(rng, ds.floor, state.nextItemId);
-  const items = chest.items.length
-    ? [...state.items, ...chest.items]
-    : state.items;
+  const pickup = applyLootPickup(
+    state.items,
+    chest.items,
+    state.lootFilter,
+    maxPartyLevel(state.party),
+  );
   let message = chestLootMessage(loot);
-  if (chest.items.length > 0) {
-    message = `${message.replace(/!$/, "")}, plus ${describeItem(chest.items[0])}!`;
+  if (pickup.kept.length > 0) {
+    message = `${message.replace(/!$/, "")}, plus ${describeItem(pickup.kept[0])}!`;
+  }
+  const logs: LogEntry[] = [entry(message, "loot")];
+  // ponytail: a log-line summary is the loot toast for now - `MessageLog`
+  // colors a whole line by `LogKind`, not per-substring, so it can't
+  // rarity-color each item within one line. A dedicated rarity-swatched
+  // toast widget is the upgrade path if this needs richer visuals later.
+  if (pickup.dismantled.length > 0 || pickup.pendingLootTriage) {
+    logs.push(
+      entry(
+        `Loot: kept ${pickup.kept.length}, dismantled ${pickup.dismantled.length} -> ${pickup.gold}g`,
+        "loot",
+      ),
+    );
   }
   return {
     ...state,
     rngState: rng.getState(),
-    gold: state.gold + loot.gold,
+    gold: state.gold + loot.gold + pickup.gold,
     inventory,
-    items,
+    items: pickup.items,
+    pendingLootTriage: pickup.pendingLootTriage,
     nextItemId: chest.nextId,
     dungeonState: { ...ds, layout },
-    log: [...state.log, entry(message, "loot")],
+    log: [...state.log, ...logs],
   };
 }
 
@@ -728,6 +755,203 @@ function sellItem(state: GameState, instanceId: string): GameState {
   };
 }
 
+/**
+ * `DepositItem` reducer (ENG-2). Moves a field backpack item into the
+ * unlimited village stash; symmetrical with `withdrawItem`.
+ */
+function depositItem(state: GameState, instanceId: string): GameState {
+  const item = state.items.find((entry) => entry.instanceId === instanceId);
+  if (!item) {
+    return {
+      ...state,
+      log: [...state.log, entry("There is nothing to deposit")],
+    };
+  }
+  return {
+    ...state,
+    items: state.items.filter((entry) => entry.instanceId !== instanceId),
+    stash: [...state.stash, item],
+    log: [...state.log, entry(`Stashed ${describeItem(item)}.`, "loot")],
+  };
+}
+
+/**
+ * `WithdrawItem` reducer (ENG-2). Moves a stashed item into the field
+ * backpack, refusing (with a log line, no-op) when the field backpack is
+ * already at `FIELD_BACKPACK_CAP`.
+ */
+function withdrawItem(state: GameState, instanceId: string): GameState {
+  const item = state.stash.find((entry) => entry.instanceId === instanceId);
+  if (!item) {
+    return {
+      ...state,
+      log: [...state.log, entry("There is nothing to withdraw")],
+    };
+  }
+  if (state.items.length >= FIELD_BACKPACK_CAP) {
+    return {
+      ...state,
+      log: [
+        ...state.log,
+        entry("The field backpack is full - deposit or sell something first"),
+      ],
+    };
+  }
+  return {
+    ...state,
+    stash: state.stash.filter((entry) => entry.instanceId !== instanceId),
+    items: [...state.items, item],
+    log: [...state.log, entry(`Withdrew ${describeItem(item)}.`, "loot")],
+  };
+}
+
+/**
+ * `SetLootFilter` reducer (ENG-2). Replaces the auto-dismantle settings
+ * wholesale - the Inventory screen's filter pane always sends the full
+ * updated object back rather than a partial patch.
+ */
+function setLootFilter(
+  state: GameState,
+  filter: LootFilterSettings,
+): GameState {
+  return { ...state, lootFilter: filter };
+}
+
+/**
+ * `ResolveLootTriage` reducer (ENG-2). Answers a pending swap-or-dismantle
+ * prompt raised when a field drop overflowed the backpack cap:
+ * `dismantleDrop` sells the pending drop; `swap` sells a named carried item
+ * and keeps the drop instead. Either way, any further drops queued behind
+ * the resolved one are re-run through the filter/cap pipeline, which may
+ * raise a new pending triage of its own. No-ops (with a log line) when
+ * there is nothing pending, or `swap` names an item not in the backpack.
+ */
+function resolveLootTriage(
+  state: GameState,
+  action: { action: "dismantleDrop" } | { action: "swap"; instanceId: string },
+): GameState {
+  const pending = state.pendingLootTriage;
+  if (!pending) {
+    return {
+      ...state,
+      log: [...state.log, entry("There is nothing to resolve")],
+    };
+  }
+
+  let items = state.items;
+  let gold = state.gold;
+  const logs: LogEntry[] = [];
+
+  if (action.action === "dismantleDrop") {
+    const proceeds = itemSellPrice(pending.drop);
+    gold += proceeds;
+    logs.push(
+      entry(
+        `Dismantled ${describeItem(pending.drop)} for ${proceeds} gold.`,
+        "loot",
+      ),
+    );
+  } else {
+    const swapTarget = items.find(
+      (entry) => entry.instanceId === action.instanceId,
+    );
+    if (!swapTarget) {
+      return {
+        ...state,
+        log: [...state.log, entry("There is nothing to swap")],
+      };
+    }
+    const proceeds = itemSellPrice(swapTarget);
+    gold += proceeds;
+    items = [
+      ...items.filter((entry) => entry.instanceId !== action.instanceId),
+      pending.drop,
+    ];
+    logs.push(
+      entry(
+        `Swapped out ${describeItem(swapTarget)} for ${describeItem(pending.drop)} (+${proceeds} gold).`,
+        "loot",
+      ),
+    );
+  }
+
+  const continued = applyLootPickup(
+    items,
+    pending.queue,
+    state.lootFilter,
+    maxPartyLevel(state.party),
+  );
+  gold += continued.gold;
+  const toastLogs = continued.kept.map((item) =>
+    entry(`Looted ${describeItem(item)}!`, "loot"),
+  );
+  if (continued.dismantled.length > 0 || continued.pendingLootTriage) {
+    toastLogs.push(
+      entry(
+        `Loot: kept ${continued.kept.length}, dismantled ${continued.dismantled.length} -> ${continued.gold}g`,
+        "loot",
+      ),
+    );
+  }
+
+  return {
+    ...state,
+    gold,
+    items: continued.items,
+    pendingLootTriage: continued.pendingLootTriage,
+    log: [...state.log, ...logs, ...toastLogs],
+  };
+}
+
+/**
+ * `UseFieldItem` reducer (ENG-2). Field-only heal item use (battle keeps
+ * going through `BattleItem`/`resolveBattleEvent`, unchanged): no-ops with a
+ * log line when in battle, the item isn't a recognized heal item, none are
+ * owned, or `memberId` doesn't name a party member.
+ */
+function applyFieldItemUse(
+  state: GameState,
+  itemId: string,
+  memberId: string,
+): GameState {
+  if (state.battleState !== null) {
+    return {
+      ...state,
+      log: [...state.log, entry("Cannot use field items in battle")],
+    };
+  }
+  if (!isHealItem(itemId)) {
+    return { ...state, log: [...state.log, entry(`Cannot use ${itemId}`)] };
+  }
+  const owned = state.inventory.find((entry) => entry.itemId === itemId);
+  if (!owned || owned.quantity <= 0) {
+    return {
+      ...state,
+      log: [...state.log, entry(`You have no ${itemId} to use`)],
+    };
+  }
+  const memberIndex = state.party.findIndex((m) => m.id === memberId);
+  if (memberIndex === -1) {
+    return { ...state, log: [...state.log, entry("No such party member")] };
+  }
+  const member = state.party[memberIndex];
+  const healed = Math.min(member.maxHp, member.hp + healAmount(itemId));
+  const applied = healed - member.hp;
+  const party = state.party.map((entry, index) =>
+    index === memberIndex ? { ...entry, hp: healed } : entry,
+  );
+  const itemName = findShopItem(itemId)?.name ?? itemId;
+  return {
+    ...state,
+    party,
+    inventory: consumeItem(state.inventory, itemId),
+    log: [
+      ...state.log,
+      entry(`${member.name} uses ${itemName} and recovers ${applied} HP.`),
+    ],
+  };
+}
+
 /** Pure reducer: never mutates `state`. All state transitions route through here. */
 export function reduce(state: GameState, event: GameEvent): GameState {
   switch (event.type) {
@@ -756,6 +980,16 @@ export function reduce(state: GameState, event: GameEvent): GameState {
       return unequipItem(state, event.slot, event.memberId);
     case "SellItem":
       return sellItem(state, event.instanceId);
+    case "DepositItem":
+      return depositItem(state, event.instanceId);
+    case "WithdrawItem":
+      return withdrawItem(state, event.instanceId);
+    case "SetLootFilter":
+      return setLootFilter(state, event.filter);
+    case "ResolveLootTriage":
+      return resolveLootTriage(state, event);
+    case "UseFieldItem":
+      return applyFieldItemUse(state, event.itemId, event.memberId);
     case "RecruitMember":
       return recruitMember(state, event.classId);
     case "RefreshRecruits":

@@ -109,3 +109,38 @@ export function itemStatLine(item: ItemInstance): string {
   }
   return line;
 }
+
+/**
+ * One rolled affix line for the Inventory screen's full inspect view, e.g.
+ * "Prefix: Brutal (+2 STR)". Unlike {@link itemStatLine} (a merged per-stat
+ * total), this lists each prefix/suffix/implicit separately by name and
+ * value so the player can see exactly what rolled onto the item.
+ */
+export function describeAffixes(item: ItemInstance): string[] {
+  const lines: string[] = [];
+  if (item.implicit) {
+    const def = findAffix(item.implicit.affixId);
+    if (def) {
+      lines.push(
+        `Implicit: ${def.name} (+${item.implicit.value} ${def.stat.toUpperCase()})`,
+      );
+    }
+  }
+  for (const affix of item.prefixes) {
+    const def = findAffix(affix.affixId);
+    if (def) {
+      lines.push(
+        `Prefix: ${def.name} (+${affix.value} ${def.stat.toUpperCase()})`,
+      );
+    }
+  }
+  for (const affix of item.suffixes) {
+    const def = findAffix(affix.affixId);
+    if (def) {
+      lines.push(
+        `Suffix: ${def.name} (+${affix.value} ${def.stat.toUpperCase()})`,
+      );
+    }
+  }
+  return lines;
+}

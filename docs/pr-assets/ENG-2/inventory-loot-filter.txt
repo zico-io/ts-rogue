@@ -1,0 +1,40 @@
+┌─ Inventory - Loot Filter ────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Auto-dismantles a drop only when it fails the rarity bar AND the ilvl bar AND carries none of your kept affix stats. │
+│ > Enabled: no                                                                                                        │
+│   Min rarity to keep: common                                                                                         │
+│   Min ilvl offset: -999                                                                                              │
+│   Always keep STR affixes: no                                                                                        │
+│   Always keep AGI affixes: no                                                                                        │
+│   Always keep VIT affixes: no                                                                                        │
+│   Always keep INT affixes: no                                                                                        │
+│ Enabled (row 1/7)                                                                                                    │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│ Hero     Lv1  HP ██████████ 24/24   MP ██████ 6/6                                                                    │
+│ Gold 40                                                                                                              │
+│ Up/down to select a row, Enter/Left/Right to edit, Tab for gear, Esc to go back.                                     │
+│ ┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐ │
+│ │ Started new game with seed 42                                                                                    │ │
+│ │ Bought 1 Potion for 10 gold                                                                                      │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘

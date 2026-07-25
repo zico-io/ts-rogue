@@ -33,6 +33,11 @@ export const OPTIONS: readonly MenuOption[] = [
   { key: "store", label: "Store - buy and sell items", shortcut: "s" },
   { key: "tavern", label: "Tavern - recruit party members", shortcut: "t" },
   {
+    key: "stash",
+    label: "Stash - store gear beyond the field backpack",
+    shortcut: "x",
+  },
+  {
     key: "overworld",
     label: "Leave town - venture into the overworld",
     shortcut: "o",
@@ -60,6 +65,7 @@ const overviewKeymap: Keymap = {
   "char:c": { kind: "shortcut", char: "c" },
   "char:s": { kind: "shortcut", char: "s" },
   "char:t": { kind: "shortcut", char: "t" },
+  "char:x": { kind: "shortcut", char: "x" },
   "char:o": { kind: "shortcut", char: "o" },
 };
 
@@ -523,6 +529,91 @@ export function reduceTavernUi(
     if (memberId && partyIndex !== 0) {
       return { state: { ...state, confirmId: memberId } };
     }
+  }
+  return { state };
+}
+
+// ---------------------------------------------------------------------------
+// Stash (ENG-2)
+// ---------------------------------------------------------------------------
+
+export type StashMode = "backpack" | "stash";
+
+export interface StashUiState {
+  mode: StashMode;
+  cursor: number;
+}
+
+export const INITIAL_STASH_UI_STATE: StashUiState = {
+  mode: "backpack",
+  cursor: 0,
+};
+
+export interface StashUiContext {
+  backpackCount: number;
+  stashCount: number;
+}
+
+export type StashUiEffect =
+  | { type: "deposit"; index: number }
+  | { type: "withdraw"; index: number }
+  | { type: "back" };
+
+export interface StashUiResult {
+  state: StashUiState;
+  effect?: StashUiEffect;
+}
+
+const stashKeymap: Keymap = {
+  escape: { kind: "cancel" },
+  tab: { kind: "switchMode" },
+  up: { kind: "menuUp" },
+  down: { kind: "menuDown" },
+  "char:d": { kind: "deposit" },
+  "char:w": { kind: "withdraw" },
+};
+
+/** Resolves the `Intent` for a key press in the Stash; both modes share the same keymap. */
+export function resolveStashIntent(key: KeyName): Intent | undefined {
+  return stashKeymap[key];
+}
+
+/**
+ * Pure transition function for the Stash's backpack/stash modes. `index`
+ * effects report a position into whichever list is active (`ctx.backpackCount`
+ * for `backpack` mode, `ctx.stashCount` for `stash` mode) - the component
+ * resolves that to an `instanceId` before dispatching, the same split
+ * `reduceStoreUi` uses for backpack entries.
+ */
+export function reduceStashUi(
+  state: StashUiState,
+  intent: Intent,
+  ctx: StashUiContext,
+): StashUiResult {
+  if (intent.kind === "cancel") return { state, effect: { type: "back" } };
+  if (intent.kind === "switchMode") {
+    return {
+      state: {
+        mode: state.mode === "backpack" ? "stash" : "backpack",
+        cursor: 0,
+      },
+    };
+  }
+
+  const count = state.mode === "backpack" ? ctx.backpackCount : ctx.stashCount;
+  if (count === 0) return { state };
+  if (intent.kind === "menuUp") {
+    return { state: { ...state, cursor: (state.cursor + count - 1) % count } };
+  }
+  if (intent.kind === "menuDown") {
+    return { state: { ...state, cursor: (state.cursor + 1) % count } };
+  }
+  const index = Math.min(state.cursor, count - 1);
+  if (state.mode === "backpack" && intent.kind === "deposit") {
+    return { state, effect: { type: "deposit", index } };
+  }
+  if (state.mode === "stash" && intent.kind === "withdraw") {
+    return { state, effect: { type: "withdraw", index } };
   }
   return { state };
 }

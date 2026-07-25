@@ -20,6 +20,11 @@ export const globalKeymap: Keymap = {
   // ENG-1: opens the fast-travel picker. Handlers gate this to the
   // overworld/village scenes themselves (evac first inside a dungeon).
   "char:z": { kind: "openZoom" },
+  // ENG-2: opens the Inventory screen. Not "char:i" - the village overview
+  // already binds `i` to entering the Inn, and this fires globally
+  // regardless of which village sub-view is open, so it needs a letter no
+  // scene's local keymap claims. Handlers gate this to non-battle scenes.
+  "char:v": { kind: "openInventory" },
 };
 
 /** Resolves the global `Intent` bound to a key press, if any. */

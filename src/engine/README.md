@@ -56,6 +56,12 @@ loot before returning to the originating scene.
   monster-specific implicit properties.
 - Village events cover resting, buying, selling, and equipment; saving stays at
   the UI and persistence boundary.
+- The field backpack for generated gear is capped (`FIELD_BACKPACK_CAP`); the
+  village stash holds unlimited overflow. An opt-in loot filter auto-dismantles
+  unwanted drops for gold, and a drop that would overflow the field cap raises a
+  pending swap-or-dismantle triage the caller must resolve before either backpack
+  changes further. Heal items can be used in the field outside battle via
+  `UseFieldItem`, sharing the same heal table as battle item use.
 
 Run the engine and persistence tests with `pnpm test:unit`. Product scope and
 design decisions live in [`PROJECT_PLAN.md`](../../PROJECT_PLAN.md).

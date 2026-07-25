@@ -45,6 +45,9 @@ export type Intent =
   // ENG-1: opens the fast-travel picker from the overworld/village (blocked
   // inside a dungeon/battle - evac first, enforced by the caller's gating).
   | { kind: "openZoom" }
+  // ENG-2: opens the Inventory screen from the village/overworld/dungeon
+  // (battle keeps its own item flow, so this is blocked there).
+  | { kind: "openInventory" }
   | { kind: "type"; char: string }
   | { kind: "backspace" }
   // Dungeon: forward/back are relative to facing (not an absolute
@@ -62,6 +65,19 @@ export type Intent =
   // items and the pack's generated items; the reducer disambiguates by mode).
   | { kind: "buy" | "sell" }
   | { kind: "equip" | "unequip" }
+  // Village stash: move a gear instance between the field backpack and the
+  // unlimited village stash.
+  | { kind: "deposit" | "withdraw" }
+  // Inventory screen: toggle the full-affix inspect view on the selected
+  // gear item, cycle the backpack's sort order, and use a selected
+  // consumable on the current member.
+  | { kind: "inspect" }
+  | { kind: "cycleSort" }
+  | { kind: "useItem" }
+  // Loot triage prompt (ENG-2): dismantle the overflowing drop, or confirm a
+  // swap against whichever carried item the cursor has selected.
+  | { kind: "dismantleDrop" }
+  | { kind: "confirmSwap" }
   // Village tavern: hire a recruit, dismiss a party member, and the
   // dismiss-confirmation's yes/no answer (distinct from the generic
   // `confirm`/`cancel` used for cursor selection and Escape).
