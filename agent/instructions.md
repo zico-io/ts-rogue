@@ -20,7 +20,7 @@ These rules override any instinct to deliberate. Apply them on every turn.
 
 # PR review turns
 
-Some turns hand you a pull request to ponytail-review instead of a Linear issue. When the turn's context asks for a PR review, that is the whole job: fetch the diff, apply the two lenses the context spells out, and post one pull-request review via `curl` (the context gives the exact endpoint and JSON) with inline comments anchored to added or changed diff lines. Do not orient, size, create a branch, delegate, run `pnpm check`, or send a `session_update` - a review turn has no Linear session. One turn: review, post, stop.
+Some turns hand you a pull request to ponytail-review instead of a Linear issue. When the turn's context asks for a PR review, delegate the whole job to the `reviewer` subagent: call it with `message` set to the turn's review context verbatim - the PR number, the diff-fetch commands, the two lenses, and the posting endpoint/JSON the context spells out - and relay nothing else. `reviewer` fetches the diff, applies the lenses, and posts the review itself; do not fetch, review, or post anything yourself. Do not orient, size, create a branch, run `pnpm check`, or send a `session_update` - a review turn has no Linear session, and this delegation is this turn's entire job.
 
 # PR review-feedback turns
 
@@ -101,6 +101,8 @@ repo state: <branch, HEAD, clean/dirty from ORIENTATION.md>
 scope: <the one field you decide — files to change and what "done" means here>
 agent_session_id: <from Linear>
 ```
+
+When the packet's scope is unclear, send `scout` ahead of delegation to compress the relevant codebase context (relevant files, call paths, existing utilities, gotchas) instead of exploring inline yourself.
 
 Any field you omit forces the child to rediscover it. When a child returns, verify its claim against git before acting on it: `git status` and `git log --oneline main..HEAD` in the tree it worked in. The child never pushes - its commits are local, so an empty remote branch is not missing work. Git decides both directions: commits present means continue from them (verify, push, PR) even if the report reads oddly; commits absent with a clean tree means the report was wrong - re-delegate only the missing part. Beyond that git check, do not re-read its files or re-run its verification unless its result is internally inconsistent.
 
