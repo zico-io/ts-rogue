@@ -54,4 +54,29 @@ describe("GitHub agent events", () => {
       ),
     ).toBe("ROG-3");
   });
+
+  it("recognizes every driven team key, not just ROG", () => {
+    const pr = (raw: GitHubPullRequestEvent["raw"]) => ({
+      action: "closed" as const,
+      headSha: "abc",
+      pullRequestNumber: 1,
+      raw,
+    });
+
+    expect(
+      linearRefFromPullRequest(pr({ head: { ref: "nico/eng-1-fast-travel" } })),
+    ).toBe("ENG-1");
+    expect(linearRefFromPullRequest(pr({ title: "HAR-9: scoping gate" }))).toBe(
+      "HAR-9",
+    );
+    expect(linearRefFromPullRequest(pr({ body: "closes WEB-2" }))).toBe(
+      "WEB-2",
+    );
+    // Hyphenated-number tokens that are not team keys must not match.
+    expect(
+      linearRefFromPullRequest(
+        pr({ body: "hashed with SHA-256, dates in ISO-8601" }),
+      ),
+    ).toBeNull();
+  });
 });

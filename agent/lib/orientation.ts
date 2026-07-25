@@ -13,6 +13,13 @@ export interface GitFacts {
   upstream: string | null;
   /** Commits on HEAD not yet on `upstream`. Always 0 when `upstream` is null (there's no ahead/behind to compute). */
   unpushedCount: number;
+  /**
+   * Linked worktree paths left behind by a prior turn (the main checkout is
+   * excluded). Ralph mode's parallel workstreams live in `.worktrees/<id>`;
+   * their branches and any unpushed commits are invisible to the current-branch
+   * checks above, so leftovers must be surfaced explicitly.
+   */
+  worktrees?: readonly string[];
 }
 
 // One command emits the raw state as delimited lines; onSession runs it in the
@@ -30,21 +37,38 @@ export const GIT_FACTS_COMMAND = [
   "git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null || echo NONE",
   "echo ---AHEAD---",
   "git rev-list --count @{u}..HEAD 2>/dev/null || echo 0",
+  "echo ---WORKTREES---",
+  "git worktree list --porcelain",
 ].join(" && ");
 
 export function parseGitFacts(stdout: string): GitFacts {
   const [head = "", afterHead = ""] = stdout.split("---COMMITS---");
-  const [commitsRaw = "", afterCommits = ""] = afterHead.split("---UPSTREAM---");
-  const [upstreamRaw = "", aheadRaw = ""] = afterCommits.split("---AHEAD---");
+  const [commitsRaw = "", afterCommits = ""] =
+    afterHead.split("---UPSTREAM---");
+  const [upstreamRaw = "", afterUpstream = ""] =
+    afterCommits.split("---AHEAD---");
+  const [aheadRaw = "", worktreesRaw = ""] =
+    afterUpstream.split("---WORKTREES---");
   const [branch = "", headSha = "", cleanFlag = ""] = head
     .trim()
     .split("\n")
     .map((line) => line.trim());
   const upstreamValue = upstreamRaw.trim();
-  const upstream = upstreamValue === "" || upstreamValue === "NONE" ? null : upstreamValue;
+  const upstream =
+    upstreamValue === "" || upstreamValue === "NONE" ? null : upstreamValue;
   const unpushedCount =
     upstream === null ? 0 : Number.parseInt(aheadRaw.trim(), 10) || 0;
+  // `git worktree list --porcelain` lists the main checkout first; every
+  // later `worktree <path>` line is a linked worktree left behind.
+  const worktrees = worktreesRaw
+    .trim()
+    .split("\n")
+    .filter((line) => line.startsWith("worktree "))
+    .slice(1)
+    .map((line) => line.slice("worktree ".length).trim())
+    .filter(Boolean);
   return {
+    worktrees,
     branch,
     headSha,
     clean: cleanFlag === "clean",
@@ -130,6 +154,15 @@ export function buildOrientationBrief(
         `- ${facts.unpushedCount} commit(s) on this branch are not yet on \`${facts.upstream}\` (the automatic push-on-session-start didn't clear them) - push now with \`git push\`; if it keeps failing, back the commits up per the git-push-failure recovery steps in \`instructions.md\` before reporting a blocker.`,
       );
     }
+  }
+  if (facts.worktrees && facts.worktrees.length > 0) {
+    lines.push(
+      `- Leftover worktrees from a prior turn: ${facts.worktrees
+        .map((path) => `\`${path}\``)
+        .join(
+          ", ",
+        )}. Each may hold a branch with unpushed commits the checks above cannot see - push (or back up) each worktree's branch from inside it, then \`git worktree remove\` it before starting new work.`,
+    );
   }
   if (screenshotTooling) {
     lines.push(

@@ -1,8 +1,8 @@
 import { connectGitHubCredentials } from "@vercel/connect/eve";
 import {
   defaultGitHubAuth,
-  githubChannel,
   type GitHubPullRequestEvent,
+  githubChannel,
 } from "eve/channels/github";
 
 export const isMainMerge = (pullRequest: GitHubPullRequestEvent) => {
@@ -16,6 +16,16 @@ export const isMainMerge = (pullRequest: GitHubPullRequestEvent) => {
     base.ref === "main"
   );
 };
+
+// Every Linear team key whose issues this agent drives. An explicit list, not
+// a generic [A-Z]+-\d+ pattern: PR bodies are scanned too, and a generic match
+// would false-positive on tokens like SHA-256 or ISO-8601.
+export const LINEAR_TEAM_KEYS = ["ROG", "ENG", "HAR", "WEB"] as const;
+
+const LINEAR_REF_PATTERN = new RegExp(
+  `\\b(?:${LINEAR_TEAM_KEYS.join("|")})-\\d+\\b`,
+  "i",
+);
 
 // The Linear issue a merged PR closes, taken from the branch, title, or body.
 // ralph mode uses it to advance the enclosing issue group; standalone PRs
@@ -31,7 +41,7 @@ export const linearRefFromPullRequest = (
   const fields = [head?.ref, title, body];
   for (const field of fields) {
     if (typeof field !== "string") continue;
-    const match = field.match(/\bROG-\d+\b/i);
+    const match = field.match(LINEAR_REF_PATTERN);
     if (match) return match[0].toUpperCase();
   }
   return null;
@@ -41,7 +51,7 @@ const MAIN_MERGE_SYNCED =
   "A pull request was merged into main. The sandbox checkout has already updated automatically; no manual repository sync is needed.";
 
 const ralphAdvanceContext = (ref: string) =>
-  `The merged pull request closes Linear issue ${ref}. If ${ref} is a sub-issue of a parent issue you are ralphing (an in-progress issue group), advance that group per the "Issue groups" instructions: confirm ${ref} is Done, then drive the next ready sub-issue. If ${ref} is a standalone issue, no further action is needed.`;
+  `The merged pull request closes Linear issue ${ref}. If ${ref} is a sub-issue of a parent issue you are ralphing (an in-progress issue group), advance that group per the "Issue groups" instructions: confirm ${ref} is Done, then claim and drive every newly ready sub-issue. If ${ref} is a standalone issue, no further action is needed.`;
 
 export default githubChannel({
   credentials: connectGitHubCredentials("github/ts-rogue-eve-github"),

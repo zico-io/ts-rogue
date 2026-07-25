@@ -267,7 +267,11 @@ export function buildBootstrapCommand(): string {
     // instructions.md).
     "(pi install git:github.com/DietrichGebert/ponytail || true)",
     "(npm install -g @ast-grep/cli || true)",
-    "git config --global --add safe.directory /workspace",
+    // '*' rather than /workspace: ralph mode adds worktrees under
+    // /workspace/.worktrees/<issue-id>, and safe.directory entries are
+    // exact-path, so the single /workspace entry would leave every worktree
+    // raising "dubious ownership".
+    "git config --global --add safe.directory '*'",
     "git clone https://github.com/zico-io/ts-rogue.git .",
     "corepack pnpm install --frozen-lockfile",
     installScreenshotTooling,
