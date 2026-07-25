@@ -39,10 +39,10 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 import {
+  footprintOf,
   SHEETS,
   TILE_SOURCES,
   type TileName,
-  type TileSource,
 } from "../src/ui/tiles/sources";
 
 const SHEET_DIR = fileURLToPath(new URL("../assets/minifantasy/", import.meta.url));
@@ -80,12 +80,8 @@ interface AtlasFrame {
 
 /** Output pixel size for a frame: its declared `multiCell` footprint in 8px cells, or one uniform 8x8 cell. */
 function outputSizeFor(name: TileName): { width: number; height: number } {
-  const multiCell = (TILE_SOURCES[name] as TileSource).multiCell;
-  if (!multiCell) return { width: OUTPUT_TILE, height: OUTPUT_TILE };
-  return {
-    width: multiCell.wide * OUTPUT_TILE,
-    height: multiCell.high * OUTPUT_TILE,
-  };
+  const { wide, high } = footprintOf(name);
+  return { width: wide * OUTPUT_TILE, height: high * OUTPUT_TILE };
 }
 
 /** Crops a frame's source rect, resizes it to its output size, and applies the palette-lock grade. */
