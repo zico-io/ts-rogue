@@ -1,4 +1,7 @@
 import { defineAgent, defineDynamic } from "eve";
+import { mockModel } from "eve/evals";
+
+import { delegationResponder } from "./lib/mock-delegation";
 
 // The coding child follows a tight orientation packet, so a fast, cheap model
 // is fine here.
@@ -12,9 +15,16 @@ export default defineAgent({
   // ruminates and second-guesses instead of acting. Use a strong, decisive
   // reasoning model. Upgrade to anthropic/claude-opus-4.8 if planning quality
   // still falls short.
-  model: defineDynamic({
-    fallback: "anthropic/claude-sonnet-5",
-    events: { "session.started": codingWorkerModel },
-  }),
+  //
+  // EVE_EVAL_MOCK_MODEL swaps in the scripted delegation fixture (eve's docs
+  // prescribe a dedicated fixture agent; this repo has one agent, so an env
+  // gate is the minimal equivalent). Production and plain `eve eval` never
+  // set it.
+  model: process.env.EVE_EVAL_MOCK_MODEL
+    ? mockModel(delegationResponder)
+    : defineDynamic({
+        fallback: "anthropic/claude-sonnet-5",
+        events: { "session.started": codingWorkerModel },
+      }),
   modelContextWindowTokens: 1_040_000,
 });

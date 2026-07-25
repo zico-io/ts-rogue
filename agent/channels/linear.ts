@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 
 import { connectLinearCredentials } from "@vercel/connect/eve";
+import type { UserContent } from "ai";
 import { type CancelFn, defineChannel, POST } from "eve/channels";
 import {
   createLinearAgentActivity,
@@ -16,6 +17,7 @@ import {
   type LinearChannelContext,
   type LinearChannelEvents,
   type LinearChannelState,
+  type LinearFetch,
   type LinearHandle,
   type LinearInstrumentationMetadata,
   type LinearReceiveTarget,
@@ -35,18 +37,22 @@ import {
 // reimplemented via `defineChannel` so the agent-session dispatch path can
 // reach the route's `cancel()` primitive - the built-in convenience wrapper
 // doesn't expose it. Everything below calls the same publicly exported
-// building blocks the built-in wrapper calls, with two exceptions the
+// building blocks the built-in wrapper calls, with three exceptions the
 // wrapper needs but the package does not actually export from
 // `eve/channels/linear` (confirmed against the runtime module's own key
-// list, not just its `.d.ts` files): webhook signature verification and the
-// default progress/response/HITL/error event handlers. Both are
-// reimplemented below from the de-minified built-in source, built only from
-// genuinely public primitives (`signLinearWebhookBody`, `node:crypto`, and
-// `createLinearAgentActivity`/`renderLinearInputRequests`) - see
-// `verifyInboundSignature` and `createLinearDefaultEvents`. The one actual
-// behavior change from the built-in is the unconditional `cancel()` before
-// `send()` in `dispatchAgentSession`. See `agent/README.md` for what this
-// does and does not cover.
+// list, not just its `.d.ts` files): webhook signature verification, the
+// default progress/response/HITL/error event handlers, and inbound image
+// attachment (`attachLinearInboundImages`/`resolveLinearAccessToken`, which
+// the built-in gained in eve 0.27.3). All are reimplemented below from the
+// de-minified built-in source (`verify.js`/`auth.js`, `defaults.js`,
+// `inbound-images.js` under `eve/dist/src/public/channels/linear/`), built
+// only from genuinely public primitives (`signLinearWebhookBody`,
+// `node:crypto`, `createLinearAgentActivity`/`renderLinearInputRequests`,
+// and global `fetch`) - see `verifyInboundSignature`,
+// `createLinearDefaultEvents`, and `attachLinearInboundImages`. The one
+// actual behavior change from the built-in is the unconditional `cancel()`
+// before `send()` in `dispatchAgentSession`. See `agent/README.md` for what
+// this does and does not cover.
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -93,6 +99,30 @@ async function resolveWebhookSecret(
   if (!resolved) {
     throw new Error(
       "linearChannel: missing webhook secret. Pass credentials.webhookSecret, set LINEAR_WEBHOOK_SECRET, or supply credentials.webhookVerifier.",
+    );
+  }
+  return resolved;
+}
+
+// Port of `resolveLinearAccessToken` (`eve/dist/src/public/channels/linear/auth.js`,
+// not exported from the `eve/channels/linear` barrel - same story as
+// `resolveWebhookSecret` above): a thunk resolves once, a string is used
+// directly, and an unset value falls back through the same env chain the
+// built-in documents before failing.
+async function resolveAccessToken(
+  accessToken: NonNullable<LinearChannelConfig["credentials"]>["accessToken"],
+): Promise<string> {
+  const resolved =
+    typeof accessToken === "function"
+      ? await accessToken()
+      : (accessToken ??
+        process.env.LINEAR_AGENT_ACCESS_TOKEN ??
+        process.env.LINEAR_ACCESS_TOKEN ??
+        process.env.LINEAR_API_KEY ??
+        process.env.LINEAR_API_TOKEN);
+  if (!resolved) {
+    throw new Error(
+      "linearChannel: missing Linear access token. Pass credentials.accessToken or set LINEAR_AGENT_ACCESS_TOKEN, LINEAR_ACCESS_TOKEN, LINEAR_API_KEY, or LINEAR_API_TOKEN.",
     );
   }
   return resolved;
@@ -167,6 +197,147 @@ async function verifyInbound(
     console.warn("linear inbound verification failed", error);
     return null;
   }
+}
+
+// --- Inbound image attachment ------------------------------------------------
+// Port of `attachLinearInboundImages` and its private pieces
+// (`eve/dist/src/public/channels/linear/inbound-images.js`, added to the
+// built-in in eve 0.27.3, not exported from the barrel - see the file
+// banner). Authenticated `uploads.linear.app` images referenced from inbound
+// Agent Session markdown become multimodal file parts; untrusted, failed, or
+// non-image references keep their original markdown text. Ported faithfully:
+// a manual-redirect 3xx counts as failure, failed references keep their
+// `![...](...)` text (the slice cursor only advances past successes), and a
+// message that becomes empty text returns file parts alone.
+
+interface LinearUploadImageReference {
+  readonly altText: string;
+  readonly end: number;
+  readonly start: number;
+  readonly url: URL;
+}
+
+interface LinearImageFilePart {
+  readonly data: Buffer;
+  readonly mediaType: string;
+  readonly type: "file";
+}
+
+const MARKDOWN_IMAGE_PATTERN =
+  /!\[([^\]\r\n]*)\]\(\s*(?:<([^>\r\n]+)>|([^\s)\r\n]+))(?:\s+(?:"[^"\r\n]*"|'[^'\r\n]*'|\([^)\r\n]*\)))?\s*\)/gu;
+
+export function extractLinearUploadImageReferences(
+  text: string,
+): LinearUploadImageReference[] {
+  const references: LinearUploadImageReference[] = [];
+  for (const match of text.matchAll(MARKDOWN_IMAGE_PATTERN)) {
+    const rawUrl = match[2] ?? match[3];
+    const start = match.index;
+    if (rawUrl === undefined || start === undefined) continue;
+    const url = parseLinearUploadUrl(rawUrl);
+    if (url !== null) {
+      references.push({
+        altText: match[1] ?? "",
+        end: start + match[0].length,
+        start,
+        url,
+      });
+    }
+  }
+  return references;
+}
+
+export async function attachLinearInboundImages(input: {
+  readonly content: UserContent;
+  readonly credentials?: LinearChannelConfig["credentials"];
+  readonly fetch?: LinearFetch;
+}): Promise<UserContent> {
+  if (typeof input.content !== "string") return input.content;
+  const references = extractLinearUploadImageReferences(input.content);
+  if (references.length === 0) return input.content;
+  let token: string;
+  try {
+    token = await resolveAccessToken(input.credentials?.accessToken);
+  } catch {
+    return input.content;
+  }
+  const fetchImpl = input.fetch ?? fetch;
+  const parts = await Promise.all(
+    references.map((reference) =>
+      fetchLinearUploadImage(reference.url, token, fetchImpl),
+    ),
+  );
+  if (parts.every((part) => part === null)) return input.content;
+  return buildLinearImageContent(input.content, references, parts);
+}
+
+function parseLinearUploadUrl(raw: string): URL | null {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return null;
+  }
+  return url.origin !== "https://uploads.linear.app" ||
+    url.username !== "" ||
+    url.password !== ""
+    ? null
+    : url;
+}
+
+async function fetchLinearUploadImage(
+  url: URL,
+  token: string,
+  fetchImpl: LinearFetch,
+): Promise<LinearImageFilePart | null> {
+  if (parseLinearUploadUrl(url.href) === null) return null;
+  try {
+    const response = await fetchImpl(url.href, {
+      credentials: "omit",
+      headers: { accept: "image/*", authorization: `Bearer ${token}` },
+      redirect: "manual",
+    });
+    if (!response.ok) return null;
+    const mediaType = readImageMediaType(response.headers.get("content-type"));
+    if (mediaType === null) return null;
+    return {
+      data: Buffer.from(await response.arrayBuffer()),
+      mediaType,
+      type: "file",
+    };
+  } catch {
+    return null;
+  }
+}
+
+function readImageMediaType(header: string | null): string | null {
+  const mediaType = header?.split(";", 1)[0]?.trim().toLowerCase();
+  return mediaType?.startsWith("image/") === true && mediaType.length > 6
+    ? mediaType
+    : null;
+}
+
+function buildLinearImageContent(
+  text: string,
+  references: readonly LinearUploadImageReference[],
+  parts: ReadonlyArray<LinearImageFilePart | null>,
+): UserContent {
+  let cursor = 0;
+  let remaining = "";
+  const files: LinearImageFilePart[] = [];
+  for (const [index, reference] of references.entries()) {
+    const part = parts[index];
+    if (part != null) {
+      remaining += text.slice(cursor, reference.start);
+      remaining += reference.altText;
+      cursor = reference.end;
+      files.push(part);
+    }
+  }
+  remaining += text.slice(cursor);
+  return remaining.trim().length === 0
+    ? files
+    : [{ text: remaining, type: "text" }, ...files];
 }
 
 function buildLinearHandle(input: {
@@ -520,6 +691,13 @@ async function dispatchAgentSession(input: {
 
   await cancel({ continuationToken });
 
+  // Attached after cancel() so a slow image fetch can never delay steering.
+  const message = await attachLinearInboundImages({
+    content: messageFromLinearAgentSessionEvent(event),
+    credentials: config.credentials,
+    fetch: config.api?.fetch,
+  });
+
   await send(
     {
       context: [
@@ -527,7 +705,7 @@ async function dispatchAgentSession(input: {
         ...event.previousComments,
         ...(result.context ?? []),
       ],
-      message: messageFromLinearAgentSessionEvent(event),
+      message,
     },
     {
       auth: result.auth,
@@ -553,6 +731,9 @@ function linearChannel(config: LinearChannelConfig = {}): LinearChannel {
     LinearReceiveTarget,
     LinearInstrumentationMetadata
   >({
+    // Same instrumentation label the built-in passes; without it stateful
+    // channels report the generic "defineChannel" kind.
+    kindHint: "linear",
     state: initialLinearState(),
     metadata(state) {
       return {
@@ -563,6 +744,8 @@ function linearChannel(config: LinearChannelConfig = {}): LinearChannel {
         organizationId: state.organizationId ?? null,
       };
     },
+    // eve 0.27 widened the factory to context(state, session); the one-param
+    // form stays assignable and the built-in ignores the session handle too.
     context(state) {
       return {
         linear: buildLinearHandle({

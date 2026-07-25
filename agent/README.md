@@ -12,6 +12,7 @@ pre-warmed Vercel Sandboxes.
 | [`channels/`](channels/) | Eve, Linear, and GitHub session activity adapters |
 | [`connections/`](connections/) | Linear MCP connection and approval policy |
 | [`hooks/`](hooks/) | Delegated-child activity relay (including the ephemeral working indicator) and turn-start sandbox prewarm |
+| [`schedules/`](schedules/) | Daily eve-version-check: bump, evaluate the changelog against the workaround audit, PR |
 | [`tools/`](tools/) | Native Linear Agent Session progress updates, proactive self-handoff to a fresh session, and read-only Vercel debugging tools (logs, traces, observability queries, sandbox/session/command introspection) |
 | [`sandbox.ts`](sandbox.ts) | Vercel Sandbox bootstrap, sync, `ORIENTATION.md` brief, network policy, and token refresh |
 | [`lib/orientation.ts`](lib/orientation.ts) | Builds the pre-computed orientation brief from git state and screenshot-tooling status |
@@ -72,9 +73,13 @@ durable `session_update`s. Those child updates are also role-coerced in code
 (`tools/session_update.ts`): a child's `started`/`review`/`completed` becomes
 `progress` with a `[<issue>]` prefix, because ENG-2's thread showed a child
 "Completed" while nothing was pushed, then "Started" again - the session
-appeared to finish and restart. No local eval can cover the delegation path
-(it needs a live sandbox child, and the ralph e2e fixture deliberately runs
-with a blank `agent_session_id`), so coverage is unit tests plus contract text.
+appeared to finish and restart. The delegation-path wiring is covered by
+`evals/delegation/child-session-update.eval.ts`: eve's `mockModel` scripts
+the root to delegate and the child to post `session_update`, so a real child
+session runs the real hook and tool code and the eval reads the coerced
+`**Progress**` body off a local mock Linear server. It proves wiring, not
+model policy - a scripted root always delegates - so the coercion map's unit
+tests and the contract text still carry the policy half.
 
 `instructions.md` requires the root to send a `session_update` before its first
 other tool call and to batch independent read-only lookups (sub-issue checks,
@@ -93,9 +98,10 @@ The mid-session update triggers are mechanical rather than judgment-based
 minutes behind a lone `started` message): the batch that starts implementation
 must carry a `progress` update with the scoped cut, and three tool-call
 batches without a `session_update` force one in the next batch. No eval guards
-this yet - the local evals stop before delegation and the ralph e2e fixture
-deliberately runs with a blank `agent_session_id`, so it would take a live
-Linear session to observe.
+these triggers yet - the delegation eval's scripted model cannot exercise
+when a real model chooses to post, and the ralph e2e fixture deliberately
+runs with a blank `agent_session_id`, so it would take a live Linear session
+to observe.
 
 Because those sentences reach the reader verbatim, `instructions.md` keeps its
 message rules as terse imperatives and holds the design rationale (the
@@ -173,13 +179,37 @@ Limits, by design:
   done. Instant steering was deliberately kept over fold-in delivery.
 
 The built-in `linearChannel()` doesn't export everything it's built from:
-`eve/channels/linear`'s barrel omits `verifyLinearRequest` and
-`createDefaultEvents` (confirmed against the module's own runtime exports,
-not just its `.d.ts` files). `channels/linear.ts` reimplements both from the
-de-minified built-in source, built only from genuinely public primitives
-(`signLinearWebhookBody`, `node:crypto`, `createLinearAgentActivity`,
-`renderLinearInputRequests`) - see the file's own comments for the exact
-provenance of each piece.
+`eve/channels/linear`'s barrel omits `verifyLinearRequest`,
+`createDefaultEvents`, and the inbound image attachment pair
+`attachLinearInboundImages`/`resolveLinearAccessToken` (confirmed against the
+module's own runtime exports, not just its `.d.ts` files).
+`channels/linear.ts` reimplements all of them from the de-minified built-in
+source, built only from genuinely public primitives (`signLinearWebhookBody`,
+`node:crypto`, `createLinearAgentActivity`, `renderLinearInputRequests`, and
+global `fetch`) - see the file's own comments for the exact provenance of
+each piece. The image port keeps the built-in's 0.27.3 behavior: authenticated
+`uploads.linear.app` screenshots in an inbound prompt reach the model as
+multimodal file parts, and any untrusted, failed, or non-image reference
+falls back to its original markdown text.
+
+#### Workaround audit (re-audited against eve 0.27.6, 2026-07-25)
+
+Every hand-rolled piece in this harness exists because eve's public surface
+misses a primitive its own internals use. This table is the checklist the
+`schedules/eve-version-check.ts` prompt evaluates new changelog entries
+against; each future audit updates the date and verdicts.
+
+| Workaround | Lives in | Gap it works around | Verdict at 0.27.6 |
+| --- | --- | --- | --- |
+| Cancel-and-steer on inbound Linear prompts | `channels/linear.ts` | Built-in dispatch has no `cancel()`; new prompts coalesce into the next turn | Still missing - the built-in route handler destructures only `{send, waitUntil}`; the 0.27.2/0.27.5 cancel/reset additions are Slack-only |
+| Webhook verification + default event handlers | `channels/linear.ts` | `verifyLinearRequest`/`createDefaultEvents` unexported from the barrel | Still unexported |
+| Inbound image attachment | `channels/linear.ts` | `attachLinearInboundImages`/`resolveLinearAccessToken` unexported | Still unexported - ported here (built-in gained it in 0.27.3) |
+| GitHub @mention gate reimplementation | `channels/github.ts` | `extractGitHubCommentTrigger`/`shouldDispatchGitHubComment` not public; custom `onComment` replaces the built-in gate wholesale | Still not public; `pull_request_review` (top-level verdict) events still unparsed |
+| Session handoff instead of quota continuation | `tools/handoff.ts` | Token-quota HITL prompt not overridable; `commentCreate` unexported | Still no public hook (0.27.1 only changed decline behavior) |
+| File-based child session-id handoff | `hooks/child-relay.ts` | `subagent.called` declared in the hook vocabulary but never dispatched to authored hooks/channels | Still absent from `ChannelEvents` |
+| Eager sandbox prewarm + durable token re-mint | `hooks/prewarm-sandbox.ts` | Lazy sandbox creation; no session-end hook; in-process token timers don't survive harness recycling | Unchanged |
+| Sandbox lifetime/timeout re-assertion, token fallback chain | `sandbox.ts` | Create-time options don't apply to resumed sandboxes (ROG-65); connect token cache staleness | Unchanged. eve 0.27.5's `workspace/` seed files were evaluated and rejected: seed paths are workspace-relative only (the files this bootstrap writes live in `~/.config` and `/etc`), and seeding `/workspace` would break bootstrap's `git clone` into an empty directory |
+| Hand-wrapped Vercel API tools | `tools/vercel_*.ts` + `lib/vercel-api.ts` | No Vercel-API credential helper in `@vercel/connect/eve` | Still none |
 
 `ORIENTATION.md` also reports whether the sandbox's Playwright chromium
 (`scripts/play-web.mjs`'s screenshots) is confirmed working - `bootstrap`'s
