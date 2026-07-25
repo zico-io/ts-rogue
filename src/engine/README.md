@@ -13,7 +13,7 @@ bounded debug journal.
 | --- | --- |
 | [`state/`](state/) | State types, reducer, store, validation, and incident boundaries |
 | [`rng/`](rng/) | Serializable seeded random number generation |
-| [`world/`](world/) | Overworld and dungeon generation, traversal, and encounters |
+| [`world/`](world/) | Overworld and dungeon generation, traversal, encounters, and the fast-travel waypoint registry |
 | [`combat/`](combat/) | Initiative, actions, damage, rewards, and defeat handling |
 | [`loot/`](loot/) | Item generation, affixes, monster-specific drops, and equipment |
 | [`entities/`](entities/) | Party and inventory models |
@@ -44,6 +44,10 @@ loot before returning to the originating scene.
   and known skills through the `CLASSES` data table.
 - The overworld contains passable biomes, a village, reachable dungeon
   entrances, and a seeded encounter meter.
+- Fast travel: evac leaves any dungeon (outside battle) for the overworld on
+  the entrance tile without touching dungeon progress, and zoom teleports
+  between landmarks (village, dungeon entrances) already visited this run.
+  Neither triggers an encounter or advances the encounter meter.
 - Dungeons contain deterministic rooms, corridors, chests, stairs, wandering
   encounters, and a boss floor.
 - Battles support Attack, Skill, Item, Defend, and Flee actions in a fixed

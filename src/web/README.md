@@ -135,14 +135,17 @@ renderers.
   unit-tested in `input/normalizeBrowserKey.test.ts`.
 - `input/keyboard.ts` - `BrowserKeyboardManager` (ROG-45): a `keydown`
   listener wired in `main.ts` that resolves the global scene-hotkey/
-  dev-console/quit keymap first, then routes to whichever scene - and,
-  inside the village, whichever sub-view (overview/inn/church/store/tavern)
+  dev-console/quit/fast-travel keymap first, then routes to whichever scene -
+  and, inside the village, whichever sub-view (overview/inn/church/store/tavern)
   - currently has focus, via the exact same `interaction.ts` modules under
   `src/ui/screens/**` the Ink renderer uses. No keymap or reducer logic is
   duplicated here. `main.ts` only calls into it while the game is being
   played (not during the title flow or a game-over screen; see below) and
   passes it an `onQuit` callback (ROG-52) that returns to the title screen.
-  Unit-tested in `input/keyboard.test.ts`.
+  ENG-1 adds a dungeon evac confirm (`<` then y/n) and the Zoom fast-travel
+  picker (`z` from the overworld/village; the picker owns input while open
+  via its own focus slot, mirroring the village sub-view pattern). Unit-tested
+  in `input/keyboard.test.ts`.
 - `public/atlas/` - the built atlas (`atlas.png` + `atlas.json`), served
   as-is by Next's default static-file handling for `<root>/public` (the Next
   root is `src/web`) and copied verbatim into `src/web/out/atlas/` on export.
@@ -312,6 +315,10 @@ is the thin real-Pixi adapter.
   unmodified, mapped to small colored rects in a corner overlay (mirroring
   `OverworldSceneView`'s minimap, which is colored rects too, not sprites),
   plus a small facing-direction mark next to the player's cell.
+- **Evac confirm (ENG-1)** - the one-line status readout (facing/boss/cleared)
+  swaps to "Evac to the entrance? [y/n]" while the keyboard manager's
+  `dungeon.confirmingExit` is set, mirroring the Ink `DungeonScreen`'s confirm
+  prompt; `render()` takes that flag as an optional third argument.
 
 ### Adding the dungeon atlas frames
 
@@ -360,6 +367,12 @@ container, the game-over container, or the normal scene switcher + chrome.
 - `BrowserKeyboardManager`'s `"quit"` global intent now calls the `onQuit`
   callback `main.ts` passes it (return to the title) instead of logging a
   stash - there is still no OS process to actually exit from a browser tab.
+- **Fast travel (ENG-1)**: pressing `z` from the overworld/village opens the
+  Zoom picker as a full overlay (`renderZoomOverlay` in `bootGame.ts`), reusing
+  the village overview's bordered-panel + `drawLines` chrome and gated on the
+  keyboard manager's `zoom.open` flag the same way `devConsoleOverlay` gates on
+  `devConsole.isOpen()`. It lists every waypoint `world/waypoints.ts`'s
+  `activatedWaypointList` reports for the save and dispatches `Zoom` on Enter.
 
 ## Persistence (ROG-46)
 

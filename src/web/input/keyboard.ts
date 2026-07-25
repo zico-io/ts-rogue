@@ -16,6 +16,8 @@
 import { isBattleHealItem } from "../../engine/combat/resolution";
 import { classSkills } from "../../engine/combat/skills";
 import type { GameStore } from "../../engine/state/store";
+import { generateOverworldMap } from "../../engine/world/overworld";
+import { activatedWaypointList } from "../../engine/world/waypoints";
 import { saveGame } from "../../persistence/browserSave";
 import { resolveGlobalIntent } from "../../ui/scene/globalInput";
 import type { KeyName } from "../../ui/scene/input";
@@ -55,6 +57,11 @@ import {
 } from "../../ui/screens/village/interaction";
 import type { VillageBuilding } from "../../ui/screens/village/types";
 import {
+  reduceZoomUi,
+  resolveZoomIntent,
+  type ZoomUiState,
+} from "../../ui/screens/zoom/interaction";
+import {
   type BrowserKeyEvent,
   normalizeBrowserKey,
 } from "./normalizeBrowserKey";
@@ -67,12 +74,21 @@ export interface VillageFocusState {
   tavern: TavernUiState;
 }
 
-/** The whole focus stack's state: one slot per scene, plus the village's sub-view. */
+/** The fast-travel picker's own focus: whether it's open and its cursor (ENG-1). */
+export interface ZoomFocusState {
+  open: boolean;
+  ui: ZoomUiState;
+}
+
+const INITIAL_ZOOM_FOCUS: ZoomFocusState = { open: false, ui: { cursor: 0 } };
+
+/** The whole focus stack's state: one slot per scene, plus the village's sub-view and the Zoom picker overlay. */
 export interface KeyboardManagerState {
   overworld: OverworldUiState;
   dungeon: DungeonUiState;
   battle: BattleUiState;
   village: VillageFocusState;
+  zoom: ZoomFocusState;
 }
 
 const INITIAL_VILLAGE_FOCUS: VillageFocusState = {
@@ -88,6 +104,7 @@ export function createInitialKeyboardManagerState(): KeyboardManagerState {
     dungeon: {},
     battle: INITIAL_BATTLE_UI_STATE,
     village: INITIAL_VILLAGE_FOCUS,
+    zoom: INITIAL_ZOOM_FOCUS,
   };
 }
 
@@ -115,6 +132,14 @@ export class BrowserKeyboardManager {
   handleKeyDown(event: BrowserKeyEvent): void {
     const keyName = normalizeBrowserKey(event);
     if (!keyName) return;
+
+    // The Zoom picker overlay owns input while open, the same way the Ink
+    // renderer's `zoomOpen` gates its scene-switching `useInput` hook - so
+    // digits/z (and everything else) don't leak through to the scene below.
+    if (this.state.zoom.open) {
+      this.handleZoom(keyName);
+      return;
+    }
 
     const globalIntent = resolveGlobalIntent(keyName);
     if (globalIntent) {
@@ -152,12 +177,51 @@ export class BrowserKeyboardManager {
           "ts-rogue: dev-console toggle key pressed (no browser dev console yet)",
         );
         break;
+      case "openZoom":
+        this.tryOpenZoom();
+        break;
       case "quit":
         this.onQuit();
         break;
       default:
         break;
     }
+  }
+
+  /** Opens the Zoom picker from the overworld/village only (ENG-1: evac first inside a dungeon/battle). */
+  private tryOpenZoom(): void {
+    const scene = this.store.getState().scene;
+    if (scene !== "village" && scene !== "overworld") return;
+    this.state = { ...this.state, zoom: { open: true, ui: { cursor: 0 } } };
+  }
+
+  private handleZoom(key: KeyName): void {
+    const intent = resolveZoomIntent(key);
+    if (!intent) return;
+    const state = this.store.getState();
+    const map = generateOverworldMap(state.seed);
+    const waypoints = activatedWaypointList(map, state.activatedWaypoints);
+    const result = reduceZoomUi(this.state.zoom.ui, intent, {
+      count: waypoints.length,
+    });
+    switch (result.effect?.type) {
+      case "travel":
+        this.store.dispatch({
+          type: "Zoom",
+          waypointId: waypoints[result.effect.index].id,
+        });
+        this.state = { ...this.state, zoom: INITIAL_ZOOM_FOCUS };
+        return;
+      case "close":
+        this.state = { ...this.state, zoom: INITIAL_ZOOM_FOCUS };
+        return;
+      default:
+        break;
+    }
+    this.state = {
+      ...this.state,
+      zoom: { ...this.state.zoom, ui: result.state },
+    };
   }
 
   private handleOverworld(key: KeyName): void {
@@ -177,7 +241,10 @@ export class BrowserKeyboardManager {
   }
 
   private handleDungeon(key: KeyName): void {
-    const intent = resolveDungeonIntent(key);
+    const intent = resolveDungeonIntent(
+      key,
+      this.state.dungeon.confirmingExit ?? false,
+    );
     if (!intent) return;
     const result = reduceDungeonUi(this.state.dungeon, intent);
     switch (result.effect?.type) {

@@ -48,6 +48,11 @@ describe("game store", () => {
     });
   });
 
+  it("seeds activatedWaypoints with just the village on a new run (ENG-1)", () => {
+    const state = newGame(1234);
+    expect(state.activatedWaypoints).toEqual(["village"]);
+  });
+
   it("defaults flags to permadeath=false and gameOver=false", () => {
     const state = newGame(1234);
     expect(state.flags).toEqual({ permadeath: false, gameOver: false });
@@ -291,6 +296,34 @@ describe("game store", () => {
       expect(after.dungeonState?.player).toEqual(
         after.dungeonState?.layout.entrance,
       );
+      expect(after.activatedWaypoints).toEqual(["village", "dungeon-0"]);
+    });
+
+    it("re-entering an already-activated dungeon entrance does not duplicate its waypoint", () => {
+      const seed = 1;
+      const map = generateOverworldMap(seed);
+      const entrance = map.dungeonEntrances[0];
+      const approach = findPassableNeighbor(map, entrance);
+      const enter = {
+        type: "MoveOverworld" as const,
+        dx: approach.dx,
+        dy: approach.dy,
+      };
+      const before = {
+        ...newGame(seed),
+        scene: "overworld" as const,
+        worldState: { player: approach.from, encounterMeter: 0 },
+      };
+      const first = reduce(before, enter);
+      const exited = reduce(first, { type: "ExitDungeon" });
+      const second = reduce(
+        {
+          ...exited,
+          worldState: { ...exited.worldState, player: approach.from },
+        },
+        enter,
+      );
+      expect(second.activatedWaypoints).toEqual(["village", "dungeon-0"]);
     });
 
     it("accumulates encounter danger on wild tiles below the threshold", () => {
@@ -991,19 +1024,31 @@ function fightToEnd(state: GameState): GameState {
 }
 
 describe("Phase 6: exit dungeon", () => {
-  it("ExitDungeon returns to the overworld and clears dungeonState", () => {
-    const state = enterDungeon(1);
+  it("ExitDungeon (evac) returns to the overworld, clears dungeonState, and carries the encounter meter through unchanged", () => {
+    const seed = 1;
+    const map = generateOverworldMap(seed);
+    const entrance = map.dungeonEntrances[0];
+    const approach = findPassableNeighbor(map, entrance);
+    const state = reduce(
+      {
+        ...newGame(seed),
+        scene: "overworld" as const,
+        worldState: { player: approach.from, encounterMeter: 42 },
+      },
+      { type: "MoveOverworld", dx: approach.dx, dy: approach.dy },
+    );
     expect(state.scene).toBe("dungeon");
     expect(state.dungeonState).not.toBeNull();
+    expect(state.worldState.encounterMeter).toBe(42);
 
     const after = reduce(state, { type: "ExitDungeon" });
     expect(after.scene).toBe("overworld");
     expect(after.dungeonState).toBeNull();
     expect(after.battleState).toBeNull();
-    expect(after.worldState.encounterMeter).toBe(0);
+    // ENG-1: evac deliberately no longer resets the danger accumulator.
+    expect(after.worldState.encounterMeter).toBe(42);
     expect(after.log.at(-1)?.text).toBe("You emerge from the dungeon");
     // The player stays at the dungeon entrance tile on the overworld.
-    const map = generateOverworldMap(1);
     expect(after.worldState.player).toEqual(map.dungeonEntrances[0]);
   });
 
@@ -1037,6 +1082,147 @@ describe("Phase 6: exit dungeon", () => {
     expect(state.scene).toBe("dungeon");
     expect(state.dungeonState?.floor).toBe(1);
     expect(state.dungeonState?.cleared).toBe(false);
+  });
+});
+
+describe("Zoom (ENG-1 fast travel)", () => {
+  it("is a no-op while in a dungeon", () => {
+    const state = enterDungeon(1);
+    const after = reduce(state, { type: "Zoom", waypointId: "village" });
+    expect(after.scene).toBe("dungeon");
+    expect(after.worldState.player).toEqual(state.worldState.player);
+    expect(after.log.at(-1)?.text).toBe(
+      "Evac the dungeon before fast-traveling",
+    );
+  });
+
+  it("is a no-op mid-battle", () => {
+    let state = enterDungeon(1);
+    state = withBattle(state, "boss");
+    expect(state.scene).toBe("battle");
+    const after = reduce(state, { type: "Zoom", waypointId: "village" });
+    expect(after.scene).toBe("battle");
+    expect(after.log.at(-1)?.text).toBe(
+      "Evac the dungeon before fast-traveling",
+    );
+  });
+
+  it("is a no-op when the waypoint has not been activated yet", () => {
+    const state = newGame(1);
+    const after = reduce(state, { type: "Zoom", waypointId: "dungeon-0" });
+    expect(after.scene).toBe(state.scene);
+    expect(after.worldState.player).toEqual(state.worldState.player);
+    expect(after.log.at(-1)?.text).toBe(
+      "That destination has not been discovered yet",
+    );
+  });
+
+  it('Zoom("village") from the overworld moves the player home without touching the encounter meter', () => {
+    const seed = 1;
+    const map = generateOverworldMap(seed);
+    const before = {
+      ...newGame(seed),
+      scene: "overworld" as const,
+      worldState: { player: { x: 1, y: 1 }, encounterMeter: 37 },
+    };
+    const after = reduce(before, { type: "Zoom", waypointId: "village" });
+    expect(after.scene).toBe("village");
+    expect(after.worldState.player).toEqual(map.village);
+    expect(after.worldState.encounterMeter).toBe(37);
+    expect(after.log.at(-1)?.text).toBe("You fast-travel to Village");
+  });
+
+  it("Zoom to a dungeon entrance from the village teleports without creating dungeonState", () => {
+    const seed = 1;
+    const map = generateOverworldMap(seed);
+    const entrance = map.dungeonEntrances[0];
+    const approach = findPassableNeighbor(map, entrance);
+    const entered = reduce(
+      {
+        ...newGame(seed),
+        scene: "overworld" as const,
+        worldState: { player: approach.from, encounterMeter: 0 },
+      },
+      { type: "MoveOverworld", dx: approach.dx, dy: approach.dy },
+    );
+    const exited = reduce(entered, { type: "ExitDungeon" });
+    const backInVillage = reduce(exited, {
+      type: "Zoom",
+      waypointId: "village",
+    });
+
+    const after = reduce(backInVillage, {
+      type: "Zoom",
+      waypointId: "dungeon-0",
+    });
+    expect(after.scene).toBe("overworld");
+    expect(after.worldState.player).toEqual(entrance);
+    expect(after.dungeonState).toBeNull();
+  });
+
+  it("round trip: village -> dungeon entrance -> Zoom home -> Zoom back out ends on the entrance tile in the overworld", () => {
+    const seed = 1;
+    const map = generateOverworldMap(seed);
+    const entrance = map.dungeonEntrances[0];
+    const approach = findPassableNeighbor(map, entrance);
+
+    let state: GameState = {
+      ...newGame(seed),
+      scene: "overworld" as const,
+      worldState: { player: approach.from, encounterMeter: 0 },
+    };
+    state = reduce(state, {
+      type: "MoveOverworld",
+      dx: approach.dx,
+      dy: approach.dy,
+    });
+    expect(state.activatedWaypoints).toEqual(["village", "dungeon-0"]);
+
+    state = reduce(state, { type: "ExitDungeon" });
+    state = reduce(state, { type: "Zoom", waypointId: "village" });
+    expect(state.scene).toBe("village");
+    expect(state.worldState.player).toEqual(map.village);
+
+    state = reduce(state, { type: "Zoom", waypointId: "dungeon-0" });
+    expect(state.scene).toBe("overworld");
+    expect(state.worldState.player).toEqual(entrance);
+    expect(state.dungeonState).toBeNull();
+  });
+
+  it("a JSON round trip preserves activatedWaypoints", () => {
+    const seed = 1;
+    const map = generateOverworldMap(seed);
+    const entrance = map.dungeonEntrances[0];
+    const approach = findPassableNeighbor(map, entrance);
+    const state = reduce(
+      {
+        ...newGame(seed),
+        scene: "overworld" as const,
+        worldState: { player: approach.from, encounterMeter: 0 },
+      },
+      { type: "MoveOverworld", dx: approach.dx, dy: approach.dy },
+    );
+    const restored: GameState = JSON.parse(JSON.stringify(state));
+    expect(restored.activatedWaypoints).toEqual(state.activatedWaypoints);
+  });
+
+  it("a fresh new-game run resets activatedWaypoints back to just the village", () => {
+    const seed = 1;
+    const map = generateOverworldMap(seed);
+    const entrance = map.dungeonEntrances[0];
+    const approach = findPassableNeighbor(map, entrance);
+    const state = reduce(
+      {
+        ...newGame(seed),
+        scene: "overworld" as const,
+        worldState: { player: approach.from, encounterMeter: 0 },
+      },
+      { type: "MoveOverworld", dx: approach.dx, dy: approach.dy },
+    );
+    expect(state.activatedWaypoints).toEqual(["village", "dungeon-0"]);
+
+    const fresh = newGame(seed);
+    expect(fresh.activatedWaypoints).toEqual(["village"]);
   });
 });
 

@@ -24,7 +24,7 @@ export interface DungeonScreenProps {
 }
 
 const HINT =
-  "Up/W/k: forward | Down/s/j: back | Left/a/h or Right/d/l: turn | o: open chest | > or Enter: descend | <: exit dungeon | q: quit";
+  "Up/W/k: forward | Down/s/j: back | Left/a/h or Right/d/l: turn | o: open chest | > or Enter: descend | <: evac confirm | q: quit";
 
 /** Fixed minimap box chrome: 17 cols + 2 padding + 2 border; 9 rows + 1 label + 2 border. */
 const MINIMAP_BOX_WIDTH = 21;
@@ -88,6 +88,8 @@ function useCameraPose(ds: DungeonState): CameraPose {
  * dispatches. The FP view reflows to the content region the frame provides.
  * Phase 6 (ROG-12) adds the `<` exit key (dispatches `ExitDungeon`) so the
  * dungeon is never a dead-end after clearing a floor or defeating the boss.
+ * ENG-1 makes `<` open a confirm prompt first ("Evac to the entrance?
+ * [y/n]") instead of exiting immediately.
  */
 export function DungeonScreen({ state, dispatch }: DungeonScreenProps) {
   const [dungeonUi, setDungeonUi] = useState<DungeonUiState>({});
@@ -95,7 +97,10 @@ export function DungeonScreen({ state, dispatch }: DungeonScreenProps) {
   useInput((input, key) => {
     const keyName = normalizeInkKey(input, key);
     if (!keyName) return;
-    const intent = resolveDungeonIntent(keyName);
+    const intent = resolveDungeonIntent(
+      keyName,
+      dungeonUi.confirmingExit ?? false,
+    );
     if (!intent) return;
 
     const result = reduceDungeonUi(dungeonUi, intent);
@@ -138,12 +143,18 @@ export function DungeonScreen({ state, dispatch }: DungeonScreenProps) {
       title={`Dungeon - Floor ${ds.floor} (${ds.dungeonId})`}
       hint={HINT}
     >
-      <DungeonBody ds={ds} />
+      <DungeonBody confirmingExit={dungeonUi.confirmingExit ?? false} ds={ds} />
     </Screen>
   );
 }
 
-function DungeonBody({ ds }: { ds: DungeonState }) {
+function DungeonBody({
+  ds,
+  confirmingExit,
+}: {
+  ds: DungeonState;
+  confirmingExit: boolean;
+}) {
   const { width, height } = useScreenContent();
   const camera = useCameraPose(ds);
 
@@ -216,7 +227,11 @@ function DungeonBody({ ds }: { ds: DungeonState }) {
           <Text color={ramp[1]}>{minimapRows.join("\n")}</Text>
         </Box>
       </Box>
-      <Text>{statusParts.join(" | ")}</Text>
+      {confirmingExit ? (
+        <Text color={theme.accent}>Evac to the entrance? [y/n]</Text>
+      ) : (
+        <Text>{statusParts.join(" | ")}</Text>
+      )}
     </Box>
   );
 }

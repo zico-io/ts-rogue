@@ -42,6 +42,7 @@ import {
   type TitleUiState,
 } from "./ui/screens/title/interaction";
 import { VillageScreen } from "./ui/screens/VillageScreen";
+import { ZoomScreen } from "./ui/screens/ZoomScreen";
 import { theme } from "./ui/theme";
 
 function App({
@@ -74,6 +75,7 @@ function App({
     nameInput: initialSettings.defaultHeroName,
   });
   const [consoleOpen, setConsoleOpen] = useState(false);
+  const [zoomOpen, setZoomOpen] = useState(false);
   const [consoleOutput, setConsoleOutput] = useState<string[]>([]);
   const [fatal, setFatal] = useState<IncidentDisplay | undefined>(() =>
     pipeline.getFatal(),
@@ -166,8 +168,15 @@ function App({
       if (intent.kind === "changeScene") {
         store.dispatch({ type: "ChangeScene", scene: intent.scene });
       }
+      if (intent.kind === "openZoom") {
+        if (state.scene === "village" || state.scene === "overworld") {
+          setZoomOpen(true);
+        }
+      }
     },
-    { isActive: !fatal && started && !consoleOpen && !gameOver },
+    {
+      isActive: !fatal && started && !consoleOpen && !gameOver && !zoomOpen,
+    },
   );
 
   // Game-over phase: Enter starts a new run (same class and permadeath mode),
@@ -233,6 +242,14 @@ function App({
         output={consoleOutput}
         pipeline={pipeline}
         setOutput={setConsoleOutput}
+        state={state}
+      />
+    );
+  } else if (zoomOpen) {
+    content = (
+      <ZoomScreen
+        dispatch={dispatch}
+        onClose={() => setZoomOpen(false)}
         state={state}
       />
     );

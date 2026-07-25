@@ -14,6 +14,7 @@ import { GameStore, INN_COST_PER_MEMBER, newGame } from "../engine/state/store";
 import type { GameState, Scene } from "../engine/state/types";
 import { generateOverworldMap } from "../engine/world/overworld";
 import type { OverworldMap } from "../engine/world/types";
+import { activatedWaypointList } from "../engine/world/waypoints";
 import {
   clearSave as clearBrowserSave,
   loadGame as loadBrowserGame,
@@ -1083,6 +1084,75 @@ export async function bootGame(
     });
   }
 
+  const zoomContainer = new Container();
+  zoomContainer.visible = false;
+  app.stage.addChild(zoomContainer);
+
+  /**
+   * Draws the fast-travel picker (ENG-1) as a full overlay on top of
+   * whatever scene is showing, gated on the keyboard manager's
+   * `zoom.open` flag exactly like `devConsoleOverlay` gates on
+   * `devConsole.isOpen()`. Reuses the village overview's bordered-panel +
+   * `drawLines` chrome (see `renderTitle`'s panel) instead of inventing new
+   * visuals, and lists every waypoint `world/waypoints.ts`'s
+   * `activatedWaypointList` reports for the current save.
+   */
+  function renderZoomOverlay(state: GameState): void {
+    const zoom = keyboardManager.getState().zoom;
+    zoomContainer.visible = zoom.open;
+    if (!zoom.open) return;
+    clearContainer(zoomContainer);
+
+    const panelFactory = createPixiDrawFactory(zoomContainer);
+    const panelBorder = panelFactory.createRect();
+    panelBorder.setPosition(0, 0);
+    panelBorder.setSize(app.screen.width, app.screen.height);
+    panelBorder.setColor(toPixiColor(theme.borderFocus));
+
+    const layout = menuLayout({
+      width: app.screen.width,
+      height: app.screen.height,
+    });
+    const panelBackground = panelFactory.createRect({ bevel: true });
+    panelBackground.setPosition(layout.margin, layout.margin);
+    panelBackground.setSize(
+      Math.max(0, app.screen.width - layout.margin * 2),
+      Math.max(0, app.screen.height - layout.margin * 2),
+    );
+    panelBackground.setColor(toPixiColor(theme.window.fill));
+
+    const map = overworldMapFor(state);
+    const waypoints = activatedWaypointList(map, state.activatedWaypoints);
+    const lines: Line[] = [
+      { text: "Fast Travel", color: toPixiColor(theme.title) },
+      { text: "" },
+    ];
+    if (waypoints.length === 0) {
+      lines.push({
+        text: "(no destinations discovered yet)",
+        color: toPixiColor(theme.textMuted),
+      });
+    } else {
+      for (const [index, waypoint] of waypoints.entries()) {
+        const selected = index === zoom.ui.cursor;
+        lines.push({
+          text: `${selected ? "> " : "  "}${waypoint.label} (tier ${waypoint.tier})`,
+          color: selected ? toPixiColor(theme.accent) : undefined,
+        });
+      }
+    }
+    lines.push({ text: "" });
+    lines.push({
+      text: "Up/Down to choose, Enter to travel, Esc to cancel.",
+      color: toPixiColor(theme.textMuted),
+    });
+
+    drawLines(zoomContainer, lines, layout.margin, layout.margin, {
+      fontSize: layout.fontSize,
+      lineHeight: layout.lineHeight,
+    });
+  }
+
   /**
    * Draws the overworld scene's real content: sprite tilemap camera viewport,
    * minimap, and encounter meter (ROG-49). Mirrors `renderVillageContent`'s
@@ -1131,17 +1201,20 @@ export async function bootGame(
    * view (walls/floor/ceiling/billboards), a graphical minimap corner, and a
    * facing/status readout (ROG-50). Mirrors `renderOverworldContent`'s guard/
    * shape, delegating to `DungeonSceneView` (framework-free, unit-tested in
-   * `dungeonView.test.ts`).
+   * `dungeonView.test.ts`). ENG-1 threads the keyboard manager's
+   * `dungeon.confirmingExit` through so the evac confirm prompt renders in
+   * the same status line the facing readout uses.
    */
   function renderDungeonContent(state: GameState): void {
     if (state.scene !== "dungeon") return;
     if (!dungeonView) return;
     if (!state.dungeonState) return;
     const rect = contentRects.dungeon;
-    dungeonView.render(state.dungeonState, {
-      width: rect.width,
-      height: rect.height,
-    });
+    dungeonView.render(
+      state.dungeonState,
+      { width: rect.width, height: rect.height },
+      keyboardManager.getState().dungeon.confirmingExit ?? false,
+    );
   }
 
   /**
@@ -1164,11 +1237,13 @@ export async function bootGame(
 
     if (phase === "title") {
       for (const scene of SCENE_ORDER) entries[scene].container.visible = false;
+      zoomContainer.visible = false;
       renderTitle();
       return;
     }
     if (gameOver) {
       for (const scene of SCENE_ORDER) entries[scene].container.visible = false;
+      zoomContainer.visible = false;
       renderGameOverView();
       return;
     }
@@ -1178,6 +1253,7 @@ export async function bootGame(
     renderOverworldContent(state);
     renderBattleContent(state);
     renderDungeonContent(state);
+    renderZoomOverlay(state);
 
     if (devConsole && devConsoleOverlay) {
       devConsoleOverlay.setVisible(devConsole.isOpen());
