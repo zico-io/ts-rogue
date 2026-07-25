@@ -19,6 +19,7 @@ pre-warmed Vercel Sandboxes.
 | [`lib/sandbox.ts`](lib/sandbox.ts) | Shared sandbox-provisioning recipe (repo checkout, toolchain, GitHub auth levels, screenshot toggle) composed by the root and future subagents |
 | [`subagents/scout/`](subagents/scout/) | Read-only codebase-recon subagent: locates files, call paths, and utilities, and returns compressed context for a delegation packet |
 | [`subagents/reviewer/`](subagents/reviewer/) | Declared specialist: ponytail-reviews one pull request and posts the GitHub review itself |
+| [`subagents/coder/`](subagents/coder/) | Declared specialist: implements one scoped issue packet on a named branch, runs `pnpm check`, commits, and pushes the branch itself |
 
 Linear owns issue status, priority, and progress. GitHub pull requests remain the
 review and merge boundary. GitHub credentials are injected through the sandbox
@@ -72,7 +73,7 @@ on an OAuth consent URL rendered natively in Linear.
 Orientation is pre-computed rather than rediscovered: the standing contract lives
 in `instructions.md`, the Linear session supplies the issue packet, and `onSession`
 writes an `ORIENTATION.md` brief of settled git state. The root then delegates
-ordinary implementation to one coding child and retains review and external
+substantive implementation to the declared `coder` subagent and retains review and external
 coordination. Agent Session activities carry progress and approval prompts
 without writing issue comments.
 
@@ -335,7 +336,7 @@ glob tools every session already gets. Its role is to run ahead of a
 delegation whose scope isn't yet clear, trade its own context budget for
 locating relevant files, call paths, reusable utilities, and invariants/
 gotchas, and hand back a compressed summary (capped at roughly 200 lines) sized
-to drop directly into the coding child's packet, instead of the root exploring
+to drop directly into `coder`'s packet, instead of the root exploring
 inline itself. `instructions.md`'s Delegation section now names it as the tool
 to reach for in that situation.
 
@@ -364,6 +365,33 @@ Workflow fan-out reviewing several open pull requests in parallel
 (`Promise.all(prs.map((n) => tools.reviewer({ message: ... })))`), which a
 bare copy of the root (the built-in `agent` tool) cannot do on its own since
 every copy carries the full root contract instead of a lean review-only one.
+
+### Coder subagent (HAR-30)
+
+`agent/subagents/coder/` is the declared specialist that replaces the
+built-in `agent` tool as the coding child for substantive implementation. Its
+own `agent.ts` keeps the `deepseek/deepseek-v4-flash` model the coding-child
+branch of the root's `agent.ts` (`codingWorkerModel`) used before this
+subagent existed, its `instructions.md` is a packet-driven implementation
+contract only (trust the packet, read only task-relevant files and their
+callers, climb the ponytail ladder, respect the architecture invariants, run
+`pnpm check`, commit, push - no sizing, no ralph mode, no Linear session
+ownership), and its `sandbox.ts` composes
+`buildSandboxDefinition({ gitAuthLevel: "push-capable" })` - the first
+subagent that needs full push access rather than read-only or no GitHub auth
+at all.
+
+This inverts the old delegation model: a declared subagent's sandbox is not
+shared with the root, so `coder` cannot hand back local commits the way the
+built-in `agent` tool's same-sandbox child did. Instead `coder` commits and
+pushes its own feature branch, and the root fetches and verifies
+`git log origin/main..origin/<branch>` against `coder`'s report before
+opening the PR - the "child never pushes, commits stay local" rule in
+`instructions.md`'s Delegation section now applies only to the built-in
+`agent` tool, which stays enabled for quick same-sandbox mechanical work
+(a single-file edit, a merge conflict) and never for substantive
+implementation. `instructions.md` states that bright line explicitly so no
+turn spends time deciding which of the two to reach for.
 
 ### Sizing gate and issue groups (ralph mode)
 
