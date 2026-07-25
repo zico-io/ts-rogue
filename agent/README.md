@@ -12,13 +12,36 @@ pre-warmed Vercel Sandboxes.
 | [`channels/`](channels/) | Eve, Linear, and GitHub session activity adapters |
 | [`connections/`](connections/) | Linear MCP connection and approval policy |
 | [`hooks/`](hooks/) | Delegated-child activity relay (including the ephemeral working indicator) and turn-start sandbox prewarm |
-| [`tools/`](tools/) | Native Linear Agent Session progress updates and proactive self-handoff to a fresh session |
+| [`tools/`](tools/) | Native Linear Agent Session progress updates, proactive self-handoff to a fresh session, and read-only Vercel debugging tools (logs, traces, observability queries, sandbox/session/command introspection) |
 | [`sandbox.ts`](sandbox.ts) | Vercel Sandbox bootstrap, sync, `ORIENTATION.md` brief, network policy, and token refresh |
 | [`lib/orientation.ts`](lib/orientation.ts) | Builds the pre-computed orientation brief from git state and screenshot-tooling status |
+| [`lib/vercel-api.ts`](lib/vercel-api.ts) | Shared authenticated-fetch helper (auth header, `teamId` scoping, JSON error surfacing, bounded NDJSON reads) backing the `tools/vercel_*.ts` debugging tools |
 
 Linear owns issue status, priority, and progress. GitHub pull requests remain the
 review and merge boundary. GitHub credentials are injected through the sandbox
 network policy rather than exposed to the agent environment.
+
+### Vercel debugging tools (HAR-20)
+
+`tools/vercel_logs.ts`, `tools/vercel_trace.ts`, `tools/vercel_observability_query.ts`,
+`tools/vercel_sandboxes.ts`, and `tools/vercel_sandbox_commands.ts` let the agent
+introspect its own Vercel deployment and its own Sandboxes for debugging - runtime
+logs for a deployment, an OTEL trace by request id, the observability query engine
+that also powers the dashboard's Agent Runs / Workflow run views (including the
+`$eve.*` workflow-run tags eve writes on every session/turn/subagent run, see
+`node_modules/eve/docs/guides/instrumentation.md`), and listing/inspecting Sandboxes,
+their sessions, and the commands run inside a session (plus that command's logs) to
+triage a stuck or failed sandbox. All five call `api.vercel.com` directly through the
+shared helper in `lib/vercel-api.ts`; none of them mutate anything - no stop, kill, or
+resume tool was added, this is read-only introspection.
+
+These tools need `VERCEL_TOKEN` (a Vercel API token with read access to this
+project) set as a plain environment variable in the Vercel project's settings -
+there is no way to mint or verify one from inside a sandbox, so a human has to add
+it before these tools work in production. `VERCEL_TEAM_ID` and `VERCEL_PROJECT_ID`
+are optional defaults the tools fall back to when a call doesn't pass them
+explicitly. Because no token is available in this repo's dev or test environment,
+`src/vercel-tools.test.ts` mocks `fetch` rather than calling the live API.
 
 Orientation is pre-computed rather than rediscovered: the standing contract lives
 in `instructions.md`, the Linear session supplies the issue packet, and `onSession`
