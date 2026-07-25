@@ -9,8 +9,15 @@
  * spells off int. The combat resolver reads these via `findSkill`; the battle
  * screen reads the hero's known skills via `classSkills` to list only the
  * class's starting skills.
+ *
+ * ENG-10 (status + element data model): an optional `element` tags a skill's
+ * damage type (defaults to `physical` when omitted, so every existing skill
+ * above is unaffected); an optional `applies` list declares status effects
+ * the skill may inflict on hit. Resolution wiring that reads either field is
+ * out of scope for ENG-10 - it lands in ENG-11+.
  */
 import { findClass } from "../../data/classes";
+import type { AppliedEffect, Element } from "./statusEffects";
 import type { CoreStats } from "./types";
 
 export type SkillKind = "attack" | "heal";
@@ -31,6 +38,10 @@ export interface SkillDef {
   power: number;
   /** Core stat the skill scales with; defaults to `int` when omitted. */
   stat?: CoreStatKey;
+  /** Damage element; defaults to `physical` when omitted. */
+  element?: Element;
+  /** Status effects this skill may inflict on hit; omitted means none. */
+  applies?: AppliedEffect[];
 }
 
 export const SKILLS: readonly SkillDef[] = [
