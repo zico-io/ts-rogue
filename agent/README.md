@@ -33,7 +33,27 @@ other tool call and to batch independent read-only lookups (sub-issue checks,
 durable, top-level Linear activity - tool calls and reasoning relay as
 transient `action`/`thought` chips (see `tools/session_update.ts` and
 `hooks/child-relay.ts`) - so without an early message a long orientation or
-delegation shows only a wall of chips with nothing a human can react to.
+delegation shows only a wall of chips with nothing a human can react to. That
+early message and the one-sentence reply the root pairs with each tool batch are
+both surfaced to the reader: `channels/linear.ts`'s `message.completed` handler
+lifts the first line of a tool-batch turn straight into a Linear `thought`, and
+`session_update` posts as a durable `response`.
+
+Because those sentences reach the reader verbatim, `instructions.md` keeps its
+message rules as terse imperatives and holds the design rationale (the
+durable-vs-transient mechanics above, the "an early message anchors the session"
+framing) here in the README rather than in the runtime prompt. A model told to
+write a sentence per batch will parrot whatever meta-language sits next to that
+rule; the concrete "reading `ORIENTATION.md`, checking for sub-issues, and
+grepping for a symbol are three independent lookups" example that once lived in
+the prompt is exactly the kind of procedure text that leaked into user-facing
+updates ("Plan: check for sub-issues, read ORIENTATION.md..."). The governing
+principle now in `instructions.md`'s Discipline section is that **Eve's messages
+describe the work and its status, never the contract's own mechanics** -
+orientation lookups, sub-issue checks, delegation, batching, and `pnpm check`
+are invisible plumbing, not message content. `evals/message-substance.eval.ts`
+is the regression guard: it asserts the `started` message carries substance and
+does not echo those process terms.
 
 `onSession` can re-run mid-session (a new inbound Linear activity re-attaches
 the same sandbox); `SYNC_MAIN_COMMAND` only force-resyncs local `main` to
