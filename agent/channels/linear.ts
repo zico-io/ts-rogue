@@ -50,10 +50,12 @@ import {
 // only from genuinely public primitives (`signLinearWebhookBody`,
 // `node:crypto`, `createLinearAgentActivity`/`renderLinearInputRequests`,
 // and global `fetch`) - see `verifyInboundSignature`,
-// `createLinearDefaultEvents`, and `attachLinearInboundImages`. The one
-// actual behavior change from the built-in is the unconditional `cancel()`
-// before `send()` in `dispatchAgentSession`. See `agent/README.md` for what
-// this does and does not cover.
+// `createLinearDefaultEvents`, and `attachLinearInboundImages`. Two actual
+// behavior changes from the built-in: the unconditional `cancel()` before
+// `send()` in `dispatchAgentSession`, and the `authorization.*` handlers
+// the built-in defaults lack entirely - see the banner above
+// `connectionDisplayName`. See `agent/README.md` for what this does and
+// does not cover.
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -539,7 +541,13 @@ function postActivity(
   >[0]["activity"]["content"],
   activityOptions: {
     readonly ephemeral?: boolean;
-  } & ReturnType<typeof linearInputRequestSignal> = {},
+    readonly signal?: Parameters<
+      typeof createLinearAgentActivity
+    >[0]["activity"]["signal"];
+    readonly signalMetadata?: Parameters<
+      typeof createLinearAgentActivity
+    >[0]["activity"]["signalMetadata"];
+  } = {},
 ) {
   return createLinearAgentActivity({
     api: options.api,
@@ -624,6 +632,44 @@ const syncAgentPlanFromTodoTool: NonNullable<
     plan: plan as unknown as LinearAgentSessionUpdateInput["plan"],
   });
 };
+
+// --- Connection authorization -------------------------------------------------
+// Intentional ADDITION over the built-in defaults (not part of the faithful
+// port): eve's Linear `createDefaultEvents` implements no `authorization.*`
+// handlers - unlike its Slack/Teams counterparts - so when a user-scoped
+// `connect(...)` connection needs OAuth, eve parks the turn and the event is
+// dropped: nothing is posted to the Agent Session and it looks stalled
+// forever. Linear's agent protocol has a native `auth` signal for exactly
+// this (https://linear.app/developers/agent-signals#auth): an `elicitation`
+// activity with `signal: "auth"` + `signalMetadata.url` renders a "Link
+// account" button. eve re-emits a delegated child's authorization events
+// unchanged through the root session's channel, so these handlers cover
+// nested subagents too.
+
+// Mirror of Slack's `formatConnectionDisplayName` fallback: title-case the
+// connection scope name ("linear" -> "Linear") when the challenge carries no
+// displayName.
+const connectionDisplayName = (name: string): string =>
+  name.replace(/[-_/]+/gu, " ").replace(/\b\p{L}/gu, (c) => c.toUpperCase());
+
+// The default Linear channel auth principal (`defaultLinearAuth`) sets
+// `authenticator: "linear-agent-webhook"` and `subject` to the triggering
+// Linear user id (or "unknown"). Passing that id as `signalMetadata.userId`
+// lets Linear show the "Link account" button to that user specifically.
+const linearUserIdFromAuthContext = (
+  auth: {
+    readonly authenticator: string;
+    readonly principalType: string;
+    readonly subject?: string;
+  } | null,
+): string | undefined =>
+  auth?.authenticator === "linear-agent-webhook" &&
+  auth.principalType === "user" &&
+  auth.subject !== undefined &&
+  auth.subject.length > 0 &&
+  auth.subject !== "unknown"
+    ? auth.subject
+    : undefined;
 
 function createLinearDefaultEvents(options: {
   readonly api?: LinearChannelConfig["api"];
@@ -728,6 +774,58 @@ function createLinearDefaultEvents(options: {
           ...(id ? ["", `Error id: ${id}`] : []),
         ].join("\n"),
         type: "error",
+      });
+    },
+    async "authorization.required"(data, channel, ctx) {
+      const challenge = data.authorization;
+      const displayName =
+        challenge?.displayName ?? connectionDisplayName(data.name);
+      const body = [
+        `I need you to connect ${displayName} before I can continue.`,
+        ...(challenge?.instructions ? ["", challenge.instructions] : []),
+        ...(challenge?.userCode ? ["", `Code: ${challenge.userCode}`] : []),
+      ].join("\n");
+      const url = challenge?.url;
+      if (url === undefined) {
+        // No URL (device/push-to-approve flows): the instructions are the
+        // whole affordance, and Linear's "auth" signal needs a link target.
+        await postActivity(channel, options, { body, type: "elicitation" });
+        return;
+      }
+      const userId = linearUserIdFromAuthContext(ctx.session.auth.current);
+      await postActivity(
+        channel,
+        options,
+        { body, type: "elicitation" },
+        {
+          signal: "auth",
+          signalMetadata: {
+            providerName: displayName,
+            url,
+            ...(userId !== undefined ? { userId } : {}),
+          },
+        },
+      );
+    },
+    async "authorization.completed"(data, channel) {
+      const displayName =
+        data.authorization?.displayName ?? connectionDisplayName(data.name);
+      if (data.outcome === "authorized") {
+        // A newer agent-initiated activity also dismisses Linear's ephemeral
+        // auth UI, per Linear's agent-signals docs.
+        await postActivity(
+          channel,
+          options,
+          { body: `Connected to ${displayName}. Resuming.`, type: "thought" },
+          { ephemeral: true },
+        );
+        return;
+      }
+      const outcome =
+        data.outcome === "timed-out" ? "timed out" : data.outcome;
+      await postActivity(channel, options, {
+        body: `Authorization for ${displayName} ${outcome}${data.reason ? `: ${data.reason}` : "."}`,
+        type: "thought",
       });
     },
   };
