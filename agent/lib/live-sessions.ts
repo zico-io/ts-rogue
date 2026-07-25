@@ -10,7 +10,6 @@ import type { LinearChannelConfig } from "eve/channels/linear";
 
 export interface LiveAgentSession {
   readonly id: string;
-  readonly status: string;
   readonly createdAt: string;
   readonly url: string | null;
 }
@@ -64,8 +63,8 @@ export const listLiveAgentSessions = async (input: {
         ? [
             {
               id: node.id,
-              status: node.status,
-              createdAt: typeof node.createdAt === "string" ? node.createdAt : "",
+              createdAt:
+                typeof node.createdAt === "string" ? node.createdAt : "",
               url: node.url ?? null,
             },
           ]
