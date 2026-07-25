@@ -98,7 +98,9 @@ export type StepDirection = "forward" | "back";
  * (roll the recruit pool), `HireRecruit` (pay to add a pool recruit to the
  * party), and `DismissMember` (remove a non-hero member). ENG-1 adds `Zoom`
  * (fast travel to a landmark the party has already activated this run);
- * it is blocked while inside a dungeon or battle - evac first.
+ * it is blocked while inside a dungeon or battle - evac first. ENG-4 adds
+ * `UseFieldItem` (consume a heal item on a chosen party member from the
+ * inventory screen, outside battle - battle's own item command is unchanged).
  */
 export type GameEvent =
   | {
@@ -127,4 +129,5 @@ export type GameEvent =
   | { type: "DescendStairs" }
   | { type: "ExitDungeon" }
   | { type: "Zoom"; waypointId: string }
+  | { type: "UseFieldItem"; itemId: string; memberId: string }
   | BattleEvent;

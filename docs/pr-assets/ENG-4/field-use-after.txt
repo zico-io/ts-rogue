@@ -1,0 +1,29 @@
+┌─ Inventory - Consumables ────────────────────────────────────────────────────────────────────────┐
+│ (no consumables)                                                                                 │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│ Hero     Lv1  HP ██████████ 24/24   MP ██████ 6/6                                                │
+│ Gold 50                                                                                          │
+│ Up/down to select, u to use on target, Tab for next section, Esc to close.                       │
+│ ┌──────────────────────────────────────────────────────────────────────────────────────────────┐ │
+│ │ Hero hits Slime for 5                                                                        │ │
+│ │ Slime is defeated!                                                                           │ │
+│ │ Victory! Gained 10 XP and 10 gold.                                                           │ │
+│ │ Looted Common Rusty Dagger!                                                                  │ │
+│ │ Looted Common Tunic!                                                                         │ │
+│ │ Looted Magic Clever Slime Ooze Charm of Evasion!                                             │ │
+│ │ Hero uses Potion and recovers 6 HP.                                                          │ │
+│ └──────────────────────────────────────────────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘

@@ -68,6 +68,10 @@ export type Intent =
   // Inventory screen gear section: cycles the backpack sort key (rarity ->
   // ilvl -> slot -> value -> rarity...).
   | { kind: "cycleSort" }
+  // Inventory screen consumables section (ENG-4): consumes the selected
+  // heal item on the currently targeted party member (Left/Right, shared
+  // with the gear section's member switch).
+  | { kind: "useItem" }
   // Village tavern: hire a recruit, dismiss a party member, and the
   // dismiss-confirmation's yes/no answer (distinct from the generic
   // `confirm`/`cancel` used for cursor selection and Escape).

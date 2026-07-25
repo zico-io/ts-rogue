@@ -9,6 +9,7 @@ import {
   recruitClassName,
   recruitCost,
 } from "../entities/recruits";
+import { consumeItem, healAmount, isHealItem } from "../loot/consumables";
 import { type EquipmentSlotName, equipTargetSlot } from "../loot/equipment";
 import { describeItem, itemSellPrice } from "../loot/items";
 import { rollChestLoot } from "../loot/resolution";
@@ -534,6 +535,75 @@ function zoom(state: GameState, waypointId: string): GameState {
 }
 
 /* -------------------------------------------------------------------------- */
+/* ENG-4: field consumable use                                                */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Consume a heal item on a chosen party member outside battle (the
+ * inventory screen's consumables section). Shares `HEAL_ITEMS`/`consumeItem`
+ * with battle's own item command (`combat/resolution.ts`), so the amount
+ * restored is identical in and out of battle; battle's item flow is
+ * otherwise untouched. Every rejection path is side-effect-free.
+ */
+function applyFieldItemUse(
+  state: GameState,
+  itemId: string,
+  memberId: string,
+): GameState {
+  if (state.scene === "battle") {
+    return {
+      ...state,
+      log: [...state.log, entry("Use battle items from the battle menu")],
+    };
+  }
+  const owned = state.inventory.find((item) => item.itemId === itemId);
+  if (!owned || owned.quantity <= 0 || !isHealItem(itemId)) {
+    return {
+      ...state,
+      log: [...state.log, entry("That item cannot be used here")],
+    };
+  }
+  const memberIndex = state.party.findIndex((m) => m.id === memberId);
+  if (memberIndex === -1) {
+    return {
+      ...state,
+      log: [...state.log, entry("No such party member")],
+    };
+  }
+  const member = state.party[memberIndex];
+  if (member.hp <= 0) {
+    return {
+      ...state,
+      log: [
+        ...state.log,
+        entry(`${member.name} is down and cannot be healed by items`),
+      ],
+    };
+  }
+  const heal = healAmount(itemId);
+  const recovered = Math.min(heal, member.maxHp - member.hp);
+  if (recovered <= 0) {
+    return {
+      ...state,
+      log: [...state.log, entry(`${member.name} is already at full health`)],
+    };
+  }
+  const party = state.party.map((entry, index) =>
+    index === memberIndex ? { ...entry, hp: entry.hp + recovered } : entry,
+  );
+  const name = findShopItem(itemId)?.name ?? itemId;
+  return {
+    ...state,
+    party,
+    inventory: consumeItem(state.inventory, itemId),
+    log: [
+      ...state.log,
+      entry(`${member.name} uses ${name} and recovers ${recovered} HP.`),
+    ],
+  };
+}
+
+/* -------------------------------------------------------------------------- */
 /* Phase 5 (ROG-11): equip / unequip / sell generated loot                    */
 /* -------------------------------------------------------------------------- */
 
@@ -778,6 +848,8 @@ export function reduce(state: GameState, event: GameEvent): GameState {
       return exitDungeon(state);
     case "Zoom":
       return zoom(state, event.waypointId);
+    case "UseFieldItem":
+      return applyFieldItemUse(state, event.itemId, event.memberId);
     case "BattleAttack":
     case "BattleSkill":
     case "BattleItem":

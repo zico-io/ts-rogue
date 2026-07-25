@@ -34,6 +34,7 @@ function ctx(overrides: Partial<InventoryUiContext> = {}): InventoryUiContext {
     partyLength: 1,
     memberId: "hero-1",
     packEntries: buildPackEntries(createStartingHero(), []),
+    consumables: [],
     ...overrides,
   };
 }
@@ -68,8 +69,29 @@ describe("resolveInventoryIntent", () => {
     });
   });
 
-  it("non-gear sections only bind escape/tab, not gear actions", () => {
-    for (const section of ["consumables", "currency", "quest"] as const) {
+  it("consumables section binds up/down/left/right/u, not gear-only actions", () => {
+    expect(resolveInventoryIntent("consumables", "up")).toEqual({
+      kind: "menuUp",
+    });
+    expect(resolveInventoryIntent("consumables", "down")).toEqual({
+      kind: "menuDown",
+    });
+    expect(resolveInventoryIntent("consumables", "left")).toEqual({
+      kind: "menuLeft",
+    });
+    expect(resolveInventoryIntent("consumables", "right")).toEqual({
+      kind: "menuRight",
+    });
+    expect(resolveInventoryIntent("consumables", "char:u")).toEqual({
+      kind: "useItem",
+    });
+    expect(resolveInventoryIntent("consumables", "char:e")).toBeUndefined();
+    expect(resolveInventoryIntent("consumables", "char:r")).toBeUndefined();
+    expect(resolveInventoryIntent("consumables", "enter")).toBeUndefined();
+  });
+
+  it("currency/quest sections only bind escape/tab, no cursor or item actions", () => {
+    for (const section of ["currency", "quest"] as const) {
       expect(resolveInventoryIntent(section, "escape")).toEqual({
         kind: "cancel",
       });
@@ -77,7 +99,7 @@ describe("resolveInventoryIntent", () => {
         kind: "switchMode",
       });
       expect(resolveInventoryIntent(section, "char:e")).toBeUndefined();
-      expect(resolveInventoryIntent(section, "char:r")).toBeUndefined();
+      expect(resolveInventoryIntent(section, "char:u")).toBeUndefined();
       expect(resolveInventoryIntent(section, "up")).toBeUndefined();
     }
   });
@@ -96,13 +118,19 @@ describe("reduceInventoryUi - section cycling", () => {
     expect(s.section).toBe("gear");
   });
 
-  it("resets packCursor and inspecting on section switch", () => {
+  it("resets packCursor, consumableCursor, and inspecting on section switch", () => {
     const result = reduceInventoryUi(
-      state({ section: "gear", packCursor: 3, inspecting: true }),
+      state({
+        section: "gear",
+        packCursor: 3,
+        consumableCursor: 2,
+        inspecting: true,
+      }),
       { kind: "switchMode" },
       ctx(),
     );
     expect(result.state.packCursor).toBe(0);
+    expect(result.state.consumableCursor).toBe(0);
     expect(result.state.inspecting).toBe(false);
   });
 
@@ -224,7 +252,7 @@ describe("reduceInventoryUi - cycleSort", () => {
 // ---------------------------------------------------------------------------
 
 describe("reduceInventoryUi - member switching", () => {
-  it("Left/Right cycle memberIndex only when party.length > 1, and only in gear", () => {
+  it("Left/Right cycle memberIndex only when party.length > 1, in gear or consumables", () => {
     const single = reduceInventoryUi(
       state({ section: "gear", memberIndex: 0 }),
       { kind: "menuRight" },
@@ -246,12 +274,19 @@ describe("reduceInventoryUi - member switching", () => {
     );
     expect(wrap.state.memberIndex).toBe(2);
 
-    const nonGear = reduceInventoryUi(
+    const consumables = reduceInventoryUi(
       state({ section: "consumables", memberIndex: 0 }),
       { kind: "menuRight" },
       ctx({ partyLength: 3 }),
     );
-    expect(nonGear.state.memberIndex).toBe(0);
+    expect(consumables.state.memberIndex).toBe(1);
+
+    const currency = reduceInventoryUi(
+      state({ section: "currency", memberIndex: 0 }),
+      { kind: "menuRight" },
+      ctx({ partyLength: 3 }),
+    );
+    expect(currency.state.memberIndex).toBe(0);
   });
 });
 
@@ -328,5 +363,57 @@ describe("reduceInventoryUi - equip/unequip", () => {
       ctxHere,
     );
     expect(noUnequip.effect).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Field consumable use (ENG-4)
+// ---------------------------------------------------------------------------
+
+describe("reduceInventoryUi - consumables cursor and use", () => {
+  const consumables = [
+    { itemId: "potion", quantity: 2 },
+    { itemId: "hi-potion", quantity: 1 },
+  ];
+
+  it("up/down cycle the consumable cursor and wrap", () => {
+    let s = state({ section: "consumables", consumableCursor: 0 });
+    s = reduceInventoryUi(s, { kind: "menuDown" }, ctx({ consumables })).state;
+    expect(s.consumableCursor).toBe(1);
+    s = reduceInventoryUi(s, { kind: "menuDown" }, ctx({ consumables })).state;
+    expect(s.consumableCursor).toBe(0);
+    s = reduceInventoryUi(s, { kind: "menuUp" }, ctx({ consumables })).state;
+    expect(s.consumableCursor).toBe(1);
+  });
+
+  it("does nothing when there are no consumables", () => {
+    const result = reduceInventoryUi(
+      state({ section: "consumables", consumableCursor: 0 }),
+      { kind: "menuDown" },
+      ctx({ consumables: [] }),
+    );
+    expect(result.state.consumableCursor).toBe(0);
+  });
+
+  it("useItem emits an effect for the selected item and current target member", () => {
+    const result = reduceInventoryUi(
+      state({ section: "consumables", consumableCursor: 1 }),
+      { kind: "useItem" },
+      ctx({ consumables, memberId: "hero-2" }),
+    );
+    expect(result.effect).toEqual({
+      type: "useItem",
+      itemId: "hi-potion",
+      memberId: "hero-2",
+    });
+  });
+
+  it("useItem is a no-op when the consumables list is empty", () => {
+    const result = reduceInventoryUi(
+      state({ section: "consumables", consumableCursor: 0 }),
+      { kind: "useItem" },
+      ctx({ consumables: [] }),
+    );
+    expect(result.effect).toBeUndefined();
   });
 });

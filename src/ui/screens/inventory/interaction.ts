@@ -1,18 +1,23 @@
 /**
  * Inventory screen input handling (ENG-3, workstream 1 of the ENG-2
- * inventory-system epic). This is the dedicated gear/consumables/currency/
- * quest browser that replaces `StoreView`'s `pack` mode as the canonical
- * place to inspect and equip gear; the Store's backpack mode now only sells.
+ * inventory-system epic; ENG-4 adds field consumable use). This is the
+ * dedicated gear/consumables/currency/quest browser that replaces
+ * `StoreView`'s `pack` mode as the canonical place to inspect and equip
+ * gear; the Store's backpack mode now only sells.
  *
  * Gear section reuses `village/interaction.ts`'s `buildPackEntries`/
  * `EQUIP_SLOTS`/`PackEntry` and `engine/loot/equipment.ts`'s `compareItem`/
  * `equipTargetSlot` rather than duplicating pack-row/compare logic - this
- * module only adds what's new: section cycling, backpack sorting, and the
- * inspect toggle. Consumables/currency are read-only browses over
- * `GameState.inventory`/`gold`; quest has no backing data model yet (a
- * future workstream), so it renders as an explicit empty state.
+ * module only adds what's new: section cycling, backpack sorting, the
+ * inspect toggle, and (ENG-4) the consumables section's item-use flow.
+ * Currency is a read-only browse over `GameState.gold`; quest has no
+ * backing data model yet (a future workstream), so it renders as an
+ * explicit empty state. The consumables section shares the gear section's
+ * `memberIndex` (the party-member switcher) as its heal target, so
+ * Left/Right picks who a potion goes to no matter which section is open.
  */
 
+import type { InventoryItem } from "../../../engine/entities/party";
 import type { EquipmentSlotName } from "../../../engine/loot/equipment";
 import { itemBaseSlot, itemSellPrice } from "../../../engine/loot/items";
 import type { ItemInstance, Rarity } from "../../../engine/loot/types";
@@ -93,6 +98,8 @@ export interface InventoryUiState {
   sortKey: SortKey;
   /** Whether the currently selected gear item shows its full affix lines. */
   inspecting: boolean;
+  /** Cursor into the consumables section's item list (ENG-4). */
+  consumableCursor: number;
 }
 
 export const INITIAL_INVENTORY_UI_STATE: InventoryUiState = {
@@ -101,6 +108,7 @@ export const INITIAL_INVENTORY_UI_STATE: InventoryUiState = {
   packCursor: 0,
   sortKey: "rarity",
   inspecting: false,
+  consumableCursor: 0,
 };
 
 export interface InventoryUiContext {
@@ -108,11 +116,14 @@ export interface InventoryUiContext {
   memberId: string;
   /** The gear section's rows, already sorted by the state's current `sortKey`. */
   packEntries: readonly PackEntry[];
+  /** The consumables section's owned stacks (ENG-4). */
+  consumables: readonly InventoryItem[];
 }
 
 export type InventoryUiEffect =
   | { type: "equip"; instanceId: string; memberId: string }
   | { type: "unequip"; slot: EquipmentSlotName; memberId: string }
+  | { type: "useItem"; itemId: string; memberId: string }
   | { type: "back" };
 
 export interface InventoryUiResult {
@@ -142,17 +153,30 @@ const inventoryGearKeymap: Keymap = {
   "char:r": { kind: "cycleSort" },
 };
 
+// Consumables-only bindings (ENG-4). Up/down move the item cursor; left/right
+// retarget which party member a use applies to (the shared `memberIndex`);
+// `char:u` uses the selected item on the current target, mirroring the gear
+// section's `u` (unequip) as "the letter that acts on the selected row".
+const inventoryConsumablesKeymap: Keymap = {
+  ...inventoryCommonKeymap,
+  up: { kind: "menuUp" },
+  down: { kind: "menuDown" },
+  left: { kind: "menuLeft" },
+  right: { kind: "menuRight" },
+  "char:u": { kind: "useItem" },
+};
+
 /** Resolves the `Intent` for a key press on the inventory screen, given its current section. */
 export function resolveInventoryIntent(
   section: InventorySection,
   key: KeyName,
 ): Intent | undefined {
-  return section === "gear"
-    ? inventoryGearKeymap[key]
-    : inventoryCommonKeymap[key];
+  if (section === "gear") return inventoryGearKeymap[key];
+  if (section === "consumables") return inventoryConsumablesKeymap[key];
+  return inventoryCommonKeymap[key];
 }
 
-/** Pure transition function for the inventory screen's sections, sort, inspect, and equip/unequip. */
+/** Pure transition function for the inventory screen's sections, sort, inspect, equip/unequip, and (ENG-4) field item use. */
 export function reduceInventoryUi(
   state: InventoryUiState,
   intent: Intent,
@@ -166,26 +190,76 @@ export function reduceInventoryUi(
         ...state,
         section: SECTIONS[nextIndex],
         packCursor: 0,
+        consumableCursor: 0,
         inspecting: false,
       },
     };
   }
 
-  // Every other intent below only applies to the gear section (the other
-  // sections are read-only browses with no cursor/sort/equip actions).
-  if (state.section !== "gear") return { state };
-
+  // The member switcher is shared between gear (equip target) and
+  // consumables (heal target) - both sections let Left/Right retarget it.
   if (
     (intent.kind === "menuLeft" || intent.kind === "menuRight") &&
-    ctx.partyLength > 1
+    ctx.partyLength > 1 &&
+    (state.section === "gear" || state.section === "consumables")
   ) {
     const delta = intent.kind === "menuLeft" ? -1 : 1;
     const next =
       (state.memberIndex + delta + ctx.partyLength) % ctx.partyLength;
     return {
-      state: { ...state, memberIndex: next, packCursor: 0, inspecting: false },
+      state: {
+        ...state,
+        memberIndex: next,
+        packCursor: 0,
+        consumableCursor: 0,
+        inspecting: false,
+      },
     };
   }
+
+  if (state.section === "consumables") {
+    if (intent.kind === "menuUp" && ctx.consumables.length > 0) {
+      return {
+        state: {
+          ...state,
+          consumableCursor:
+            (state.consumableCursor + ctx.consumables.length - 1) %
+            ctx.consumables.length,
+        },
+      };
+    }
+    if (intent.kind === "menuDown" && ctx.consumables.length > 0) {
+      return {
+        state: {
+          ...state,
+          consumableCursor:
+            (state.consumableCursor + 1) % ctx.consumables.length,
+        },
+      };
+    }
+    if (intent.kind === "useItem") {
+      const index = Math.min(
+        state.consumableCursor,
+        ctx.consumables.length - 1,
+      );
+      const selected = ctx.consumables[index];
+      if (!selected) return { state };
+      return {
+        state,
+        effect: {
+          type: "useItem",
+          itemId: selected.itemId,
+          memberId: ctx.memberId,
+        },
+      };
+    }
+    return { state };
+  }
+
+  // Every other intent below only applies to the gear section (currency and
+  // quest are read-only browses with no cursor/sort/equip actions).
+  if (state.section !== "gear") return { state };
+
   if (intent.kind === "menuUp") {
     return {
       state: {
