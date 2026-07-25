@@ -8,10 +8,44 @@
  * `Spritesheet` (`atlas.ts`'s `loadAtlas()`).
  */
 
-import { Graphics, Sprite, type Spritesheet } from "pixi.js";
+import {
+  Graphics,
+  Rectangle,
+  Sprite,
+  type Spritesheet,
+  Texture,
+} from "pixi.js";
 import type { TileName } from "../../ui/tiles/sources";
-import type { OverworldDrawFactory, SpriteHandle } from "./overworldView";
+import type {
+  MultiCellRegion,
+  OverworldDrawFactory,
+  SpriteHandle,
+} from "./overworldView";
 import type { RectHandle } from "./sceneView";
+
+/**
+ * A frame's atlas rect already isolates its own pixels via Pixi's
+ * `Texture.frame`; a multi-cell texture (ENG-8) is packed at its natural
+ * `wide*8 x high*8` size instead of squished to one cell (`sources.ts`'s
+ * `multiCell`, `scripts/build-atlas.ts`), so this subdivides that rect into
+ * `region.wide x region.high` even slices and returns the one sub-region at
+ * `region.col, region.row` - what makes one covered grid cell show its own
+ * slice instead of the whole (unsquished) texture. Not cached: only debug/
+ * landmark fixtures use multi-cell regions today, nowhere near per-frame-
+ * sensitive volume; cache by `${name}:${col}:${row}` if that changes
+ * (ponytail).
+ */
+function subTexture(base: Texture, region: MultiCellRegion): Texture {
+  const subWidth = base.frame.width / region.wide;
+  const subHeight = base.frame.height / region.high;
+  const frame = new Rectangle(
+    base.frame.x + region.col * subWidth,
+    base.frame.y + region.row * subHeight,
+    subWidth,
+    subHeight,
+  );
+  return new Texture({ source: base.source, frame });
+}
 
 /** Builds an `OverworldDrawFactory` whose sprites/rects are all children of `container`. */
 export function createPixiOverworldDrawFactory(
@@ -26,15 +60,26 @@ export function createPixiOverworldDrawFactory(
         setPosition(x: number, y: number) {
           sprite.position.set(x, y);
         },
-        setTexture(name: TileName) {
-          const texture = sheet.textures[name];
-          if (sprite.texture !== texture) {
-            sprite.texture = texture;
-            // Atlas tiles are native 8x8 pixel art (ART_DIRECTION.md §2.1);
-            // `atlas.ts`'s `loadAtlas()` already sets this on the shared
-            // texture source, so this is a defensive no-op (ROG-63).
-            sprite.texture.source.scaleMode = "nearest";
+        setTexture(name: TileName, region?: MultiCellRegion) {
+          const isMultiCell =
+            region !== undefined && (region.wide > 1 || region.high > 1);
+          if (!isMultiCell) {
+            const texture = sheet.textures[name];
+            if (sprite.texture !== texture) {
+              sprite.texture = texture;
+              // Atlas tiles are native 8x8 pixel art (ART_DIRECTION.md
+              // §2.1); `atlas.ts`'s `loadAtlas()` already sets this on the
+              // shared texture source, so this is a defensive no-op
+              // (ROG-63).
+              sprite.texture.source.scaleMode = "nearest";
+            }
+            return;
           }
+          // A multi-cell region's sub-texture is a fresh object every call
+          // (see `subTexture`'s doc comment), so there is no cheap identity
+          // check to skip the reassignment here.
+          sprite.texture = subTexture(sheet.textures[name], region);
+          sprite.texture.source.scaleMode = "nearest";
         },
         setSize(width: number, height: number) {
           // Scales the native 8x8 atlas frame up to the viewport's tile

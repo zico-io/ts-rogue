@@ -28,6 +28,16 @@
  * density/position instead of always drawing at a fixed size - see that
  * module's doc comment for the full picture (and why there's no per-neighbor
  * bitmask shore autotile art here yet).
+ *
+ * `drawFootprint` (ENG-8) is the multi-cell texture mapping capability: it
+ * places one sprite per grid cell covered by a texture's `multiCell`
+ * footprint (`sources.ts`), each showing that cell's own sub-region, so the
+ * whole texture reads as one continuous image across the footprint instead
+ * of a single squished-and-rescaled sprite or tiled 1x1 repeats. `render`'s
+ * optional `debugFixture` wires a dev-only demo of it into the real
+ * viewport (see `bootGame.ts`'s `renderOverworldContent`); no live overworld
+ * tile uses a multi-cell footprint yet - actually placing a landmark across
+ * more than one map tile is ENG-7's job.
  */
 
 import type { GameState } from "../../engine/state/types";
@@ -47,8 +57,25 @@ import {
   sameNeighborCount,
   shoreSides,
 } from "../../ui/tiles/overworldVariants";
-import type { TileName } from "../../ui/tiles/sources";
+import {
+  footprintCells,
+  footprintOf,
+  type TileName,
+} from "../../ui/tiles/sources";
 import type { DrawHandle, RectHandle } from "./sceneView";
+
+/**
+ * Which sub-region of a texture's natural multi-cell footprint one sprite
+ * should show: the cell at `(col, row)` out of a `wide x high` grid, 0-based
+ * from the footprint's top-left. Omitted (or `wide === high === 1`) means
+ * "the whole texture", exactly as before ENG-8.
+ */
+export interface MultiCellRegion {
+  col: number;
+  row: number;
+  wide: number;
+  high: number;
+}
 
 /**
  * A positioned, keyed, texture-backed tile. `setSize` scales the sprite's
@@ -57,7 +84,7 @@ import type { DrawHandle, RectHandle } from "./sceneView";
  * gap in every `tilePx`-sized cell instead of filling it (ROG-63).
  */
 export interface SpriteHandle extends DrawHandle {
-  setTexture(name: TileName): void;
+  setTexture(name: TileName, region?: MultiCellRegion): void;
   setSize(width: number, height: number): void;
   /** `0xffffff` (no tint) leaves the texture's own colors untouched. */
   setTint(color: number): void;
@@ -73,6 +100,17 @@ export interface OverworldDrawFactory {
 export interface PixelSize {
   width: number;
   height: number;
+}
+
+/**
+ * A dev-only multi-cell fixture placement (ENG-8), anchored at a
+ * viewport-local (not map) grid position - purely a demonstration of the
+ * texture-mapping capability, not a real map landmark (that's ENG-7).
+ */
+export interface DebugFootprintFixture {
+  name: TileName;
+  originCol: number;
+  originRow: number;
 }
 
 /** Pixel size of one main-viewport tile; the minimap always draws smaller than this. */
@@ -111,12 +149,15 @@ export class OverworldSceneView {
   /**
    * Renders one frame. `tilePx` is the pixel size of a main-viewport tile;
    * the minimap and meter size themselves off `pixelSize` independently.
+   * `debugFixture` (ENG-8) is an optional dev-only multi-cell placement drawn
+   * on top of the viewport, anchored at a viewport-local grid position.
    */
   render(
     state: GameState,
     map: OverworldMap,
     pixelSize: PixelSize,
     tilePx: number = DEFAULT_TILE_PX,
+    debugFixture?: DebugFootprintFixture,
   ): void {
     const player = state.worldState.player;
     const contentHeight = Math.max(
@@ -176,6 +217,21 @@ export class OverworldSceneView {
       seenSprites,
       seenShoreRects,
     );
+    if (debugFixture) {
+      // Drawn after the terrain loop above, so its sprites are later
+      // container children and render on top - a multi-cell placement
+      // needs to read as one continuous image, not be poked through by
+      // whatever ordinary terrain sits underneath it.
+      this.drawFootprint(
+        debugFixture.name,
+        debugFixture.originCol,
+        debugFixture.originRow,
+        viewportOffsetX,
+        viewportOffsetY,
+        tilePx,
+        seenSprites,
+      );
+    }
     this.pruneStaleSprites(seenSprites);
     this.pruneStaleShoreRects(seenShoreRects);
 
@@ -241,6 +297,42 @@ export class OverworldSceneView {
 
         this.drawShoreFringe(map, cell, cellX, cellY, tilePx, seenShoreRects);
       }
+    }
+  }
+
+  /**
+   * Places one sprite per grid cell covered by `name`'s multi-cell footprint
+   * (`sources.ts`'s `multiCell`), anchored with its top-left at viewport-local
+   * grid `(originCol, originRow)`. Each sprite shows only its own sub-region
+   * of the source texture (via `MultiCellRegion`), so the whole footprint
+   * reads as one continuous image spanning `wide x high` cells instead of
+   * `wide*high` repeats of the same 1x1 frame (ENG-8).
+   */
+  private drawFootprint(
+    name: TileName,
+    originCol: number,
+    originRow: number,
+    offsetX: number,
+    offsetY: number,
+    tilePx: number,
+    seenSprites: Set<string>,
+  ): void {
+    const { wide, high } = footprintOf(name);
+    for (const { col, row } of footprintCells(name)) {
+      const key = `footprint:${name}:${col},${row}`;
+      seenSprites.add(key);
+      let sprite = this.viewportSprites.get(key);
+      if (!sprite) {
+        sprite = this.factory.createSprite();
+        this.viewportSprites.set(key, sprite);
+      }
+      sprite.setTexture(name, { col, row, wide, high });
+      sprite.setTint(0xffffff);
+      sprite.setPosition(
+        offsetX + (originCol + col) * tilePx,
+        offsetY + (originRow + row) * tilePx,
+      );
+      sprite.setSize(tilePx, tilePx);
     }
   }
 
