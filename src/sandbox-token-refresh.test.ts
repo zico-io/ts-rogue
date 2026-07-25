@@ -3,8 +3,13 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { getToken } from "@vercel/connect";
 import type { SandboxNetworkPolicy } from "eve/sandbox";
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("@vercel/connect", () => ({
+  getToken: vi.fn(() => Promise.resolve("fresh-token")),
+}));
 
 import {
   AUTO_RECOVER_PUSH_COMMAND,
@@ -12,6 +17,7 @@ import {
   dependencyRevalidationKey,
   keepTokenFresh,
   MAX_SET_POLICY_FAILURES,
+  mintFreshPolicy,
   resolveStartupNetworkPolicy,
   SYNC_MAIN_COMMAND,
 } from "../agent/sandbox";
@@ -149,6 +155,77 @@ describe("keepTokenFresh", () => {
     await vi.advanceTimersByTimeAsync(1000 * (MAX_SET_POLICY_FAILURES + 5));
 
     expect(calls).toBe(MAX_SET_POLICY_FAILURES);
+    vi.useRealTimers();
+  });
+});
+
+describe("mintFreshPolicy", () => {
+  it("bypasses @vercel/connect's token cache with forceRefresh", async () => {
+    // Without forceRefresh the cache serves the same token until 30s before
+    // its ~1h expiry, turning the 45-minute refresh tick into a no-op
+    // re-install of a dying token (the >45-minute push outages).
+    vi.mocked(getToken).mockClear();
+    const policy = await mintFreshPolicy();
+
+    expect(getToken).toHaveBeenCalledWith(
+      "github/ts-rogue-eve-github",
+      { subject: { type: "app" }, scopes: ["*"] },
+      { forceRefresh: true },
+    );
+    const header = `Basic ${Buffer.from("x-access-token:fresh-token").toString("base64")}`;
+    const injected = [{ transform: [{ headers: { authorization: header } }] }];
+    expect(policy).toEqual({
+      allow: {
+        "github.com": injected,
+        "*.github.com": injected,
+        "*": [],
+      },
+    });
+  });
+});
+
+describe("keepTokenFresh failure logging", () => {
+  it("warns on a mint failure instead of failing silently", async () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const sandbox = { setNetworkPolicy: () => Promise.resolve() };
+
+    keepTokenFresh(sandbox, () => Promise.reject(new Error("oidc expired")), {
+      refreshMs: 10000,
+      retryMs: 1000,
+      initialMs: 1000,
+    });
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("token mint failed"),
+      "oidc expired",
+    );
+    warn.mockRestore();
+    vi.useRealTimers();
+  });
+
+  it("warns with the failure count on a setNetworkPolicy failure", async () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const sandbox = {
+      setNetworkPolicy: () => Promise.reject(new Error("gone")),
+    };
+
+    keepTokenFresh(
+      sandbox,
+      () => Promise.resolve({ allow: {} } as SandboxNetworkPolicy),
+      1000,
+    );
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining(
+        `setNetworkPolicy failed (1/${MAX_SET_POLICY_FAILURES})`,
+      ),
+      "gone",
+    );
+    warn.mockRestore();
     vi.useRealTimers();
   });
 });

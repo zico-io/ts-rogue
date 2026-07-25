@@ -60,6 +60,7 @@ const {
   resolveReceiveSession,
   stateFromAgentSession,
 } = await import("../agent/channels/linear");
+const { createLinearAgentActivity } = await import("eve/channels/linear");
 
 // biome-ignore lint/suspicious/noExplicitAny: reaching into the mocked channel shape for tests
 const route = (channel as any).routes[0] as {
@@ -205,6 +206,63 @@ describe("agent/channels/linear (cancel-before-send)", () => {
     expect(response.status).toBe(401);
     expect(cancelMock).not.toHaveBeenCalled();
     expect(sendMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("actions.requested ephemeral render", () => {
+  const postAction = async (action: unknown) => {
+    vi.mocked(createLinearAgentActivity).mockClear();
+    // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handler directly
+    await (channel as any).events["actions.requested"](
+      { actions: [action] },
+      { state: { agentSessionId: "sess-1", pendingToolCallMessage: null } },
+    );
+    return vi.mocked(createLinearAgentActivity).mock.calls[0]?.[0].activity;
+  };
+
+  it("labels a subagent-call with the delegation packet's lead line, not the static tool description", async () => {
+    // The static `agent` tool description froze the ephemeral chip on
+    // meaningless text for entire child runs; the packet's first line names
+    // the delegated issue.
+    const activity = await postAction({
+      kind: "subagent-call",
+      name: "agent",
+      description: "Delegate a focused subtask to a fresh copy of yourself.",
+      input: {
+        message: "issue: ROG-65 - Add depth to the overworld\nscope: ...",
+      },
+    });
+    expect(activity?.content).toEqual({
+      action: "subagent-call",
+      parameter: "issue: ROG-65 - Add depth to the overworld",
+      type: "action",
+    });
+    expect(activity?.ephemeral).toBe(true);
+  });
+
+  it("falls back to the description when a subagent-call has no usable message", async () => {
+    const activity = await postAction({
+      kind: "subagent-call",
+      name: "agent",
+      description: "Delegate a focused subtask to a fresh copy of yourself.",
+      input: { message: "   \n  " },
+    });
+    expect(activity?.content).toMatchObject({
+      parameter: "Delegate a focused subtask to a fresh copy of yourself.",
+    });
+  });
+
+  it("keeps rendering plain tool calls from their input", async () => {
+    const activity = await postAction({
+      kind: "tool-call",
+      toolName: "bash",
+      input: { command: "git status" },
+    });
+    expect(activity?.content).toEqual({
+      action: "bash",
+      parameter: '{"command":"git status"}',
+      type: "action",
+    });
   });
 });
 
