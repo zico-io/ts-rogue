@@ -14,7 +14,8 @@ pre-warmed Vercel Sandboxes.
 | [`hooks/`](hooks/) | Delegated-child activity relay (including the ephemeral working indicator) and turn-start sandbox prewarm |
 | [`schedules/`](schedules/) | Daily eve-version-check: bump, evaluate the changelog against the workaround audit, PR |
 | [`tools/`](tools/) | Native Linear Agent Session progress updates and proactive self-handoff to a fresh session |
-| [`sandbox.ts`](sandbox.ts) | Vercel Sandbox bootstrap, sync, `ORIENTATION.md` brief, network policy, and token refresh |
+| [`sandbox.ts`](sandbox.ts) | Root Vercel Sandbox definition: composes `lib/sandbox.ts` with push-capable git auth and screenshot tooling on |
+| [`lib/sandbox.ts`](lib/sandbox.ts) | Shared sandbox-provisioning recipe (repo checkout, HAR-3 CLI toolchain, git/gh auth brokering, `ORIENTATION.md` brief, token refresh) every subagent's own `sandbox.ts` composes |
 | [`lib/orientation.ts`](lib/orientation.ts) | Builds the pre-computed orientation brief from git state and screenshot-tooling status |
 
 Linear owns issue status, priority, and progress. GitHub pull requests remain the
@@ -158,6 +159,69 @@ failing anyway, `scripts/backup-unpushed-work.sh <issue-id>` patches up the
 unpushed commits so they survive even if this sandbox is discarded;
 `instructions.md` has the agent attach that patch to the Linear issue as a
 last resort before reporting the blocker.
+
+### Shared subagent sandbox recipe (HAR-26)
+
+Declared subagents (`agent/subagents/<id>/`) inherit nothing from the root -
+not instructions, tools, connections, or sandbox (see
+`node_modules/eve/docs/subagents.mdx`). An absent `subagents/<id>/sandbox.ts`
+falls back to the framework default: no repo checkout, no HAR-3 toolchain, no
+GitHub auth. Every subagent this repo declares needs some subset of the
+root's sandbox recipe, so [`lib/sandbox.ts`](lib/sandbox.ts) extracts it once
+into `createSandboxRecipe(options)`, and both `agent/sandbox.ts` and each
+subagent's own `sandbox.ts` compose it instead of duplicating any of it.
+
+```ts
+// agent/subagents/scout/sandbox.ts
+import { defineSandbox } from "eve/sandbox";
+
+import { createSandboxRecipe } from "../../lib/sandbox";
+
+export default defineSandbox(createSandboxRecipe({ gitAuth: "none" }));
+```
+
+`createSandboxRecipe` returns the `backend`/`revalidationKey`/`bootstrap`/
+`onSession` shape `defineSandbox` expects, built from the same pieces
+`agent/sandbox.ts` always exported for its own test suite
+(`buildBootstrapCommand`, `resolveStartupNetworkPolicy`, `keepTokenFresh`,
+`SYNC_MAIN_COMMAND`, `AUTO_RECOVER_PUSH_COMMAND`, ...) - `agent/sandbox.ts`
+re-exports those directly rather than duplicating them, so
+`src/sandbox-token-refresh.test.ts` and `hooks/prewarm-sandbox.ts` needed no
+changes. Two options cover what the declared subagents in this group need:
+
+* **`gitAuth`** (`"none" | "read-only" | "push-capable"`, required) - how
+  much GitHub network-boundary auth the *live* session gets. Bootstrap always
+  mints a token once regardless of level, to clone the private repo into the
+  baked snapshot; this option only governs what `onSession` wires up
+  afterward:
+  * `"none"` - the live session's network policy carries no `github.com` auth
+    header, there's no token-refresh loop, and stranded-push recovery is
+    skipped. The session can read the checked-out repo but cannot push or
+    call an authenticated GitHub API. For `scout` (recon only).
+  * `"read-only"` - the live session keeps an authenticated, periodically
+    refreshed network policy so `gh api`/`git fetch` work, but stranded-push
+    recovery is skipped. For `reviewer` (posts a PR review through GitHub's
+    API, never pushes code). The underlying GitHub App token is the same
+    all-scopes token `"push-capable"` gets - Vercel Connect mints one token
+    per app installation, not a narrower one per requested permission subset
+    - so this level is a deliberate policy for what the recipe wires up, not
+    a mechanically narrower credential.
+  * `"push-capable"` - `"read-only"` plus stranded-push recovery
+    (`AUTO_RECOVER_PUSH_COMMAND`), for a session expected to push its own
+    branch: the root, and `coder`.
+* **`screenshotTooling`** (boolean, default `false`) - installs and verifies
+  Playwright chromium for `scripts/play-web.mjs` screenshots at bootstrap.
+  Only `playtester` needs it; every other subagent skips the extra image
+  weight. The root passes `true` (its historical, unparameterized behavior)
+  since its coding child may ship a rendered-UI change.
+
+Repo checkout and the HAR-3 CLI toolchain (`rg`/`fd`/`bat`/`eza`/`ast-grep`,
+`gh`, `pi`+ponytail) are unconditional in `buildBootstrapCommand` - every
+subagent needs some subset of them, installing all of them regardless of
+which subset costs nothing extra (the image is baked once per
+`dependencyRevalidationKey` and reused), and `screenshotTooling` is the one
+option expensive enough (a Playwright browser install) to make opt-in worth
+it.
 
 ### Mid-turn steering on Linear
 
