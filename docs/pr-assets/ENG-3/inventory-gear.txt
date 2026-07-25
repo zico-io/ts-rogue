@@ -1,0 +1,30 @@
+┌─ Inventory - Gear ───────────────────────────────────────────────────────────────────────────────┐
+│ Hero ATK 7 DEF 3 SPD 4 - sort: rarity (r to cycle)                                               │
+│   Weapon: (empty)                                                                                │
+│   Armor: (empty)                                                                                 │
+│   Accessory 1: (empty)                                                                           │
+│   Accessory 2: (empty)                                                                           │
+│ > Magic Clever Rusty Dagger of Evasion - +1 STR +3 AGI +1 INT - sell 14g [e equip]               │
+│ Equipping into Weapon: +1 STR +3 AGI +1 INT                                                      │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│ Hero     Lv1  HP ███████░░░ 17/24   MP ██████ 6/6                                                │
+│ Gold 60                                                                                          │
+│ Up/down to select, Enter to inspect, e to equip, u to unequip, r to cycle sort (rarity), Tab for │
+│  next section, Esc to close.                                                                     │
+│ ┌──────────────────────────────────────────────────────────────────────────────────────────────┐ │
+│ │ Slime hits Hero for 1                                                                        │ │
+│ │ Hero hits Slime for 5                                                                        │ │
+│ │ Slime hits Hero for 1                                                                        │ │
+│ │ Hero hits Slime for 4                                                                        │ │
+│ │ Slime is defeated!                                                                           │ │
+│ │ Victory! Gained 10 XP and 10 gold.                                                           │ │
+│ │ Looted Magic Clever Rusty Dagger of Evasion!                                                 │ │
+│ └──────────────────────────────────────────────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────────────────────────────────┘

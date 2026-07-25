@@ -936,7 +936,7 @@ export async function bootGame(
       const selected = index === packIndex;
       if (packEntry.kind === "equipped") {
         const text = packEntry.item
-          ? `${packEntry.label}: ${describeItem(packEntry.item)} (${itemStatLine(packEntry.item)}) [u to unequip]`
+          ? `${packEntry.label}: ${describeItem(packEntry.item)} (${itemStatLine(packEntry.item)})`
           : `${packEntry.label}: (empty)`;
         lines.push({
           text: `${selected ? "> " : "  "}${text}`,
@@ -948,7 +948,7 @@ export async function bootGame(
         });
       } else {
         lines.push({
-          text: `${selected ? "> " : "  "}${describeItem(packEntry.item)} - ${itemStatLine(packEntry.item)} - sell ${itemSellPrice(packEntry.item)}g [e equip / s sell]`,
+          text: `${selected ? "> " : "  "}${describeItem(packEntry.item)} - ${itemStatLine(packEntry.item)} - sell ${itemSellPrice(packEntry.item)}g [s sell]`,
           color: selected
             ? toPixiColor(theme.accent)
             : toPixiColor(theme.rarity[packEntry.item.rarity]),
@@ -973,7 +973,7 @@ export async function bootGame(
     }
     lines.push({ text: "" });
     lines.push({
-      text: "Up/down to select, e to equip, u to unequip, s to sell, Tab for shop, Esc to go back.",
+      text: "Up/down to select, s to sell, Tab for shop, Esc to go back.",
       color: toPixiColor(theme.textMuted),
     });
     return lines;

@@ -20,6 +20,12 @@ export const globalKeymap: Keymap = {
   // ENG-1: opens the fast-travel picker. Handlers gate this to the
   // overworld/village scenes themselves (evac first inside a dungeon).
   "char:z": { kind: "openZoom" },
+  // ENG-3: opens the dedicated inventory screen. Deliberately not `char:i` -
+  // the village overview's own local keymap already binds `char:i` to the
+  // Inn, and Ink fires every active `useInput` hook for a keypress with no
+  // stopPropagation, so a global `char:i` binding would fire alongside the
+  // village's Inn shortcut. Handlers gate this to non-battle scenes.
+  "char:v": { kind: "openInventory" },
 };
 
 /** Resolves the global `Intent` bound to a key press, if any. */

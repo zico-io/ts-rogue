@@ -49,16 +49,19 @@ pure darks downsample to invisible ANSI black; that is why `border` and
 
 | Context | Controls |
 | --- | --- |
-| Global | `q` or Ctrl+C exits; backtick switches the developer console in dev mode; `z` opens fast travel from the overworld/village |
+| Global | `q` or Ctrl+C exits; backtick switches the developer console in dev mode; `z` opens fast travel from the overworld/village; `v` opens the Inventory screen anywhere outside battle |
 | New game | Up/Down and Enter select a class, then Normal or Permadeath mode; Esc returns to class selection |
 | Village | Up/Down and Enter select; `i`, `c`, `s`, `o` open buildings or leave; Esc returns |
 | Overworld | Arrows or `h`, `j`, `k`, `l` move; Esc returns to the village |
 | Dungeon | Arrows, WASD, or HJKL move and turn; `o` opens; Enter or `>` descends; `<` opens an evac confirm (y/n or Enter/Esc) |
 | Battle | Up/Down selects an action; Enter confirms; Esc cancels targeting |
 | Fast travel | Up/Down selects a discovered waypoint; Enter travels; Esc cancels |
+| Inventory | Tab cycles gear/consumables/currency/quest sections; in gear, Up/Down selects, Enter inspects full affix lines, `e`/`u` equip/unequip, `r` cycles the backpack sort (rarity/ilvl/slot/value), Left/Right switches party member; Esc closes |
 
 The store view uses Tab to switch between shop and backpack modes. Backpack
-actions equip, unequip, compare, and sell generated items.
+mode is sell-only (`s` to sell) - browsing, inspecting, comparing, and
+equipping/unequipping gear now live on the dedicated Inventory screen (`v`)
+described above.
 
 The class selection offers Warrior, Rogue, and Wizard. Battle skill menus show
 only the selected class's known skills, and restarting after permadeath keeps

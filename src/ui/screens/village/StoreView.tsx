@@ -2,7 +2,6 @@ import { Box, Text, useInput } from "ink";
 import { useState } from "react";
 import { SHOP_ITEMS, sellPriceFor } from "../../../data/shops";
 import { atkFrom, defFrom, spdFrom } from "../../../engine/combat/resolution";
-import { compareItem, equipTargetSlot } from "../../../engine/loot/equipment";
 import {
   describeItem,
   itemSellPrice,
@@ -14,7 +13,6 @@ import { normalizeInkKey } from "../../hooks/normalizeInkKey";
 import { theme } from "../../theme";
 import {
   buildPackEntries,
-  EQUIP_SLOTS,
   INITIAL_STORE_UI_STATE,
   type PackEntry,
   reduceStoreUi,
@@ -30,8 +28,12 @@ export interface StoreViewProps {
 
 const STAT_KEYS = ["str", "agi", "vit", "int"] as const;
 
-/** Compact signed stat delta line for the compare panel. */
-function deltaLine(delta: {
+/**
+ * Compact signed stat delta line for a compare panel. Exported so the
+ * Inventory screen (ENG-3, `screens/inventory/InventoryScreen.tsx`) reuses
+ * this formatting for its own gear compare panel instead of duplicating it.
+ */
+export function deltaLine(delta: {
   str: number;
   agi: number;
   vit: number;
@@ -51,14 +53,19 @@ function deltaLine(delta: {
 /**
  * Store sub-view (PROJECT_PLAN Phase 5, ROG-11; multi-member switcher in
  * ROG-20). Two modes: `shop` browses the static catalog and buys/sells
- * stackable consumables one unit at a time; `pack` manages generated,
- * affix-bearing loot for the selected party member - equip, unequip, compare
- * against the slot it would fill, and sell for a rarity/affix-scaled price.
- * Tab switches modes; Left/Right cycles which party member `pack` mode
- * targets (only shown once the party has more than one member); Esc returns
- * to the village overview. The mode/cursor state machine lives in the pure
- * `reduceStoreUi` (ROG-45); this component only normalizes Ink's input,
- * resolves an intent, applies the result, and dispatches the mapped event.
+ * stackable consumables one unit at a time; `pack` lists the selected party
+ * member's equipment slots and backpack and sells backpack items for a
+ * rarity/affix-scaled price. Tab switches modes; Left/Right cycles which
+ * party member `pack` mode targets (only shown once the party has more than
+ * one member); Esc returns to the village overview. The mode/cursor state
+ * machine lives in the pure `reduceStoreUi` (ROG-45); this component only
+ * normalizes Ink's input, resolves an intent, applies the result, and
+ * dispatches the mapped event.
+ *
+ * ENG-3: `pack` mode used to also equip/unequip/compare gear; that moved to
+ * the dedicated Inventory screen (`char:v`, `screens/inventory`), which is
+ * now the canonical place to browse, inspect, and equip gear. This view's
+ * `pack` mode is sell-only.
  */
 export function StoreView({ state, dispatch, onBack }: StoreViewProps) {
   const [storeUi, setStoreUi] = useState<StoreUiState>(INITIAL_STORE_UI_STATE);
@@ -70,7 +77,6 @@ export function StoreView({ state, dispatch, onBack }: StoreViewProps) {
   const member = state.party[clampedMemberIndex];
   const packEntries = buildPackEntries(member, state.items);
   const packIndex = Math.min(storeUi.packCursor, packEntries.length - 1);
-  const selectedPack = packEntries[packIndex];
 
   useInput((input, key) => {
     const keyName = normalizeInkKey(input, key);
@@ -102,20 +108,6 @@ export function StoreView({ state, dispatch, onBack }: StoreViewProps) {
       case "sellItem":
         dispatch({ type: "SellItem", instanceId: result.effect.instanceId });
         break;
-      case "equip":
-        dispatch({
-          type: "EquipItem",
-          instanceId: result.effect.instanceId,
-          memberId: result.effect.memberId,
-        });
-        break;
-      case "unequip":
-        dispatch({
-          type: "UnequipItem",
-          slot: result.effect.slot,
-          memberId: result.effect.memberId,
-        });
-        break;
       case "back":
         onBack();
         break;
@@ -136,7 +128,7 @@ export function StoreView({ state, dispatch, onBack }: StoreViewProps) {
       hint={
         storeUi.mode === "shop"
           ? `Up/down to select, b to buy 1, s to sell 1, Tab for backpack, Esc to go back.${switchHint}`
-          : `Up/down to select, e to equip, u to unequip, s to sell, Tab for shop, Esc to go back.${switchHint}`
+          : `Up/down to select, s to sell, Tab for shop, Esc to go back.${switchHint}`
       }
     >
       <Box flexDirection="column" gap={1}>
@@ -148,12 +140,7 @@ export function StoreView({ state, dispatch, onBack }: StoreViewProps) {
         {storeUi.mode === "shop" ? (
           <ShopCatalog cursor={storeUi.shopCursor} state={state} />
         ) : (
-          <BackpackPanel
-            entries={packEntries}
-            cursor={packIndex}
-            member={member}
-            selected={selectedPack}
-          />
+          <BackpackPanel entries={packEntries} cursor={packIndex} />
         )}
       </Box>
     </Screen>
@@ -190,24 +177,14 @@ function ShopCatalog({ cursor, state }: ShopCatalogProps) {
 interface BackpackPanelProps {
   entries: readonly PackEntry[];
   cursor: number;
-  member: GameState["party"][number];
-  selected: PackEntry | undefined;
 }
 
-function BackpackPanel({
-  entries,
-  cursor,
-  member,
-  selected,
-}: BackpackPanelProps) {
-  let compare: string | null = null;
-  if (selected?.kind === "backpack") {
-    const target = equipTargetSlot(member, selected.item);
-    const targetLabel =
-      EQUIP_SLOTS.find((entry) => entry.slot === target)?.label ?? "?";
-    compare = `Equipping into ${targetLabel}: ${deltaLine(compareItem(member, selected.item))}`;
-  }
-
+/**
+ * Sell-only backpack listing (ENG-3): equipment slots are display-only rows
+ * (no unequip affordance) and backpack items only offer `[s sell]` - equip,
+ * unequip, and the compare panel moved to the Inventory screen.
+ */
+function BackpackPanel({ entries, cursor }: BackpackPanelProps) {
   return (
     <Box flexDirection="column">
       {entries.map((entry, index) => {
@@ -229,7 +206,6 @@ function BackpackPanel({
             >
               {selectedRow ? "> " : "  "}
               {text}
-              {entry.item ? " [u to unequip]" : ""}
             </Text>
           );
         }
@@ -240,17 +216,10 @@ function BackpackPanel({
           >
             {selectedRow ? "> " : "  "}
             {describeItem(entry.item)} - {itemStatLine(entry.item)} - sell{" "}
-            {itemSellPrice(entry.item)}g [e equip / s sell]
+            {itemSellPrice(entry.item)}g [s sell]
           </Text>
         );
       })}
-      {compare ? (
-        <Text color={theme.gold}>{compare}</Text>
-      ) : (
-        <Text color={theme.textMuted}>
-          Select a backpack item to compare against its slot.
-        </Text>
-      )}
     </Box>
   );
 }
