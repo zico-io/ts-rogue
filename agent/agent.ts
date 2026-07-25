@@ -3,8 +3,10 @@ import { mockModel } from "eve/evals";
 
 import { delegationResponder } from "./lib/mock-delegation";
 
-// The coding child follows a tight orientation packet, so a fast, cheap model
-// is fine here.
+// The built-in `agent` tool now only handles quick same-sandbox mechanical
+// work (substantive implementation goes to the declared `coder` subagent, see
+// agent/subagents/coder/), but that child still follows a tight orientation
+// packet, so a fast, cheap model is fine here.
 export const codingWorkerModel = (event: unknown) =>
   (event as { data?: { invocation?: unknown } }).data?.invocation
     ? { model: "deepseek/deepseek-v4-flash", modelContextWindowTokens: 1_000_000 }
