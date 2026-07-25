@@ -4,9 +4,26 @@ import {
   createLinearAgentSessionOnComment,
 } from "eve/channels/linear";
 import { defineTool } from "eve/tools";
+import type { ToolContext } from "eve/tools";
 import { z } from "zod";
 
+import { listLiveAgentSessions } from "../lib/live-sessions";
+
 const credentials = connectLinearCredentials("linear/ts-rogue-eve");
+
+// The caller's own Linear Agent Session id, read from the dispatch auth
+// attributes `defaultLinearAuth` stamps on every Linear-initiated session
+// (the same channel-to-callback side channel HAR-24's review-only flag rides
+// in `channels/github.ts`). Needed so the self-continuation use of this tool
+// - where the caller's session is live on the very issue being handed off -
+// does not count itself as a duplicate.
+const callerAgentSessionId = (ctx: ToolContext): string | null => {
+  const attribute = (ctx.session.auth.current ?? ctx.session.auth.initiator)
+    ?.attributes.agent_session_id;
+  return typeof attribute === "string" && attribute.length > 0
+    ? attribute
+    : null;
+};
 
 // Linear's Agent Session creation mutations have no free-text field of their
 // own (`AgentSessionCreateOnIssue`/`AgentSessionCreateOnComment` only take
@@ -68,12 +85,31 @@ export const createLinearComment = async (input: {
 
 export default defineTool({
   description:
-    "Hand off a Linear issue to a brand-new Agent Session with an empty context window and its own fresh token quota, seeded by a comment carrying `brief`. Two uses: (1) Self-continuation - the current session has run long enough to risk hitting its own token-quota limit. Pass the current issue's id and a full continuation packet (what's done with evidence, what's left, the exact next action), then end your own turn immediately after calling it. (2) Ralph-mode dependency unlock - a sub-issue just became ready because its blocker(s) merged. Pass that sub-issue's id and a brief carrying context its own issue packet won't have: what the predecessor(s) shipped (their PR), and any decisions or gotchas that affect this sub-issue's approach. Use this instead of a bare delegate assignment so the new session starts informed, not blind. Either way, `brief` must let a fresh agent with zero conversation history proceed without re-reading anything.",
+    "Hand off a Linear issue to a brand-new Agent Session with an empty context window and its own fresh token quota, seeded by a comment carrying `brief`. Two uses: (1) Self-continuation - the current session has run long enough to risk hitting its own token-quota limit. Pass the current issue's id and a full continuation packet (what's done with evidence, what's left, the exact next action), then end your own turn immediately after calling it. (2) Ralph-mode dependency unlock - a sub-issue just became ready because its blocker(s) merged. Pass that sub-issue's id and a brief carrying context its own issue packet won't have: what the predecessor(s) shipped (their PR), and any decisions or gotchas that affect this sub-issue's approach. Use this instead of a bare delegate assignment so the new session starts informed, not blind. Either way, `brief` must let a fresh agent with zero conversation history proceed without re-reading anything. If the issue already has another live Agent Session, this tool creates nothing and returns `alreadyLive` with that session's id and URL - treat the issue as in flight and report the existing session; never retry the handoff.",
   inputSchema: z.object({
     issueId: z.string().min(1),
     brief: z.string().min(1).max(8000),
   }),
-  async execute(input) {
+  async execute(input, ctx) {
+    // One live session per issue: creating a second Agent Session while one
+    // is live is exactly the HAR-26 duplicate. The caller's own session
+    // (self-continuation) is exempt; a pre-check failure fails open because
+    // a flaky lookup must never block a legitimate handoff.
+    try {
+      const self = callerAgentSessionId(ctx);
+      const existing = (
+        await listLiveAgentSessions({ credentials, issueId: input.issueId })
+      ).find((session) => session.id !== self);
+      if (existing !== undefined) {
+        return {
+          alreadyLive: true,
+          existingSessionId: existing.id,
+          existingSessionUrl: existing.url,
+        };
+      }
+    } catch {
+      // fail open
+    }
     const commentId = await createLinearComment({
       issueId: input.issueId,
       body: `${HANDOFF_COMMENT_HEADER}${input.brief}`,
