@@ -340,6 +340,56 @@ framing now lives entirely in the model-authored `brief`, which differs by
 caller: a continuation packet for self-handoff, a predecessor's shipped
 context for a dependency unlock).
 
+### Review-feedback turns (HAR-16)
+
+`channels/github.ts` already dispatches an in-repo ponytail auto-review when a
+pull request opens or leaves draft (`onPullRequest`'s `opened`/`ready_for_review`
+branch), posting inline comments through GitHub's pull-request-review API.
+Those comments, and any a human reviewer leaves the same way, arrive back at
+eve as `pull_request_review_comment` webhook events - the only granularity of
+"pull request review" eve's public `githubChannel` API parses; the coarser
+`pull_request_review` event (a review submitted with only a top-level
+verdict/body and no inline comments) isn't parsed by eve at all as of the
+version pinned here, so that case cannot wake a turn without a bespoke
+verified webhook route - out of scope for this change.
+
+Before HAR-16, `onComment` was unset, so eve's built-in mention gate applied
+to every comment kind: review feedback sat unanswered unless a human
+remembered to type `@ts-rogue-eve` in the review. `channels/github.ts` now
+supplies its own `onComment`, dispatching when `ctx.conversation.kind ===
+"review_thread"` (an inline review comment) and it is a new finding, while
+reimplementing the mention check (`isBotMentioned`) for every other comment
+kind, since providing `onComment` replaces eve's built-in gate entirely
+rather than layering on top of it. The reimplementation is scoped to the
+mention regex alone - the bot-authored/self-comment loop guard needs no
+reimplementation, because eve applies that (`isIgnoredInboundComment`) before
+ever calling `onComment`, confirmed by reading `dispatch.js`'s
+`dispatchPullRequestReviewComment`. As with `channels/linear.ts`'s earlier
+precedent, the reimplemented pieces are not part of eve's public
+`./channels/github` export surface (only `defaultGitHubAuth` ships from
+`defaults.js`; `inbound.js`'s `extractGitHubCommentTrigger` and
+`shouldDispatchGitHubComment` have no public subpath), so this is ported from
+the installed package's own de-minified source rather than guessed at.
+
+"New finding" excludes replies within an already-open review thread: GitHub
+fires the same `pull_request_review_comment` webhook for every later reply
+in a thread, and a reply is conversation about a finding already surfaced,
+not a fresh one that needs its own turn. The webhook payload marks a reply
+with `in_reply_to_id`; eve's normalized `GitHubComment` drops that field, so
+`isNewReviewFinding` reads it off `comment.raw` directly, the same escape
+hatch `onPullRequest` already uses for fields the normalized event omits.
+
+The dispatched turn carries a short context string pointing at
+`instructions.md`'s new "PR review-feedback turns" section rather than
+repeating the procedure inline, the same pattern `ponytailReviewContext`
+already uses for "PR review turns". That section tells the agent to check
+out the pull request's branch with `gh pr checkout`, ground itself with
+`git log`/`git status` before changing anything, fix and push a follow-up
+commit when the feedback names a concrete change (or reply in the thread
+otherwise), and skip orientation, sizing, delegation, and `session_update` -
+this turn has no Linear Agent Session, only the GitHub conversation the
+comment arrived on.
+
 ## Development
 
 Run the local agent with:

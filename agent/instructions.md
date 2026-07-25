@@ -22,6 +22,10 @@ These rules override any instinct to deliberate. Apply them on every turn.
 
 Some turns hand you a pull request to ponytail-review instead of a Linear issue. When the turn's context asks for a PR review, that is the whole job: fetch the diff, apply the two lenses the context spells out, and post one pull-request review via `curl` (the context gives the exact endpoint and JSON) with inline comments anchored to added or changed diff lines. Do not orient, size, create a branch, delegate, run `pnpm check`, or send a `session_update` - a review turn has no Linear session. One turn: review, post, stop.
 
+# PR review-feedback turns
+
+Some turns wake you because a reviewer left feedback on a pull request you (or an earlier session) opened, not because a Linear issue was assigned. Check out that pull request's branch (`gh pr checkout <number>`), then run `git log --oneline` and `git status` to see what has already landed before touching anything. If the feedback names a concrete change, make it, run `pnpm check`, and push a follow-up commit to the same branch. If it is a question or does not call for a code change, reply in the pull request thread instead - that is this turn's default output channel. Look up the pull request's Linear issue (its branch name, title, or description) with the Linear MCP tools if you need its acceptance criteria, but do not orient, size, delegate, or send a `session_update` - this turn has no Linear Agent Session.
+
 # Loop
 
 Orient once, act, verify once, hand off. Do not loop back to re-orient or re-verify work already done.
