@@ -2,10 +2,12 @@ import { connectGitHubCredentials } from "@vercel/connect/eve";
 import {
   defaultGitHubAuth,
   type GitHubComment,
+  type GitHubEventContext,
   type GitHubInboundContext,
   type GitHubPullRequestEvent,
   githubChannel,
 } from "eve/channels/github";
+import type { SessionContext } from "eve/tools";
 
 export const isMainMerge = (pullRequest: GitHubPullRequestEvent) => {
   const base = pullRequest.raw.base;
@@ -64,12 +66,27 @@ const ponytailReviewContext = (
   prNumber: number,
   baseRef: string,
   headRef: string,
-) =>
-  `Ponytail-review pull request #${prNumber} in zico-io/ts-rogue. This is a review-only turn (see "PR review turns"): review and post, nothing else.
-
+  // Set only for a re-review triggered by a push to an already-reviewed PR
+  // (`synchronize`): the head sha the *previous* review covered, taken from
+  // the webhook payload's own `before` field. Scoping the diff to just what
+  // changed since then avoids re-flagging - and re-posting findings on -
+  // lines a prior review already passed judgment on.
+  reReviewSinceSha: string | null,
+) => {
+  const fetchCmd = reReviewSinceSha
+    ? `git fetch origin ${reReviewSinceSha} ${headRef}`
+    : `git fetch origin ${baseRef} ${headRef}`;
+  const diffCmd = reReviewSinceSha
+    ? `git diff ${reReviewSinceSha}...origin/${headRef}`
+    : `git diff origin/${baseRef}...origin/${headRef}`;
+  const scopeNote = reReviewSinceSha
+    ? `\nThis is a re-review triggered by a new push, not the PR's first review. Review ONLY the diff introduced since the last review (${reReviewSinceSha} to the new head) - do not re-review or re-report on parts of the PR a prior review already covered. If fetching ${reReviewSinceSha} fails (a rebase or force-push can make an old commit unreachable), fall back to the full origin/${baseRef}...origin/${headRef} diff instead.\n`
+    : "";
+  return `Ponytail-review pull request #${prNumber} in zico-io/ts-rogue. This is a review-only turn (see "PR review turns"): review and post, nothing else.
+${scopeNote}
 Get the diff (the working tree is on main; fetch the PR's refs):
-  git fetch origin ${baseRef} ${headRef}
-  git diff origin/${baseRef}...origin/${headRef}
+  ${fetchCmd}
+  ${diffCmd}
 Read a changed file's full context with \`git show origin/${headRef}:<path>\` when a lens needs it.
 
 Apply two lenses in one pass.
@@ -89,7 +106,8 @@ Post the findings as ONE pull-request review via curl. Each finding's line MUST 
   {"event":"COMMENT","body":"<summary>","comments":[{"path":"<file>","line":<line>,"side":"RIGHT","body":"<tag> <what>. <fix>."}]}
   JSON
   curl -sS -X POST -H "Accept: application/vnd.github+json" https://api.github.com/repos/zico-io/ts-rogue/pulls/${prNumber}/reviews -d @/tmp/review.json
-<summary> is exactly one line: \`net: -<N> lines, <M> convention fixes.\` when you found something, or \`net: clean. Ship.\` when you did not (post it with an empty comments array). Then stop.`;
+<summary> is exactly one line: \`net: -<N> lines, <M> convention fixes.\` when you found something, or \`net: clean. Ship.\` when you did not (post it with an empty comments array). Do not post any other comment, summary, or confirmation - the review posted via curl above is the only reply this turn produces. Then stop.`;
+};
 
 // Context for a turn woken by review feedback landing on a pull request (see
 // "PR review-feedback turns" in instructions.md for the full contract). Kept
@@ -161,45 +179,130 @@ export const onComment = (
     : null;
 };
 
+// Marks a dispatched turn's auth as "review-only" (HAR-24): ponytail's
+// auto-review turn already posts its findings as a native PR review via the
+// curl call in ponytailReviewContext above, so the agent's own trailing
+// assistant text for that turn is a second, redundant top-level comment
+// ("Review posted: ...") duplicating what the review UI already shows. The
+// flag rides in the dispatch auth's attributes (the one piece of dispatch-time
+// data a later `message.completed` handler can still read, via
+// `ctx.session.auth.initiator`) so that handler can skip posting it.
+export const REVIEW_ONLY_TURN_ATTRIBUTE = "tsRogueReviewOnlyTurn";
+
+const reviewOnlyAuth = (ctx: GitHubInboundContext) => {
+  const auth = defaultGitHubAuth(ctx);
+  return {
+    ...auth,
+    attributes: { ...auth.attributes, [REVIEW_ONLY_TURN_ATTRIBUTE]: "true" },
+  };
+};
+
+const isReviewOnlyTurn = (ctx: SessionContext): boolean =>
+  ctx.session.auth.initiator?.attributes[REVIEW_ONLY_TURN_ATTRIBUTE] === "true";
+
+// GitHub's own comment-body size cap, mirrored here because eve's internal
+// `splitGitHubCommentBody` isn't part of the public `eve/channels/github`
+// API surface (only `defaultGitHubAuth` is exported from that module - see
+// the comment on `isBotMentioned` above for how that was confirmed).
+// ponytail: this is a naive fixed-length split, not the paragraph-aware
+// chunking eve's internal helper does. Ceiling: a reply could break
+// mid-sentence at a chunk boundary. Upgrade path: ask eve to publicize its
+// splitter, or vendor its exact rules, if a reply this large ever ships in
+// practice - ordinary agent replies stay well under this limit.
+const GITHUB_COMMENT_BODY_MAX_LENGTH = 65536;
+
+const splitCommentBody = (body: string): readonly string[] => {
+  const chunks: string[] = [];
+  for (let i = 0; i < body.length; i += GITHUB_COMMENT_BODY_MAX_LENGTH) {
+    chunks.push(body.slice(i, i + GITHUB_COMMENT_BODY_MAX_LENGTH));
+  }
+  return chunks;
+};
+
+// Posts a completed assistant message as a GitHub comment, mirroring eve's
+// built-in `message.completed` handler (`postCommentChunks` in
+// `defaults.js`), except it skips the post entirely for a review-only turn
+// (see `isReviewOnlyTurn` above) to eliminate the duplicate comment from
+// HAR-24. Declaring this handler in `events` replaces eve's built-in for this
+// key rather than layering on top of it, so the non-review path re-implements
+// the same chunk-and-post behavior the default provided.
+export const onMessageCompleted = async (
+  data: { finishReason?: string; message: string | null },
+  channel: GitHubEventContext,
+  ctx: SessionContext,
+): Promise<void> => {
+  if (data.finishReason === "tool-calls" || !data.message) return;
+  if (isReviewOnlyTurn(ctx)) return;
+  for (const chunk of splitCommentBody(data.message)) {
+    await channel.thread.post(chunk);
+  }
+};
+
+export const onPullRequest = (
+  context: GitHubInboundContext,
+  pullRequest: GitHubPullRequestEvent,
+) => {
+  if (isMainMerge(pullRequest)) {
+    const ref = linearRefFromPullRequest(pullRequest);
+    return {
+      auth: defaultGitHubAuth(context),
+      context: ref
+        ? [MAIN_MERGE_SYNCED, ralphAdvanceContext(ref)]
+        : [MAIN_MERGE_SYNCED],
+    };
+  }
+  // Auto ponytail-review on a newly opened / newly ready pull request, and
+  // again on every push to it (`synchronize`) - the latter is what turns a
+  // fix-and-resolve into a fresh re-review (HAR-24) with no extra
+  // resolution-tracking: pushing a fix commit, whether from a human or from
+  // this agent's own "PR review-feedback turns" handling, already fires
+  // this same GitHub event.
+  if (
+    pullRequest.action === "opened" ||
+    pullRequest.action === "ready_for_review" ||
+    pullRequest.action === "synchronize"
+  ) {
+    const raw = pullRequest.raw as {
+      draft?: boolean;
+      head?: { ref?: string };
+      base?: { ref?: string };
+      before?: string;
+    };
+    // Event-time draft flag, not a live fetch: a PR opened as a draft then
+    // marked ready fires both events; gating on the payload's own draft flag
+    // reviews exactly once (a ready_for_review payload is never a draft).
+    if (raw.draft === true) return null;
+    const head = raw.head?.ref;
+    if (!head) return null;
+    const base = raw.base?.ref ?? "main";
+    // `before` is only meaningful on `synchronize` (the sha the previous
+    // review saw); GitHub also omits it once in a while (e.g. a synthetic
+    // replay), in which case ponytailReviewContext falls back to the full
+    // base...head diff.
+    const reReviewSinceSha =
+      pullRequest.action === "synchronize" && raw.before ? raw.before : null;
+    return {
+      auth: reviewOnlyAuth(context),
+      context: [
+        ponytailReviewContext(
+          pullRequest.pullRequestNumber,
+          base,
+          head,
+          reReviewSinceSha,
+        ),
+      ],
+    };
+  }
+  return null;
+};
+
 export default githubChannel({
   credentials: connectGitHubCredentials("github/ts-rogue-eve-github"),
-  // onSession already synced main; skip the channel's default PR-head checkout.
-  events: { "turn.started": () => {} },
-  onComment,
-  onPullRequest: (context, pullRequest) => {
-    if (isMainMerge(pullRequest)) {
-      const ref = linearRefFromPullRequest(pullRequest);
-      return {
-        auth: defaultGitHubAuth(context),
-        context: ref
-          ? [MAIN_MERGE_SYNCED, ralphAdvanceContext(ref)]
-          : [MAIN_MERGE_SYNCED],
-      };
-    }
-    // Auto ponytail-review on newly opened / newly ready pull requests.
-    if (
-      pullRequest.action === "opened" ||
-      pullRequest.action === "ready_for_review"
-    ) {
-      const raw = pullRequest.raw as {
-        draft?: boolean;
-        head?: { ref?: string };
-        base?: { ref?: string };
-      };
-      // Event-time draft flag, not a live fetch: a PR opened as a draft then
-      // marked ready fires both events; gating on the payload's own draft flag
-      // reviews exactly once (a ready_for_review payload is never a draft).
-      if (raw.draft === true) return null;
-      const head = raw.head?.ref;
-      if (!head) return null;
-      const base = raw.base?.ref ?? "main";
-      return {
-        auth: defaultGitHubAuth(context),
-        context: [
-          ponytailReviewContext(pullRequest.pullRequestNumber, base, head),
-        ],
-      };
-    }
-    return null;
+  events: {
+    // onSession already synced main; skip the channel's default PR-head checkout.
+    "turn.started": () => {},
+    "message.completed": onMessageCompleted,
   },
+  onComment,
+  onPullRequest,
 });

@@ -10,6 +10,9 @@ import {
   isMainMerge,
   linearRefFromPullRequest,
   onComment,
+  onMessageCompleted,
+  onPullRequest,
+  REVIEW_ONLY_TURN_ATTRIBUTE,
 } from "../agent/channels/github";
 
 const fakeContext = (
@@ -190,5 +193,184 @@ describe("GitHub agent events", () => {
         fakeComment("just chatting, no mention"),
       ),
     ).toBeNull();
+  });
+
+  const fakeOpenPr = (
+    overrides: Partial<GitHubPullRequestEvent> = {},
+  ): GitHubPullRequestEvent =>
+    ({
+      action: "opened",
+      headSha: "abc",
+      pullRequestNumber: 7,
+      raw: { base: { ref: "main" }, head: { ref: "feat/thing" } },
+      ...overrides,
+    }) as GitHubPullRequestEvent;
+
+  it("auto-reviews a newly opened pull request and marks the turn review-only", () => {
+    const result = onPullRequest(fakeContext("pull_request"), fakeOpenPr());
+
+    expect(result).not.toBeNull();
+    expect(result?.context?.[0]).toContain("Ponytail-review pull request #7");
+    expect(result?.auth?.attributes[REVIEW_ONLY_TURN_ATTRIBUTE]).toBe("true");
+  });
+
+  it("re-reviews on every push to the pull request (synchronize), not just when opened", () => {
+    const result = onPullRequest(
+      fakeContext("pull_request"),
+      fakeOpenPr({ action: "synchronize" }),
+    );
+
+    expect(result).not.toBeNull();
+    expect(result?.auth?.attributes[REVIEW_ONLY_TURN_ATTRIBUTE]).toBe("true");
+  });
+
+  it("scopes a re-review's diff to just what changed since the last review", () => {
+    const result = onPullRequest(
+      fakeContext("pull_request"),
+      fakeOpenPr({
+        action: "synchronize",
+        raw: {
+          base: { ref: "main" },
+          head: { ref: "feat/thing" },
+          before: "sha-from-last-review",
+        },
+      }),
+    );
+
+    const context = result?.context?.[0] ?? "";
+    expect(context).toContain(
+      "git diff sha-from-last-review...origin/feat/thing",
+    );
+    expect(context).toContain(
+      "Review ONLY the diff introduced since the last review",
+    );
+    // The full base diff must not be the one instructed for a re-review.
+    expect(context).not.toContain("git diff origin/main...origin/feat/thing");
+  });
+
+  it("falls back to the full PR diff on the initial review (opened), not a since-last-review diff", () => {
+    const result = onPullRequest(fakeContext("pull_request"), fakeOpenPr());
+
+    const context = result?.context?.[0] ?? "";
+    expect(context).toContain("git diff origin/main...origin/feat/thing");
+    expect(context).not.toContain(
+      "Review ONLY the diff introduced since the last review",
+    );
+  });
+
+  it("falls back to the full PR diff for a synchronize event missing `before`", () => {
+    const result = onPullRequest(
+      fakeContext("pull_request"),
+      fakeOpenPr({ action: "synchronize" }),
+    );
+
+    const context = result?.context?.[0] ?? "";
+    expect(context).toContain("git diff origin/main...origin/feat/thing");
+    expect(context).not.toContain(
+      "Review ONLY the diff introduced since the last review",
+    );
+  });
+
+  it("skips auto-review for a draft pull request", () => {
+    expect(
+      onPullRequest(
+        fakeContext("pull_request"),
+        fakeOpenPr({
+          raw: {
+            base: { ref: "main" },
+            head: { ref: "feat/thing" },
+            draft: true,
+          },
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it("takes no action on other pull-request events, like plain synchronization noise from a merge", () => {
+    expect(
+      onPullRequest(
+        fakeContext("pull_request"),
+        fakeOpenPr({ action: "labeled" }),
+      ),
+    ).toBeNull();
+  });
+
+  const fakeChannel = () => {
+    const posted: string[] = [];
+    return {
+      posted,
+      channel: {
+        thread: {
+          post: async (body: string) => {
+            posted.push(body);
+            return {
+              htmlUrl: undefined,
+              id: 0,
+              raw: undefined,
+              url: undefined,
+            };
+          },
+        },
+      } as unknown as Parameters<typeof onMessageCompleted>[1],
+    };
+  };
+
+  const fakeSessionContext = (
+    reviewOnly: boolean,
+  ): Parameters<typeof onMessageCompleted>[2] =>
+    ({
+      session: {
+        auth: {
+          initiator: reviewOnly
+            ? {
+                attributes: { [REVIEW_ONLY_TURN_ATTRIBUTE]: "true" },
+                authenticator: "github-webhook",
+                principalId: "github:2",
+                principalType: "user",
+              }
+            : null,
+        },
+      },
+    }) as unknown as Parameters<typeof onMessageCompleted>[2];
+
+  it("skips posting the trailing reply for a ponytail review-only turn (HAR-24 duplicate)", async () => {
+    const { channel, posted } = fakeChannel();
+
+    await onMessageCompleted(
+      { finishReason: "stop", message: "Review posted: net: clean. Ship." },
+      channel,
+      fakeSessionContext(true),
+    );
+
+    expect(posted).toEqual([]);
+  });
+
+  it("still posts the reply for an ordinary (non-review-only) turn", async () => {
+    const { channel, posted } = fakeChannel();
+
+    await onMessageCompleted(
+      { finishReason: "stop", message: "Fixed as requested." },
+      channel,
+      fakeSessionContext(false),
+    );
+
+    expect(posted).toEqual(["Fixed as requested."]);
+  });
+
+  it("never posts for tool-call-only or empty completions", async () => {
+    const { channel, posted } = fakeChannel();
+
+    await onMessageCompleted(
+      { finishReason: "tool-calls", message: "ignored" },
+      channel,
+      fakeSessionContext(false),
+    );
+    await onMessageCompleted(
+      { finishReason: "stop", message: null },
+      channel,
+      fakeSessionContext(false),
+    );
+
+    expect(posted).toEqual([]);
   });
 });
