@@ -67,7 +67,9 @@ const {
 } = await import("../agent/channels/linear");
 const {
   createLinearAgentActivity,
+  linearInputRequestSignal,
   messageFromLinearAgentSessionEvent,
+  renderLinearInputRequests,
   updateLinearAgentSession,
 } = await import("eve/channels/linear");
 
@@ -272,6 +274,68 @@ describe("actions.requested ephemeral render", () => {
       parameter: '{"command":"git status"}',
       type: "action",
     });
+  });
+});
+
+describe("input.requested elicitation (HAR-17)", () => {
+  it("posts a clean elicitation body with Linear's native select signal, not a hidden tracking marker", async () => {
+    // HAR-17: eve's Linear channel used to track which pending request a
+    // reply answered by appending a base64 `<!-- eve-input:... -->` blob
+    // into the same visible message body it rendered. Since eve 0.27 the
+    // runtime matches replies to pending requests itself, so
+    // `renderLinearInputRequests` renders clean prompt/option text and the
+    // tracking metadata (via `linearInputRequestSignal`) rides Linear's own
+    // `signal`/`signalMetadata` activity fields instead of the body.
+    vi.mocked(createLinearAgentActivity).mockClear();
+    vi.mocked(renderLinearInputRequests).mockReturnValueOnce(
+      "Approve this breakdown?\n\n1. Approve\n2. Revise",
+    );
+    vi.mocked(linearInputRequestSignal).mockReturnValueOnce({
+      signal: "select",
+      signalMetadata: {
+        options: [
+          { label: "Approve", value: "approve" },
+          { label: "Revise", value: "revise" },
+        ],
+      },
+    });
+    const requests = [
+      {
+        requestId: "req-1",
+        prompt: "Approve this breakdown?",
+        options: [
+          { id: "approve", label: "Approve" },
+          { id: "revise", label: "Revise" },
+        ],
+      },
+    ];
+
+    await // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handler directly
+    (channel as any).events["input.requested"](
+      { requests },
+      { state: { agentSessionId: "sess-1" } },
+    );
+
+    expect(renderLinearInputRequests).toHaveBeenCalledWith(requests);
+    expect(linearInputRequestSignal).toHaveBeenCalledWith(requests);
+    const activity = vi.mocked(createLinearAgentActivity).mock.calls[0]?.[0]
+      .activity;
+    expect(activity).toMatchObject({
+      content: {
+        body: "Approve this breakdown?\n\n1. Approve\n2. Revise",
+        type: "elicitation",
+      },
+      signal: "select",
+      signalMetadata: {
+        options: [
+          { label: "Approve", value: "approve" },
+          { label: "Revise", value: "revise" },
+        ],
+      },
+    });
+    expect((activity?.content as { body?: string })?.body).not.toMatch(
+      /eve-input/,
+    );
   });
 });
 
