@@ -90,6 +90,9 @@ describe("handoff tool", () => {
     expect(createSessionOnComment).toHaveBeenCalledWith(
       expect.objectContaining({ commentId: "comment-9" }),
     );
+    const commentBody = callGraphQL.mock.calls[0]?.[0].variables.input.body;
+    expect(commentBody).toContain("**Agent handoff**");
+    expect(commentBody).toContain("continuation packet");
     expect(result).toEqual({
       handoffSessionId: "session-9",
       handoffSessionUrl: "https://linear.app/session-9",

@@ -8,6 +8,18 @@ import { z } from "zod";
 
 const credentials = connectLinearCredentials("linear/ts-rogue-eve");
 
+// Linear's Agent Session creation mutations have no free-text field of their
+// own (`AgentSessionCreateOnIssue`/`AgentSessionCreateOnComment` only take
+// id/link inputs - confirmed by reading the mutation shapes in
+// `node_modules/eve/dist/src/public/channels/linear/api.js`); a session's
+// initial message comes from whatever comment it's anchored to. A comment is
+// therefore the only way to deliver a custom brief into a fresh session, not
+// a side channel this tool invented - every human-initiated Agent Session
+// already starts the same way, from a comment. This header just makes the
+// comment read as deliberate handoff plumbing rather than a stray note.
+const HANDOFF_COMMENT_HEADER =
+  "**Agent handoff**\n\nSeeding a fresh Agent Session so this issue keeps moving with an empty context window and a fresh token quota, instead of running into a token-quota limit in this session.\n\n---\n\n";
+
 /**
  * Posts a Linear comment and returns its id.
  *
@@ -61,7 +73,7 @@ export default defineTool({
   async execute(input) {
     const commentId = await createLinearComment({
       issueId: input.issueId,
-      body: input.brief,
+      body: `${HANDOFF_COMMENT_HEADER}${input.brief}`,
     });
     const session = await createLinearAgentSessionOnComment({
       credentials,
