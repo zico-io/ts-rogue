@@ -214,6 +214,22 @@ each piece. The image port keeps the built-in's 0.27.3 behavior: authenticated
 multimodal file parts, and any untrusted, failed, or non-image reference
 falls back to its original markdown text.
 
+### Agent Plan sync on Linear
+
+`channels/linear.ts` also mirrors the durable `todo` framework tool (already
+enabled by default) into Linear's Agent Plan preview
+(https://linear.app/developers/agent-interaction#agent-plans): its
+`"action.result"` event handler (`syncAgentPlanFromTodoTool`) watches for a
+completed, non-error `todo` tool call and pushes the current list into
+`AgentSession.plan` via `channel.linear.updateSession({ plan })`
+(`planFromTodoToolOutput` does the mapping - todo's `in_progress`/`cancelled`
+statuses become Linear's `inProgress`/`canceled`). This is additive: the
+existing `session_update` chat updates are unaffected, and Linear's own UI now
+also renders the live checklist alongside them. An empty todo list is left
+alone rather than clearing an existing Linear plan, since the tool's own
+"omit `todos` to read" contract means an empty read should not blank out a
+plan the agent is still working from.
+
 #### Workaround audit (re-audited against eve 0.27.6, 2026-07-25)
 
 Every hand-rolled piece in this harness exists because eve's public surface
