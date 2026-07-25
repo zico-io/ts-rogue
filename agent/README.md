@@ -17,6 +17,7 @@ pre-warmed Vercel Sandboxes.
 | [`sandbox.ts`](sandbox.ts) | Root's Vercel Sandbox: bootstrap, sync, `ORIENTATION.md` brief, network policy, and token refresh |
 | [`lib/orientation.ts`](lib/orientation.ts) | Builds the pre-computed orientation brief from git state and screenshot-tooling status |
 | [`lib/sandbox.ts`](lib/sandbox.ts) | Shared sandbox-provisioning recipe (repo checkout, toolchain, GitHub auth levels, screenshot toggle) composed by the root and future subagents |
+| [`subagents/playtester/`](subagents/playtester/) | Declared specialist: checks out a branch, plays the game (`scripts/play.sh` / `scripts/play-web.mjs`) to verify acceptance criteria, returns evidence |
 | [`subagents/scout/`](subagents/scout/) | Read-only codebase-recon subagent: locates files, call paths, and utilities, and returns compressed context for a delegation packet |
 | [`subagents/reviewer/`](subagents/reviewer/) | Declared specialist: ponytail-reviews one pull request and posts the GitHub review itself |
 
@@ -290,7 +291,7 @@ and gives the batching rule a concrete example.
 ### Shared sandbox recipe (HAR-26)
 
 `agent/sandbox.ts` no longer defines the provisioning building blocks itself:
-they moved to `agent/lib/sandbox.ts` so a future subagent (`agent/subagents/<id>/sandbox.ts`,
+they moved to `agent/lib/sandbox.ts` so a subagent (`agent/subagents/<id>/sandbox.ts`,
 HAR-27..30) can compose them without duplicating this file. The root's own
 `bootstrap`/`onSession` are still written out by hand here, since only the
 root builds the `ORIENTATION.md` brief; they just call the shared
@@ -307,9 +308,22 @@ supports narrower scopes than `["*"]`; `"push-capable"` additionally runs
 main-branch sync and stranded-push auto-recovery, for a branch-pushing
 subagent like `coder`) and a `screenshotTooling` flag (installs and verifies
 Playwright chromium during bootstrap; off by default since only the root and
-a future `playtester` subagent need it). A read-only scout subagent's whole
+`playtester` need it). A read-only scout subagent's whole
 `sandbox.ts` is then one line:
 `export default defineSandbox(buildSandboxDefinition({ gitAuthLevel: "none" }));`
+`playtester` (HAR-29) composes the same helper with
+`{ gitAuthLevel: "read-only", screenshotTooling: true }`: it can fetch and
+check out a branch to verify but never push, and its bootstrap installs the
+same Playwright chromium the root uses for `scripts/play-web.mjs` screenshots.
+Its own `instructions.md` tells it to actually play the branch it's given
+(`scripts/play.sh` for the terminal renderer, `scripts/play-web.mjs` for the
+web renderer), verify the caller's named acceptance criteria against what
+renders, and return a verdict per criterion with evidence embedded in its
+reply - a terminal frame as a fenced text block, a web screenshot as an
+embedded `data:image/png;base64,...` Markdown image - since a declared
+subagent's sandbox is its own, not shared with its caller's. `instructions.md`'s
+end-to-end-reproduction and mandatory-screenshot rules now delegate to it
+instead of having the root or its coding child drive the play scripts inline.
 
 This is already the same class of infrastructure `pnpm pr:sandbox`
 (`scripts/pr-sandbox.sh`) uses for human PR review - both are Vercel

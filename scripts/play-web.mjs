@@ -102,11 +102,16 @@ async function cmdStart(args) {
     return;
   }
   // Run `next dev` directly (not `pnpm web:dev`, whose arg forwarding mangles
-  // flags), pointed at the src/web app, on an explicit host+port. Detached
-  // process group so `stop` can kill next + its child compilers.
+  // flags), scoped to the src/web workspace package on an explicit
+  // host+port. `pnpm --filter <pkg> exec` (not a bare `pnpm exec`) is
+  // required here: root's own package.json does not depend on `next` (only
+  // src/web's does), so a bare `pnpm exec next` run from ROOT fails to
+  // resolve the `next` binary at all - `--filter` switches pnpm's exec cwd
+  // to src/web first, where `next` is actually installed. Detached process
+  // group so `stop` can kill next + its child compilers.
   const child = spawn(
     "pnpm",
-    ["exec", "next", "dev", "src/web", "-H", HOST, "-p", String(PORT)],
+    ["--filter", "@ts-rogue/web", "exec", "next", "dev", "-H", HOST, "-p", String(PORT)],
     { cwd: ROOT, detached: true, stdio: "ignore" },
   );
   child.unref();
