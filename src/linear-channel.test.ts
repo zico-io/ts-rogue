@@ -661,3 +661,121 @@ describe("action.result plan sync", () => {
     expect(updateLinearAgentSession).not.toHaveBeenCalled();
   });
 });
+
+describe("authorization events surface the OAuth challenge", () => {
+  // eve parks the turn on `authorization.required` for a user-scoped
+  // `connect(...)` connection. Without these handlers the event is dropped
+  // and the Agent Session stalls with no login prompt - the exact symptom
+  // of a Linear-delegated task hanging forever.
+  const linearUserAuth = {
+    attributes: {},
+    authenticator: "linear-agent-webhook",
+    issuer: "linear:org-1",
+    principalId: "linear:user-1",
+    principalType: "user",
+    subject: "user-1",
+  };
+  const ctx = { session: { auth: { current: linearUserAuth } } };
+
+  const fire = (event: string, data: unknown, eventCtx: unknown = ctx) =>
+    // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handler directly
+    (channel as any).events[event](
+      data,
+      { state: { agentSessionId: "sess-1" } },
+      eventCtx,
+    );
+
+  const lastActivity = () =>
+    vi.mocked(createLinearAgentActivity).mock.calls.at(-1)?.[0].activity;
+
+  it("posts an elicitation with Linear's native auth signal and the challenge URL", async () => {
+    vi.mocked(createLinearAgentActivity).mockClear();
+    await fire("authorization.required", {
+      authorization: {
+        displayName: "Linear MCP",
+        url: "https://example.com/oauth",
+      },
+      description: "Authorize the linear connection",
+      name: "linear",
+    });
+    expect(lastActivity()).toMatchObject({
+      agentSessionId: "sess-1",
+      content: {
+        body: "I need you to connect Linear MCP before I can continue.",
+        type: "elicitation",
+      },
+      signal: "auth",
+      signalMetadata: {
+        providerName: "Linear MCP",
+        url: "https://example.com/oauth",
+        userId: "user-1",
+      },
+    });
+    expect(lastActivity()?.ephemeral).not.toBe(true);
+  });
+
+  it("title-cases the connection name and omits userId for a non-Linear principal", async () => {
+    vi.mocked(createLinearAgentActivity).mockClear();
+    await fire(
+      "authorization.required",
+      {
+        authorization: { url: "https://example.com/oauth" },
+        description: "Authorize the vercel connection",
+        name: "vercel",
+      },
+      { session: { auth: { current: null } } },
+    );
+    const activity = lastActivity();
+    expect(activity?.signalMetadata).toEqual({
+      providerName: "Vercel",
+      url: "https://example.com/oauth",
+    });
+  });
+
+  it("falls back to a plain elicitation with instructions when the challenge has no URL", async () => {
+    vi.mocked(createLinearAgentActivity).mockClear();
+    await fire("authorization.required", {
+      authorization: {
+        instructions: "Approve the sign-in request on your phone.",
+        userCode: "ABCD-1234",
+      },
+      description: "Authorize the linear connection",
+      name: "linear",
+    });
+    const activity = lastActivity();
+    expect(activity?.signal).toBeUndefined();
+    expect(activity?.content).toMatchObject({ type: "elicitation" });
+    const body = (activity?.content as { body?: string })?.body ?? "";
+    expect(body).toContain("Approve the sign-in request on your phone.");
+    expect(body).toContain("Code: ABCD-1234");
+  });
+
+  it("posts an ephemeral resuming thought once authorization completes", async () => {
+    vi.mocked(createLinearAgentActivity).mockClear();
+    await fire("authorization.completed", {
+      authorization: { displayName: "Linear MCP" },
+      name: "linear",
+      outcome: "authorized",
+    });
+    expect(lastActivity()).toMatchObject({
+      content: { body: "Connected to Linear MCP. Resuming.", type: "thought" },
+      ephemeral: true,
+    });
+  });
+
+  it("reports a non-authorized outcome durably", async () => {
+    vi.mocked(createLinearAgentActivity).mockClear();
+    await fire("authorization.completed", {
+      name: "linear",
+      outcome: "timed-out",
+      reason: "challenge expired",
+    });
+    expect(lastActivity()).toMatchObject({
+      content: {
+        body: "Authorization for Linear timed out: challenge expired",
+        type: "thought",
+      },
+    });
+    expect(lastActivity()?.ephemeral).not.toBe(true);
+  });
+});
