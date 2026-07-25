@@ -240,6 +240,25 @@ const USE_HTTPS_APT_MIRRORS_COMMAND =
   "sudo sed -i 's#http://archive.ubuntu.com#https://archive.ubuntu.com#; s#http://security.ubuntu.com#https://security.ubuntu.com#' /etc/apt/sources.list.d/ubuntu.sources 2>/dev/null || true";
 
 /**
+ * `gh` refuses to run most commands (`gh pr create`, `gh api`, ...) unless it
+ * thinks it's logged in, but the real GitHub credential must never enter the
+ * sandbox process (see `githubNetworkPolicy` above - that's the whole point
+ * of brokering it at the network boundary). So seed `gh`'s own config file
+ * with a placeholder token that satisfies just the local login check: every
+ * request `gh` sends to `github.com`/`*.github.com` has its `Authorization`
+ * header overwritten by the network-boundary broker before it leaves the
+ * sandbox, exactly like `git push` (and the `curl`-based PR calls this
+ * replaces, HAR-14) already work with no real secret on disk. Baking this
+ * placeholder into the snapshot is safe - it authenticates nothing by
+ * itself and is worthless outside a sandbox whose egress firewall rewrites
+ * it.
+ */
+const SEED_GH_CLI_AUTH_COMMAND = [
+  'mkdir -p "$HOME/.config/gh"',
+  `printf 'github.com:\n    oauth_token: placeholder-overwritten-by-network-broker\n    git_protocol: https\n' > "$HOME/.config/gh/hosts.yml"`,
+].join(" && ");
+
+/**
  * Builds the sandbox pre-warm command: system packages, repo clone,
  * dependency install, and the Playwright chromium `scripts/play-web.mjs`'s
  * screenshots depend on. Exported (rather than inlined in `bootstrap` below)
@@ -275,15 +294,17 @@ export function buildBootstrapCommand(): string {
     // agent-friendly replacements for grep/find/cat/ls (faster, .gitignore
     // aware, better defaults - see HAR-3); ast-grep adds structural
     // (syntax-tree) code search on top of them for refactors and call-site
-    // queries plain text search can't express.
+    // queries plain text search can't express. `gh` replaces raw `curl` +
+    // the GitHub REST API for pull-request operations (HAR-14).
     USE_HTTPS_APT_MIRRORS_COMMAND,
-    "(sudo apt-get update && sudo apt-get install -y tmux ripgrep fd-find bat eza) || true",
+    "(sudo apt-get update && sudo apt-get install -y tmux ripgrep fd-find bat eza gh) || true",
     // Debian/Ubuntu ship fd-find/bat under the `fdfind`/`batcat` binary names
     // to avoid clashing with unrelated packages already named `fd`/`bat`;
     // symlink the conventional names onto PATH so agents and scripts can
     // invoke `fd`/`bat` directly instead of learning the distro rename.
     "(sudo ln -sf /usr/bin/fdfind /usr/local/bin/fd || true)",
     "(sudo ln -sf /usr/bin/batcat /usr/local/bin/bat || true)",
+    SEED_GH_CLI_AUTH_COMMAND,
     "(npm install -g @earendil-works/pi-coding-agent@0.81.1 || true)",
     // Ponytail is a YAGNI/minimal-diff ruleset for coding agents (see
     // https://github.com/DietrichGebert/ponytail); `pi install` fetches it as
