@@ -890,6 +890,138 @@ describe("Phase 5 loot, equip, and sell", () => {
     });
   });
 
+  describe("UseFieldItem (ENG-4 field consumable use)", () => {
+    it("heals the target member, caps at maxHp, and consumes one from the stack", () => {
+      const base = newGame(1);
+      const before = {
+        ...base,
+        party: [{ ...base.party[0], hp: base.party[0].maxHp - 10 }],
+        inventory: [{ itemId: "potion", quantity: 2 }],
+      };
+      const after = reduce(before, {
+        type: "UseFieldItem",
+        itemId: "potion",
+        memberId: before.party[0].id,
+      });
+      expect(after.party[0].hp).toBe(before.party[0].maxHp);
+      expect(after.inventory).toEqual([{ itemId: "potion", quantity: 1 }]);
+      expect(after.log.at(-1)?.text).toBe(
+        `${before.party[0].name} uses Potion and recovers 10 HP.`,
+      );
+    });
+
+    it("drops the stack entirely once the last unit is consumed", () => {
+      const base = newGame(1);
+      const before = {
+        ...base,
+        party: [{ ...base.party[0], hp: base.party[0].maxHp - 5 }],
+        inventory: [{ itemId: "potion", quantity: 1 }],
+      };
+      const after = reduce(before, {
+        type: "UseFieldItem",
+        itemId: "potion",
+        memberId: before.party[0].id,
+      });
+      expect(after.inventory).toEqual([]);
+    });
+
+    it("no-ops when the item is not owned", () => {
+      const before = newGame(1);
+      const after = reduce(before, {
+        type: "UseFieldItem",
+        itemId: "potion",
+        memberId: before.party[0].id,
+      });
+      expect(after.party[0].hp).toBe(before.party[0].hp);
+      expect(after.log.at(-1)?.text).toBe("That item cannot be used here");
+    });
+
+    it("no-ops on a non-heal consumable (e.g. antidote)", () => {
+      const base = newGame(1);
+      const before = {
+        ...base,
+        inventory: [{ itemId: "antidote", quantity: 1 }],
+      };
+      const after = reduce(before, {
+        type: "UseFieldItem",
+        itemId: "antidote",
+        memberId: before.party[0].id,
+      });
+      expect(after.inventory).toEqual(before.inventory);
+      expect(after.log.at(-1)?.text).toBe("That item cannot be used here");
+    });
+
+    it("no-ops on an unknown memberId", () => {
+      const base = newGame(1);
+      const before = {
+        ...base,
+        inventory: [{ itemId: "potion", quantity: 1 }],
+      };
+      const after = reduce(before, {
+        type: "UseFieldItem",
+        itemId: "potion",
+        memberId: "nope",
+      });
+      expect(after.inventory).toEqual(before.inventory);
+      expect(after.log.at(-1)?.text).toBe("No such party member");
+    });
+
+    it("no-ops on an already-full-health member", () => {
+      const base = newGame(1);
+      const before = {
+        ...base,
+        inventory: [{ itemId: "potion", quantity: 1 }],
+      };
+      const after = reduce(before, {
+        type: "UseFieldItem",
+        itemId: "potion",
+        memberId: before.party[0].id,
+      });
+      expect(after.inventory).toEqual(before.inventory);
+      expect(after.log.at(-1)?.text).toBe(
+        `${before.party[0].name} is already at full health`,
+      );
+    });
+
+    it("no-ops on a downed member", () => {
+      const base = newGame(1);
+      const before = {
+        ...base,
+        party: [{ ...base.party[0], hp: 0 }],
+        inventory: [{ itemId: "potion", quantity: 1 }],
+      };
+      const after = reduce(before, {
+        type: "UseFieldItem",
+        itemId: "potion",
+        memberId: before.party[0].id,
+      });
+      expect(after.inventory).toEqual(before.inventory);
+      expect(after.log.at(-1)?.text).toBe(
+        `${before.party[0].name} is down and cannot be healed by items`,
+      );
+    });
+
+    it("is rejected while in battle - the battle item command is unchanged", () => {
+      const base = newGame(1);
+      const before = {
+        ...base,
+        scene: "battle" as const,
+        party: [{ ...base.party[0], hp: base.party[0].maxHp - 10 }],
+        inventory: [{ itemId: "potion", quantity: 1 }],
+      };
+      const after = reduce(before, {
+        type: "UseFieldItem",
+        itemId: "potion",
+        memberId: before.party[0].id,
+      });
+      expect(after.party[0].hp).toBe(before.party[0].hp);
+      expect(after.inventory).toEqual(before.inventory);
+      expect(after.log.at(-1)?.text).toBe(
+        "Use battle items from the battle menu",
+      );
+    });
+  });
+
   describe("OpenChest (Phase 5 generated loot)", () => {
     it("adds a generated item to state.items and advances nextItemId", () => {
       let state = withToughHero(enterDungeon(1234));

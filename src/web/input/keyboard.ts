@@ -13,8 +13,8 @@
  * correctly today even though nothing on screen reflects it yet.
  */
 
-import { isBattleHealItem } from "../../engine/combat/resolution";
 import { classSkills } from "../../engine/combat/skills";
+import { isHealItem } from "../../engine/loot/consumables";
 import type { GameStore } from "../../engine/state/store";
 import { generateOverworldMap } from "../../engine/world/overworld";
 import { activatedWaypointList } from "../../engine/world/waypoints";
@@ -293,7 +293,7 @@ export class BrowserKeyboardManager {
         .filter((enemy) => enemy.hp > 0)
         .map((enemy) => enemy.id),
       healItemIds: state.inventory
-        .filter((entry) => isBattleHealItem(entry.itemId))
+        .filter((entry) => isHealItem(entry.itemId))
         .map((entry) => entry.itemId),
     });
 

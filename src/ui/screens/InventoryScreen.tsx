@@ -2,6 +2,8 @@ import { Box, Text, useInput } from "ink";
 import { useState } from "react";
 import { findShopItem } from "../../data/shops";
 import { atkFrom, defFrom, spdFrom } from "../../engine/combat/resolution";
+import type { InventoryItem } from "../../engine/entities/party";
+import { isHealItem } from "../../engine/loot/consumables";
 import { compareItem, equipTargetSlot } from "../../engine/loot/equipment";
 import {
   describeItem,
@@ -45,16 +47,18 @@ const SECTION_LABEL: Record<InventorySection, string> = {
 
 /**
  * The dedicated Inventory screen (ENG-3, workstream 1 of the ENG-2
- * inventory-system epic): the canonical place to browse gear, consumables,
- * currency, and (eventually) quest items, and to inspect/compare/equip gear
- * for any party member. Opened from anywhere outside battle via `char:v`
+ * inventory-system epic; ENG-4 adds field consumable use): the canonical
+ * place to browse gear, consumables, currency, and (eventually) quest
+ * items, to inspect/compare/equip gear for any party member, and to drink a
+ * potion outside battle. Opened from anywhere outside battle via `char:v`
  * (see `app.tsx`'s `inventoryOpen` state, mirroring `ZoomScreen`'s overlay
  * pattern). Tab cycles the four sections; the gear section reuses
  * `village/interaction.ts`'s pack-row/compare building blocks (also used by
  * `StoreView`, which is now sell-only) rather than duplicating them. The
- * section/sort/inspect/member-index state machine lives in the pure
- * `reduceInventoryUi`; this component only normalizes Ink's input, resolves
- * an intent, applies the result, and dispatches the mapped event.
+ * section/sort/inspect/member-index/consumable-cursor state machine lives
+ * in the pure `reduceInventoryUi`; this component only normalizes Ink's
+ * input, resolves an intent, applies the result, and dispatches the mapped
+ * event.
  */
 export function InventoryScreen({
   state,
@@ -76,6 +80,10 @@ export function InventoryScreen({
   );
   const packIndex = Math.min(inventoryUi.packCursor, packEntries.length - 1);
   const selectedPack = packEntries[packIndex];
+  const consumableIndex = Math.min(
+    inventoryUi.consumableCursor,
+    state.inventory.length - 1,
+  );
 
   useInput((input, key) => {
     const keyName = normalizeInkKey(input, key);
@@ -87,6 +95,7 @@ export function InventoryScreen({
       partyLength: state.party.length,
       memberId: member.id,
       packEntries,
+      consumables: state.inventory,
     });
 
     switch (result.effect?.type) {
@@ -101,6 +110,13 @@ export function InventoryScreen({
         dispatch({
           type: "UnequipItem",
           slot: result.effect.slot,
+          memberId: result.effect.memberId,
+        });
+        break;
+      case "useItem":
+        dispatch({
+          type: "UseFieldItem",
+          itemId: result.effect.itemId,
           memberId: result.effect.memberId,
         });
         break;
@@ -119,7 +135,9 @@ export function InventoryScreen({
   const hint =
     inventoryUi.section === "gear"
       ? `Up/down to select, Enter to inspect, e to equip, u to unequip, r to cycle sort (${inventoryUi.sortKey}), Tab for next section, Esc to close.${switchHint}`
-      : "Tab for next section, Esc to close.";
+      : inventoryUi.section === "consumables"
+        ? `Up/down to select, u to use on target, Tab for next section, Esc to close.${switchHint}`
+        : "Tab for next section, Esc to close.";
 
   return (
     <Screen
@@ -139,7 +157,11 @@ export function InventoryScreen({
           />
         )}
         {inventoryUi.section === "consumables" && (
-          <ConsumablesSection state={state} />
+          <ConsumablesSection
+            entries={state.inventory}
+            cursor={consumableIndex}
+            member={member}
+          />
         )}
         {inventoryUi.section === "currency" && (
           <CurrencySection gold={state.gold} />
@@ -257,21 +279,37 @@ function InspectPanel({ item }: InspectPanelProps) {
 }
 
 interface ConsumablesSectionProps {
-  state: GameState;
+  entries: readonly InventoryItem[];
+  cursor: number;
+  member: GameState["party"][number];
 }
 
-/** Read-only browse of owned consumable stacks; using them is a future workstream (ENG-4). */
-function ConsumablesSection({ state }: ConsumablesSectionProps) {
-  if (state.inventory.length === 0) {
+/** Browse owned consumable stacks and use a heal item on `member` (ENG-4). */
+function ConsumablesSection({
+  entries,
+  cursor,
+  member,
+}: ConsumablesSectionProps) {
+  if (entries.length === 0) {
     return <Text color={theme.textMuted}>(no consumables)</Text>;
   }
   return (
     <Box flexDirection="column">
-      {state.inventory.map((entry) => {
+      <Text>
+        Target: {member.name} ({member.hp}/{member.maxHp} HP)
+      </Text>
+      {entries.map((entry, index) => {
         const def = findShopItem(entry.itemId);
+        const selectedRow = index === cursor;
+        const usable = isHealItem(entry.itemId);
         return (
-          <Text key={entry.itemId}>
+          <Text
+            color={selectedRow ? theme.accent : theme.text}
+            key={entry.itemId}
+          >
+            {selectedRow ? "> " : "  "}
             {def?.name ?? entry.itemId} x{entry.quantity}
+            {usable ? " [u to use]" : ""}
           </Text>
         );
       })}

@@ -56,7 +56,7 @@ pure darks downsample to invisible ANSI black; that is why `border` and
 | Dungeon | Arrows, WASD, or HJKL move and turn; `o` opens; Enter or `>` descends; `<` opens an evac confirm (y/n or Enter/Esc) |
 | Battle | Up/Down selects an action; Enter confirms; Esc cancels targeting |
 | Fast travel | Up/Down selects a discovered waypoint; Enter travels; Esc cancels |
-| Inventory | Tab cycles gear/consumables/currency/quest sections; in gear, Up/Down selects, Enter inspects full affix lines, `e`/`u` equip/unequip, `r` cycles the backpack sort (rarity/ilvl/slot/value), Left/Right switches party member; Esc closes |
+| Inventory | Tab cycles gear/consumables/currency/quest sections; in gear, Up/Down selects, Enter inspects full affix lines, `e`/`u` equip/unequip, `r` cycles the backpack sort (rarity/ilvl/slot/value), Left/Right switches party member; in consumables, Up/Down selects a stack, Left/Right retargets the party member, `u` uses a heal item on them (outside battle only - battle's own item command is unchanged); Esc closes |
 
 The store view uses Tab to switch between shop and backpack modes. Backpack
 mode is sell-only (`s` to sell) - browsing, inspecting, comparing, and

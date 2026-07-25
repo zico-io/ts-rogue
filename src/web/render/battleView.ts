@@ -23,13 +23,10 @@
  */
 
 import { findShopItem } from "../../data/shops";
-import {
-  battleItemHealAmount,
-  isBattleHealItem,
-} from "../../engine/combat/resolution";
 import { classSkills, type SkillDef } from "../../engine/combat/skills";
 import type { BattleEnemy, BattleState } from "../../engine/combat/types";
 import type { PartyMember } from "../../engine/entities/party";
+import { healAmount, isHealItem } from "../../engine/loot/consumables";
 import type { GameState } from "../../engine/state/types";
 import {
   ACTIONS,
@@ -188,7 +185,7 @@ export class BattleSceneView {
       state.party[0];
     const knownSkills = classSkills(actor.classId);
     const healItems = state.inventory.filter((entryItem) =>
-      isBattleHealItem(entryItem.itemId),
+      isHealItem(entryItem.itemId),
     );
 
     const menuRows = buildMenuRows(battleUi, actor, knownSkills, healItems);
@@ -502,7 +499,7 @@ function buildMenuRows(
       const selected = index === battleUi.itemCursor;
       const name = findShopItem(item.itemId)?.name ?? item.itemId;
       return {
-        text: `${selected ? "> " : "  "}${name} x${item.quantity} - heal ${battleItemHealAmount(item.itemId)}`,
+        text: `${selected ? "> " : "  "}${name} x${item.quantity} - heal ${healAmount(item.itemId)}`,
         color: selected ? toPixiColor(theme.accent) : toPixiColor(theme.text),
       };
     });

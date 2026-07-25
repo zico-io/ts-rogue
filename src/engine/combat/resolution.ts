@@ -34,6 +34,7 @@ import { DEFAULT_CLASS_ID, findClass } from "../../data/classes";
 import { findMonster, MONSTERS, type MonsterDef } from "../../data/monsters";
 import { findShopItem } from "../../data/shops";
 import type { InventoryItem, PartyMember } from "../entities/party";
+import { consumeItem, healAmount, isHealItem } from "../loot/consumables";
 import { effectiveStats } from "../loot/equipment";
 import { describeItem } from "../loot/items";
 import { rollVictoryLoot } from "../loot/resolution";
@@ -89,12 +90,6 @@ export const FLEE_MAX = 0.9;
 /** Level-up curve: xp needed to advance from `level` to `level + 1`. */
 export const XP_BASE = 10;
 export const XP_GROWTH = 1.5;
-
-/** Battle healing items and how much HP they restore. */
-export const BATTLE_ITEM_HEAL: Readonly<Record<string, number>> = {
-  potion: 30,
-  "hi-potion": 99,
-};
 
 /* -------------------------------------------------------------------------- */
 /* Derived stats                                                              */
@@ -389,14 +384,6 @@ export function startBattle(
 /* Battle items                                                               */
 /* -------------------------------------------------------------------------- */
 
-export function isBattleHealItem(itemId: string): boolean {
-  return itemId in BATTLE_ITEM_HEAL;
-}
-
-export function battleItemHealAmount(itemId: string): number {
-  return BATTLE_ITEM_HEAL[itemId] ?? 0;
-}
-
 /* -------------------------------------------------------------------------- */
 /* Round resolution                                                           */
 /* -------------------------------------------------------------------------- */
@@ -425,20 +412,6 @@ function villageWorldState(seed: number): WorldState {
   return createInitialWorldState(generateOverworldMap(seed));
 }
 
-function consumeItem(
-  inventory: readonly InventoryItem[],
-  itemId: string,
-): InventoryItem[] {
-  const owned = inventory.find((entry) => entry.itemId === itemId);
-  if (!owned) return [...inventory];
-  const remaining = owned.quantity - 1;
-  return remaining > 0
-    ? inventory.map((entry) =>
-        entry.itemId === itemId ? { ...entry, quantity: remaining } : entry,
-      )
-    : inventory.filter((entry) => entry.itemId !== itemId);
-}
-
 function validateCommand(
   command: Command,
   actor: PartyMember,
@@ -454,7 +427,7 @@ function validateCommand(
     }
     case "item": {
       const owned = inventory.find((entry) => entry.itemId === command.itemId);
-      return !!owned && owned.quantity > 0 && isBattleHealItem(command.itemId);
+      return !!owned && owned.quantity > 0 && isHealItem(command.itemId);
     }
     case "defend":
       return true;
@@ -558,7 +531,7 @@ function applyMemberCommand(
       break;
     }
     case "item": {
-      const heal = battleItemHealAmount(command.itemId);
+      const heal = healAmount(command.itemId);
       if (heal > 0) {
         actor.hp = Math.min(actor.maxHp, actor.hp + heal);
         itemUsed = command.itemId;
