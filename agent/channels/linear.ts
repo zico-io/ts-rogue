@@ -346,6 +346,19 @@ const actionLabel = (action: any): string =>
 
 // biome-ignore lint/suspicious/noExplicitAny: see actionLabel
 const actionParameter = (action: any): string => {
+  // A subagent-call's `description` is the built-in `agent` tool's static
+  // description ("Delegate a focused subtask to a fresh copy of yourself…"),
+  // and the chip posted here stays frozen while the parent turn is parked on
+  // the child - so prefer the delegation packet's first line, which leads
+  // with `issue: <identifier> - <title>` (see instructions.md) and actually
+  // says what was delegated.
+  if (action.kind === "subagent-call" && typeof action.input === "object") {
+    const message = action.input?.message;
+    if (typeof message === "string") {
+      const lead = firstNonEmptyLine(message);
+      if (lead) return lead;
+    }
+  }
   if (action.description) return action.description;
   if (action.name) return action.name;
   if (action.input !== undefined) {

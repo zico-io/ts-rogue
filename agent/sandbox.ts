@@ -36,6 +36,13 @@ const TOKEN_MINT_TIMEOUT_MS = 10 * 1000;
 // so recovery from a transient blip is faster without giving up on a longer
 // outage any sooner.
 export const MAX_SET_POLICY_FAILURES = 20;
+// Sandbox max lifetime, passed at create AND re-asserted on every session
+// attach (create options don't apply to resumed sandboxes). Without this,
+// eve's Vercel backend defaults Sandbox.create to a 30-minute timeout; when it
+// elapsed mid-task, eve silently recreated the session sandbox from the
+// template snapshot and the local branch state - including unpushed commits -
+// was gone (ROG-65). 5h is the Vercel Sandbox platform ceiling.
+export const SANDBOX_TIMEOUT_MS = 5 * 60 * 60 * 1000;
 
 // Unauthenticated fallback: allow every host with no header injection. Public
 // clone/fetch and the npm registry still work; only authenticated `git push`
@@ -44,10 +51,18 @@ export const MAX_SET_POLICY_FAILURES = 20;
 const OPEN_NETWORK_POLICY: SandboxNetworkPolicy = { allow: { "*": [] } };
 
 async function githubNetworkPolicy(): Promise<SandboxNetworkPolicy> {
-  const token = await getToken("github/ts-rogue-eve-github", {
-    subject: { type: "app" },
-    scopes: ["*"],
-  });
+  const token = await getToken(
+    "github/ts-rogue-eve-github",
+    { subject: { type: "app" }, scopes: ["*"] },
+    // Bypass @vercel/connect's in-process token cache: it serves a cached
+    // token until 30 seconds before its ~1h expiry, which turned the 45-minute
+    // refresh tick into a no-op re-install of the same dying token - pushes
+    // then failed from ~60min until the 90min tick. Every caller of this
+    // function is a deliberate refresh point that wants a genuinely fresh
+    // token, and mints happen at most a few times an hour, so skipping the
+    // cache costs one Connect roundtrip and nothing else.
+    { forceRefresh: true },
+  );
   const authorization = `Basic ${Buffer.from(`x-access-token:${token}`).toString("base64")}`;
   return {
     allow: {
@@ -158,15 +173,25 @@ export function keepTokenFresh(
       let policy: SandboxNetworkPolicy;
       try {
         policy = await mintPolicy();
-      } catch {
-        // Token service down/slow: keep the current policy, retry soon.
+      } catch (err) {
+        // Token service down/slow: keep the current policy, retry soon. Warn
+        // rather than stay silent - an incident where pushes died for an hour
+        // was undiagnosable because every failure here was swallowed.
+        console.warn(
+          `keepTokenFresh: token mint failed, retrying in ${retryMs}ms:`,
+          err instanceof Error ? err.message : err,
+        );
         schedule(retryMs);
         return;
       }
       try {
         await sandbox.setNetworkPolicy(policy);
-      } catch {
+      } catch (err) {
         // Retry (could be a blip); give up only once we're sure it's torn down.
+        console.warn(
+          `keepTokenFresh: setNetworkPolicy failed (${setPolicyFailures + 1}/${MAX_SET_POLICY_FAILURES}):`,
+          err instanceof Error ? err.message : err,
+        );
         if (++setPolicyFailures >= MAX_SET_POLICY_FAILURES) return;
         schedule(retryMs);
         return;
@@ -180,7 +205,8 @@ export function keepTokenFresh(
 
 // Refresh mint is bounded too: a hung getToken during a refresh tick would
 // otherwise never reschedule and silently stop keeping the token fresh.
-const mintFreshPolicy = () =>
+// Exported for the turn-start re-mint in hooks/prewarm-sandbox.ts.
+export const mintFreshPolicy = () =>
   withTimeout(githubNetworkPolicy(), TOKEN_MINT_TIMEOUT_MS);
 
 // Cache the bootstrap-baked node_modules across commits: key the snapshot on the
@@ -329,7 +355,7 @@ export const AUTO_RECOVER_PUSH_COMMAND = [
 ].join(" ; ");
 
 export default defineSandbox({
-  backend: vercel(),
+  backend: vercel({ timeout: SANDBOX_TIMEOUT_MS }),
   revalidationKey: dependencyRevalidationKey,
   async bootstrap({ use }) {
     const { policy } = await resolveStartupNetworkPolicy();
@@ -340,7 +366,13 @@ export default defineSandbox({
   },
   async onSession({ use }) {
     const { policy, authed } = await resolveStartupNetworkPolicy();
-    const sandbox = await use({ networkPolicy: policy });
+    // `timeout` re-ups the lifetime ceiling on every attach: the backend's
+    // create-time value (above) never reaches resumed sandboxes, and `use`
+    // options land in the SDK's `Sandbox.update`, which accepts it.
+    const sandbox = await use({
+      networkPolicy: policy,
+      timeout: SANDBOX_TIMEOUT_MS,
+    });
     const sync = await sandbox.run({ command: SYNC_MAIN_COMMAND });
     if (sync.exitCode !== 0)
       throw new Error(sync.stderr || "Sandbox repository sync failed");
