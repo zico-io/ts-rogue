@@ -20,12 +20,14 @@ export default defineMcpClientConnection({
   auth: connect({ connector: "linear/ts-rogue-eve", principalType: "app" }),
   // Smallest surface the contract needs: `save_issue` is the one write the
   // prompts require (breakdown sub-issues, delegate assignment, schedule-filed
-  // issues); the rest is read-only lookup. Every other write (save_comment,
-  // save_project, save_document, delete_*, merge_diff, submit_diff_review,
-  // attachments, labels, releases, status updates) stays out - session posts
-  // go through the authored `session_update`/`handoff` tools instead. An
-  // unknown name in `allow` is inert; if a flow needs a missing read tool,
-  // connection_search will surface the gap - widen then.
+  // issues, applying an existing type label at orientation - `save_issue`
+  // takes a labels field, so no extra tool is needed); the rest is read-only
+  // lookup. Every other write (save_comment, save_project, save_document,
+  // delete_*, merge_diff, submit_diff_review, attachments, creating labels,
+  // releases, status updates) stays out - session posts go through the
+  // authored `session_update`/`handoff` tools instead. An unknown name in
+  // `allow` is inert; if a flow needs a missing read tool, connection_search
+  // will surface the gap - widen then.
   tools: {
     allow: [
       "save_issue",

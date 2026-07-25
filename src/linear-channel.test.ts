@@ -23,6 +23,19 @@ const { order, cancelMock, sendMock, waitUntilTasks, webhookVerifier } =
     webhookVerifier: vi.fn(async () => true),
   }));
 
+// Harness-owned issue lifecycle: mocked so dispatch tests can assert the
+// transition calls without the module's own GraphQL traffic muddying the
+// `callLinearGraphQL` assertions (the guard's live-session query).
+const { advanceIssueStateMock } = vi.hoisted(() => ({
+  advanceIssueStateMock: vi.fn(async () => {
+    order.push("advance");
+  }),
+}));
+
+vi.mock("../agent/lib/issue-state", () => ({
+  advanceIssueState: advanceIssueStateMock,
+}));
+
 vi.mock("@vercel/connect/eve", () => ({
   connectLinearCredentials: () => ({
     accessToken: () => "connect-token",
@@ -179,7 +192,7 @@ describe("agent/channels/linear (cancel-before-send)", () => {
     expect(response.status).toBe(200);
     expect(cancelMock).toHaveBeenCalledTimes(1);
     expect(sendMock).toHaveBeenCalledTimes(1);
-    expect(order).toEqual(["cancel", "send"]);
+    expect(order).toEqual(["cancel", "send", "advance"]);
   });
 
   it("cancels with the continuation token for the event's agent session id", async () => {
@@ -295,7 +308,7 @@ describe("duplicate created-session guard", () => {
 
     await invoke(createdEvent);
 
-    expect(order).toEqual(["cancel", "send"]);
+    expect(order).toEqual(["cancel", "send", "advance"]);
   });
 
   it("exempts agent-created sessions (handoff successors) without querying", async () => {
@@ -311,7 +324,7 @@ describe("duplicate created-session guard", () => {
     });
 
     expect(callLinearGraphQL).not.toHaveBeenCalled();
-    expect(order).toEqual(["cancel", "send"]);
+    expect(order).toEqual(["cancel", "send", "advance"]);
   });
 
   it("never guards prompted events", async () => {
@@ -331,7 +344,7 @@ describe("duplicate created-session guard", () => {
 
     await invoke(createdEvent);
 
-    expect(order).toEqual(["cancel", "send"]);
+    expect(order).toEqual(["cancel", "send", "advance"]);
   });
 
   it("fails open when the session carries no issue id", async () => {
@@ -344,6 +357,132 @@ describe("duplicate created-session guard", () => {
 
     expect(callLinearGraphQL).not.toHaveBeenCalled();
     expect(order).toEqual(["cancel", "send"]);
+  });
+});
+
+describe("issue lifecycle sync on dispatch", () => {
+  const reset = () => {
+    order.length = 0;
+    cancelMock.mockClear();
+    sendMock.mockClear();
+    waitUntilTasks.length = 0;
+    vi.mocked(callLinearGraphQL).mockClear();
+    vi.mocked(createLinearAgentActivity).mockClear();
+    advanceIssueStateMock.mockClear();
+  };
+
+  it("moves the issue to In Progress after dispatching a created session", async () => {
+    reset();
+
+    await invoke(createdEvent);
+
+    expect(advanceIssueStateMock).toHaveBeenCalledTimes(1);
+    expect(advanceIssueStateMock).toHaveBeenCalledWith(
+      expect.objectContaining({ issueRef: "issue-1", target: "inProgress" }),
+    );
+    expect(order).toEqual(["cancel", "send", "advance"]);
+  });
+
+  it("never syncs on prompted events", async () => {
+    reset();
+
+    await invoke(promptedEvent);
+
+    expect(advanceIssueStateMock).not.toHaveBeenCalled();
+  });
+
+  it("never syncs a guard-declined duplicate session", async () => {
+    reset();
+    vi.mocked(callLinearGraphQL).mockResolvedValueOnce({
+      issue: {
+        agentSessions: {
+          nodes: [
+            {
+              id: "sess-0",
+              status: "active",
+              createdAt: "2026-07-25T10:00:00.000Z",
+              url: null,
+            },
+          ],
+        },
+      },
+    });
+
+    await invoke(createdEvent);
+
+    expect(sendMock).not.toHaveBeenCalled();
+    expect(advanceIssueStateMock).not.toHaveBeenCalled();
+  });
+
+  it("syncs a handoff-successor session (creator is the app user)", async () => {
+    reset();
+
+    await invoke({
+      ...createdEvent,
+      agentSession: {
+        ...agentSession,
+        appUserId: "app-user-1",
+        creatorId: "app-user-1",
+      },
+    });
+
+    expect(advanceIssueStateMock).toHaveBeenCalledWith(
+      expect.objectContaining({ target: "inProgress" }),
+    );
+  });
+
+  it("skips the sync when the session carries no issue id", async () => {
+    reset();
+
+    await invoke({
+      ...createdEvent,
+      agentSession: { ...agentSession, issue: null, issueId: null },
+    });
+
+    expect(sendMock).toHaveBeenCalled();
+    expect(advanceIssueStateMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("issue lifecycle sync on session failure", () => {
+  const failureData = { message: "boom", details: {} };
+  const channelCtx = (issueId: string | null) => ({
+    state: { agentSessionId: "sess-1", issueId, pendingToolCallMessage: null },
+  });
+
+  it("moves the issue to Blocked on session.failed", async () => {
+    advanceIssueStateMock.mockClear();
+    // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handler directly
+    await (channel as any).events["session.failed"](
+      failureData,
+      channelCtx("issue-1"),
+    );
+
+    expect(advanceIssueStateMock).toHaveBeenCalledWith(
+      expect.objectContaining({ issueRef: "issue-1", target: "blocked" }),
+    );
+  });
+
+  it("skips the sync when the failed session has no issue", async () => {
+    advanceIssueStateMock.mockClear();
+    // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handler directly
+    await (channel as any).events["session.failed"](
+      failureData,
+      channelCtx(null),
+    );
+
+    expect(advanceIssueStateMock).not.toHaveBeenCalled();
+  });
+
+  it("never syncs on turn.failed (recoverable)", async () => {
+    advanceIssueStateMock.mockClear();
+    // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handler directly
+    await (channel as any).events["turn.failed"](
+      failureData,
+      channelCtx("issue-1"),
+    );
+
+    expect(advanceIssueStateMock).not.toHaveBeenCalled();
   });
 });
 
