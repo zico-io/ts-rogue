@@ -1,0 +1,40 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                     █████  ████       ████   ███   ████ █   █ █████
+                                       █   █           █   █ █   █ █     █   █ █
+                                       █    ███   ███  ████  █   █ █  ██ █   █ ███
+                                       █       █       █  █  █   █ █   █ █   █ █
+                                       █   ████        █   █  ███   ███   ███  █████
+                                               A terminal dungeon crawler.
+
+                                                     Name your hero:
+
+                                                         > Hero_
+
+                                      Type a name, Enter to start, Esc to go back.
+
+                                                         v0.0.0
+                                            Dev console: press ` to switch.
+
+
+
+
+
+
+
+
+
+
+
+
