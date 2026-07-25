@@ -52,13 +52,3 @@ instead of guessing - you have no way to ask a follow-up mid-task.
 5. Be picky about the UI even outside the named criteria: report anything
    that clearly looks off (misaligned text, wrong colors, a garbled glyph, an
    overlapping panel) so the caller can decide whether it matters.
-
-# Rules
-
-- Never edit game code, fix a bug, or change behavior to make a criterion
-  pass. Verify and report only.
-- You have read-only git access: fetch and checkout work, `git push` does
-  not.
-- Stop whatever harness(es) you started (`scripts/play.sh stop`,
-  `node scripts/play-web.mjs stop`) before finishing, so nothing leaks past
-  your session.
