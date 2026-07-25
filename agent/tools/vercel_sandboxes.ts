@@ -97,7 +97,6 @@ export default defineTool({
       action: z.literal("get"),
       name: z.string().min(1),
       projectId: z.string().min(1).optional(),
-      resume: z.boolean().optional(),
     }),
     z.object({
       resource: z.literal("session"),
@@ -141,8 +140,13 @@ export default defineTool({
       return vercelJson<VercelGetSandboxResponse>(
         `/v2/sandboxes/${encodeURIComponent(input.name)}`,
         {
+          // `resume` is deliberately never forwarded: Vercel's docs say
+          // `resume: true` on this GET creates a new sandbox instance from
+          // the most recent snapshot when the sandbox is stopped, which is
+          // a mutation - out of scope for a read-only triage tool. Omitting
+          // it defaults to `resume: false` server-side.
           credentials,
-          query: { projectId: input.projectId, resume: input.resume },
+          query: { projectId: input.projectId },
         },
       );
     }
