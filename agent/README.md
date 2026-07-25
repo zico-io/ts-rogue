@@ -14,8 +14,9 @@ pre-warmed Vercel Sandboxes.
 | [`hooks/`](hooks/) | Delegated-child activity relay (including the ephemeral working indicator) and turn-start sandbox prewarm |
 | [`schedules/`](schedules/) | Daily eve-version-check: bump, evaluate the changelog against the workaround audit, PR |
 | [`tools/`](tools/) | Native Linear Agent Session progress updates and proactive self-handoff to a fresh session |
-| [`sandbox.ts`](sandbox.ts) | Vercel Sandbox bootstrap, sync, `ORIENTATION.md` brief, network policy, and token refresh |
+| [`sandbox.ts`](sandbox.ts) | Root's Vercel Sandbox: bootstrap, sync, `ORIENTATION.md` brief, network policy, and token refresh |
 | [`lib/orientation.ts`](lib/orientation.ts) | Builds the pre-computed orientation brief from git state and screenshot-tooling status |
+| [`lib/sandbox.ts`](lib/sandbox.ts) | Shared sandbox-provisioning recipe (repo checkout, toolchain, GitHub auth levels, screenshot toggle) composed by the root and future subagents |
 
 Linear owns issue status, priority, and progress. GitHub pull requests remain the
 review and merge boundary. GitHub credentials are injected through the sandbox
@@ -283,6 +284,30 @@ one-at-a-time tool calls despite the batching rule already existing.
 structural (syntax-aware) searches the built-in tools can't express, pairs
 every batch of tool calls with a short immediate reply instead of silence,
 and gives the batching rule a concrete example.
+
+### Shared sandbox recipe (HAR-26)
+
+`agent/sandbox.ts` no longer defines the provisioning building blocks itself:
+they moved to `agent/lib/sandbox.ts` so a future subagent (`agent/subagents/<id>/sandbox.ts`,
+HAR-27..30) can compose them without duplicating this file. The root's own
+`bootstrap`/`onSession` are still written out by hand here, since only the
+root builds the `ORIENTATION.md` brief; they just call the shared
+`buildBootstrapCommand`, `resolveStartupNetworkPolicy`, `keepTokenFresh`, and
+friends instead of owning that logic inline. `lib/sandbox.ts`'s
+`buildSandboxDefinition(options)` is the one-call surface for everyone else:
+it takes a `gitAuthLevel` (`"none"` never mints or refreshes a GitHub token,
+for a subagent that only reads files already on disk from bootstrap's clone;
+`"read-only"` and `"push-capable"` both broker and keep refreshed the same
+GitHub App installation token, since the platform has no finer scope split -
+a `"read-only"` caller technically holds a token that could push, a ponytail
+gap noted in the type's own comment and fixable only once a GitHub connector
+supports narrower scopes than `["*"]`; `"push-capable"` additionally runs
+main-branch sync and stranded-push auto-recovery, for a branch-pushing
+subagent like `coder`) and a `screenshotTooling` flag (installs and verifies
+Playwright chromium during bootstrap; off by default since only the root and
+a future `playtester` subagent need it). A read-only scout subagent's whole
+`sandbox.ts` is then one line:
+`export default defineSandbox(buildSandboxDefinition({ gitAuthLevel: "none" }));`
 
 This is already the same class of infrastructure `pnpm pr:sandbox`
 (`scripts/pr-sandbox.sh`) uses for human PR review - both are Vercel
