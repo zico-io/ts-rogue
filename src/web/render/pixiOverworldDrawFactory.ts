@@ -10,10 +10,14 @@
 
 import { Graphics, Sprite, type Spritesheet } from "pixi.js";
 import type { TileName } from "../../ui/tiles/sources";
-import type { OverworldDrawFactory, SpriteHandle } from "./overworldView";
+import type {
+  BlobHandle,
+  OverworldDrawFactory,
+  SpriteHandle,
+} from "./overworldView";
 import type { RectHandle } from "./sceneView";
 
-/** Builds an `OverworldDrawFactory` whose sprites/rects are all children of `container`. */
+/** Builds an `OverworldDrawFactory` whose sprites/rects/blobs are all children of `container`. */
 export function createPixiOverworldDrawFactory(
   container: { addChild(child: Sprite | Graphics): void },
   sheet: Spritesheet,
@@ -73,6 +77,43 @@ export function createPixiOverworldDrawFactory(
         },
         setColor(c: number) {
           color = c;
+          redraw();
+        },
+        destroy() {
+          graphics.destroy();
+        },
+      };
+    },
+    createBlob(): BlobHandle {
+      // A filled ellipse, not a rect - soft-edged enough at tile scale to
+      // read as a shadow/glow/glint without needing a blur filter (ROG-65).
+      const graphics = new Graphics();
+      container.addChild(graphics);
+      let width = 0;
+      let height = 0;
+      let color = 0x000000;
+      let alpha = 1;
+      const redraw = () => {
+        graphics.clear();
+        const rx = width / 2;
+        const ry = height / 2;
+        graphics.ellipse(rx, ry, rx, ry).fill({ color, alpha });
+      };
+      return {
+        setPosition(x: number, y: number) {
+          graphics.position.set(x, y);
+        },
+        setSize(w: number, h: number) {
+          width = w;
+          height = h;
+          redraw();
+        },
+        setColor(c: number) {
+          color = c;
+          redraw();
+        },
+        setAlpha(a: number) {
+          alpha = a;
           redraw();
         },
         destroy() {

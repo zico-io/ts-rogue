@@ -3,8 +3,18 @@ import { newGame } from "../../engine/state/store";
 import { generateOverworldMap } from "../../engine/world/overworld";
 import type { OverworldMap, Tile } from "../../engine/world/types";
 import { theme, toPixiColor } from "../../ui/theme";
-import type { OverworldDrawFactory, SpriteHandle } from "./overworldView";
-import { OverworldSceneView } from "./overworldView";
+import type {
+  BlobHandle,
+  OverworldDrawFactory,
+  SpriteHandle,
+} from "./overworldView";
+import {
+  ambientParticleKind,
+  isShimmerTile,
+  needsMarkerPulse,
+  needsPropShadow,
+  OverworldSceneView,
+} from "./overworldView";
 import type { RectHandle } from "./sceneView";
 
 interface FakeSprite extends SpriteHandle {
@@ -22,18 +32,29 @@ interface FakeRect extends RectHandle {
   destroy: ReturnType<typeof vi.fn<() => void>>;
 }
 
+interface FakeBlob extends BlobHandle {
+  setPosition: ReturnType<typeof vi.fn<(x: number, y: number) => void>>;
+  setSize: ReturnType<typeof vi.fn<(width: number, height: number) => void>>;
+  setColor: ReturnType<typeof vi.fn<(color: number) => void>>;
+  setAlpha: ReturnType<typeof vi.fn<(alpha: number) => void>>;
+  destroy: ReturnType<typeof vi.fn<() => void>>;
+}
+
 interface FakeFactory extends OverworldDrawFactory {
   sprites: FakeSprite[];
   rects: FakeRect[];
+  blobs: FakeBlob[];
 }
 
 /** Minimal fake `OverworldDrawFactory`, mirroring `sceneView.test.ts`'s `fakeFactory()`. */
 function fakeFactory(): FakeFactory {
   const sprites: FakeSprite[] = [];
   const rects: FakeRect[] = [];
+  const blobs: FakeBlob[] = [];
   return {
     sprites,
     rects,
+    blobs,
     createSprite(): SpriteHandle {
       const handle: FakeSprite = {
         setPosition: vi.fn(),
@@ -53,6 +74,17 @@ function fakeFactory(): FakeFactory {
         destroy: vi.fn(),
       };
       rects.push(handle);
+      return handle;
+    },
+    createBlob(): BlobHandle {
+      const handle: FakeBlob = {
+        setPosition: vi.fn(),
+        setSize: vi.fn(),
+        setColor: vi.fn(),
+        setAlpha: vi.fn(),
+        destroy: vi.fn(),
+      };
+      blobs.push(handle);
       return handle;
     },
   };
@@ -273,5 +305,266 @@ describe("OverworldSceneView", () => {
     const bgWidth = meterBg?.setSize.mock.calls.at(-1)?.[0] as number;
     const fillWidth = meterFill?.setSize.mock.calls.at(-1)?.[0] as number;
     expect(fillWidth).toBeCloseTo(bgWidth, 0);
+  });
+
+  it("draws a ground-shadow blob under the player marker and mountain/forest/village/dungeonEntrance props, but not under plain grass/water (ROG-65)", () => {
+    const factory = fakeFactory();
+    const view = new OverworldSceneView(factory);
+    const state = newGame(1);
+    const map = mapFrom(["vgggg", "gdggg", "ggmgg", "gggfg", "ggggw"]);
+    const positioned = {
+      ...state,
+      worldState: { ...state.worldState, player: { x: 4, y: 0 } },
+    };
+
+    view.render(positioned, map, SIZE, TILE_PX);
+
+    const shadowColor = toPixiColor(theme.background);
+    const shadowBlobs = factory.blobs.filter(
+      (blob) =>
+        blob.setColor.mock.calls.some((call) => call[0] === shadowColor) &&
+        blob.setAlpha.mock.calls.some((call) => call[0] === 0.32),
+    );
+    // player + village + dungeonEntrance + mountain + forest, never water/grass.
+    expect(shadowBlobs.length).toBe(5);
+  });
+
+  it("draws a breathing glow halo behind village/dungeonEntrance markers only (ROG-65)", () => {
+    const factory = fakeFactory();
+    const view = new OverworldSceneView(factory);
+    const state = newGame(1);
+    const map = mapFrom(["vgggg", "gdggg", "ggmgg", "gggfg", "ggggw"]);
+    const positioned = {
+      ...state,
+      worldState: { ...state.worldState, player: { x: 4, y: 0 } },
+    };
+
+    view.render(positioned, map, SIZE, TILE_PX);
+
+    const villageColor = toPixiColor(theme.biome.village);
+    const dungeonColor = toPixiColor(theme.biome.dungeonEntrance);
+    const pulseBlobs = factory.blobs.filter(
+      (blob) =>
+        blob.setColor.mock.calls.some(
+          (call) => call[0] === villageColor || call[0] === dungeonColor,
+        ) && !blob.setAlpha.mock.calls.some((call) => call[0] === 0.32),
+    );
+    expect(pulseBlobs.length).toBe(2);
+  });
+
+  it("ages the village/dungeonEntrance pulse halo's alpha over time via tick", () => {
+    const factory = fakeFactory();
+    const view = new OverworldSceneView(factory);
+    const state = newGame(1);
+    const map = mapFrom(["vg", "gg"]);
+    const positioned = {
+      ...state,
+      worldState: { ...state.worldState, player: { x: 1, y: 1 } },
+    };
+    view.render(positioned, map, SIZE, TILE_PX);
+
+    const villageColor = toPixiColor(theme.biome.village);
+    const pulse = factory.blobs.find((blob) =>
+      blob.setColor.mock.calls.some((call) => call[0] === villageColor),
+    );
+    expect(pulse).toBeDefined();
+    const alphaCallsBefore = pulse?.setAlpha.mock.calls.length ?? 0;
+    view.tick(500);
+    expect(pulse?.setAlpha.mock.calls.length).toBeGreaterThan(alphaCallsBefore);
+  });
+
+  it("draws water shimmer blobs on the deterministic hash-selected subset of visible water tiles (ROG-65)", () => {
+    const factory = fakeFactory();
+    const view = new OverworldSceneView(factory);
+    const state = newGame(1);
+    const map = mapFrom(["wwwww", "wwwww", "wwwww", "wwwww", "wwwww"]);
+    const positioned = {
+      ...state,
+      worldState: { ...state.worldState, player: { x: 0, y: 0 } },
+    };
+
+    view.render(positioned, map, SIZE, TILE_PX);
+
+    const shimmerColor = toPixiColor(theme.biome.shimmer);
+    const shimmerBlobs = factory.blobs.filter((blob) =>
+      blob.setColor.mock.calls.some((call) => call[0] === shimmerColor),
+    );
+
+    let expectedCount = 0;
+    for (let y = 0; y < 5; y += 1) {
+      for (let x = 0; x < 5; x += 1) {
+        if (isShimmerTile(x, y)) expectedCount += 1;
+      }
+    }
+    expect(expectedCount).toBeGreaterThan(0);
+    expect(expectedCount).toBeLessThan(25);
+    expect(shimmerBlobs.length).toBe(expectedCount);
+  });
+
+  it("spawns firefly-colored ambient particles but no leaf particles over a grass-only viewport (ROG-65)", () => {
+    const factory = fakeFactory();
+    const view = new OverworldSceneView(factory);
+    const state = newGame(1);
+    const map = mapFrom(["ggggg", "ggggg", "ggggg", "ggggg", "ggggg"]);
+    const positioned = {
+      ...state,
+      worldState: { ...state.worldState, player: { x: 0, y: 0 } },
+    };
+
+    view.render(positioned, map, SIZE, TILE_PX);
+
+    const fireflyColor = toPixiColor(theme.biome.firefly);
+    const leafColor = toPixiColor(theme.biome.leaf);
+    expect(
+      factory.blobs.some((blob) =>
+        blob.setColor.mock.calls.some((call) => call[0] === fireflyColor),
+      ),
+    ).toBe(true);
+    expect(
+      factory.blobs.some((blob) =>
+        blob.setColor.mock.calls.some((call) => call[0] === leafColor),
+      ),
+    ).toBe(false);
+  });
+
+  it("spawns both leaf- and firefly-colored ambient particles once forest is visible (ROG-65)", () => {
+    const factory = fakeFactory();
+    const view = new OverworldSceneView(factory);
+    const state = newGame(1);
+    const map = mapFrom(["fgggg", "ggggg", "ggggg", "ggggg", "ggggg"]);
+    const positioned = {
+      ...state,
+      worldState: { ...state.worldState, player: { x: 4, y: 4 } },
+    };
+
+    view.render(positioned, map, SIZE, TILE_PX);
+
+    const fireflyColor = toPixiColor(theme.biome.firefly);
+    const leafColor = toPixiColor(theme.biome.leaf);
+    expect(
+      factory.blobs.some((blob) =>
+        blob.setColor.mock.calls.some((call) => call[0] === fireflyColor),
+      ),
+    ).toBe(true);
+    expect(
+      factory.blobs.some((blob) =>
+        blob.setColor.mock.calls.some((call) => call[0] === leafColor),
+      ),
+    ).toBe(true);
+  });
+
+  it("spawns no ambient particles over a mountain/water-only viewport (ROG-65)", () => {
+    const factory = fakeFactory();
+    const view = new OverworldSceneView(factory);
+    const state = newGame(1);
+    const map = mapFrom(["mmwww", "mmwww", "mmwww", "mmwww", "mmwww"]);
+    const positioned = {
+      ...state,
+      worldState: { ...state.worldState, player: { x: 0, y: 0 } },
+    };
+
+    view.render(positioned, map, SIZE, TILE_PX);
+
+    const fireflyColor = toPixiColor(theme.biome.firefly);
+    const leafColor = toPixiColor(theme.biome.leaf);
+    expect(
+      factory.blobs.some((blob) =>
+        blob.setColor.mock.calls.some(
+          (call) => call[0] === fireflyColor || call[0] === leafColor,
+        ),
+      ),
+    ).toBe(false);
+  });
+
+  it("clears the ambient particle pool and freezes tick-driven alpha when reduced motion is enabled (ROG-65)", () => {
+    const factory = fakeFactory();
+    const view = new OverworldSceneView(factory);
+    const state = newGame(1);
+    const map = mapFrom(["ggggg", "ggggg", "ggggg", "ggggg", "ggggg"]);
+    const positioned = {
+      ...state,
+      worldState: { ...state.worldState, player: { x: 0, y: 0 } },
+    };
+    view.render(positioned, map, SIZE, TILE_PX);
+
+    const fireflyColor = toPixiColor(theme.biome.firefly);
+    const ambientBlobs = factory.blobs.filter((blob) =>
+      blob.setColor.mock.calls.some((call) => call[0] === fireflyColor),
+    );
+    expect(ambientBlobs.length).toBeGreaterThan(0);
+
+    view.setReducedMotion(true);
+    expect(
+      ambientBlobs.every((blob) => blob.destroy.mock.calls.length > 0),
+    ).toBe(true);
+
+    const blobCountAfterClear = factory.blobs.length;
+    view.tick(1000);
+    // No new draw objects, and no destroyed blob gets a further mutation.
+    expect(factory.blobs.length).toBe(blobCountAfterClear);
+  });
+});
+
+describe("needsPropShadow", () => {
+  it("is true for the player marker regardless of terrain", () => {
+    expect(needsPropShadow("grass", true)).toBe(true);
+    expect(needsPropShadow(undefined, true)).toBe(true);
+  });
+
+  it("is true for mountain/forest/village/dungeonEntrance props", () => {
+    for (const tile of [
+      "mountain",
+      "forest",
+      "village",
+      "dungeonEntrance",
+    ] as const) {
+      expect(needsPropShadow(tile, false)).toBe(true);
+    }
+  });
+
+  it("is false for grass/water when it isn't the player marker", () => {
+    expect(needsPropShadow("grass", false)).toBe(false);
+    expect(needsPropShadow("water", false)).toBe(false);
+  });
+});
+
+describe("needsMarkerPulse", () => {
+  it("is true only for village/dungeonEntrance", () => {
+    expect(needsMarkerPulse("village")).toBe(true);
+    expect(needsMarkerPulse("dungeonEntrance")).toBe(true);
+    expect(needsMarkerPulse("grass")).toBe(false);
+    expect(needsMarkerPulse("forest")).toBe(false);
+    expect(needsMarkerPulse("mountain")).toBe(false);
+    expect(needsMarkerPulse("water")).toBe(false);
+    expect(needsMarkerPulse(undefined)).toBe(false);
+  });
+});
+
+describe("ambientParticleKind", () => {
+  it("is undefined when neither biome cue is present", () => {
+    expect(ambientParticleKind(0, false, false)).toBeUndefined();
+  });
+
+  it("is leaf for every slot when only forest cover triggers it", () => {
+    expect(ambientParticleKind(0, true, false)).toBe("leaf");
+    expect(ambientParticleKind(1, true, false)).toBe("leaf");
+  });
+
+  it("is firefly for every slot when only grass/forest presence triggers it", () => {
+    expect(ambientParticleKind(0, false, true)).toBe("firefly");
+    expect(ambientParticleKind(1, false, true)).toBe("firefly");
+  });
+
+  it("alternates leaf/firefly by index parity when both cues are present", () => {
+    expect(ambientParticleKind(0, true, true)).toBe("leaf");
+    expect(ambientParticleKind(1, true, true)).toBe("firefly");
+    expect(ambientParticleKind(2, true, true)).toBe("leaf");
+  });
+});
+
+describe("isShimmerTile", () => {
+  it("is a pure, deterministic function of tile coordinate", () => {
+    expect(isShimmerTile(2, 2)).toBe(isShimmerTile(2, 2));
+    expect(isShimmerTile(0, 0)).toBe(isShimmerTile(0, 0));
   });
 });
