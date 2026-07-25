@@ -33,6 +33,12 @@ vi.mock("eve/channels", () => ({
 }));
 
 vi.mock("eve/channels/linear", () => ({
+  // Default: no prior activities - individual tests override this with
+  // `mockResolvedValueOnce` to feed a signalMetadata-carrying elicitation
+  // activity into `resolvePromptResponses`'s `listElicitationActivities` call.
+  callLinearGraphQL: vi.fn(async () => ({
+    agentSession: { activities: { nodes: [] } },
+  })),
   createLinearAgentActivity: vi.fn(async () => ({ id: "a", success: true })),
   createLinearAgentSessionOnComment: vi.fn(async () => ({ id: "sess-new" })),
   createLinearAgentSessionOnIssue: vi.fn(async () => ({ id: "sess-new" })),
@@ -47,8 +53,6 @@ vi.mock("eve/channels/linear", () => ({
   parseLinearWebhookEvent: vi.fn(({ body }: { body: string }) =>
     JSON.parse(body),
   ),
-  renderLinearInputRequests: vi.fn(() => "elicitation"),
-  resolveLinearPromptInputResponses: vi.fn(() => []),
   signLinearWebhookBody: vi.fn(
     () => "unused-because-webhookVerifier-bypasses-it",
   ),
@@ -60,7 +64,9 @@ const {
   resolveReceiveSession,
   stateFromAgentSession,
 } = await import("../agent/channels/linear");
-const { createLinearAgentActivity } = await import("eve/channels/linear");
+const { callLinearGraphQL, createLinearAgentActivity } = await import(
+  "eve/channels/linear"
+);
 
 // biome-ignore lint/suspicious/noExplicitAny: reaching into the mocked channel shape for tests
 const route = (channel as any).routes[0] as {
@@ -301,5 +307,149 @@ describe("resolveReceiveSession", () => {
     await expect(resolveReceiveSession({} as any, {})).rejects.toThrow(
       "linearChannel().receive requires target.agentSessionId, issueId, or commentId.",
     );
+  });
+});
+
+describe("input.requested elicitation activity (HAR-17 signalMetadata)", () => {
+  const requests = [
+    {
+      action: {
+        callId: "linear-input:req-1",
+        input: {},
+        kind: "tool-call",
+        toolName: "linear_input",
+      },
+      prompt: "Approve this plan?",
+      requestId: "req-1",
+      allowFreeform: false,
+      options: [
+        { id: "approve", label: "Approve" },
+        { id: "revise", label: "Revise" },
+      ],
+    },
+  ];
+
+  it("renders a clean body with no hidden tracking marker", async () => {
+    vi.mocked(createLinearAgentActivity).mockClear();
+    // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handler directly
+    await (channel as any).events["input.requested"](
+      { requests },
+      { state: { agentSessionId: "sess-1" } },
+    );
+    const call = vi.mocked(createLinearAgentActivity).mock.calls.at(-1)?.[0];
+    const body = call?.activity.content as { body: string; type: string };
+
+    expect(body.type).toBe("elicitation");
+    expect(body.body).not.toContain("<!--");
+    expect(body.body).not.toContain("eve-input");
+    expect(body.body).toContain("Approve this plan?");
+    expect(body.body).toContain("1. Approve");
+    expect(body.body).toContain("2. Revise");
+  });
+
+  it("carries the requests in signalMetadata instead of the body", async () => {
+    vi.mocked(createLinearAgentActivity).mockClear();
+    // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handler directly
+    await (channel as any).events["input.requested"](
+      { requests },
+      { state: { agentSessionId: "sess-1" } },
+    );
+    const call = vi.mocked(createLinearAgentActivity).mock.calls.at(-1)?.[0];
+
+    expect(call?.activity.signalMetadata).toEqual({
+      eveInputRequests: [
+        {
+          requestId: "req-1",
+          allowFreeform: false,
+          options: [
+            { id: "approve", label: "Approve" },
+            { id: "revise", label: "Revise" },
+          ],
+        },
+      ],
+    });
+  });
+});
+
+describe("resolving a prompted reply from signalMetadata (HAR-17)", () => {
+  const optionRequest = {
+    requestId: "req-1",
+    options: [
+      { id: "approve", label: "Approve" },
+      { id: "revise", label: "Revise" },
+    ],
+  };
+  const freeformRequest = {
+    requestId: "req-2",
+    allowFreeform: true,
+    options: [{ id: "approve", label: "Approve" }],
+  };
+
+  const elicitationActivity = (request: unknown) => ({
+    id: "act-1",
+    content: { type: "elicitation", body: "rendered elicitation" },
+    signalMetadata: { eveInputRequests: [request] },
+  });
+
+  const promptedWith = (body: string) => ({
+    kind: "agent_session",
+    action: "prompted",
+    agentSession,
+    agentActivity: { body, content: {}, id: "activity-reply" },
+    delivery: { event: "AgentSessionEvent", id: "delivery-reply" },
+    previousComments: [],
+    raw: {},
+  });
+
+  const lastInputResponses = () =>
+    // biome-ignore lint/suspicious/noExplicitAny: sendMock's inferred type has no call args to index
+    (sendMock.mock.calls as any[]).at(-1)?.[0]?.inputResponses;
+
+  it("matches a reply by option id", async () => {
+    vi.mocked(callLinearGraphQL).mockResolvedValueOnce({
+      agentSession: {
+        activities: { nodes: [elicitationActivity(optionRequest)] },
+      },
+    });
+    await invoke(promptedWith("approve"));
+    expect(lastInputResponses()).toEqual([
+      { requestId: "req-1", optionId: "approve" },
+    ]);
+  });
+
+  it("matches a reply by option label, case-insensitively", async () => {
+    vi.mocked(callLinearGraphQL).mockResolvedValueOnce({
+      agentSession: {
+        activities: { nodes: [elicitationActivity(optionRequest)] },
+      },
+    });
+    await invoke(promptedWith("Revise"));
+    expect(lastInputResponses()).toEqual([
+      { requestId: "req-1", optionId: "revise" },
+    ]);
+  });
+
+  it("matches a reply by 1-based option number", async () => {
+    vi.mocked(callLinearGraphQL).mockResolvedValueOnce({
+      agentSession: {
+        activities: { nodes: [elicitationActivity(optionRequest)] },
+      },
+    });
+    await invoke(promptedWith("2"));
+    expect(lastInputResponses()).toEqual([
+      { requestId: "req-1", optionId: "revise" },
+    ]);
+  });
+
+  it("falls back to the raw text when the request allows freeform and nothing matches", async () => {
+    vi.mocked(callLinearGraphQL).mockResolvedValueOnce({
+      agentSession: {
+        activities: { nodes: [elicitationActivity(freeformRequest)] },
+      },
+    });
+    await invoke(promptedWith("do it differently"));
+    expect(lastInputResponses()).toEqual([
+      { requestId: "req-2", text: "do it differently" },
+    ]);
   });
 });

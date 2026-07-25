@@ -214,9 +214,18 @@ sub-issue plan of PR-sized workstreams first. The proposed breakdown posts as a
 `ask_question` tool - the stop before approval is enforced by the runtime's
 `input.requested`/`session.waiting` protocol, not by prompt discipline, and
 `channels/linear.ts` already renders the elicitation and resolves the human's
-reply (`resolvePromptResponses`). Only after approval does the agent create the
-sub-issues over the Linear MCP (`save_issue` with `parentId` and `blockedBy`
-relations), which turns the ticket into an ordinary issue group.
+reply (`resolvePromptResponses`). As of HAR-17, that rendering/resolution is
+hand-rolled rather than eve's built-in `renderLinearInputRequests`/
+`resolveLinearPromptInputResponses`: the built-in tracks a reply's target
+request by appending a hidden `<!-- eve-input:... -->` marker into the same
+visible Linear message body it renders, leaking that blob into every
+elicitation a human sees. `channels/linear.ts` instead stores the tracking
+payload in the Activity's `signalMetadata` field - durable per-activity data
+Linear never renders - and reads it back with a small local GraphQL query
+extension, so the posted body stays clean prompt/option text with no marker.
+Only after approval does the agent create the sub-issues over the Linear MCP
+(`save_issue` with `parentId` and `blockedBy` relations), which turns the
+ticket into an ordinary issue group.
 
 When the assigned issue has sub-issues - pre-existing or just created from an
 approved breakdown - the agent treats it as a group (ralph mode): it sequences

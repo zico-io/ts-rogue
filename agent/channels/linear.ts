@@ -3,6 +3,7 @@ import { timingSafeEqual } from "node:crypto";
 import { connectLinearCredentials } from "@vercel/connect/eve";
 import { type CancelFn, defineChannel, POST } from "eve/channels";
 import {
+  callLinearGraphQL,
   createLinearAgentActivity,
   createLinearAgentSessionOnComment,
   createLinearAgentSessionOnIssue,
@@ -24,29 +25,35 @@ import {
   listLinearAgentSessionActivities,
   messageFromLinearAgentSessionEvent,
   parseLinearWebhookEvent,
-  renderLinearInputRequests,
-  resolveLinearPromptInputResponses,
   signLinearWebhookBody,
   updateLinearAgentSession,
 } from "eve/channels/linear";
+import type { InputOption, InputRequest, InputResponse } from "eve/client";
 
 // Hand-rolled port of eve's built-in `linearChannel()` (see
 // `node_modules/eve/dist/src/public/channels/linear/linearChannel.js`),
 // reimplemented via `defineChannel` so the agent-session dispatch path can
 // reach the route's `cancel()` primitive - the built-in convenience wrapper
 // doesn't expose it. Everything below calls the same publicly exported
-// building blocks the built-in wrapper calls, with two exceptions the
+// building blocks the built-in wrapper calls, with three exceptions the
 // wrapper needs but the package does not actually export from
 // `eve/channels/linear` (confirmed against the runtime module's own key
-// list, not just its `.d.ts` files): webhook signature verification and the
-// default progress/response/HITL/error event handlers. Both are
-// reimplemented below from the de-minified built-in source, built only from
-// genuinely public primitives (`signLinearWebhookBody`, `node:crypto`, and
-// `createLinearAgentActivity`/`renderLinearInputRequests`) - see
-// `verifyInboundSignature` and `createLinearDefaultEvents`. The one actual
-// behavior change from the built-in is the unconditional `cancel()` before
-// `send()` in `dispatchAgentSession`. See `agent/README.md` for what this
-// does and does not cover.
+// list, not just its `.d.ts` files): webhook signature verification, the
+// default progress/response/HITL/error event handlers, and (as of HAR-17)
+// elicitation rendering/resolution. All three are reimplemented below from
+// the de-minified built-in source, built only from genuinely public
+// primitives (`signLinearWebhookBody`, `node:crypto`, and
+// `createLinearAgentActivity`/`callLinearGraphQL`) - see
+// `verifyInboundSignature`, `createLinearDefaultEvents`, and the
+// "Elicitation rendering/resolution" section. The elicitation piece is a
+// deliberate deviation, not just a gap-fill: the built-in
+// `renderLinearInputRequests`/`resolveLinearPromptInputResponses` track a
+// reply's target request by appending a hidden `<!-- eve-input:... -->`
+// marker straight into the same visible Linear message body they render, so
+// every elicitation a human sees carries a leaked tracking blob (HAR-17).
+// The one actual behavior change from the built-in beyond that is the
+// unconditional `cancel()` before `send()` in `dispatchAgentSession`. See
+// `agent/README.md` for what this does and does not cover.
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -246,8 +253,8 @@ async function resolvePromptResponses(input: {
   readonly event: LinearAgentSessionEvent;
 }) {
   try {
-    return resolveLinearPromptInputResponses({
-      activities: await listLinearAgentSessionActivities({
+    return resolveElicitationResponses({
+      activities: await listElicitationActivities({
         api: input.config.api,
         credentials: input.config.credentials,
         agentSessionId: input.event.agentSession.id,
@@ -402,6 +409,258 @@ function postActivity(
   });
 }
 
+// --- Elicitation rendering/resolution (HAR-17) ------------------------------
+// eve's built-in `renderLinearInputRequests`/`resolveLinearPromptInputResponses`
+// (`eve/channels/linear`, backed by
+// `node_modules/eve/dist/src/public/channels/linear/hitl.js`) track which
+// input requests a reply answers by appending a hidden
+// `<!-- eve-input:... -->` marker straight into the same visible Linear
+// message body it renders - so every elicitation a human sees carries a
+// leaked base64 blob. Linear Activities already have a `signalMetadata`
+// field (`LinearAgentActivityCreateInput.signalMetadata`, see
+// `node_modules/eve/dist/src/public/channels/linear/api.d.ts`) built exactly
+// for durable per-activity metadata that never renders into the message
+// body. What follows re-implements the same rendering/matching semantics
+// against `signalMetadata` instead of a body marker.
+
+/**
+ * Minimal per-request shape stored in an elicitation activity's
+ * `signalMetadata.eveInputRequests`. Mirrors the field names of eve's own
+ * built-in `storableRequest` (same hitl.js as above) but keeps only what
+ * `resolveElicitationResponses` needs to match a reply - `prompt`/`display`
+ * are rendered into the body once and never read back.
+ */
+interface StorableInputRequest {
+  readonly requestId: string;
+  readonly allowFreeform?: boolean;
+  readonly options?: readonly InputOption[];
+}
+
+// `LinearAgentActivityCreateInput.signalMetadata` is typed as the internal,
+// non-exported `JsonObject` (see
+// `node_modules/eve/dist/src/public/channels/linear/api.d.ts`). Extracted
+// this way - the same `Parameters<...>` extraction `postActivity` already
+// uses for `content` above - rather than importing an unexported type name.
+// `StorableInputRequest` is genuinely JSON-safe (only strings, booleans, and
+// nested option records); TS just can't verify that through a named
+// interface without a matching index signature, hence the cast where this
+// type is used.
+type LinearActivitySignalMetadata = NonNullable<
+  Parameters<typeof createLinearAgentActivity>[0]["activity"]["signalMetadata"]
+>;
+
+function storableRequest(request: InputRequest): StorableInputRequest {
+  const stored: {
+    requestId: string;
+    allowFreeform?: boolean;
+    options?: readonly InputOption[];
+  } = { requestId: request.requestId };
+  if (request.allowFreeform !== undefined) {
+    stored.allowFreeform = request.allowFreeform;
+  }
+  if (request.options !== undefined) stored.options = request.options;
+  return stored;
+}
+
+// Port of eve's built-in `renderLinearInputRequest` (singular, same hitl.js
+// as above): prompt line, then a blank line and a numbered option list,
+// then - if freeform is allowed - a trailing hint. No marker appended.
+function renderElicitationRequest(request: InputRequest): string {
+  const lines = [request.prompt];
+  if (request.options !== undefined && request.options.length > 0) {
+    lines.push(
+      "",
+      ...request.options.map((option, index) => {
+        const description = option.description
+          ? ` - ${option.description}`
+          : "";
+        return `${index + 1}. ${option.label}${description}`;
+      }),
+    );
+  }
+  if (request.allowFreeform === true) {
+    lines.push("", "You can also reply with a custom answer.");
+  }
+  return lines.join("\n");
+}
+
+function renderElicitationBody(requests: readonly InputRequest[]): string {
+  return requests.map(renderElicitationRequest).join("\n\n");
+}
+
+// Port of eve's built-in `matchOption`/`resolveTextToResponse`
+// (`node_modules/eve/dist/src/channel/resolve-text.js`, not exported from
+// any public barrel): exact option id match, then exact label match
+// (case-insensitive), then a 1-based option number, else - when freeform is
+// allowed or there are no options at all - the raw trimmed reply as text.
+function matchStoredOption(
+  reply: string,
+  options: readonly InputOption[],
+): InputOption | undefined {
+  const byId = options.find((option) => option.id.toLowerCase() === reply);
+  if (byId !== undefined) return byId;
+  const byLabel = options.find(
+    (option) => option.label.toLowerCase() === reply,
+  );
+  if (byLabel !== undefined) return byLabel;
+  const asNumber = Number(reply);
+  if (
+    Number.isInteger(asNumber) &&
+    asNumber > 0 &&
+    asNumber <= options.length
+  ) {
+    return options[asNumber - 1];
+  }
+  return undefined;
+}
+
+function resolveStoredRequestResponse(
+  body: string,
+  request: StorableInputRequest,
+): InputResponse | undefined {
+  const trimmed = body.trim();
+  if (trimmed.length === 0) return undefined;
+  const lower = trimmed.toLowerCase();
+  if (request.options !== undefined && request.options.length > 0) {
+    const match = matchStoredOption(lower, request.options);
+    if (match !== undefined) {
+      return { requestId: request.requestId, optionId: match.id };
+    }
+  }
+  if (
+    (request.allowFreeform === true ||
+      request.options === undefined ||
+      request.options.length === 0) &&
+    trimmed.length > 0
+  ) {
+    return { requestId: request.requestId, text: trimmed };
+  }
+  return undefined;
+}
+
+function isStorableInputRequest(value: unknown): value is StorableInputRequest {
+  if (!isPlainObject(value) || typeof value.requestId !== "string") {
+    return false;
+  }
+  if (
+    value.allowFreeform !== undefined &&
+    typeof value.allowFreeform !== "boolean"
+  ) {
+    return false;
+  }
+  if (value.options === undefined) return true;
+  return (
+    Array.isArray(value.options) &&
+    value.options.every(
+      (option) =>
+        isPlainObject(option) &&
+        typeof option.id === "string" &&
+        typeof option.label === "string",
+    )
+  );
+}
+
+interface ActivityWithSignalMetadata {
+  readonly content: { readonly body?: string; readonly type?: string };
+  readonly signalMetadata: Record<string, unknown> | null;
+}
+
+// Scans backward for the latest elicitation activity carrying a valid
+// `eveInputRequests` payload, mirroring the built-in's own backward scan in
+// `findLatestLinearHitlMarker` (same hitl.js as above).
+function latestElicitationRequests(
+  activities: readonly ActivityWithSignalMetadata[],
+): readonly StorableInputRequest[] | undefined {
+  for (let index = activities.length - 1; index >= 0; index--) {
+    const activity = activities[index];
+    if (activity?.content.type !== "elicitation") continue;
+    const requests = activity.signalMetadata?.eveInputRequests;
+    if (Array.isArray(requests) && requests.every(isStorableInputRequest)) {
+      return requests;
+    }
+  }
+  return undefined;
+}
+
+function resolveElicitationResponses(input: {
+  readonly activities: readonly ActivityWithSignalMetadata[];
+  readonly body: string;
+}): readonly InputResponse[] {
+  const requests = latestElicitationRequests(input.activities);
+  if (requests === undefined) return [];
+  const responses: InputResponse[] = [];
+  for (const request of requests) {
+    const response = resolveStoredRequestResponse(input.body, request);
+    if (response !== undefined) responses.push(response);
+  }
+  return responses;
+}
+
+/**
+ * Extends eve's built-in `listLinearAgentSessionActivities` query (see
+ * `node_modules/eve/dist/src/public/channels/linear/api.js`) with the
+ * `signal`/`signalMetadata` Activity fields the public barrel's query never
+ * selects, even though `signalMetadata` is a first-class input the same
+ * barrel's `createLinearAgentActivity` already accepts when creating an
+ * Activity - the query just never reads it back. Hand-rolled against the
+ * public `callLinearGraphQL` transport, the same pattern
+ * `tools/handoff.ts`'s `createLinearComment` uses for a mutation missing
+ * from the same barrel.
+ */
+async function listElicitationActivities(input: {
+  readonly api?: LinearChannelConfig["api"];
+  readonly credentials?: LinearChannelConfig["credentials"];
+  readonly agentSessionId: string;
+  readonly last?: number;
+}): Promise<readonly ActivityWithSignalMetadata[]> {
+  const data = await callLinearGraphQL<{
+    agentSession?: { activities?: { nodes?: unknown[] } };
+  }>({
+    api: input.api,
+    credentials: input.credentials,
+    query: `
+      query AgentSessionActivitiesWithSignal($id: String!, $last: Int!) {
+        agentSession(id: $id) {
+          activities(last: $last) {
+            nodes {
+              id
+              updatedAt
+              content {
+                __typename
+                ... on AgentActivityElicitationContent { body type }
+                ... on AgentActivityPromptContent { body type }
+                ... on AgentActivityResponseContent { body type }
+                ... on AgentActivityThoughtContent { body type }
+                ... on AgentActivityErrorContent { body type }
+              }
+              signal
+              signalMetadata
+            }
+          }
+        }
+      }
+    `,
+    queryName: "AgentSessionActivitiesWithSignal",
+    variables: { id: input.agentSessionId, last: input.last ?? 20 },
+  });
+  const nodes = data.agentSession?.activities?.nodes;
+  if (!Array.isArray(nodes)) return [];
+  return nodes.flatMap((node): ActivityWithSignalMetadata[] => {
+    if (!isPlainObject(node) || !isPlainObject(node.content)) return [];
+    const content: { body?: string; type?: string } = {};
+    if (typeof node.content.body === "string") content.body = node.content.body;
+    if (typeof node.content.type === "string") content.type = node.content.type;
+    return [
+      {
+        content,
+        signalMetadata: isPlainObject(node.signalMetadata)
+          ? node.signalMetadata
+          : null,
+      },
+    ];
+  });
+}
+
 function createLinearDefaultEvents(options: {
   readonly api?: LinearChannelConfig["api"];
   readonly credentials?: LinearChannelConfig["credentials"];
@@ -456,9 +715,22 @@ function createLinearDefaultEvents(options: {
       }
     },
     async "input.requested"(data, channel) {
-      await postActivity(channel, options, {
-        body: renderLinearInputRequests(data.requests),
-        type: "elicitation",
+      // Posted via `createLinearAgentActivity` directly rather than
+      // `postActivity` - this is the one activity that needs
+      // `signalMetadata`, which `postActivity`'s other call sites don't use.
+      await createLinearAgentActivity({
+        api: options.api,
+        credentials: options.credentials,
+        activity: {
+          agentSessionId: requireAgentSessionId(channel.state.agentSessionId),
+          content: {
+            body: renderElicitationBody(data.requests),
+            type: "elicitation",
+          },
+          signalMetadata: {
+            eveInputRequests: data.requests.map(storableRequest),
+          } as unknown as LinearActivitySignalMetadata,
+        },
       });
     },
     async "message.completed"(data, channel) {
