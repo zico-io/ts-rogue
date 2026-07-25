@@ -1,8 +1,6 @@
 ---
-name: eve
-description: Build durable backend AI agents with the eve framework. Use when creating, editing, or debugging an eve project — agent instructions, skills, tools, connections, channels, sandboxes, subagents, schedules, or evals.
+description: "Build durable backend AI agents with the eve framework. Use when creating, editing, or debugging an eve project — agent instructions, skills, tools, connections, channels, sandboxes, subagents, schedules, or evals."
 ---
-
 # eve
 
 eve is a filesystem-first framework for durable backend AI agents. An agent is
