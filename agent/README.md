@@ -10,38 +10,61 @@ pre-warmed Vercel Sandboxes.
 | [`agent.ts`](agent.ts) | Root and delegated coding model selection |
 | [`instructions.md`](instructions.md) | Runtime operating and delegation contract |
 | [`channels/`](channels/) | Eve, Linear, and GitHub session activity adapters |
-| [`connections/`](connections/) | Linear MCP connection and approval policy |
+| [`connections/`](connections/) | Linear MCP connection (allow-listed), Vercel MCP connection (deployments/logs/errors/analytics), and Vercel REST OpenAPI connection (traces, observability queries, read-only sandbox introspection) |
 | [`hooks/`](hooks/) | Delegated-child activity relay (including the ephemeral working indicator) and turn-start sandbox prewarm |
-| [`tools/`](tools/) | Native Linear Agent Session progress updates, proactive self-handoff to a fresh session, and read-only Vercel debugging tools (logs, traces, observability queries, sandbox/session/command introspection) |
+| [`schedules/`](schedules/) | Daily eve-version-check: bump, evaluate the changelog against the workaround audit, PR |
+| [`tools/`](tools/) | Native Linear Agent Session progress updates and proactive self-handoff to a fresh session |
 | [`sandbox.ts`](sandbox.ts) | Vercel Sandbox bootstrap, sync, `ORIENTATION.md` brief, network policy, and token refresh |
 | [`lib/orientation.ts`](lib/orientation.ts) | Builds the pre-computed orientation brief from git state and screenshot-tooling status |
-| [`lib/vercel-api.ts`](lib/vercel-api.ts) | Shared authenticated-fetch helper (auth header, `teamId` scoping, JSON error surfacing, bounded NDJSON reads) backing the `tools/vercel_*.ts` debugging tools |
 
 Linear owns issue status, priority, and progress. GitHub pull requests remain the
 review and merge boundary. GitHub credentials are injected through the sandbox
 network policy rather than exposed to the agent environment.
 
-### Vercel debugging tools (HAR-20)
+### Vercel debugging connections (HAR-20)
 
-`tools/vercel_logs.ts`, `tools/vercel_trace.ts`, `tools/vercel_observability_query.ts`,
-`tools/vercel_sandboxes.ts`, and `tools/vercel_sandbox_commands.ts` let the agent
-introspect its own Vercel deployment and its own Sandboxes for debugging - runtime
-logs for a deployment, an OTEL trace by request id, the observability query engine
-that also powers the dashboard's Agent Runs / Workflow run views (including the
-`$eve.*` workflow-run tags eve writes on every session/turn/subagent run, see
-`node_modules/eve/docs/guides/instrumentation.md`), and listing/inspecting Sandboxes,
-their sessions, and the commands run inside a session (plus that command's logs) to
-triage a stuck or failed sandbox. All five call `api.vercel.com` directly through the
-shared helper in `lib/vercel-api.ts`; none of them mutate anything - no stop, kill, or
-resume tool was added, this is read-only introspection.
+Vercel introspection is served by two connections in `connections/`, discovered
+by the model through the built-in `connection_search` tool. `connections/vercel.ts`
+is the official Vercel MCP server (`mcp.vercel.com`, Vercel Connect OAuth):
+deployments, build logs, bounded runtime logs, runtime errors, and web analytics,
+allow-listed to read-only tools. `connections/vercel-api.ts` is an OpenAPI
+connection over `https://openapi.vercel.sh` for what the MCP server does not
+expose: an OTEL trace by request id (`getProjectTrace`), the observability query
+engine that also powers the dashboard's Agent Runs / Workflow run views
+(including the `$eve.*` workflow-run tags eve writes on every
+session/turn/subagent run, see `node_modules/eve/docs/guides/instrumentation.md`),
+and listing/inspecting Sandboxes, their sessions, and the commands run inside a
+session to triage a stuck or failed sandbox. Its `operations.allow` admits only
+read operations, and an exported approval policy (`vercelApiApproval`, tested in
+`src/vercel-api-connection.test.ts`) denies `getNamedSandbox` calls carrying
+`resume: true`, which would mutate (new instance from snapshot).
 
-These tools need `VERCEL_TOKEN` (a Vercel API token with read access to this
-project) set as a plain environment variable in the Vercel project's settings -
-there is no way to mint or verify one from inside a sandbox, so a human has to add
-it before these tools work in production. `VERCEL_TEAM_ID` and `VERCEL_PROJECT_ID`
-are optional defaults the tools fall back to when a call doesn't pass them
-explicitly. Because no token is available in this repo's dev or test environment,
-`src/vercel-tools.test.ts` mocks `fetch` rather than calling the live API.
+These connections replaced the hand-rolled `tools/vercel_*.ts` + `lib/vercel-api.ts`
+layer. Two accepted losses, and their re-add path: sandbox command logs
+(`getSessionCommandLogs`) and raw `getRuntimeLogs` are excluded because they are
+unbounded NDJSON streams a generated tool would hang on (runtime logs are covered
+by the MCP connection's `get_runtime_logs`; if command logs are missed, re-add a
+single authored tool with a bounded NDJSON reader), and `teamId`/`projectId` are
+no longer injected into requests - generated tools take them as model-supplied
+inputs, guided by ids embedded in the connection description. Those ids need no
+env vars: they are decoded from the deployment's always-present
+`VERCEL_OIDC_TOKEN` claims (`owner_id`/`project_id`), with
+`VERCEL_TEAM_ID`/`VERCEL_PROJECT_ID` kept only as optional overrides.
+
+The OpenAPI connection needs `VERCEL_TOKEN` (a Vercel API token with read access
+to this project) set as a plain environment variable in the Vercel project's
+settings. The deployment's OIDC token cannot substitute: tested 2026-07-25,
+`api.vercel.com` accepts an OIDC bearer on the `/v2/sandboxes*` endpoints but
+returns 403 `invalidToken` on `/v2/observability/*` and `/v1/projects/traces` -
+and a warm Fluid instance would serve a stale (~1h) OIDC env token anyway (the
+ROG-65 failure class). There is no way to mint an API token from inside a
+sandbox, so a human has to add it before it works in production (as of
+2026-07-25 the project has no production env vars at all, so the retired
+hand-rolled tools were never live in production either). The MCP connection instead
+needs its Vercel Connect connector provisioned once from the linked project:
+`vercel connect create mcp.vercel.com --name ts-rogue-vercel-mcp` then
+`vercel connect attach <connector-uid> --yes`; the first call in a session parks
+on an OAuth consent URL rendered natively in Linear.
 
 Orientation is pre-computed rather than rediscovered: the standing contract lives
 in `instructions.md`, the Linear session supplies the issue packet, and `onSession`
@@ -72,9 +95,13 @@ durable `session_update`s. Those child updates are also role-coerced in code
 (`tools/session_update.ts`): a child's `started`/`review`/`completed` becomes
 `progress` with a `[<issue>]` prefix, because ENG-2's thread showed a child
 "Completed" while nothing was pushed, then "Started" again - the session
-appeared to finish and restart. No local eval can cover the delegation path
-(it needs a live sandbox child, and the ralph e2e fixture deliberately runs
-with a blank `agent_session_id`), so coverage is unit tests plus contract text.
+appeared to finish and restart. The delegation-path wiring is covered by
+`evals/delegation/child-session-update.eval.ts`: eve's `mockModel` scripts
+the root to delegate and the child to post `session_update`, so a real child
+session runs the real hook and tool code and the eval reads the coerced
+`**Progress**` body off a local mock Linear server. It proves wiring, not
+model policy - a scripted root always delegates - so the coercion map's unit
+tests and the contract text still carry the policy half.
 
 `instructions.md` requires the root to send a `session_update` before its first
 other tool call and to batch independent read-only lookups (sub-issue checks,
@@ -93,9 +120,10 @@ The mid-session update triggers are mechanical rather than judgment-based
 minutes behind a lone `started` message): the batch that starts implementation
 must carry a `progress` update with the scoped cut, and three tool-call
 batches without a `session_update` force one in the next batch. No eval guards
-this yet - the local evals stop before delegation and the ralph e2e fixture
-deliberately runs with a blank `agent_session_id`, so it would take a live
-Linear session to observe.
+these triggers yet - the delegation eval's scripted model cannot exercise
+when a real model chooses to post, and the ralph e2e fixture deliberately
+runs with a blank `agent_session_id`, so it would take a live Linear session
+to observe.
 
 Because those sentences reach the reader verbatim, `instructions.md` keeps its
 message rules as terse imperatives and holds the design rationale (the
@@ -173,13 +201,38 @@ Limits, by design:
   done. Instant steering was deliberately kept over fold-in delivery.
 
 The built-in `linearChannel()` doesn't export everything it's built from:
-`eve/channels/linear`'s barrel omits `verifyLinearRequest` and
-`createDefaultEvents` (confirmed against the module's own runtime exports,
-not just its `.d.ts` files). `channels/linear.ts` reimplements both from the
-de-minified built-in source, built only from genuinely public primitives
-(`signLinearWebhookBody`, `node:crypto`, `createLinearAgentActivity`,
-`renderLinearInputRequests`) - see the file's own comments for the exact
-provenance of each piece.
+`eve/channels/linear`'s barrel omits `verifyLinearRequest`,
+`createDefaultEvents`, and the inbound image attachment pair
+`attachLinearInboundImages`/`resolveLinearAccessToken` (confirmed against the
+module's own runtime exports, not just its `.d.ts` files).
+`channels/linear.ts` reimplements all of them from the de-minified built-in
+source, built only from genuinely public primitives (`signLinearWebhookBody`,
+`node:crypto`, `createLinearAgentActivity`, `renderLinearInputRequests`, and
+global `fetch`) - see the file's own comments for the exact provenance of
+each piece. The image port keeps the built-in's 0.27.3 behavior: authenticated
+`uploads.linear.app` screenshots in an inbound prompt reach the model as
+multimodal file parts, and any untrusted, failed, or non-image reference
+falls back to its original markdown text.
+
+#### Workaround audit (re-audited against eve 0.27.6, 2026-07-25)
+
+Every hand-rolled piece in this harness exists because eve's public surface
+misses a primitive its own internals use. This table is the checklist the
+`schedules/eve-version-check.ts` prompt evaluates new changelog entries
+against; each future audit updates the date and verdicts.
+
+| Workaround | Lives in | Gap it works around | Verdict at 0.27.6 |
+| --- | --- | --- | --- |
+| Cancel-and-steer on inbound Linear prompts | `channels/linear.ts` | Built-in dispatch has no `cancel()`; new prompts coalesce into the next turn | Still missing - the built-in route handler destructures only `{send, waitUntil}`; the 0.27.2/0.27.5 cancel/reset additions are Slack-only |
+| Webhook verification + default event handlers | `channels/linear.ts` | `verifyLinearRequest`/`createDefaultEvents` unexported from the barrel | Still unexported |
+| Inbound image attachment | `channels/linear.ts` | `attachLinearInboundImages`/`resolveLinearAccessToken` unexported | Still unexported - ported here (built-in gained it in 0.27.3) |
+| GitHub @mention gate reimplementation | `channels/github.ts` | `extractGitHubCommentTrigger`/`shouldDispatchGitHubComment` not public; custom `onComment` replaces the built-in gate wholesale | Still not public; `pull_request_review` (top-level verdict) events still unparsed |
+| Session handoff instead of quota continuation | `tools/handoff.ts` | Token-quota HITL prompt not overridable; `commentCreate` unexported | Still no public hook (0.27.1 only changed decline behavior) |
+| File-based child session-id handoff | `hooks/child-relay.ts` | `subagent.called` declared in the hook vocabulary but never dispatched to authored hooks/channels | Still absent from `ChannelEvents` |
+| Eager sandbox prewarm + durable token re-mint | `hooks/prewarm-sandbox.ts` | Lazy sandbox creation; no session-end hook; in-process token timers don't survive harness recycling | Unchanged |
+| Sandbox lifetime/timeout re-assertion, token fallback chain | `sandbox.ts` | Create-time options don't apply to resumed sandboxes (ROG-65); connect token cache staleness | Unchanged. eve 0.27.5's `workspace/` seed files were evaluated and rejected: seed paths are workspace-relative only (the files this bootstrap writes live in `~/.config` and `/etc`), and seeding `/workspace` would break bootstrap's `git clone` into an empty directory |
+| Vercel introspection | `connections/vercel.ts` + `connections/vercel-api.ts` | Vercel MCP server lacks sandbox/trace/observability tools; no Vercel-API credential helper in `@vercel/connect/eve` | Retired the hand-rolled `tools/vercel_*.ts` + `lib/vercel-api.ts` layer in favor of an MCP + OpenAPI connection pair. `VERCEL_TOKEN` env still required for observability/traces (OIDC bearers 403 there; sandbox endpoints would accept them). `teamId`/`projectId` now derived from OIDC claims. Accepted loss: sandbox command logs (see "Vercel debugging connections") |
+| Agent Session posting in code | `tools/session_update.ts`, `tools/handoff.ts`, `hooks/child-relay.ts`, `channels/linear.ts` | `mcp.linear.app` exposes no Agent Session tools (`agentActivityCreate`, `agentSessionCreateOnComment`), and hooks/channel code cannot call connection tools at all | Not replaceable by the Linear MCP connection until Linear ships agent-session MCP tools |
 
 `ORIENTATION.md` also reports whether the sandbox's Playwright chromium
 (`scripts/play-web.mjs`'s screenshots) is confirmed working - `bootstrap`'s
@@ -236,8 +289,10 @@ sub-issue plan of PR-sized workstreams first. The proposed breakdown posts as a
 `review` session_update and then parks the turn on eve's built-in
 `ask_question` tool - the stop before approval is enforced by the runtime's
 `input.requested`/`session.waiting` protocol, not by prompt discipline, and
-`channels/linear.ts` already renders the elicitation and resolves the human's
-reply (`resolvePromptResponses`). Only after approval does the agent create the
+`channels/linear.ts` already renders the elicitation (with Linear's native
+select signal via `linearInputRequestSignal`; since eve 0.27 the runtime, not
+the channel, matches the human's reply to the pending input request). Only
+after approval does the agent create the
 sub-issues over the Linear MCP (`save_issue` with `parentId` and `blockedBy`
 relations), which turns the ticket into an ordinary issue group.
 

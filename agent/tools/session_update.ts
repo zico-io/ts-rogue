@@ -5,7 +5,18 @@ import { z } from "zod";
 
 import { relayIssueId } from "../hooks/child-relay";
 
-const credentials = connectLinearCredentials("linear/ts-rogue-eve");
+// Under EVE_EVAL_MOCK_MODEL the delegation eval swaps in a fake bearer and
+// points `api.apiBaseUrl` at its local mock GraphQL server (`LinearApiOptions`
+// documents both as test overrides), so the coerced activity body is
+// observable without a live Linear session. With the flag set but no base
+// URL, the fake bearer 401s against real Linear - no write is possible.
+const credentials = process.env.EVE_EVAL_MOCK_MODEL
+  ? { accessToken: "eval-mock" }
+  : connectLinearCredentials("linear/ts-rogue-eve");
+
+const api = process.env.LINEAR_API_BASE_URL
+  ? { apiBaseUrl: process.env.LINEAR_API_BASE_URL }
+  : undefined;
 
 type SessionUpdateStatus =
   | "started"
@@ -70,6 +81,7 @@ export default defineTool({
       relayIssueId(),
     );
     await createLinearAgentActivity({
+      api,
       credentials,
       activity: {
         agentSessionId: input.agentSessionId,

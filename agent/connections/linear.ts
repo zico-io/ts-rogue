@@ -4,8 +4,39 @@ import { never } from "eve/tools/approval";
 
 export default defineMcpClientConnection({
   url: "https://mcp.linear.app/mcp",
-  description: "Linear workspace for ts-rogue issues, projects, priorities, assignments, and status.",
+  description:
+    "Linear workspace for ts-rogue issues, projects, priorities, assignments, and status.",
   auth: connect("mcp.linear.app/ts-rogue-eve-mcp"),
-  tools: { block: ["save_comment"] },
+  // Smallest surface the contract needs: `save_issue` is the one write the
+  // prompts require (breakdown sub-issues, delegate assignment, schedule-filed
+  // issues); the rest is read-only lookup. Every other write (save_comment,
+  // save_project, save_document, delete_*, merge_diff, submit_diff_review,
+  // attachments, labels, releases, status updates) stays out - session posts
+  // go through the authored `session_update`/`handoff` tools instead. An
+  // unknown name in `allow` is inert; if a flow needs a missing read tool,
+  // connection_search will surface the gap - widen then.
+  tools: {
+    allow: [
+      "save_issue",
+      "get_issue",
+      "list_issues",
+      "list_comments",
+      "get_team",
+      "list_teams",
+      "get_user",
+      "list_users",
+      "list_issue_statuses",
+      "list_issue_labels",
+      "get_project",
+      "list_projects",
+      "list_cycles",
+      "list_milestones",
+      "get_document",
+      "list_documents",
+      "search_documentation",
+    ],
+  },
+  // `save_issue` runs in unattended ralph turns and is already human-gated
+  // upstream by the ask_question breakdown approval.
   approval: never(),
 });
