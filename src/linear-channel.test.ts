@@ -299,8 +299,27 @@ describe("duplicate created-session guard", () => {
     vi.mocked(createLinearAgentActivity).mockClear();
   };
 
+  // listLiveAgentSessions now excludes sessions idle past STALE_SESSION_MS, so a
+  // blocking mock session needs a recent "last active" signal to count as live.
+  // Expressed relative to Date.now() for determinism without pinning the clock;
+  // createdAt stays whatever the test sets, as it only drives oldest-wins order.
   const liveSessions = (nodes: readonly unknown[]) => ({
-    issue: { agentSessions: { nodes } },
+    issue: {
+      agentSessions: {
+        nodes: nodes.map((node) =>
+          node && typeof node === "object" && !("activities" in node)
+            ? {
+                ...(node as object),
+                activities: {
+                  nodes: [
+                    { updatedAt: new Date(Date.now() - 60_000).toISOString() },
+                  ],
+                },
+              }
+            : node,
+        ),
+      },
+    },
   });
 
   it("declines a created session when an older session is already live on the issue", async () => {
@@ -336,6 +355,31 @@ describe("duplicate created-session guard", () => {
     expect((activity?.content as { body?: string })?.body).toContain(
       "https://linear.app/sess-0",
     );
+  });
+
+  it("dispatches when the only older session is stale (idle past the threshold)", async () => {
+    reset();
+    vi.mocked(callLinearGraphQL).mockResolvedValueOnce(
+      liveSessions([
+        {
+          id: "sess-0",
+          status: "active",
+          createdAt: "2026-07-25T10:00:00.000Z", // older than the newcomer sess-1
+          url: "https://linear.app/sess-0",
+          // Silent well past STALE_SESSION_MS, so it no longer blocks.
+          activities: {
+            nodes: [
+              { updatedAt: new Date(Date.now() - 60 * 60_000).toISOString() },
+            ],
+          },
+        },
+      ]),
+    );
+
+    await invoke(createdEvent);
+
+    expect(order).toEqual(["cancel", "send", "advance"]);
+    expect(createLinearAgentActivity).not.toHaveBeenCalled();
   });
 
   it("dispatches when the created session is the oldest live one", async () => {
@@ -453,6 +497,12 @@ describe("issue lifecycle sync on dispatch", () => {
               status: "active",
               createdAt: "2026-07-25T10:00:00.000Z",
               url: null,
+              // Recent activity so it counts as live and still blocks sess-1.
+              activities: {
+                nodes: [
+                  { updatedAt: new Date(Date.now() - 60_000).toISOString() },
+                ],
+              },
             },
           ],
         },
