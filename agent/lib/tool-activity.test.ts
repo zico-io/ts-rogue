@@ -1,24 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  toolActionLabel,
-  toolActionParameter,
-  toolActionResult,
-} from "./tool-activity";
-
-describe("toolActionLabel", () => {
-  it("humanizes framework tool names", () => {
-    expect(toolActionLabel("bash")).toBe("Bash");
-    expect(toolActionLabel("read_file")).toBe("Read file");
-    expect(toolActionLabel("write_file")).toBe("Write file");
-  });
-
-  it("strips the MCP connection prefix", () => {
-    expect(toolActionLabel("linear__save_issue")).toBe(
-      "Create or update an issue",
-    );
-  });
-});
+import { toolActionParameter, toolActionResult } from "./tool-activity";
 
 describe("toolActionParameter", () => {
   it("shows the command for bash", () => {

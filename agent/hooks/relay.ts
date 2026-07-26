@@ -4,11 +4,8 @@ import { defineState } from "eve/context";
 import { defineHook, type HookContext } from "eve/hooks";
 
 import type { PendingAction } from "../lib/pending-action";
-import {
-  toolActionLabel,
-  toolActionParameter,
-  toolActionResult,
-} from "../lib/tool-activity";
+import { toolActionParameter, toolActionResult } from "../lib/tool-activity";
+import { toolLabel } from "../lib/tool-label";
 import { MAX_ACTIVITY_TEXT_LENGTH, truncate } from "../lib/truncate";
 
 // Runs in both root and child sessions.
@@ -137,10 +134,7 @@ const post = async (
     });
   } catch (err) {
     // Observe-only: a Linear hiccup must never fail the child's turn.
-    console.warn(
-      "relay: posting a Linear activity failed:",
-      errorMessage(err),
-    );
+    console.warn("relay: posting a Linear activity failed:", errorMessage(err));
   }
 };
 
@@ -183,7 +177,7 @@ export default defineHook({
           }
           continue; // session_update already posts its own activity
         }
-        const label = toolActionLabel(action.toolName);
+        const label = toolLabel(action.toolName);
         const parameter = toolActionParameter(action.toolName, action.input);
         relay.update((s) => ({
           ...s,

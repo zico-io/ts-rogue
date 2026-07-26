@@ -37,11 +37,8 @@ import { isPlainObject } from "../lib/is-plain-object";
 import { advanceIssueState } from "../lib/issue-state";
 import { listLiveAgentSessions } from "../lib/live-sessions";
 import type { PendingAction } from "../lib/pending-action";
-import {
-  toolActionLabel,
-  toolActionParameter,
-  toolActionResult,
-} from "../lib/tool-activity";
+import { toolActionParameter, toolActionResult } from "../lib/tool-activity";
+import { toolLabel } from "../lib/tool-label";
 import { MAX_ACTIVITY_TEXT_LENGTH, truncate } from "../lib/truncate";
 
 // Hand-rolled port of eve's built-in `linearChannel()` (see
@@ -514,7 +511,7 @@ const firstNonEmptyLine = (value: string): string | undefined => {
 // biome-ignore lint/suspicious/noExplicitAny: mirrors the union of runtime action request shapes (load-skill / remote-agent-call / subagent-call / tool-call)
 const actionLabel = (action: any): string =>
   action.kind === "tool-call" && action.toolName
-    ? toolActionLabel(action.toolName)
+    ? toolLabel(action.toolName)
     : action.kind;
 
 // biome-ignore lint/suspicious/noExplicitAny: see actionLabel

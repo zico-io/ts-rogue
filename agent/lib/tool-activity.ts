@@ -1,22 +1,23 @@
 import { isPlainObject } from "./is-plain-object";
-import { toolLabel } from "./tool-label";
+import { toolOperation } from "./tool-label";
 import { MAX_ACTIVITY_TEXT_LENGTH, truncate } from "./truncate";
 
-// Shared formatter for Linear Agent Activity `action` chips
-// (`{ action, parameter, result }`). Both emission points - the root channel
+// Shared formatter for the `parameter` and `result` fields of a Linear Agent
+// Activity `action` chip. Both emission points - the root channel
 // (`channels/linear.ts`) and the delegated-child relay (`hooks/relay.ts`) -
 // route through here so parent and child tool-call chips read identically.
 // Without it, chips render as `bash {"command":"..."}` (raw tool name + a
 // `JSON.stringify(input)` blob) with a raw `JSON.stringify(output)` result;
 // with it they read `Bash <command>` + `exit 0 · N lines`, which is what
-// Linear's native tool-call UI is built to show. (Both call sites already
-// correlate a call's input to its result by callId in their own state, so this
-// module is pure formatting.)
+// Linear's native tool-call UI is built to show. (The chip's `action` label
+// comes from `toolLabel`; both call sites already correlate a call's input to
+// its result by callId in their own state, so this module is pure formatting.)
 
 const asString = (value: unknown): string | undefined =>
   typeof value === "string" && value.length > 0 ? value : undefined;
 
-const firstLine = (value: string): string => value.split(/\r?\n/, 1)[0] ?? value;
+const firstLine = (value: string): string =>
+  value.split(/\r?\n/, 1)[0] ?? value;
 
 const lineCount = (text: string): number =>
   text.length === 0 ? 0 : text.split(/\r?\n/).length;
@@ -31,14 +32,6 @@ const compactJson = (value: unknown): string => {
     return "";
   }
 };
-
-// Bare tool operation, minus any `connection__tool` MCP prefix, so the per-tool
-// maps key off "save_issue", not "linear__save_issue". Mirrors tool-label.ts.
-const operation = (toolName: string): string =>
-  toolName.split("__").at(-1) ?? toolName;
-
-/** Humanized verb for a tool-call chip (thin wrapper so both paths share one humanizer). */
-export const toolActionLabel = (toolName: string): string => toolLabel(toolName);
 
 // --- parameter: a readable summary of the tool INPUT ------------------------
 
@@ -74,7 +67,7 @@ export const toolActionParameter = (
   toolName: string,
   input: unknown,
 ): string => {
-  const formatter = PARAMETER_FORMATTERS[operation(toolName)];
+  const formatter = PARAMETER_FORMATTERS[toolOperation(toolName)];
   const formatted = formatter?.(isPlainObject(input) ? input : {});
   // ponytail: unknown/MCP tools fall back to truncated JSON of the input;
   // add a per-tool formatter above if one reads badly.
@@ -119,7 +112,7 @@ const bashResult = (output: unknown): string => {
 };
 
 const rawResult = (toolName: string, output: unknown): string => {
-  const op = operation(toolName);
+  const op = toolOperation(toolName);
   if (op === "bash") return bashResult(output);
   if (op === "write_file") return "wrote";
   if (op === "load_skill") return "loaded";
