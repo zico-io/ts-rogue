@@ -634,3 +634,88 @@ describe("multi-member party (ROG-20)", () => {
     expect(fled?.party.find((m) => m.id === memberB.id)?.mp).toBe(memberB.mp);
   });
 });
+
+/* -------------------------------------------------------------------------- */
+/* ENG-21: Status effect application & element on hit                        */
+/* -------------------------------------------------------------------------- */
+
+describe("ENG-21 status effects and element on hit", () => {
+  it("a monster attack with attackApplies attaches poison on a successful roll", () => {
+    // Seed 1 with a slime enemy: after the hero defends (no RNG consumed),
+    // the slime attacks and the RNG sequence produces a hit + poison proc.
+    const slime = makeEnemy("slime-1", "slime", "Slime", 12, SLIME_STATS, 5, 5);
+    const state = stateInBattle(1, slime);
+    const after = reduce(state, { type: "BattleDefend" });
+
+    const effects = after.party[0].effects ?? [];
+    expect(effects.length).toBeGreaterThanOrEqual(1);
+    const poison = effects.find((e) => e.effectId === "poison");
+    expect(poison).toBeDefined();
+    expect(poison?.duration).toBe(3);
+    expect(poison?.potency).toBe(1);
+  });
+
+  it("a water-flavored skill (frost) applies wet on the target", () => {
+    // Wizard has frost (element: "ice", applies wet on hit).
+    const wizard = createStartingHero("wizard", "hero-1", "Wizard");
+    const fatSlime = makeEnemy(
+      "slime-1",
+      "slime",
+      "Slime",
+      999,
+      SLIME_STATS,
+      5,
+      5,
+    );
+    // Seed 2 produces a successful wet application.
+    const state = stateInBattle(2, fatSlime, wizard);
+    const after = reduce(state, {
+      type: "BattleSkill",
+      skillId: "frost",
+      targetId: "slime-1",
+    });
+
+    // The slime should survive and have the wet effect.
+    const enemy = after.battleState?.enemies[0];
+    expect(enemy).toBeDefined();
+    expect(enemy?.hp).toBeGreaterThan(0);
+    const effects = enemy?.effects ?? [];
+    const wet = effects.find((e) => e.effectId === "wet");
+    expect(wet).toBeDefined();
+    expect(wet?.duration).toBe(3);
+    expect(wet?.potency).toBe(1);
+  });
+
+  it("a fire-element skill is distinguishable from a physical attack in the log", () => {
+    const slime = makeEnemy(
+      "slime-1",
+      "slime",
+      "Slime",
+      999,
+      SLIME_STATS,
+      5,
+      5,
+    );
+    const state = stateInBattle(1, slime);
+
+    // Flame has element: "fire" (set in skills.ts ENG-21).
+    const flameState = reduce(state, {
+      type: "BattleSkill",
+      skillId: "flame",
+      targetId: "slime-1",
+    });
+
+    // The log for the flame attack should contain "(fire)".
+    const fireHits = flameState.log.filter((l) => l.text.includes("(fire)"));
+    expect(fireHits.length).toBeGreaterThanOrEqual(1);
+    expect(fireHits[0].kind).toBe("damage");
+
+    // A basic attack (physical, no element tag) should NOT have "(fire)".
+    const basicState = reduce(stateInBattle(1, slime), {
+      type: "BattleAttack",
+      targetId: "slime-1",
+    });
+    const fireInBasic = basicState.log.filter((l) => l.text.includes("(fire)"));
+    expect(fireInBasic.length).toBe(0);
+  });
+});

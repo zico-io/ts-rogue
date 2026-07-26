@@ -28,6 +28,10 @@
  * party at the village with a gold penalty (default) or ends the run with a
  * terminal game-over flag (permadeath). A boss victory also marks the dungeon
  * cleared so the player knows it is safe to leave.
+ *
+ * ENG-21: skill elements are now carried through resolution output (log text)
+ * and status effects from `skill.applies` / monster `attackApplies` are rolled
+ * on hit and attached to the target as `EffectInstance` objects.
  */
 
 import { DEFAULT_CLASS_ID, findClass } from "../../data/classes";
@@ -54,6 +58,7 @@ import {
 } from "../world/overworld";
 import type { DungeonState, WorldState } from "../world/types";
 import { findSkill, type SkillDef } from "./skills";
+import type { EffectInstance } from "./statusEffects";
 import type {
   BattleEnemy,
   BattleEvent,
@@ -444,6 +449,17 @@ interface MemberActionResult {
   fled: boolean;
 }
 
+/** Push an `EffectInstance` onto `target.effects`, lazy-initialising if needed. */
+function applyEffect(
+  target: BattleEnemy | PartyMember,
+  effectId: string,
+  duration: number,
+  potency: number,
+): void {
+  target.effects = target.effects ?? [];
+  target.effects.push({ effectId, duration, potency } as EffectInstance);
+}
+
 /**
  * Execute the player's chosen command for `actor`. `actor` is a reference into
  * the mutable `party` working array, so mutating `actor.hp`/`actor.mp`
@@ -512,14 +528,29 @@ function applyMemberCommand(
             ),
           );
           target.hp = Math.max(0, target.hp - damage);
+
+          // Build the log line with element tag if the skill carries one.
+          const elementTag =
+            skill.element && skill.element !== "physical"
+              ? ` (${skill.element})`
+              : "";
           logs.push(
             entry(
-              `${actor.name} casts ${skill.name} on ${target.name} for ${damage}!`,
+              `${actor.name} casts ${skill.name} on ${target.name} for ${damage}${elementTag}!`,
               "damage",
             ),
           );
           if (target.hp === 0)
             logs.push(entry(`${target.name} is defeated!`, "damage"));
+
+          // Roll each applicable status effect on hit.
+          if (skill.applies) {
+            for (const app of skill.applies) {
+              if (rng.next() < app.chance) {
+                applyEffect(target, app.effectId, app.duration, 1);
+              }
+            }
+          }
         }
       } else {
         // Heal skills always target the caster (self). Ally targeting is
@@ -583,6 +614,9 @@ interface AdvanceResult {
  * down (lost). Enemies auto-attack a randomly chosen living party member each
  * time they come up, spreading damage across the party. `party` and `enemies`
  * are mutable working copies; HP is mutated in place.
+ *
+ * ENG-21: enemy attacks now read the monster's `attackElement` and
+ * `attackApplies` from the definition and apply status effects on hit.
  */
 function advanceRound(
   initiative: readonly string[],
@@ -617,18 +651,39 @@ function advanceRound(
       effectiveStats(target),
       defendingIds.has(target.id),
     );
+
+    // Look up the monster definition for element and applies data.
+    const monsterDef = findMonster(enemy.defId);
+    const attackElement = monsterDef?.attackElement;
+    const attackApplies = monsterDef?.attackApplies;
+
     if (!attack.hit) {
       logs.push(
         entry(`${enemy.name} attacks ${target.name} but misses!`, "damage"),
       );
     } else {
       target.hp = Math.max(0, target.hp - attack.damage);
+
+      const elementTag =
+        attackElement && attackElement !== "physical"
+          ? ` (${attackElement})`
+          : "";
       logs.push(
         entry(
-          `${enemy.name} hits ${target.name} for ${attack.damage}${attack.crit ? " - crit!" : ""}`,
+          `${enemy.name} hits ${target.name} for ${attack.damage}${elementTag}${attack.crit ? " - crit!" : ""}`,
           "damage",
         ),
       );
+
+      // Roll each applicable status effect on hit.
+      if (attackApplies) {
+        for (const app of attackApplies) {
+          if (rng.next() < app.chance) {
+            applyEffect(target, app.effectId, app.duration, 1);
+          }
+        }
+      }
+
       if (party.every((m) => m.hp <= 0)) {
         return { status: "lost", nextActorId: null };
       }

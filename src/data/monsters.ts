@@ -23,8 +23,10 @@
  * optional `attackElement` (defaults to `physical` when omitted) and an
  * optional `attackApplies` list of status effects it may inflict on hit.
  * Resolution wiring that reads either field is out of scope for ENG-10.
+ *
+ * ENG-21: the slime now has `attackApplies` with a poison effect so its
+ * basic attack can poison the target on a successful roll.
  */
-
 import type { AppliedEffect, Element } from "../engine/combat/statusEffects";
 
 export interface MonsterStats {
@@ -91,6 +93,7 @@ export const MONSTERS: readonly MonsterDef[] = [
       "   ~-.________.-~",
     ],
     color: "#53c09f",
+    attackApplies: [{ effectId: "poison", chance: 0.3, duration: 3 }],
   },
   {
     id: "goblin",
