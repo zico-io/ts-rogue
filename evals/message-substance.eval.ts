@@ -24,8 +24,7 @@ const PROCESS_RECITAL =
 const isSessionUpdate = (toolName: string) =>
   toolName.endsWith("session_update");
 
-const isTodoTool = (toolName: string) =>
-  toolName === "todo" || toolName.endsWith("todo");
+const isTodoTool = (toolName: string) => toolName.endsWith("todo");
 
 export default defineEval({
   description:
