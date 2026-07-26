@@ -41,35 +41,19 @@ const MIGRATIONS = [
   "CREATE INDEX IF NOT EXISTS memories_category_idx ON memories (category)",
 ];
 
-const MEMORY_COLUMNS = [
-  "key",
-  "value",
-  "category",
-  "source",
-  "created_at",
-  "updated_at",
-] as const;
-
-/** Reads and validates one text column from a query result row. */
-function readTextColumn(row: Row, column: (typeof MEMORY_COLUMNS)[number]): string {
-  const value = row[column];
-  if (typeof value !== "string") {
-    throw new Error(
-      `memory-store: expected column "${column}" to be text, got ${typeof value}`,
-    );
-  }
-  return value;
-}
-
 function rowToMemory(row: Row): Memory {
-  return {
-    key: readTextColumn(row, "key"),
-    value: readTextColumn(row, "value"),
-    category: readTextColumn(row, "category"),
-    source: readTextColumn(row, "source"),
-    createdAt: readTextColumn(row, "created_at"),
-    updatedAt: readTextColumn(row, "updated_at"),
-  };
+  const { key, value, category, source, created_at, updated_at } = row;
+  if (
+    typeof key !== "string" ||
+    typeof value !== "string" ||
+    typeof category !== "string" ||
+    typeof source !== "string" ||
+    typeof created_at !== "string" ||
+    typeof updated_at !== "string"
+  ) {
+    throw new Error("memory-store: expected all memories columns to be text");
+  }
+  return { key, value, category, source, createdAt: created_at, updatedAt: updated_at };
 }
 
 /** Produces a connected libSQL client. Called fresh for every store operation. */
