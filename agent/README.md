@@ -404,8 +404,8 @@ turn's review context (PR number, diff-fetch commands, the two lenses, the
 posting endpoint/JSON) as the subagent's `message` and relaying nothing else
 back. `channels/github.ts`'s `onPullRequest` is unchanged - it still builds
 that context string and dispatches a review-only turn exactly as before;
-only what the root *does* with that turn changed. This is what unlocks a
-Workflow fan-out reviewing several open pull requests in parallel
+only what the root *does* with that turn changed. This is what enables a
+Workflow fan-out reviewing several open pull requests in parallel (documented in `instructions.md`'s Delegation section, guarded by `evals/delegation/workflow-parallel-fanout.eval.ts`)
 (`Promise.all(prs.map((n) => tools.reviewer({ message: ... })))`), which a
 bare copy of the root (the built-in `agent` tool) cannot do on its own since
 every copy carries the full root contract instead of a lean review-only one.
