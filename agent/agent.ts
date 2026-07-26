@@ -11,13 +11,11 @@ export default defineAgent({
   //
   // There is no separate cheap "coding worker" model any more: substantive
   // implementation is delegated to the declared `coder` subagent
-  // (agent/subagents/coder/, its own sandbox + `reasoning: "none"` deepseek),
+  // (agent/subagents/coder/, its own sandbox, anthropic/claude-haiku-4.5),
   // and the built-in `agent` tool's quick same-sandbox mechanical work just
   // runs this same orchestrator model. This replaces the old dynamic
   // `codingWorkerModel`, which swapped deepseek onto the built-in coding child
-  // before the `coder` subagent existed - a redundant second coding path whose
-  // deepseek reasoning stream also tripped the AI-Gateway crash the coder
-  // subagent now avoids.
+  // before the `coder` subagent existed.
   //
   // EVE_EVAL_MOCK_MODEL swaps in the scripted delegation fixture (eve's docs
   // prescribe a dedicated fixture agent; this repo has one agent, so an env

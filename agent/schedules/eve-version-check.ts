@@ -11,18 +11,24 @@ export default defineSchedule({
 There is no Linear Agent Session. Skip orientation, sizing, delegation, and
 session_update entirely. You cannot wait for input: finish or stop.
 
-1. Gate. In one batch run \`npm view eve version\`, read the \`eve\` version in
-   \`package.json\`, and run
+1. Gate. In one batch run \`npm view eve version\`, read the \`eve\` version
+   from the \`catalog\` block in \`pnpm-workspace.yaml\` (the single source of
+   truth both \`package.json\` and \`src/web/package.json\` reference as
+   \`catalog:\`), and run
    \`gh pr list --state open --json number,title,headRefName\`. If the
-   published version equals the installed range's version, or any open PR's
+   published version equals the catalog range's version, or any open PR's
    \`headRefName\` starts with \`eve-bump-\`, stop with no output.
 
-2. Bump, then read. Create branch \`eve-bump-<new-version>\` off \`main\`. Run
-   \`pnpm add -w eve@latest\` and resolve any peer-range warnings it prints
-   (eve's peer ranges can force bumps of \`ai\` and similar). Only after the
-   install, read \`node_modules/eve/CHANGELOG.md\` - it only ever contains the
-   installed version's entries - and collect every entry strictly newer than
-   the previous version.
+2. Bump, then read. Create branch \`eve-bump-<new-version>\` off \`main\`.
+   Update \`catalog.eve\` in \`pnpm-workspace.yaml\` to \`^<new-version>\` and
+   run \`pnpm install\` - this moves the root and \`src/web\` together, since
+   both resolve eve through the catalog; keeping them on one version matters
+   because \`src/web\` is what builds the agent as a nested Vercel service.
+   Resolve any peer-range warnings it prints (eve's peer ranges can force
+   bumps of \`ai\` and similar). Only after the install, read
+   \`node_modules/eve/CHANGELOG.md\` - it only ever contains the installed
+   version's entries - and collect every entry strictly newer than the
+   previous version.
 
 3. Evaluate. Judge each entry on two axes: (a) breaking or removed APIs this
    repo calls (grep before assuming), and (b) features that could retire a

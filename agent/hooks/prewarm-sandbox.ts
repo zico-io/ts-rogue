@@ -41,8 +41,9 @@ import { mintFreshPolicy } from "../sandbox/sandbox";
 // call would await anyway, so awaiting adds no new wedge risk. This is a
 // last-resort heal on top of onSession's (now widened) startup mint; a single
 // subagent turn that outlives the GitHub token TTL (~1h) still has no mid-turn
-// heal (rare now that the coder no longer crash-loops - see agent/agent.ts and
-// the coder's `reasoning: "none"`).
+// heal (rare now that the coder no longer crash-loops - the deepseek stream
+// desync behind those replays is gone with the model swap to Haiku, see
+// agent/subagents/coder/agent.ts).
 export default defineHook({
   events: {
     async "turn.started"(_event, ctx) {
