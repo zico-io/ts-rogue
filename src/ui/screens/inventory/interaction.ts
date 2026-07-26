@@ -15,22 +15,38 @@
  * explicit empty state. The consumables section shares the gear section's
  * `memberIndex` (the party-member switcher) as its heal target, so
  * Left/Right picks who a potion goes to no matter which section is open.
+ *
+ * ENG-19 adds the loot filter settings pane: a cursor-driven editor that
+ * reads `GameState.lootFilter` from context and dispatches `SetLootFilter`
+ * on every value change (Enter/Left/Right cycles the selected row's value).
  */
 
 import type { InventoryItem } from "../../../engine/entities/party";
 import type { EquipmentSlotName } from "../../../engine/loot/equipment";
 import { itemBaseSlot, itemSellPrice } from "../../../engine/loot/items";
-import { type ItemInstance, RARITY_ORDER } from "../../../engine/loot/types";
+import type { LootFilterRules } from "../../../engine/loot/lootFilter";
+import {
+  type ItemInstance,
+  type ItemStat,
+  RARITY_ORDER,
+  type Rarity,
+} from "../../../engine/loot/types";
 import type { Intent, Keymap, KeyName } from "../../scene/input";
 import type { PackEntry } from "../village/interaction";
 
-export type InventorySection = "gear" | "consumables" | "currency" | "quest";
+export type InventorySection =
+  | "gear"
+  | "consumables"
+  | "currency"
+  | "quest"
+  | "filter";
 
 const SECTIONS: readonly InventorySection[] = [
   "gear",
   "consumables",
   "currency",
   "quest",
+  "filter",
 ];
 
 /** Backpack sort keys, cycled by `cycleSort` (Tab-adjacent, see keymap below). */
@@ -89,6 +105,118 @@ function cycleIndex(current: number, delta: -1 | 1, length: number): number {
   return (current + delta + length) % length;
 }
 
+/**
+ * Cycle a value through an ordered list, wrapping at both ends. `delta` is
+ * 1 for forward, -1 for backward. Used by the filter pane's setting rows.
+ */
+function cycleValue<T>(values: readonly T[], current: T, delta: -1 | 1): T {
+  const idx = values.indexOf(current);
+  if (idx === -1) return values[0];
+  return values[(idx + delta + values.length) % values.length];
+}
+
+// ---------------------------------------------------------------------------
+// Filter pane constants and helpers (ENG-19)
+// ---------------------------------------------------------------------------
+
+/** Number of cursor-addressable rows in the filter settings pane. */
+export const FILTER_ROW_COUNT = 8;
+
+/** The rarities a tier row can cycle through, plus `undefined` for "no floor". */
+const RARITY_VALUES: readonly (Rarity | undefined)[] = [
+  undefined,
+  "common",
+  "magic",
+  "rare",
+  "unique",
+];
+
+/** The ilvl-offset values a row can cycle through, plus `undefined` for "not configured". */
+const ILVL_OFFSET_VALUES: readonly (number | undefined)[] = [
+  undefined,
+  -5,
+  -3,
+  0,
+  3,
+  5,
+  10,
+];
+
+/**
+ * All 4 `ItemStat` values in a stable order matching the cursor rows.
+ * Row 4-7 map to these indices: str, agi, vit, int.
+ */
+export const ALL_STATS: readonly ItemStat[] = ["str", "agi", "vit", "int"];
+
+/** Row 0/1/2 -> tier 1/2/3 (tier 3 represents "tier 3+"); other rows -> undefined. */
+const TIER_BY_ROW = [1, 2, 3] as const;
+
+/**
+ * Returns the dungeon tier key for a given filter row index.
+ * Row 0 -> tier 1, row 1 -> tier 2, row 2 -> tier 3+ (represented as key 3).
+ */
+function tierForFilterRow(row: number): number | undefined {
+  return TIER_BY_ROW[row];
+}
+
+/**
+ * Returns the `ItemStat` for a given affix-toggle row index.
+ * Row 4 -> str, row 5 -> agi, row 6 -> vit, row 7 -> int.
+ */
+function statForFilterRow(row: number): ItemStat | undefined {
+  const index = row - 4;
+  if (index >= 0 && index < ALL_STATS.length) return ALL_STATS[index];
+  return undefined;
+}
+
+/**
+ * Build a new `LootFilterRules` from the current filter and a single row
+ * change. `cursor` tells us which row was activated; `delta` is 1 for
+ * forward/cycle/toggle and -1 for backward cycle. Returns the full rules
+ * object suitable for dispatching as `SetLootFilter`.
+ */
+export function cycleFilterRow(
+  current: LootFilterRules,
+  cursor: number,
+  delta: -1 | 1,
+): LootFilterRules {
+  // Rarity-tier rows (0-2)
+  const tier = tierForFilterRow(cursor);
+  if (tier !== undefined) {
+    const currentRarity = current.minRarityByTier[tier];
+    const nextRarity = cycleValue(RARITY_VALUES, currentRarity, delta);
+    const nextMap = { ...current.minRarityByTier };
+    if (nextRarity === undefined) {
+      delete nextMap[tier];
+    } else {
+      nextMap[tier] = nextRarity;
+    }
+    return { ...current, minRarityByTier: nextMap };
+  }
+
+  // Ilvl-offset row (3)
+  if (cursor === 3) {
+    const nextOffset = cycleValue(
+      ILVL_OFFSET_VALUES,
+      current.minIlvlOffset,
+      delta,
+    );
+    return { ...current, minIlvlOffset: nextOffset };
+  }
+
+  // Affix-toggle rows (4-7)
+  const stat = statForFilterRow(cursor);
+  if (stat !== undefined) {
+    const has = current.keepAffixStats.includes(stat);
+    const nextStats = has
+      ? current.keepAffixStats.filter((s) => s !== stat)
+      : [...current.keepAffixStats, stat];
+    return { ...current, keepAffixStats: nextStats };
+  }
+
+  return current;
+}
+
 export interface InventoryUiState {
   section: InventorySection;
   memberIndex: number;
@@ -98,6 +226,8 @@ export interface InventoryUiState {
   inspecting: boolean;
   /** Cursor into the consumables section's item list (ENG-4). */
   consumableCursor: number;
+  /** Cursor into the filter settings pane's row list (ENG-19). */
+  filterCursor: number;
 }
 
 export const INITIAL_INVENTORY_UI_STATE: InventoryUiState = {
@@ -107,6 +237,7 @@ export const INITIAL_INVENTORY_UI_STATE: InventoryUiState = {
   sortKey: "rarity",
   inspecting: false,
   consumableCursor: 0,
+  filterCursor: 0,
 };
 
 export interface InventoryUiContext {
@@ -116,13 +247,16 @@ export interface InventoryUiContext {
   packEntries: readonly PackEntry[];
   /** The consumables section's owned stacks (ENG-4). */
   consumables: readonly InventoryItem[];
+  /** The current loot filter rules, read from GameState (ENG-19). */
+  lootFilter: LootFilterRules;
 }
 
 export type InventoryUiEffect =
   | { type: "equip"; instanceId: string; memberId: string }
   | { type: "unequip"; slot: EquipmentSlotName; memberId: string }
   | { type: "useItem"; itemId: string; memberId: string }
-  | { type: "back" };
+  | { type: "back" }
+  | { type: "setLootFilter"; rules: LootFilterRules };
 
 export interface InventoryUiResult {
   state: InventoryUiState;
@@ -164,6 +298,17 @@ const inventoryConsumablesKeymap: Keymap = {
   "char:u": { kind: "useItem" },
 };
 
+// Filter-pane bindings (ENG-19). Up/down move the row cursor; Enter/Left/Right
+// cycle the selected row's value. Tab and Escape fall through to common.
+const inventoryFilterKeymap: Keymap = {
+  ...inventoryCommonKeymap,
+  up: { kind: "menuUp" },
+  down: { kind: "menuDown" },
+  left: { kind: "menuLeft" },
+  right: { kind: "menuRight" },
+  enter: { kind: "confirm" },
+};
+
 /** Resolves the `Intent` for a key press on the inventory screen, given its current section. */
 export function resolveInventoryIntent(
   section: InventorySection,
@@ -171,6 +316,7 @@ export function resolveInventoryIntent(
 ): Intent | undefined {
   if (section === "gear") return inventoryGearKeymap[key];
   if (section === "consumables") return inventoryConsumablesKeymap[key];
+  if (section === "filter") return inventoryFilterKeymap[key];
   return inventoryCommonKeymap[key];
 }
 
@@ -189,6 +335,7 @@ export function reduceInventoryUi(
         section: SECTIONS[nextIndex],
         packCursor: 0,
         consumableCursor: 0,
+        filterCursor: 0,
         inspecting: false,
       },
     };
@@ -254,6 +401,40 @@ export function reduceInventoryUi(
           itemId: selected.itemId,
           memberId: ctx.memberId,
         },
+      };
+    }
+    return { state };
+  }
+
+  // Filter section (ENG-19): up/down move cursor, Enter/Left/Right cycle
+  // the value at the cursor position and dispatch the updated rules.
+  if (state.section === "filter") {
+    if (intent.kind === "menuUp") {
+      return {
+        state: {
+          ...state,
+          filterCursor: cycleIndex(state.filterCursor, -1, FILTER_ROW_COUNT),
+        },
+      };
+    }
+    if (intent.kind === "menuDown") {
+      return {
+        state: {
+          ...state,
+          filterCursor: cycleIndex(state.filterCursor, 1, FILTER_ROW_COUNT),
+        },
+      };
+    }
+    if (
+      intent.kind === "confirm" ||
+      intent.kind === "menuLeft" ||
+      intent.kind === "menuRight"
+    ) {
+      const delta = intent.kind === "menuLeft" ? -1 : 1;
+      const rules = cycleFilterRow(ctx.lootFilter, state.filterCursor, delta);
+      return {
+        state,
+        effect: { type: "setLootFilter", rules },
       };
     }
     return { state };

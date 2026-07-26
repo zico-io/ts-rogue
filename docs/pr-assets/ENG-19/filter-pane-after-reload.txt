@@ -1,0 +1,16 @@
+Terminal frame: Inventory screen, Filter pane, after save + reload (values survive)
+
+┌─ Inventory - Loot Filter ──────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Minimum Rarity by Tier                                                                                                         │
+│ > Tier 1: magic                                                                                                                │
+│   Tier 2: none                                                                                                                 │
+│   Tier 3+: none                                                                                                                │
+│ Item Level Offset                                                                                                              │
+│   Min ilvl vs party: -5                                                                                                        │
+│ Keep Affix Types                                                                                                               │
+│   str: yes                                                                                                                     │
+│   agi: no                                                                                                                      │
+│   vit: no                                                                                                                      │
+│   int: no                                                                                                                      │
+│                                                                                                                                │
+│ Row 1/8 - Enter/Left/Right changes value                                                                                       │

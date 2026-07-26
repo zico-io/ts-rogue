@@ -11,12 +11,15 @@ import {
   itemSellPrice,
   itemStatLine,
 } from "../../engine/loot/items";
-import type { ItemInstance } from "../../engine/loot/types";
+import type { LootFilterRules } from "../../engine/loot/lootFilter";
+import type { ItemInstance, Rarity } from "../../engine/loot/types";
 import type { GameEvent, GameState } from "../../engine/state/types";
 import { Screen } from "../components/Screen";
 import { normalizeInkKey } from "../hooks/normalizeInkKey";
 import { theme } from "../theme";
 import {
+  ALL_STATS,
+  FILTER_ROW_COUNT,
   INITIAL_INVENTORY_UI_STATE,
   type InventorySection,
   type InventoryUiState,
@@ -43,22 +46,23 @@ const SECTION_LABEL: Record<InventorySection, string> = {
   consumables: "Consumables",
   currency: "Currency",
   quest: "Quest Items",
+  filter: "Loot Filter",
 };
 
 /**
  * The dedicated Inventory screen (ENG-3, workstream 1 of the ENG-2
  * inventory-system epic; ENG-4 adds field consumable use): the canonical
- * place to browse gear, consumables, currency, and (eventually) quest
- * items, to inspect/compare/equip gear for any party member, and to drink a
- * potion outside battle. Opened from anywhere outside battle via `char:v`
- * (see `app.tsx`'s `inventoryOpen` state, mirroring `ZoomScreen`'s overlay
- * pattern). Tab cycles the four sections; the gear section reuses
- * `village/interaction.ts`'s pack-row/compare building blocks (also used by
- * `StoreView`, which is now sell-only) rather than duplicating them. The
- * section/sort/inspect/member-index/consumable-cursor state machine lives
- * in the pure `reduceInventoryUi`; this component only normalizes Ink's
- * input, resolves an intent, applies the result, and dispatches the mapped
- * event.
+ * place to browse gear, consumables, currency, and quest items, to
+ * inspect/compare/equip gear for any party member, to drink a potion outside
+ * battle, and (ENG-19) to edit loot filter rules. Opened from anywhere
+ * outside battle via `char:v` (see `app.tsx`'s `inventoryOpen` state,
+ * mirroring `ZoomScreen`'s overlay pattern). Tab cycles the five sections;
+ * the gear section reuses `village/interaction.ts`'s pack-row/compare
+ * building blocks (also used by `StoreView`, which is now sell-only) rather
+ * than duplicating them. The section/sort/inspect/member-index/consumable-
+ * cursor/filter-cursor state machine lives in the pure `reduceInventoryUi`;
+ * this component only normalizes Ink's input, resolves an intent, applies
+ * the result, and dispatches the mapped event.
  */
 export function InventoryScreen({
   state,
@@ -96,6 +100,7 @@ export function InventoryScreen({
       memberId: member.id,
       packEntries,
       consumables: state.inventory,
+      lootFilter: state.lootFilter,
     });
 
     switch (result.effect?.type) {
@@ -120,6 +125,12 @@ export function InventoryScreen({
           memberId: result.effect.memberId,
         });
         break;
+      case "setLootFilter":
+        dispatch({
+          type: "SetLootFilter",
+          rules: result.effect.rules,
+        });
+        break;
       case "back":
         onClose();
         break;
@@ -137,7 +148,9 @@ export function InventoryScreen({
       ? `Up/down to select, Enter to inspect, e to equip, u to unequip, r to cycle sort (${inventoryUi.sortKey}), Tab for next section, Esc to close.${switchHint}`
       : inventoryUi.section === "consumables"
         ? `Up/down to select, u to use on target, Tab for next section, Esc to close.${switchHint}`
-        : "Tab for next section, Esc to close.";
+        : inventoryUi.section === "filter"
+          ? "Up/down to select a rule, Enter/Left/Right to change value, Tab for next section, Esc to close."
+          : "Tab for next section, Esc to close.";
 
   return (
     <Screen
@@ -167,6 +180,12 @@ export function InventoryScreen({
           <CurrencySection gold={state.gold} />
         )}
         {inventoryUi.section === "quest" && <QuestSection />}
+        {inventoryUi.section === "filter" && (
+          <FilterSettingsSection
+            rules={state.lootFilter}
+            cursor={inventoryUi.filterCursor}
+          />
+        )}
       </Box>
     </Screen>
   );
@@ -366,4 +385,98 @@ function CurrencySection({ gold }: CurrencySectionProps) {
 /** Quest items have no backing data model yet - explicit empty state, not a crash. */
 function QuestSection() {
   return <Text color={theme.textMuted}>(no quest items yet)</Text>;
+}
+
+// ---------------------------------------------------------------------------
+// Loot filter settings pane (ENG-19)
+// ---------------------------------------------------------------------------
+
+interface FilterSettingsSectionProps {
+  rules: LootFilterRules;
+  cursor: number;
+}
+
+/**
+ * Renders the loot filter settings pane with 8 cursor-addressable rows:
+ *
+ * 0-2: Minimum rarity per dungeon tier (tier 1, tier 2, tier 3+)
+ * 3:   Minimum ilvl offset vs party level
+ * 4-7: Affix-type keep-list toggles (str, agi, vit, int)
+ *
+ * Up/down cycles the cursor, Enter/Left/Right cycles the selected row's
+ * value (rarity per tier, ilvl offset, or stat toggle). The parent
+ * InventoryScreen dispatches SetLootFilter on every change.
+ */
+function FilterSettingsSection({ rules, cursor }: FilterSettingsSectionProps) {
+  const rarityDisplay = (rarity: Rarity | undefined): string =>
+    rarity ?? "none";
+
+  return (
+    <Box flexDirection="column">
+      <Text>Minimum Rarity by Tier</Text>
+      <FilterRow
+        label="Tier 1"
+        value={rarityDisplay(rules.minRarityByTier[1])}
+        active={cursor === 0}
+      />
+      <FilterRow
+        label="Tier 2"
+        value={rarityDisplay(rules.minRarityByTier[2])}
+        active={cursor === 1}
+      />
+      <FilterRow
+        label="Tier 3+"
+        value={rarityDisplay(rules.minRarityByTier[3])}
+        active={cursor === 2}
+      />
+
+      <Text>Item Level Offset</Text>
+      <FilterRow
+        label="Min ilvl vs party"
+        value={
+          rules.minIlvlOffset !== undefined
+            ? `${rules.minIlvlOffset >= 0 ? "+" : ""}${rules.minIlvlOffset}`
+            : "none"
+        }
+        active={cursor === 3}
+      />
+
+      <Text>Keep Affix Types</Text>
+      {ALL_STATS.map((stat, index) => {
+        const row = index + 4;
+        const enabled = rules.keepAffixStats.includes(stat);
+        return (
+          <FilterRow
+            key={stat}
+            label={stat}
+            value={enabled ? "yes" : "no"}
+            active={cursor === row}
+          />
+        );
+      })}
+
+      <Box marginTop={1}>
+        <Text color={theme.textMuted}>
+          Row {cursor + 1}/{FILTER_ROW_COUNT} - Enter/Left/Right changes value
+        </Text>
+      </Box>
+    </Box>
+  );
+}
+
+interface FilterRowProps {
+  label: string;
+  value: string;
+  active: boolean;
+}
+
+function FilterRow({ label, value, active }: FilterRowProps) {
+  return (
+    <Box flexDirection="row">
+      <Text color={active ? theme.accent : theme.text}>
+        {active ? "> " : "  "}
+        {label}: {value}
+      </Text>
+    </Box>
+  );
 }
