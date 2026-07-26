@@ -92,6 +92,22 @@ describe("listLiveAgentSessions staleness", () => {
     expect(live).toEqual([]);
   });
 
+  it("excludes mirror sessions so they never block a handoff or the guard", async () => {
+    const live = await list([
+      { id: "real", status: "active", createdAt: FRESH, url: null },
+      {
+        id: "mirror",
+        status: "active",
+        createdAt: FRESH,
+        url: null,
+        externalLinks: [
+          { label: "eve-subagent-mirror", url: "https://eve.internal/x" },
+        ],
+      },
+    ]);
+    expect(live.map((s) => s.id)).toEqual(["real"]);
+  });
+
   it("exposes a 30-minute threshold", () => {
     expect(STALE_SESSION_MS).toBe(30 * 60 * 1000);
   });

@@ -3,12 +3,21 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // The hook fires inside the delegated child (a copy of the root agent). These
 // mocks stand in for the eve runtime scope so the handlers can be driven and
 // their Linear posts asserted without a live session.
-const { createActivity, stateBox } = vi.hoisted(() => ({
+const { createActivity, createMirror, graphql, stateBox } = vi.hoisted(() => ({
   // biome-ignore lint/suspicious/noExplicitAny: mock captures the Linear activity payload
   createActivity: vi.fn(async (_input: any) => ({})),
+  // biome-ignore lint/suspicious/noExplicitAny: mirror-session create mock
+  createMirror: vi.fn(async (_input: any) => ({ id: "mirror-1" })),
+  // Defaults to "no issue on the parent session" so mirror creation returns
+  // null and the relay falls back to posting into the parent session - the
+  // behavior every pre-mirror test below asserts. Mirror-path tests override it.
+  // biome-ignore lint/suspicious/noExplicitAny: graphql mock
+  graphql: vi.fn(async (_input: any) => ({}) as any),
   stateBox: {
     value: {
       agentSessionId: null as string | null,
+      mirrorSessionId: null as string | null,
+      mirrorFailed: false,
       issueId: null as string | null,
       sandboxChecked: false,
       warnedDark: false,
@@ -27,6 +36,8 @@ vi.mock("@vercel/connect/eve", () => ({
 }));
 vi.mock("eve/channels/linear", () => ({
   createLinearAgentActivity: (input: unknown) => createActivity(input),
+  createLinearAgentSessionOnIssue: (input: unknown) => createMirror(input),
+  callLinearGraphQL: (input: unknown) => graphql(input),
 }));
 vi.mock("eve/hooks", () => ({ defineHook: (def: unknown) => def }));
 vi.mock("eve/context", () => ({
@@ -42,12 +53,15 @@ vi.mock("eve/context", () => ({
 }));
 
 const { SESSION_ID_FILE } = await import("../agent/hooks/relay");
+const { MIRROR_MARKER } = await import("../agent/lib/mirror-session");
 const events =
   // biome-ignore lint/suspicious/noExplicitAny: driving mocked hook handlers in a test
   (await import("../agent/hooks/relay")).default.events as any;
 
 const freshState = (): RelayState => ({
   agentSessionId: null,
+  mirrorSessionId: null,
+  mirrorFailed: false,
   issueId: null,
   sandboxChecked: false,
   warnedDark: false,
@@ -60,8 +74,8 @@ const makeSandbox = (fileContent = "") => ({
   writeTextFile: vi.fn(async () => {}),
 });
 
-const makeChild = (sandbox = makeSandbox()) => ({
-  session: { parent: { sessionId: "root", callId: "c1" } },
+const makeChild = (sandbox = makeSandbox(), id = "child-1") => ({
+  session: { id, parent: { sessionId: "root", callId: "c1" } },
   channel: {},
   getSandbox: async () => sandbox,
 });
@@ -90,6 +104,13 @@ const contentOf = (call: number) =>
 describe("relay hook", () => {
   beforeEach(() => {
     createActivity.mockClear();
+    // Default: parent session has no readable issue, so mirror creation returns
+    // null and the relay falls back to the parent session. Mirror-path tests
+    // override `graphql`/`createMirror` to make creation succeed.
+    graphql.mockReset();
+    graphql.mockImplementation(async () => ({}));
+    createMirror.mockReset();
+    createMirror.mockImplementation(async () => ({ id: "mirror-1" }));
     stateBox.value = freshState();
     vi.spyOn(console, "warn").mockImplementation(() => {});
   });
@@ -414,5 +435,107 @@ describe("relay hook", () => {
       type: "action",
       result: "Command not found",
     });
+  });
+
+  it("routes a child's stream to its own mirror card, unprefixed, not the parent session", async () => {
+    stateBox.value = {
+      ...freshState(),
+      agentSessionId: "sess-5",
+      issueId: "ROG-1",
+    };
+    graphql.mockResolvedValue({
+      agentSession: { issue: { id: "issue-uuid" } },
+    });
+    createMirror.mockResolvedValue({ id: "mirror-1" });
+
+    await events["actions.requested"](
+      toolCall("edit_file", { path: "src/x.ts" }),
+      makeChild(),
+    );
+
+    // Created on the parent session's issue, tagged with the mirror marker.
+    expect(createMirror).toHaveBeenCalledTimes(1);
+    expect(createMirror.mock.calls[0]?.[0]).toMatchObject({
+      issueId: "issue-uuid",
+      externalUrls: [MIRROR_MARKER],
+    });
+    // Activity lands in the mirror and carries no [issue] prefix (the card is
+    // already per-child) - a parent-session fallback would read "[ROG-1] ...".
+    expect(createActivity.mock.calls[0]?.[0].activity.agentSessionId).toBe(
+      "mirror-1",
+    );
+    expect(contentOf(0).action).toBe("Edit file");
+  });
+
+  it("closes the mirror card with a response on the child's final message", async () => {
+    stateBox.value = { ...freshState(), agentSessionId: "sess-5" };
+    graphql.mockResolvedValue({
+      agentSession: { issue: { id: "issue-uuid" } },
+    });
+
+    await events["message.completed"](
+      { data: { message: "handoff report", finishReason: "stop" } },
+      makeChild(),
+    );
+
+    const activity = createActivity.mock.calls[0]?.[0].activity;
+    expect(activity.agentSessionId).toBe("mirror-1");
+    // A `response` concludes the Linear session, so the card lands "complete".
+    expect(activity.content).toEqual({
+      type: "response",
+      body: "handoff report",
+    });
+    expect(activity.ephemeral).toBeUndefined();
+  });
+
+  it("keeps a child's mid-batch narration ephemeral in the mirror", async () => {
+    stateBox.value = { ...freshState(), agentSessionId: "sess-5" };
+    graphql.mockResolvedValue({
+      agentSession: { issue: { id: "issue-uuid" } },
+    });
+
+    await events["message.completed"](
+      {
+        data: {
+          message: "let me check the callers",
+          finishReason: "tool-calls",
+        },
+      },
+      makeChild(),
+    );
+
+    const activity = createActivity.mock.calls[0]?.[0].activity;
+    expect(activity.agentSessionId).toBe("mirror-1");
+    expect(activity.content).toEqual({
+      type: "thought",
+      body: "let me check the callers",
+    });
+    expect(activity.ephemeral).toBe(true);
+  });
+
+  it("gives up to the parent session (prefixed) and does not retry when the mirror can't be created", async () => {
+    stateBox.value = {
+      ...freshState(),
+      agentSessionId: "sess-5",
+      issueId: "ROG-2",
+    };
+    graphql.mockResolvedValue({}); // no issue on the parent -> creation returns null
+
+    await events["actions.requested"](
+      toolCall("edit_file", { path: "a" }),
+      makeChild(),
+    );
+    await events["reasoning.completed"](
+      { data: { reasoning: "thinking" } },
+      makeChild(),
+    );
+
+    expect(createMirror).not.toHaveBeenCalled();
+    expect(createActivity.mock.calls[0]?.[0].activity.agentSessionId).toBe(
+      "sess-5",
+    );
+    expect(contentOf(0).action).toBe("[ROG-2] Edit file");
+    // mirrorFailed short-circuits the second activity: one lookup, no storm.
+    expect(graphql).toHaveBeenCalledTimes(1);
   });
 });

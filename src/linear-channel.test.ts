@@ -90,6 +90,7 @@ const {
   renderLinearInputRequests,
   updateLinearAgentSession,
 } = await import("eve/channels/linear");
+const { MIRROR_MARKER } = await import("../agent/lib/mirror-session");
 
 // biome-ignore lint/suspicious/noExplicitAny: reaching into the mocked channel shape for tests
 const route = (channel as any).routes[0] as {
@@ -406,7 +407,7 @@ describe("duplicate created-session guard", () => {
     expect(order).toEqual(["cancel", "send", "advance"]);
   });
 
-  it("exempts agent-created sessions (handoff successors) without querying", async () => {
+  it("marker-checks an agent-created session, then dispatches when it is not a mirror", async () => {
     reset();
 
     await invoke({
@@ -418,8 +419,52 @@ describe("duplicate created-session guard", () => {
       },
     });
 
-    expect(callLinearGraphQL).not.toHaveBeenCalled();
+    // App-created sessions are either handoff successors (dispatch) or this
+    // app's own mirror cards (decline); the guard pays one marker lookup to
+    // tell them apart. A non-mirror falls through to dispatch as before.
+    expect(callLinearGraphQL).toHaveBeenCalledTimes(1);
     expect(order).toEqual(["cancel", "send", "advance"]);
+  });
+
+  it("declines an agent-created mirror session (marker on the webhook payload)", async () => {
+    reset();
+
+    await invoke({
+      ...createdEvent,
+      raw: { agentSession: { externalLinks: [MIRROR_MARKER] } },
+      agentSession: {
+        ...agentSession,
+        appUserId: "app-user-1",
+        creatorId: "app-user-1",
+      },
+    });
+
+    // Free path: the marker rides the raw payload, so no GraphQL lookup, and the
+    // mirror card never spins up its own turn.
+    expect(callLinearGraphQL).not.toHaveBeenCalled();
+    expect(cancelMock).not.toHaveBeenCalled();
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+
+  it("declines an agent-created mirror session (marker read back via GraphQL)", async () => {
+    reset();
+    vi.mocked(callLinearGraphQL).mockResolvedValueOnce({
+      agentSession: { externalLinks: [MIRROR_MARKER] },
+    });
+
+    await invoke({
+      ...createdEvent,
+      agentSession: {
+        ...agentSession,
+        appUserId: "app-user-1",
+        creatorId: "app-user-1",
+      },
+    });
+
+    // Fallback path: the webhook lacked externalUrls, so one read confirms the
+    // marker and the mirror session is declined.
+    expect(callLinearGraphQL).toHaveBeenCalledTimes(1);
+    expect(sendMock).not.toHaveBeenCalled();
   });
 
   it("never guards prompted events", async () => {
