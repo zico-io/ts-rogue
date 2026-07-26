@@ -108,7 +108,18 @@ export async function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
 // a couple of quick attempts before conceding that fallback - a single
 // TOKEN_MINT_TIMEOUT_MS window is sometimes too tight for a token service
 // that's merely slow to warm up rather than actually down (see HAR-5).
-export const STARTUP_MINT_ATTEMPTS = 2;
+// A task-mode subagent (e.g. the `coder`) runs as durable workflow steps that
+// suspend between boundaries and resume in fresh processes, so its background
+// keepTokenFresh refresh timer is unref'd and never ticks, and its single
+// `turn.started` prewarm re-mint fires at most once. That makes `onSession`'s
+// startup mint the ONLY reliable auth window it has - a startup blip that
+// concedes the OPEN (unauthenticated) fallback strands the whole session with
+// no push access (the ROG/HAR git-auth incident). So spend a few more attempts
+// here to ride out a transient token-service blip. Only the failing path pays
+// this cost: a healthy mint succeeds on the first attempt in ~1s. The budget
+// stays bounded (attempts * (timeout + gap)) so a genuinely-down service still
+// concedes OPEN in well under a minute rather than hanging session start.
+export const STARTUP_MINT_ATTEMPTS = 4;
 export const STARTUP_MINT_RETRY_GAP_MS = 3 * 1000;
 
 async function mintWithRetries(
@@ -146,7 +157,19 @@ export async function resolveStartupNetworkPolicy(
       policy: await mintWithRetries(mintPolicy, attempts, timeoutMs, gapMs),
       authed: true,
     };
-  } catch {
+  } catch (err) {
+    // Warn, never stay silent: this catch swallowing the mint error is exactly
+    // why a full git-auth outage produced ZERO token/mint log lines and was
+    // undiagnosable (every push failed with "could not read Username" while
+    // the cause - a failed startup mint conceding OPEN - left no trace). The
+    // OPEN fallback behavior is unchanged; only the visibility is added. In
+    // task mode this failure is terminal for the session's push access (no
+    // heal path re-runs - see STARTUP_MINT_ATTEMPTS above), so it warrants a
+    // loud line.
+    console.warn(
+      "resolveStartupNetworkPolicy: GitHub token mint failed after retries; coming up on the unauthenticated OPEN network policy (git push/gh will fail until auth heals):",
+      err instanceof Error ? err.message : err,
+    );
     return { policy: OPEN_NETWORK_POLICY, authed: false };
   }
 }
