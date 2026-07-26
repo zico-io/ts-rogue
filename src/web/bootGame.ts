@@ -540,7 +540,7 @@ export async function bootGame(
         break;
       }
       default: {
-        const options = mainMenuOptions(false);
+        const options = mainMenuOptions(hasSave);
         for (const [index, option] of options.entries()) {
           const selected = index === titleUi.menuCursor;
           lines.push({
