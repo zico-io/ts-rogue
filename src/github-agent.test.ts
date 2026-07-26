@@ -6,6 +6,9 @@ import type {
 import { describe, expect, it } from "vitest";
 
 import {
+  DEBT_ISSUE_LABEL,
+  DEBT_REMEDIATION_THRESHOLD,
+  debtReviewContext,
   isBotMentioned,
   isMainMerge,
   linearRefFromPullRequest,
@@ -377,6 +380,32 @@ describe("GitHub agent events", () => {
   });
 });
 
+it("includes debt-review context on every main-merge dispatch (HAR-18)", () => {
+  const pullRequest = {
+    action: "closed" as const,
+    headSha: "abc",
+    pullRequestNumber: 42,
+    raw: { base: { ref: "main" }, merged: true },
+  };
+
+  const result = onPullRequest(fakeContext("pull_request"), pullRequest);
+
+  expect(result).not.toBeNull();
+  expect(result?.context).toEqual(
+    expect.arrayContaining([
+      expect.stringContaining("#42 in zico-io/ts-rogue"),
+    ]),
+  );
+});
+
+it("debtReviewContext returns a string containing PR number, repo, label, threshold, and turn reference", () => {
+  const result = debtReviewContext(42);
+
+  expect(result).toContain("#42 in zico-io/ts-rogue");
+  expect(result).toContain(DEBT_ISSUE_LABEL);
+  expect(result).toContain(String(DEBT_REMEDIATION_THRESHOLD));
+  expect(result).toContain("PR merge debt-review turns");
+});
 describe("authorization events surface the OAuth challenge (HAR-33)", () => {
   // Without these handlers a user-scoped connection challenge on a
   // GitHub-dispatched turn parks the turn invisibly - the silent merge-wake

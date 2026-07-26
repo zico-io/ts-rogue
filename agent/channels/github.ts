@@ -32,6 +32,16 @@ export const isMainMerge = (pullRequest: GitHubPullRequestEvent) => {
 // would false-positive on tokens like SHA-256 or ISO-8601.
 export const LINEAR_TEAM_KEYS = ["ROG", "ENG", "HAR", "WEB"] as const;
 
+// Label used to track technical-debt issues filed from unresolved review
+// comments on merged pull requests. Created on demand by the debt-review turn.
+export const DEBT_ISSUE_LABEL = "tech-debt";
+
+// Threshold of open debt issues that triggers automated remediation: when the
+// count of open issues carrying DEBT_ISSUE_LABEL reaches this number, the
+// debt-review turn dispatches the coder subagent to fix all of them in one
+// remediation pull request.
+export const DEBT_REMEDIATION_THRESHOLD = 5;
+
 const LINEAR_REF_PATTERN = new RegExp(
   `\\b(?:${LINEAR_TEAM_KEYS.join("|")})-\\d+\\b`,
   "i",
@@ -123,6 +133,41 @@ Post the findings as ONE pull-request review via curl. Each finding's line MUST 
 const REVIEW_FEEDBACK_CONTEXT =
   'Reviewer feedback landed on this pull request (see the comment above). This is a PR review-feedback turn (see "PR review-feedback turns" in the contract): validate it, then either fix the code or reply - nothing else.';
 
+
+// Context for a merge-wake turn to audit unresolved review-comment threads
+// from the merged PR and file GitHub issues for any still-real debt. See
+// "PR merge debt-review turns" in instructions.md for the full contract.
+// Pointed at that section rather than inlining the procedure, matching the
+// pattern ponytailReviewContext and REVIEW_FEEDBACK_CONTEXT already follow.
+export const debtReviewContext = (prNumber: number): string => {
+  return `A merged pull request (#${prNumber} in zico-io/ts-rogue) may carry unresolved review-comment threads. Audit them per the "PR merge debt-review turns" section in the contract.
+
+Label for debt issues: ${DEBT_ISSUE_LABEL}
+Remediation threshold (open issues before auto-fix): ${DEBT_REMEDIATION_THRESHOLD}
+
+Query unresolved review threads via GraphQL (only the GraphQL API exposes thread resolution state; the REST endpoint has no resolved/unresolved field):
+  gh api graphql -f query='
+    query {
+      repository(owner: "zico-io", name: "ts-rogue") {
+        pullRequest(number: ${prNumber}) {
+          reviewThreads(first: 100) {
+            nodes {
+              isResolved
+              comments(first: 1) {
+                nodes {
+                  body
+                  path
+                  line
+                  url
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  '`;
+};
 const escapeRegExp = (value: string) =>
   value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 
@@ -343,11 +388,21 @@ export const onPullRequest = (
 ) => {
   if (isMainMerge(pullRequest)) {
     const ref = linearRefFromPullRequest(pullRequest);
+    const contextEntries = ref
+      ? [MAIN_MERGE_SYNCED, ralphAdvanceContext(ref)]
+      : [MAIN_MERGE_SYNCED];
+    // Every merge to main also wakes a debt-review turn: this context entry
+    // tells the woken turn to audit unresolved review threads and file debt
+    // issues. The webhook handler makes no API call itself - the GraphQL
+    // query runs inside the woken turn (which has gh CLI access). This runs
+    // unconditionally alongside the ralph-advance and main-synced entries
+    // since only the turn can determine whether unresolved threads exist.
+    contextEntries.push(
+      debtReviewContext(pullRequest.pullRequestNumber),
+    );
     return {
       auth: defaultGitHubAuth(context),
-      context: ref
-        ? [MAIN_MERGE_SYNCED, ralphAdvanceContext(ref)]
-        : [MAIN_MERGE_SYNCED],
+      context: contextEntries,
     };
   }
   // Auto ponytail-review on a newly opened / newly ready pull request, and

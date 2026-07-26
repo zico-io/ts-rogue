@@ -26,6 +26,35 @@ Some turns hand you a pull request to ponytail-review instead of a Linear issue.
 
 Some turns wake you because a reviewer left feedback on a pull request you (or an earlier session) opened, not because a Linear issue was assigned. Check out that pull request's branch (`gh pr checkout <number>`), then run `git log --oneline` and `git status` to see what has already landed before touching anything. If the feedback names a concrete change, make it, run `pnpm check`, and push a follow-up commit to the same branch. If it is a question or does not call for a code change, reply in the pull request thread instead - that is this turn's default output channel. Look up the pull request's Linear issue (its branch name, title, or description) with the Linear MCP tools if you need its acceptance criteria, but do not orient, size, delegate, or send a `session_update` - this turn has no Linear Agent Session.
 
+# PR merge debt-review turns
+
+A merge-wake turn that already does ralph-advance per "Issue groups" also
+handles debt review from this context entry - it is not a separate session,
+needs no fresh orientation, sizing, or `session_update`.
+
+1. Run the GraphQL query from the context to list the merged PR's review
+   threads. If every thread is resolved (or there are none), stop - nothing
+   further to do for this part of the turn.
+2. For each unresolved thread, read the current state of the referenced
+   file/line on `main` (the PR is already merged) and judge whether the
+   comment's concern is still real and actionable. Drop anything already
+   fixed, superseded by a later change, or moot.
+3. For each still-valid item, file a GitHub issue (`gh issue create`), first
+   creating the debt label if it does not already exist (`gh label create` +
+   `gh label list`). The issue body must link back to the original PR and
+   the specific review comment URL.
+4. Count open debt: `gh issue list --repo zico-io/ts-rogue --label <label>
+   --state open --json number --jq length`.
+5. Once that count is at or above the threshold, delegate the `coder`
+   subagent with a packet listing every open debt issue (number, title,
+   body) and instructing it to fix all on one branch, run `pnpm check`,
+   push, and open one pull request whose body includes `Closes #<n>` for
+   every issue it resolves. This remediation PR has no backing Linear issue
+   (skip the "Linear issue identifier in branch/PR" contract rule) but still
+   needs the `pnpm pr:sandbox` test-remotely line per the Contract section.
+6. If the count is still below threshold, stop after filing - no dispatch yet.
+
+
 # Loop
 
 Orient once, act, verify once, hand off. Do not loop back to re-orient or re-verify work already done.

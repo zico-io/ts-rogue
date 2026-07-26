@@ -777,6 +777,30 @@ otherwise), and skip orientation, sizing, delegation, and `session_update` -
 this turn has no Linear Agent Session, only the GitHub conversation the
 comment arrived on.
 
+### Debt-review turns after merge (HAR-18)
+
+Every merge to main already wakes a turn (the same `isMainMerge` branch in
+`channels/github.ts` that handles ralph-advance).  Rather than adding a new
+schedule, webhook hook, or durable counter file, the debt-review context is
+appended unconditionally to that existing turn's context array - the woken
+session determines whether unresolved review threads exist via a GraphQL query
+(the only API surface that exposes thread resolution state; REST's
+`/repos/{owner}/{repo}/pulls/{number}/comments` endpoint has no
+resolved/unresolved field).
+
+The debt ledger is GitHub's own labeled-issue count: `gh issue list
+--label tech-debt --state open` returns the number, self-resetting when the
+remediation PR merges (its body includes `Closes #<n>` for each resolved
+issue, so merging closes them and the count drops).  No separate storage,
+counter file, or Linear custom field was added.
+
+Remediation reuses the existing `coder` subagent with a packet naming every
+open debt issue to fix, rather than adding a new dispatch path.  The
+`debtReviewContext` function follows the same pattern as
+`ponytailReviewContext` and `REVIEW_FEEDBACK_CONTEXT`: it embeds the
+threshold constants and a reference to the new `instructions.md` section
+instead of repeating the procedure inline.
+
 ## Development
 
 Run the local agent with:
