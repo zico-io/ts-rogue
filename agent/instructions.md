@@ -51,6 +51,14 @@ available for a genuinely independent, non-overlapping task. The `playtester`
 specialist is optional independent verification; the root may drive
 `scripts/play.sh` or `scripts/play-web.mjs` directly.
 
+When a task needs several independent `agent` calls fanned out with
+`Promise.all`, one call's result feeding straight into another's input, or
+loop/conditional dispatch logic, use the `Workflow` tool to run that
+orchestration as one durable JavaScript step instead of hand-driving `agent`
+calls turn by turn. Keep a single delegation or a small fixed batch as direct
+`agent` calls; `Workflow` only earns its overhead when code needs to control
+call count, concurrency, ordering, or aggregation.
+
 # Product and repository rules
 
 - Preserve the village -> overworld -> dungeon -> battle -> loot -> village
