@@ -646,6 +646,43 @@ human-directed action only - nothing in the sizing gate or ralph mode reaches
 for `save_project` on its own - so it needs no extra approval gate beyond the
 connection's existing `never()`.
 
+### Linear project-workflow skills (HAR-64)
+
+Two load-on-demand skills port Nico's Claude Code Linear workflows into the
+agent: `skills/linear-project-manager/SKILL.md` (scaffold/enrich/audit rich
+projects - milestones as dependency groups, native `blocks`/`blockedBy`
+relations, Decision Log / Meeting Notes documents, DAG verification) and
+`skills/linear-project-update/SKILL.md` (draft and post a project status update
+backed by a 7-day context sweep). Both are procedures over existing tools, so
+skills - not `instructions.md` sections or authored tools - are the right slot:
+eve advertises each skill's `description` and appends its body via the
+framework's `load_skill` tool only when a Linear request matches, keeping the
+always-on prompt lean.
+
+They extend `connections/linear.ts`'s project-content write surface along the
+HAR-47 line. `save_milestone`, `save_document`, and `create_issue_label` are the
+writes the scaffolding procedure needs; `save_status_update` (plus the read
+`get_status_updates`) is what the update skill posts. Each is a project-content
+object exactly as `save_project` is - not an Agent-Session activity - so each
+belongs in the MCP allow-list. In particular a project *status update* is
+Linear's project health feed and flips no session lifecycle state, so it is
+unlike `save_comment` (a session post), which stays out and is routed through
+the authored `session_update`/`handoff` tools. `lib/tool-label.ts` gained a
+friendly label per new write. The connection keeps `approval: never()`: both
+skills are reachable only from an explicit human request and each parks on the
+runtime's `ask_question` for approval before it writes, so no extra gate is
+warranted - the same reasoning as `save_project`.
+
+Two deliberate scope choices (decided with the requester): the update flow is
+**on-demand only** - triggered by a human request, mention, or the Linear
+"Reminder to post update" arriving on the existing Linear channel, with no cron
+schedule - and its context sweep reads **Linear + merged GitHub PRs only**. The
+source skill's Slack and Notion legs are dropped (no connection); the GitHub leg
+runs `gh` inside the agent's sandbox (its own auth) against `zico-io/ts-rogue`,
+never an assumed host `gh`, and is skipped-and-noted on failure rather than
+fatal. The source's stale `brand-voice` cross-reference is replaced with a short
+ts-rogue voice section inline in the skill.
+
 ### Handoff to a fresh session (HAR-12, HAR-15)
 
 HAR-12 asked for eve's own token-quota HITL (a continue/stop prompt raised
