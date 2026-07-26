@@ -1164,6 +1164,113 @@ describe("action.result durable chip promotion (HAR-45)", () => {
     // Only one activity posted total (entry was consumed after first)
     expect(createLinearAgentActivity).toHaveBeenCalledTimes(1);
   });
+
+  // --- HAR-48: subagent-call / subagent-result durable promotion ---
+
+  it("promotes a tracked subagent-call to durable on subagent-result", async () => {
+    // Simulate an actions.requested that stashed a pending entry for a
+    // subagent-call, then the matching action.result fires.
+    await fireActionResult(
+      {
+        status: "completed",
+        result: {
+          kind: "subagent-result",
+          callId: "sub-c1",
+          subagentName: "coder",
+          output: { summary: "Implemented all changes" },
+        },
+      },
+      {
+        "sub-c1": {
+          action: "subagent-call",
+          parameter: "issue: HAR-48 - Add durable subagent_calls action",
+        },
+      },
+    );
+
+    expect(createLinearAgentActivity).toHaveBeenCalledTimes(1);
+    const call = vi.mocked(createLinearAgentActivity).mock.calls[0]?.[0];
+    expect(call.activity.ephemeral).toBeUndefined();
+    expect(call.activity.content).toEqual({
+      type: "action",
+      action: "subagent-call",
+      parameter: "issue: HAR-48 - Add durable subagent_calls action",
+      result: JSON.stringify({ summary: "Implemented all changes" }),
+    });
+  });
+
+  it("promotes a remote-agent-call request followed by subagent-result to durable", async () => {
+    await fireActionResult(
+      {
+        status: "completed",
+        result: {
+          kind: "subagent-result",
+          callId: "remote-c1",
+          subagentName: "scout",
+          output: { notes: "Found 3 issues" },
+        },
+      },
+      {
+        "remote-c1": {
+          action: "remote-agent-call",
+          parameter: "issue: HAR-47 - Scout the codebase",
+        },
+      },
+    );
+
+    expect(createLinearAgentActivity).toHaveBeenCalledTimes(1);
+    const content = vi.mocked(createLinearAgentActivity).mock.calls[0]?.[0]
+      .activity.content as Record<string, unknown>;
+    expect(content.action).toBe("remote-agent-call");
+    expect(content.parameter).toBe("issue: HAR-47 - Scout the codebase");
+    expect(content.result).toBe(JSON.stringify({ notes: "Found 3 issues" }));
+  });
+
+  it("posts nothing for an untracked callId on a subagent-result", async () => {
+    await fireActionResult(
+      {
+        status: "completed",
+        result: {
+          kind: "subagent-result",
+          callId: "unknown-sub",
+          subagentName: "coder",
+          output: { summary: "Done" },
+        },
+      },
+      { "sub-c1": { action: "subagent-call", parameter: "real work" } },
+    );
+
+    expect(createLinearAgentActivity).not.toHaveBeenCalled();
+  });
+
+  it("uses error.message as the result when a subagent call failed", async () => {
+    await fireActionResult(
+      {
+        status: "failed",
+        result: {
+          kind: "subagent-result",
+          callId: "sub-c2",
+          subagentName: "coder",
+          output: {},
+        },
+        error: {
+          code: "SUBAGENT_ERROR",
+          message: "The subagent encountered an error",
+        },
+      },
+      {
+        "sub-c2": {
+          action: "subagent-call",
+          parameter: "issue: HAR-48 - Add durable subagent_calls action",
+        },
+      },
+    );
+
+    expect(createLinearAgentActivity).toHaveBeenCalledTimes(1);
+    const content = vi.mocked(createLinearAgentActivity).mock.calls[0]?.[0]
+      .activity.content as Record<string, unknown>;
+    expect(content.result).toBe("The subagent encountered an error");
+  });
 });
 
 describe("authorization events surface the OAuth challenge", () => {
