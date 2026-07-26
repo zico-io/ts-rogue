@@ -2,6 +2,11 @@ import { findClass } from "../../data/classes";
 import type { AppliedEffect, Element } from "./statusEffects";
 import type { CoreStats } from "./types";
 
+// Heal-cleanse decision (ENG-12): every "heal" kind skill also cleanses all
+// of the caster's active status effects when cast (see the "skill" case in
+// resolution.ts's applyMemberCommand). This makes MP-cost Heal skills a
+// full-service response - HP plus every ailment - while single-status cure
+// items (Antidote, Thermal Salts) stay the cheaper, targeted, MP-free option.
 export type SkillKind = "attack" | "heal";
 export type SkillTarget = "enemy" | "self";
 

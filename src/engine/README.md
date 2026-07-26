@@ -56,7 +56,13 @@ loot before returning to the originating scene.
 - Dungeons contain deterministic rooms, corridors, chests, stairs, wandering
   encounters, and a boss floor.
 - Battles support Attack, Skill, Item, Defend, and Flee actions in a fixed
-  initiative order for each round.
+  initiative order for each round. Skills and monster attacks carry an
+  element and may apply status effects (poison, burn, stun, slow, wet, oiled,
+  chilled, frozen, shocked); effects tick at the start of the afflicted
+  actor's turn and are cleared entirely when battle ends. Antidote cures
+  poison and Thermal Salts cure burn/chilled; every Heal-kind skill also
+  cleanses the caster's own status effects on cast (see the comment on
+  `SkillKind` in `combat/skills.ts` for the full Heal-cleanse rationale).
 - Loot combines item bases, rarity, prefixes, suffixes, and optional
   monster-specific implicit properties.
 - Village events cover resting, buying, selling, and equipment; saving stays at

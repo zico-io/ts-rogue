@@ -1372,3 +1372,138 @@ describe("ENG-25 reapplying an active effect refreshes it instead of stacking", 
     expect(wetInstances[0].initialDuration).toBe(3);
   });
 });
+
+describe("ENG-12 status cures", () => {
+  // defId deliberately does not match a MONSTERS entry, so findMonster
+  // returns undefined and the enemy's counter-attack never rolls
+  // attackApplies (e.g. the real slime's 30% poison-on-hit) - keeping these
+  // cure/cleanse assertions free of an unrelated, randomly reapplied status.
+  const dummy = () =>
+    makeEnemy("dummy-1", "training-dummy", "Dummy", 999, SLIME_STATS, 5, 3);
+
+  it("using an Antidote on a poisoned party member removes the poison status and is consumed", () => {
+    const hero = { ...createStartingHero(), hp: 30, mp: 0 };
+    let state = stateInBattle(7, dummy(), hero);
+    state = {
+      ...state,
+      inventory: [{ itemId: "antidote", quantity: 1 }],
+      party: [
+        {
+          ...state.party[0],
+          effects: [
+            {
+              effectId: "poison" as const,
+              duration: 3,
+              potency: 1,
+              initialDuration: 3,
+            },
+          ],
+        },
+      ],
+    };
+
+    const after = reduce(state, {
+      type: "BattleItem",
+      itemId: "antidote",
+      targetId: "hero-1",
+    });
+
+    expect(after).not.toBe(state);
+    expect(after.party[0].effects).toBeUndefined();
+    expect(after.inventory).toEqual([]);
+    expect(after.log.some((l) => l.text.includes("cured of Poison"))).toBe(
+      true,
+    );
+  });
+
+  it("the burn/chill cure item removes both burn and chilled without touching unrelated effects", () => {
+    const hero = { ...createStartingHero(), hp: 30, mp: 0 };
+    let state = stateInBattle(7, dummy(), hero);
+    state = {
+      ...state,
+      inventory: [{ itemId: "thermal-salts", quantity: 1 }],
+      party: [
+        {
+          ...state.party[0],
+          effects: [
+            {
+              effectId: "burn" as const,
+              duration: 2,
+              potency: 1,
+              initialDuration: 2,
+            },
+            { effectId: "chilled" as const, duration: 2, potency: 1 },
+            { effectId: "slow" as const, duration: 2, potency: 1 },
+          ],
+        },
+      ],
+    };
+
+    const after = reduce(state, {
+      type: "BattleItem",
+      itemId: "thermal-salts",
+      targetId: "hero-1",
+    });
+
+    expect(after).not.toBe(state);
+    const remaining = after.party[0].effects ?? [];
+    expect(remaining.map((e) => e.effectId)).toEqual(["slow"]);
+    expect(after.inventory).toEqual([]);
+    expect(
+      after.log.some((l) => l.text.includes("cured of Burn and Chilled")),
+    ).toBe(true);
+  });
+
+  it("a cure item with nothing to cure is still consumed and logs no effect", () => {
+    const hero = { ...createStartingHero(), hp: 30, mp: 0 };
+    const state = {
+      ...stateInBattle(7, dummy(), hero),
+      inventory: [{ itemId: "antidote", quantity: 1 }],
+    };
+
+    const after = reduce(state, {
+      type: "BattleItem",
+      itemId: "antidote",
+      targetId: "hero-1",
+    });
+
+    expect(after.inventory).toEqual([]);
+    expect(after.log.some((l) => l.text.includes("nothing to cure"))).toBe(
+      true,
+    );
+  });
+
+  it("Heal-kind skills cleanse the caster's status effects along with restoring HP (documented Heal-cleanse decision)", () => {
+    const hero = { ...createStartingHero(), hp: 5, mp: 99 };
+    let state = stateInBattle(7, dummy(), hero);
+    state = {
+      ...state,
+      party: [
+        {
+          ...state.party[0],
+          effects: [
+            {
+              effectId: "poison" as const,
+              duration: 2,
+              potency: 1,
+              initialDuration: 2,
+            },
+            { effectId: "slow" as const, duration: 2, potency: 1 },
+          ],
+        },
+      ],
+    };
+
+    const after = reduce(state, {
+      type: "BattleSkill",
+      skillId: "heal",
+      targetId: "hero-1",
+    });
+
+    expect(after.party[0].hp).toBeGreaterThan(5);
+    expect(after.party[0].effects).toBeUndefined();
+    expect(
+      after.log.some((l) => l.text.includes("cleansed of Poison and Slow")),
+    ).toBe(true);
+  });
+});

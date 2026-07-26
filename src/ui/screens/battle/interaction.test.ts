@@ -32,7 +32,7 @@ function ctx(overrides: Partial<BattleUiContext> = {}): BattleUiContext {
     actorMp: 10,
     knownSkills: [attackSkill, healSkill],
     aliveEnemyIds: ["goblin", "slime"],
-    healItemIds: ["potion", "hi-potion"],
+    usableItemIds: ["potion", "hi-potion"],
     ...overrides,
   };
 }
@@ -208,12 +208,12 @@ describe("reduceBattleUi - item mode", () => {
     const result = reduceBattleUi(
       itemState(),
       { kind: "menuDown" },
-      ctx({ healItemIds: [] }),
+      ctx({ usableItemIds: [] }),
     );
     expect(result.state).toEqual(itemState());
   });
 
-  it("wraps itemCursor over healItemIds.length", () => {
+  it("wraps itemCursor over usableItemIds.length", () => {
     const up = reduceBattleUi(
       itemState({ itemCursor: 0 }),
       { kind: "menuUp" },
