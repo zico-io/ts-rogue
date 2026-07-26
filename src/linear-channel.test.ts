@@ -309,7 +309,7 @@ describe("duplicate created-session guard", () => {
         nodes: nodes.map((node) =>
           node && typeof node === "object" && !("activities" in node)
             ? {
-                ...(node as object),
+                ...node,
                 activities: {
                   nodes: [
                     { updatedAt: new Date(Date.now() - 60_000).toISOString() },

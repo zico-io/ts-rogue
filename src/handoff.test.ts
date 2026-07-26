@@ -68,7 +68,7 @@ const mockGraphQL = (input: {
   const nodes = (input.sessions ?? []).map((session) =>
     session && typeof session === "object" && !("activities" in session)
       ? {
-          ...(session as object),
+          ...session,
           activities: { nodes: [{ updatedAt: RECENT() }] },
         }
       : session,
