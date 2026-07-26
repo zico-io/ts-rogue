@@ -17,10 +17,17 @@ vi.mock("eve/channels/linear", () => ({
 vi.mock("eve/tools", () => ({ defineTool: (def: unknown) => def }));
 vi.mock("../agent/hooks/child-relay", () => ({ relayIssueId: () => "ROG-7" }));
 
+// Reuse the tool's real status union (via the exported forSessionRole
+// signature) so a typo'd status in a test case fails to type-check instead
+// of silently widening to string.
+type SessionUpdateInput = Parameters<
+  typeof import("../agent/tools/session_update")["forSessionRole"]
+>[0];
+
 const tool = (await import("../agent/tools/session_update"))
   .default as unknown as {
   execute: (
-    input: { agentSessionId: string; message: string; status: string },
+    input: SessionUpdateInput & { agentSessionId: string },
     ctx: unknown,
   ) => Promise<{ delivered: boolean; refused?: string }>;
 };

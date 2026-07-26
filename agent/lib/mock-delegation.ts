@@ -22,9 +22,6 @@ const DELEGATION_PACKET = [
   "You are the fixture child. Post one session_update with status completed, then one with status blocked, then finish.",
 ].join("\n");
 
-const hasToolResult = (request: MockModelRequest, name: string): boolean =>
-  request.toolResults.some((result) => result.name.endsWith(name));
-
 const toolResultCount = (request: MockModelRequest, name: string): number =>
   request.toolResults.filter((result) => result.name.endsWith(name)).length;
 
@@ -35,7 +32,7 @@ export const delegationResponder = (
     message.includes(DELEGATION_TRIGGER),
   );
   if (isRoot) {
-    if (hasToolResult(request, "agent")) {
+    if (toolResultCount(request, "agent") > 0) {
       return { text: "Delegation fixture complete." };
     }
     return {
