@@ -306,69 +306,22 @@ interface GitHubPullRequestReviewWebhookPayload {
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
 
-const isOptional = <T>(
-  value: unknown,
-  check: (value: unknown) => value is T,
-): value is T | undefined => value === undefined || check(value);
-
-const isString = (value: unknown): value is string => typeof value === "string";
-
-const isNumber = (value: unknown): value is number => typeof value === "number";
-
-// Validates an optional `{ ref?: string; sha?: string }` shape, present on
-// both `pull_request.base` and `pull_request.head`.
-const isOptionalRefShaShape = (
-  value: unknown,
-): value is { ref?: string; sha?: string } | undefined =>
-  isOptional(
-    value,
-    (v): v is { ref?: string; sha?: string } =>
-      isPlainObject(v) &&
-      isOptional(v.ref, isString) &&
-      isOptional(v.sha, isString),
-  );
-
-// Validates an optional `{ id?; login?; type? }` shape, present on both
-// `review.user` and the top-level `sender`.
-const isOptionalActorShape = (
-  value: unknown,
-): value is { id?: number; login?: string; type?: string } | undefined =>
-  isOptional(
-    value,
-    (v): v is { id?: number; login?: string; type?: string } =>
-      isPlainObject(v) &&
-      isOptional(v.id, isNumber) &&
-      isOptional(v.login, isString) &&
-      isOptional(v.type, isString),
-  );
-
-// Validates every field this handler dereferences (with or without optional
-// chaining) before any of it is trusted - the webhook signature only proves
-// who sent the request, not that its JSON body has the shape this file
-// expects. Returns `null` for anything that doesn't match, which the caller
-// treats the same as unparseable JSON.
+// Validates the fields this handler actually dereferences without optional
+// chaining before any of them is trusted - the webhook signature only
+// proves who sent the request, not that its JSON body has the shape this
+// file expects. Everything else in the payload (installation, sender,
+// review.user, base/head refs/shas, default_branch, html_url) is only ever
+// read downstream with `??`/`?.`, so a malformed value there just resolves
+// to `undefined` - rejecting the whole payload for it buys nothing. Returns
+// `null` for anything that doesn't match, which the caller treats the same
+// as unparseable JSON.
 const parsePullRequestReviewPayload = (
   value: unknown,
 ): GitHubPullRequestReviewWebhookPayload | null => {
   if (!isPlainObject(value)) return null;
-  const { action, installation, pull_request, repository, review, sender } =
-    value;
+  const { action, pull_request, repository, review } = value;
   if (typeof action !== "string") return null;
-  if (
-    !isOptional(
-      installation,
-      (v): v is { id?: number } =>
-        isPlainObject(v) && isOptional(v.id, isNumber),
-    )
-  ) {
-    return null;
-  }
-  if (
-    !isPlainObject(pull_request) ||
-    typeof pull_request.number !== "number" ||
-    !isOptionalRefShaShape(pull_request.base) ||
-    !isOptionalRefShaShape(pull_request.head)
-  ) {
+  if (!isPlainObject(pull_request) || typeof pull_request.number !== "number") {
     return null;
   }
   if (
@@ -376,21 +329,17 @@ const parsePullRequestReviewPayload = (
     typeof repository.id !== "number" ||
     typeof repository.name !== "string" ||
     !isPlainObject(repository.owner) ||
-    typeof repository.owner.login !== "string" ||
-    !isOptional(repository.default_branch, isString)
+    typeof repository.owner.login !== "string"
   ) {
     return null;
   }
   if (
     !isPlainObject(review) ||
     typeof review.state !== "string" ||
-    (review.body !== null && typeof review.body !== "string") ||
-    !isOptional(review.html_url, isString) ||
-    !isOptionalActorShape(review.user)
+    (review.body !== null && typeof review.body !== "string")
   ) {
     return null;
   }
-  if (!isOptionalActorShape(sender)) return null;
   return value as unknown as GitHubPullRequestReviewWebhookPayload;
 };
 

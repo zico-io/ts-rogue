@@ -824,8 +824,8 @@ describe("coarse pull_request_review webhook handler (HAR-49)", () => {
       expect(sendFn).not.toHaveBeenCalled();
     });
 
-    it("returns ok-true and does not call send when an optional nested field has the wrong shape", async () => {
-      const sendFn = vi.fn();
+    it("still dispatches when an optional nested field has the wrong shape, since downstream reads it defensively", async () => {
+      const sendFn = vi.fn().mockResolvedValue(undefined);
       const credentials = {
         webhookVerifier: async () => true,
       };
@@ -850,7 +850,9 @@ describe("coarse pull_request_review webhook handler (HAR-49)", () => {
       );
 
       expect(response.ok).toBe(true);
-      expect(sendFn).not.toHaveBeenCalled();
+      expect(sendFn).toHaveBeenCalledOnce();
+      const call = sendFn.mock.calls[0];
+      expect(call[1].state.baseRef).toBeNull();
     });
   });
 });
