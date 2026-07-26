@@ -11,10 +11,6 @@ import {
 import { useTerminalLayout } from "../components/MinSizeGuard";
 import { type CommandResult, runDevCommand } from "./devConsoleCommands";
 
-// `runDevCommand`/`CommandResult` now live in `devConsoleCommands.ts` (ROG-48)
-// so the browser renderer's dev console can share them without importing
-// Ink. Re-exported here so `DevConsole.test.ts`'s existing import keeps
-// working unchanged.
 export { type CommandResult, runDevCommand };
 
 async function fileIssue(
@@ -44,7 +40,6 @@ async function fileIssue(
   ]);
 }
 
-/** Retry every locally queued issue; report what filed and what remains. */
 async function flushOutbox(
   setOutput: Dispatch<SetStateAction<string[]>>,
 ): Promise<void> {

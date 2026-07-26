@@ -17,7 +17,6 @@ export interface IncidentDisplay {
   detail?: string;
 }
 
-/** Enforces capture for synchronous failures at application boundaries. */
 export class FailureBoundary {
   constructor(private readonly store: GameStore) {}
 
@@ -109,7 +108,6 @@ function issueBody(
   });
 }
 
-/** One process-wide incident pipeline for UI state and report submission. */
 export class IncidentPipeline {
   private fatal?: IncidentDisplay;
   private readonly listeners = new Set<(display: IncidentDisplay) => void>();

@@ -1,17 +1,6 @@
-/**
- * Item base definitions (PROJECT_PLAN Phase 5, ROG-11; data table named in
- * section 7). Plain serializable content, authored separately from engine code
- * so the loot table can be tuned without touching resolution logic. Bases fix
- * the slot, an item level that gates affix rolling, flat base stats granted
- * when equipped, and a base sell value. Signature bases (the guardian and
- * slime drops) have distinctive names so a monster-implicit drop is
- * recognizably that monster's even before its implicit affix.
- */
-
 import type { ItemBaseDef } from "../engine/loot/types";
 
 export const ITEM_BASES: readonly ItemBaseDef[] = [
-  // Weapons
   {
     id: "rusty-dagger",
     name: "Rusty Dagger",
@@ -36,7 +25,7 @@ export const ITEM_BASES: readonly ItemBaseDef[] = [
     stats: { str: 5 },
     baseValue: 25,
   },
-  // Armor
+
   {
     id: "tunic",
     name: "Tunic",
@@ -61,7 +50,7 @@ export const ITEM_BASES: readonly ItemBaseDef[] = [
     stats: { vit: 5 },
     baseValue: 25,
   },
-  // Accessories
+
   {
     id: "copper-ring",
     name: "Copper Ring",
@@ -78,7 +67,7 @@ export const ITEM_BASES: readonly ItemBaseDef[] = [
     stats: { agi: 2, int: 1 },
     baseValue: 15,
   },
-  // Signature bases (monster-implicit pools)
+
   {
     id: "guardian-bulwark",
     name: "Guardian's Bulwark",

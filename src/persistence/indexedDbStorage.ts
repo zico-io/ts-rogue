@@ -1,7 +1,7 @@
 import type { SaveStorage } from "./storage";
 
 const STORE_NAME = "saves";
-/** Single save slot, mirroring `sqliteStorage.ts`'s `SAVE_SLOT` convention. */
+
 const SAVE_SLOT = 1;
 const DEFAULT_DB_NAME = "ts-rogue-save";
 const DB_VERSION = 1;
@@ -21,15 +21,6 @@ function promisifyTransaction(tx: IDBTransaction): Promise<void> {
   });
 }
 
-/**
- * Async `SaveStorage` (ROG-46) over the global `indexedDB` - the browser
- * counterpart to `sqliteStorage.ts`'s `SqliteSaveStorage`. Uses whatever
- * `indexedDB` global is in scope, so it works against a real browser's
- * implementation and, in tests, against `fake-indexeddb/auto`'s polyfill of
- * that same global - this module never imports `fake-indexeddb` itself.
- * One object store, one fixed key, matching the sqlite backend's
- * single-save-slot semantics.
- */
 export class IndexedDbSaveStorage implements SaveStorage {
   constructor(private readonly dbName: string = DEFAULT_DB_NAME) {}
 

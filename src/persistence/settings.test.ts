@@ -46,7 +46,7 @@ describe("settings persistence", () => {
 
   it("backfills missing keys from defaults for a partial row", () => {
     const dbPath = tempDbPath();
-    // Simulate a row written by an older build missing customSeed.
+
     const db = new DatabaseSync(dbPath);
     db.exec(
       "CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY, settings_json TEXT NOT NULL)",

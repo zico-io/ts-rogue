@@ -1,11 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 
-// listLiveAgentSessions is the shared "which sessions still block a new one?"
-// query behind both the webhook duplicate guard and the handoff pre-check. It
-// filters Linear's agentSessions by live status AND by recency: a live-status
-// session that has been silent past STALE_SESSION_MS is dead and must not
-// block. This mock stands in for the Linear GraphQL transport so the recency
-// logic can be driven with an injected clock.
 const { callGraphQL } = vi.hoisted(() => ({ callGraphQL: vi.fn() }));
 
 vi.mock("eve/channels/linear", () => ({
@@ -17,8 +11,8 @@ const { listLiveAgentSessions, STALE_SESSION_MS } = await import(
 );
 
 const NOW = Date.parse("2026-07-25T10:00:00.000Z");
-const FRESH = "2026-07-25T09:50:00.000Z"; // 10 min ago - within threshold
-const STALE = "2026-07-25T09:00:00.000Z"; // 60 min ago - past 30 min threshold
+const FRESH = "2026-07-25T09:50:00.000Z";
+const STALE = "2026-07-25T09:00:00.000Z";
 
 const list = (sessions: readonly unknown[]) => {
   callGraphQL.mockResolvedValue({
@@ -37,7 +31,7 @@ describe("listLiveAgentSessions staleness", () => {
       {
         id: "s1",
         status: "active",
-        createdAt: STALE, // old creation, but recent activity keeps it live
+        createdAt: STALE,
         url: null,
         activities: { nodes: [{ updatedAt: FRESH }] },
       },

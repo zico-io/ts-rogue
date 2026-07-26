@@ -13,14 +13,6 @@ export interface ChurchViewProps {
   failures: FailureBoundary;
 }
 
-/**
- * Church sub-view: writes the current `GameState` to the sqlite save slot
- * (PROJECT_PLAN §8 - save at the Church, load on boot). Save I/O lives here
- * in the UI layer, not the engine, and stays in this effect handler rather
- * than the pure `reduceChurchUi` (ROG-45); a successful save logs through
- * the normal `Log` event so it shows up in the shared `MessageLog` like any
- * other action.
- */
 export function ChurchView({
   state,
   dispatch,

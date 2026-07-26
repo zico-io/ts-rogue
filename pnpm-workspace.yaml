@@ -2,13 +2,8 @@ packages:
   - "."
   - "src/web"
 
-# Single source of truth for eve across the workspace: both the root (which
-# authors the agent) and src/web (which hosts and BUILDS the agent as a nested
-# Vercel service) must resolve the same eve, or the older one compiles the
-# agent - src/web sat on 0.25.2 while the root moved to 0.27.6, and 0.25.2's
-# unauthenticated model-catalog fetch is what surfaced the deploy break. Both
-# reference `catalog:`; bump the version here and `pnpm install` to move both.
 catalog:
+  # Root and web share this version because the web package builds the agent.
   eve: "^0.27.6"
 
 allowBuilds:

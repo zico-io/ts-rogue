@@ -1,21 +1,3 @@
-/**
- * Pure HUD/screen-chrome builder (ROG-47), the first real consumer of the
- * ROG-56 scene tree. Extracts `Screen.tsx`'s original chrome layout (bordered
- * panel + title, footer party bar, optional hint, optional message log) into
- * a framework-free function so both the Ink interpreter (`Screen.tsx`) and
- * the Pixi interpreter (`src/web/render/sceneView.ts`) draw the exact same
- * tree instead of maintaining two hand-written implementations.
- *
- * `buildChrome` takes the available size in the caller's `Unit` (1 unit = 1
- * terminal cell for Ink, 1 unit = N atlas px for Pixi - see `tree.ts`) and
- * returns both the chrome `PanelNode` and the content-region size, which is
- * `useScreenContent`'s contract: scenes size their own viewport from the
- * content region a single layout computation produced, not from raw
- * terminal/canvas dimensions.
- *
- * No imports from `ink`, `pixi.js`, or `react`.
- */
-
 import type { PartyMember } from "../../engine/entities/party";
 import type { GameState } from "../../engine/state/types";
 import { hpColor, mpColor, theme } from "../theme";
@@ -29,26 +11,21 @@ export interface ChromeSize {
 export interface ChromeOptions {
   title: string;
   hint?: string;
-  /** Show the message log in the footer. Off for scenes that place it elsewhere (Battle). */
+
   showLog?: boolean;
 }
 
 export interface ChromeResult {
   panel: PanelNode;
-  /** Drawable content-region size, in the same `Unit` `size` was given in. */
+
   content: ChromeSize;
 }
 
-/** Glyph-bar width (in `Unit`) for the HP/MP meters; matches the original Ink bar widths. */
 const HP_METER_WIDTH: Unit = 10;
 const MP_METER_WIDTH: Unit = 6;
 
-/**
- * Panel chrome overhead: title line (1 unit) and the body's bottom border (1
- * unit). Mirrors `Screen.tsx`'s original `rows - 2` budget.
- */
 const PANEL_OVERHEAD_HEIGHT: Unit = 2;
-/** Body left/right border + paddingX (1 unit each side), mirrors `columns - 4`. */
+
 const PANEL_OVERHEAD_WIDTH: Unit = 4;
 
 const DEFAULT_LOG_LINES_MIN = 3;
@@ -59,17 +36,11 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(value, max));
 }
 
-/**
- * Upper bound on how many lines `text` wraps to at `width` units. Mirrors
- * `lineCount` in `src/ui/components/MinSizeGuard.tsx`, duplicated here so
- * this module stays framework-free (that file imports `ink`/`react`).
- */
 function estimateLineCount(text: string, width: Unit): number {
   if (width <= 0) return 1;
   return Math.max(1, Math.ceil(text.length / width));
 }
 
-/** One footer row: name/level, then an HP meter and an MP meter with their numbers. */
 function partyRow(member: PartyMember): StackNode {
   const hpTone = hpColor(member.hp, member.maxHp);
   const mpTone = mpColor(member.mp, member.maxMp);
@@ -135,13 +106,6 @@ function partyRow(member: PartyMember): StackNode {
   };
 }
 
-/**
- * Builds the shared HUD chrome: a titled panel whose children are the footer
- * (one party row per member plus a gold line), an optional hint line, and an
- * optional message log - the same regions `Screen.tsx` used to hand-render.
- * Also returns the content-region size so callers/interpreters can publish
- * it through `useScreenContent`'s contract.
- */
 export function buildChrome(
   state: GameState,
   size: ChromeSize,
@@ -149,7 +113,7 @@ export function buildChrome(
 ): ChromeResult {
   const { title, hint, showLog = true } = opts;
   const innerWidth = Math.max(1, size.width - PANEL_OVERHEAD_WIDTH);
-  const partyRows = state.party.length + 1; // one row per member + gold line
+  const partyRows = state.party.length + 1;
   const hintRows = hint ? estimateLineCount(hint, innerWidth) : 0;
   const logLines = showLog
     ? clamp(

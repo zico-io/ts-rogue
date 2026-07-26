@@ -6,11 +6,6 @@ import {
 } from "./lootFilter";
 import type { ItemInstance, RolledAffix } from "./types";
 
-// ---------------------------------------------------------------------------
-// Test fixtures
-// ---------------------------------------------------------------------------
-
-/** Build an `ItemInstance` with sensible defaults for filter tests. */
 function makeItem(overrides: Partial<ItemInstance> = {}): ItemInstance {
   return {
     instanceId: "itm-test",
@@ -29,10 +24,6 @@ function affix(affixId: string, value = 1): RolledAffix {
 }
 
 const defaultContext = { dungeonTier: 1, partyLevel: 5 };
-
-// ---------------------------------------------------------------------------
-// shouldDismantle
-// ---------------------------------------------------------------------------
 
 describe("shouldDismantle", () => {
   describe("no rules configured", () => {
@@ -155,8 +146,7 @@ describe("shouldDismantle", () => {
         minIlvlOffset: 0,
         keepAffixStats: ["str"],
       };
-      // Common rarity (below magic floor), ilvl 4 (below partyLevel 5), but
-      // has a str affix -> keep.
+
       const item = makeItem({
         rarity: "common",
         ilvl: 4,
@@ -171,7 +161,7 @@ describe("shouldDismantle", () => {
         minIlvlOffset: 0,
         keepAffixStats: ["str"],
       };
-      // Common rarity, ilvl 4, no str affix -> all fail -> dismantle.
+
       const item = makeItem({
         rarity: "common",
         ilvl: 4,

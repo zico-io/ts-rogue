@@ -1,20 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import type { SaveStorage } from "./storage";
 
-/** Single save slot, per PROJECT_PLAN §8 (simplified: whole-state JSON blob). */
 const SAVE_SLOT = 1;
-
-/**
- * `node:sqlite` is a synchronous API (no separate worker thread), so this
- * module exposes both a synchronous helper set - kept for `save.ts`'s
- * long-standing sync API, which existing callers (`app.tsx`,
- * `ChurchView.tsx`, and every test in `save.test.ts`) rely on staying
- * sync - and `SqliteSaveStorage`, an async `SaveStorage` implementation
- * (ROG-46) that wraps the same helpers in resolved promises so the terminal
- * backend is swappable with the browser's `IndexedDbSaveStorage` wherever
- * code is written against the shared interface instead of these concrete
- * functions.
- */
 
 function openDb(dbPath: string): DatabaseSync {
   const db = new DatabaseSync(dbPath);
@@ -24,7 +11,6 @@ function openDb(dbPath: string): DatabaseSync {
   return db;
 }
 
-/** Write `json` to the single save slot, upserting over any prior save. */
 export function writeSlot(dbPath: string, json: string): void {
   const db = openDb(dbPath);
   try {
@@ -37,7 +23,6 @@ export function writeSlot(dbPath: string, json: string): void {
   }
 }
 
-/** Read the single save slot's JSON blob, or `undefined` if it is empty. */
 export function readSlot(dbPath: string): string | undefined {
   const db = openDb(dbPath);
   try {
@@ -50,7 +35,6 @@ export function readSlot(dbPath: string): string | undefined {
   }
 }
 
-/** Delete the single save slot, if present. */
 export function clearSlot(dbPath: string): void {
   const db = openDb(dbPath);
   try {
@@ -60,13 +44,6 @@ export function clearSlot(dbPath: string): void {
   }
 }
 
-/**
- * Async `SaveStorage` over `node:sqlite` (ROG-46). Terminal callers that
- * only need the sync API should keep using `save.ts`'s `saveGame`/
- * `loadGame`/`clearSave` directly - this class exists so the terminal
- * backend is usable anywhere code is written against the shared
- * `SaveStorage` interface, matching the browser's `IndexedDbSaveStorage`.
- */
 export class SqliteSaveStorage implements SaveStorage {
   constructor(private readonly dbPath: string) {}
 

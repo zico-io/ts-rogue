@@ -158,7 +158,7 @@ describe("classSkills", () => {
     expect(backstab?.stat).toBe("agi");
     const frost = classSkills("wizard").find((s) => s.id === "frost");
     expect(frost?.stat).toBe("int");
-    // Legacy Flame/Heal omit stat and default to int.
+
     const flame = classSkills("wizard").find((s) => s.id === "flame");
     expect(flame?.stat).toBeUndefined();
   });

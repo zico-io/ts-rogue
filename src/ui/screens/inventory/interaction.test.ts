@@ -42,10 +42,6 @@ function ctx(overrides: Partial<InventoryUiContext> = {}): InventoryUiContext {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Section (tab) cycling
-// ---------------------------------------------------------------------------
-
 describe("resolveInventoryIntent", () => {
   it("gear section binds up/down/left/right/enter/e/u/r", () => {
     expect(resolveInventoryIntent("gear", "up")).toEqual({ kind: "menuUp" });
@@ -196,10 +192,6 @@ describe("reduceInventoryUi - section cycling", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Sort cycling
-// ---------------------------------------------------------------------------
-
 describe("sortPackEntries", () => {
   const member = createStartingHero();
   const rareHigh = item({
@@ -249,8 +241,7 @@ describe("sortPackEntries", () => {
   it("sorts by slot, alphabetically", () => {
     const entries = buildPackEntries(member, backpack);
     const sorted = sortPackEntries(entries, "slot");
-    // plate-mail -> "armor", rusty-dagger/iron-sword -> "weapon" (tied
-    // weapons keep their relative order: common-lo before magic-mid).
+
     const backpackIds = sorted
       .slice(4)
       .map((e) => (e.kind === "backpack" ? e.item.instanceId : null));
@@ -263,7 +254,7 @@ describe("sortPackEntries", () => {
     const backpackIds = sorted
       .slice(4)
       .map((e) => (e.kind === "backpack" ? e.item.instanceId : null));
-    // rare-hi: floor(25*3)=75; magic-mid: floor(12*2)+4=28; common-lo: floor(5*1)=5
+
     expect(backpackIds).toEqual(["rare-hi", "magic-mid", "common-lo"]);
   });
 });
@@ -281,10 +272,6 @@ describe("reduceInventoryUi - cycleSort", () => {
     expect(s.sortKey).toBe("rarity");
   });
 });
-
-// ---------------------------------------------------------------------------
-// Member switching
-// ---------------------------------------------------------------------------
 
 describe("reduceInventoryUi - member switching", () => {
   it("Left/Right cycle memberIndex only when party.length > 1, in gear or consumables", () => {
@@ -325,10 +312,6 @@ describe("reduceInventoryUi - member switching", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Inspect
-// ---------------------------------------------------------------------------
-
 describe("reduceInventoryUi - inspect", () => {
   it("confirm toggles inspecting on and off", () => {
     const on = reduceInventoryUi(
@@ -342,10 +325,6 @@ describe("reduceInventoryUi - inspect", () => {
     expect(off.state.inspecting).toBe(false);
   });
 });
-
-// ---------------------------------------------------------------------------
-// Equip / unequip
-// ---------------------------------------------------------------------------
 
 describe("reduceInventoryUi - equip/unequip", () => {
   it("equips the selected backpack entry", () => {
@@ -401,10 +380,6 @@ describe("reduceInventoryUi - equip/unequip", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Field consumable use (ENG-4)
-// ---------------------------------------------------------------------------
-
 describe("reduceInventoryUi - consumables cursor and use", () => {
   const consumables = [
     { itemId: "potion", quantity: 2 },
@@ -453,10 +428,6 @@ describe("reduceInventoryUi - consumables cursor and use", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Loot filter settings pane (ENG-19)
-// ---------------------------------------------------------------------------
-
 describe("reduceInventoryUi - filter section cursor movement", () => {
   it("up/down cycle the filter cursor wrapping through 8 rows", () => {
     let s = state({ section: "filter", filterCursor: 0 });
@@ -492,7 +463,7 @@ describe("reduceInventoryUi - filter section value changes", () => {
     expect(result.effect.type).toBe("setLootFilter");
     const rules = (result.effect as { type: "setLootFilter"; rules: unknown })
       .rules;
-    // Starting from empty (no floor -> undefined), cycle forward -> "common"
+
     expect(rules).toHaveProperty("minRarityByTier");
     expect(
       (rules as { minRarityByTier: Record<number, string> }).minRarityByTier[1],
@@ -560,7 +531,7 @@ describe("reduceInventoryUi - filter section value changes", () => {
         rules: { minIlvlOffset: number | undefined };
       }
     ).rules;
-    // Starting from 0, cycle back -> -3 (since array is [undefined, -5, -3, 0, 3, 5, 10])
+
     expect(rules.minIlvlOffset).toBe(-3);
   });
 

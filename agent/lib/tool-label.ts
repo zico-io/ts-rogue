@@ -1,4 +1,3 @@
-/** Bare tool operation, minus any `connection__tool` MCP prefix (e.g. `linear__save_issue` -> `save_issue`). */
 export const toolOperation = (toolName: string): string =>
   toolName.split("__").at(-1) ?? toolName;
 
