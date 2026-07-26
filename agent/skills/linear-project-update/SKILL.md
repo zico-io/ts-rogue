@@ -41,28 +41,21 @@ when a deadline has already been missed or delivery is broadly blocked.
 
 ## Write
 
-Lead with the outcome, then use only the sections that help:
+Start with the outcome. Do not repeat the project name or add a title, heading,
+status label, or decorative emoji; Linear already renders that metadata. Use
+only the lines that help:
 
 ```markdown
-## Project name - concise status
-
 One or two sentences on what changed and why it matters.
 
-**Shipped**
-- TICKET-ID - outcome
-
-**In flight**
-- TICKET-ID - current delivery
-
-**Blocked**
-- TICKET-ID - blocked by TICKET-ID
-
-**Next**
-One sentence on the next boundary.
+- Shipped: TICKET-ID - outcome
+- In flight: TICKET-ID - current delivery
+- Blocked: TICKET-ID - blocked by TICKET-ID
+- Next: one sentence on the next boundary
 ```
 
 Omit empty sections. Use exact counts and ticket identifiers, plain English,
-active voice, and at most one relevant emoji in the heading.
+active voice, and no sentence that merely restates visible metadata.
 
 When asked to draft, return the proposed body and recommended health without
 posting. When asked to post, call `save_status_update` and return its Linear URL.

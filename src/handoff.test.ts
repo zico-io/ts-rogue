@@ -128,7 +128,10 @@ describe("handoff tool", () => {
     });
 
     const result = await handoffTool.execute(
-      { issueId: "issue-uuid", brief: "continuation packet" },
+      {
+        issueId: "issue-uuid",
+        brief: "**Agent handoff**\n\ncontinuation packet",
+      },
       toolCtx(),
     );
 
@@ -136,8 +139,7 @@ describe("handoff tool", () => {
       expect.objectContaining({ commentId: "comment-9" }),
     );
     const commentBody = commentCreateCall()?.variables.input.body;
-    expect(commentBody).toContain("**Agent handoff**");
-    expect(commentBody).toContain("continuation packet");
+    expect(commentBody).toBe("continuation packet");
     expect(result).toEqual({
       handoffSessionId: "session-9",
       handoffSessionUrl: "https://linear.app/session-9",

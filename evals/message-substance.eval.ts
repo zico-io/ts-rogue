@@ -2,10 +2,12 @@ import { defineEval } from "eve/evals";
 
 const PROCESS_RECITAL =
   /orientation\.md|sub-issue check|coding child|\bsizing\b|\bscoping\b|tool batch|pnpm check/i;
+const LEADING_HEADER =
+  /^\s*(?:#{1,6}\s+|(?:\*\*|__)[^\n]+(?:\*\*|__)\s*(?:\n|$))/u;
 
 export default defineEval({
   description:
-    "human-facing messages describe the work without reciting internal procedure",
+    "human-facing messages are concise, headerless, and substantive",
   async test(t) {
     await t.send(
       [
@@ -19,9 +21,16 @@ export default defineEval({
       events
         .filter((event) => event.type === "message.completed")
         .every(
-          (event) =>
-            !PROCESS_RECITAL.test(event.data.message ?? "") &&
-            /gold|hud|status bar/i.test(event.data.message ?? ""),
+          (event) => {
+            const message = event.data.message ?? "";
+            return (
+              message.length <= 500 &&
+              !LEADING_HEADER.test(message) &&
+              !/\n{3,}/u.test(message) &&
+              !PROCESS_RECITAL.test(message) &&
+              /gold|hud|status bar/i.test(message)
+            );
+          },
         ),
     );
   },

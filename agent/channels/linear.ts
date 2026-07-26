@@ -37,6 +37,7 @@ import { isPlainObject } from "../lib/is-plain-object";
 import { advanceIssueState } from "../lib/issue-state";
 import { listLiveAgentSessions } from "../lib/live-sessions";
 import type { PendingAction } from "../lib/pending-action";
+import { stripLeadingProseHeader } from "../lib/prose";
 import { toolActionParameter, toolActionResult } from "../lib/tool-activity";
 import { toolLabel } from "../lib/tool-label";
 import { MAX_ACTIVITY_TEXT_LENGTH, truncate } from "../lib/truncate";
@@ -658,16 +659,19 @@ function createLinearDefaultEvents(options: {
       );
     },
     async "message.completed"(data, channel) {
+      const message = data.message
+        ? stripLeadingProseHeader(data.message)
+        : null;
       if (data.finishReason === "tool-calls") {
-        channel.state.pendingToolCallMessage = data.message
-          ? (firstNonEmptyLine(data.message) ?? null)
+        channel.state.pendingToolCallMessage = message
+          ? (firstNonEmptyLine(message) ?? null)
           : null;
         return;
       }
       channel.state.pendingToolCallMessage = null;
-      if (data.message) {
+      if (message) {
         await postActivity(channel, options, {
-          body: data.message,
+          body: message,
           type: "response",
         });
       }

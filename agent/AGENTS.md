@@ -8,6 +8,8 @@
   capability surface, or useful isolation.
 - Keep Linear as the issue source of truth and GitHub pull requests as the merge
   boundary.
+- Keep human-facing prose concise and headerless. Linear and GitHub metadata
+  already provide titles, identities, and state.
 - Keep credentials in Vercel Connect and sandbox network policies.
 - Treat Linear's Agent Interaction Guidelines as acceptance criteria for
   harness changes: disclose the agent, use native platform actions, respond

@@ -28,6 +28,9 @@ pnpm exec eve info
 The root agent owns ordinary work end to end: it reads the Linear issue, changes
 the repository, verifies the result, pushes a branch, and opens a pull request.
 It communicates at useful milestones rather than narrating each command.
+Human-facing Linear and GitHub prose starts with substance and stays compact.
+The harness removes redundant leading Markdown headers because both platforms
+already render the project, issue, pull request, author, and activity state.
 
 The declared `playtester` subagent is available when independent terminal or web
 verification adds value. The root can also drive the same play scripts directly.

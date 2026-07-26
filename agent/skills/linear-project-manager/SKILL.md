@@ -22,6 +22,8 @@ substantially restructure several records, present one concise preview covering:
 
 Wait for approval of that broad write. Small, explicit changes such as adding
 one requested ticket or correcting one field need no extra ceremony.
+Begin previews and summaries with the decision or outcome, not a heading or the
+project name already visible in Linear.
 
 ## Create or enrich a project
 

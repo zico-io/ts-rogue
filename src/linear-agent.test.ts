@@ -29,15 +29,14 @@ describe("Linear agent interaction", () => {
     ]);
   });
 
-  it("preserves rich Markdown in Agent Session updates", () => {
+  it("keeps Agent Session updates concise and headerless", () => {
     expect(
       sessionUpdateActivity({
-        message:
-          "## Changes\n\n- Added village state\n\n## Evidence\n\n`pnpm check` passes.",
+        message: "## Review\n\nAdded village state.\n\n- `pnpm check` passes",
         status: "review",
       }),
     ).toEqual({
-      body: "**Review**\n\n## Changes\n\n- Added village state\n\n## Evidence\n\n`pnpm check` passes.",
+      body: "Added village state.\n\n- `pnpm check` passes",
       type: "response",
     });
   });

@@ -14,6 +14,7 @@ import {
 import type { SessionContext } from "eve/tools";
 
 import { advanceIssueState, type IssueStateTarget } from "../lib/issue-state";
+import { stripLeadingProseHeader } from "../lib/prose";
 
 export const isMainMerge = (pullRequest: GitHubPullRequestEvent) => {
   const base = pullRequest.raw.base;
@@ -145,7 +146,7 @@ export const onMessageCompleted = async (
   _ctx: SessionContext,
 ): Promise<void> => {
   if (data.finishReason === "tool-calls" || !data.message) return;
-  for (const chunk of splitCommentBody(data.message)) {
+  for (const chunk of splitCommentBody(stripLeadingProseHeader(data.message))) {
     await channel.thread.post(chunk);
   }
 };

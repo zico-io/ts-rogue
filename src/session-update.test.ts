@@ -20,7 +20,7 @@ const tool = (await import("../agent/tools/session_update"))
 };
 
 describe("session_update", () => {
-  it("posts a rich Agent Session update", async () => {
+  it("posts the update without a redundant status or Markdown header", async () => {
     createActivity.mockResolvedValue({ id: "a", success: true });
 
     await expect(
@@ -37,7 +37,7 @@ describe("session_update", () => {
       activity: {
         agentSessionId: "sess-1",
         content: {
-          body: "**Review**\n\n## Evidence\n\n`pnpm check` passes.",
+          body: "`pnpm check` passes.",
           type: "response",
         },
       },

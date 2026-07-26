@@ -3,11 +3,12 @@ import {
   callLinearGraphQL,
   createLinearAgentSessionOnComment,
 } from "eve/channels/linear";
-import { defineTool } from "eve/tools";
 import type { ToolContext } from "eve/tools";
+import { defineTool } from "eve/tools";
 import { z } from "zod";
 
 import { listLiveAgentSessions } from "../lib/live-sessions";
+import { stripLeadingProseHeader } from "../lib/prose";
 
 const credentials = connectLinearCredentials("linear/ts-rogue-eve");
 
@@ -18,8 +19,6 @@ const callerAgentSessionId = (ctx: ToolContext): string | null => {
     ? attribute
     : null;
 };
-
-const HANDOFF_COMMENT_HEADER = "**Agent handoff**\n\n---\n\n";
 
 export const createLinearComment = async (input: {
   readonly issueId: string;
@@ -53,7 +52,7 @@ export const createLinearComment = async (input: {
 
 export default defineTool({
   description:
-    "Start an informed Agent Session for a Linear issue. Use for a ready sub-issue or to continue long-running work with fresh context. The brief must state what is done, what remains, and the next action. Existing live sessions are returned instead of duplicated.",
+    "Start an informed Agent Session for a Linear issue. Use for a ready sub-issue or to continue long-running work with fresh context. Keep the brief concise, start with substance rather than a heading, and state what is done, what remains, and the next action. Existing live sessions are returned instead of duplicated.",
   inputSchema: z.object({
     issueId: z.string().min(1),
     brief: z.string().min(1).max(8000),
@@ -74,7 +73,7 @@ export default defineTool({
     } catch {}
     const commentId = await createLinearComment({
       issueId: input.issueId,
-      body: `${HANDOFF_COMMENT_HEADER}${input.brief}`,
+      body: stripLeadingProseHeader(input.brief),
     });
     const session = await createLinearAgentSessionOnComment({
       credentials,

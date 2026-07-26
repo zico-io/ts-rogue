@@ -303,6 +303,18 @@ describe("GitHub agent events", () => {
     expect(posted).toEqual(["Fixed as requested."]);
   });
 
+  it("removes a redundant leading header before posting", async () => {
+    const { channel, posted } = fakeChannel();
+
+    await onMessageCompleted(
+      { finishReason: "stop", message: "## Update\n\nFixed as requested." },
+      channel,
+      fakeSessionContext(),
+    );
+
+    expect(posted).toEqual(["Fixed as requested."]);
+  });
+
   it("never posts for tool-call-only or empty completions", async () => {
     const { channel, posted } = fakeChannel();
 
