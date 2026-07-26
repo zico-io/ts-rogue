@@ -3,12 +3,13 @@ import type {
   GitHubInboundContext,
   GitHubPullRequestEvent,
 } from "eve/channels/github";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   DEBT_ISSUE_LABEL,
   DEBT_REMEDIATION_THRESHOLD,
   debtReviewContext,
+  handlePullRequestReviewWebhook,
   isBotMentioned,
   isMainMerge,
   linearRefFromPullRequest,
@@ -17,6 +18,8 @@ import {
   onComment,
   onMessageCompleted,
   onPullRequest,
+  pullRequestReviewVerdict,
+  pullRequestReviewVerdictContext,
 } from "../agent/channels/github";
 
 const fakeContext = (
@@ -461,5 +464,395 @@ describe("authorization events surface the OAuth challenge (HAR-33)", () => {
     expect(posted).toEqual([
       "Authorization for Linear timed out: challenge expired",
     ]);
+  });
+});
+
+describe("coarse pull_request_review webhook handler (HAR-49)", () => {
+  describe("pullRequestReviewVerdict", () => {
+    it("returns 'approved' for submitted reviews with approved state", () => {
+      expect(
+        pullRequestReviewVerdict({
+          action: "submitted",
+          review: { state: "approved", body: null },
+        }),
+      ).toBe("approved");
+    });
+
+    it("returns 'changes_requested' for submitted reviews with changes_requested state", () => {
+      expect(
+        pullRequestReviewVerdict({
+          action: "submitted",
+          review: { state: "changes_requested", body: null },
+        }),
+      ).toBe("changes_requested");
+    });
+
+    it("returns null for submitted reviews with commented state", () => {
+      expect(
+        pullRequestReviewVerdict({
+          action: "submitted",
+          review: { state: "commented", body: null },
+        }),
+      ).toBeNull();
+    });
+
+    it("returns null for edited reviews with approved state", () => {
+      expect(
+        pullRequestReviewVerdict({
+          action: "edited",
+          review: { state: "approved", body: null },
+        }),
+      ).toBeNull();
+    });
+
+    it("returns null for dismissed reviews with approved state", () => {
+      expect(
+        pullRequestReviewVerdict({
+          action: "dismissed",
+          review: { state: "approved", body: null },
+        }),
+      ).toBeNull();
+    });
+  });
+
+  describe("pullRequestReviewVerdictContext", () => {
+    it("formats an approval verdict with reviewer name and body", () => {
+      const payload = {
+        action: "submitted" as const,
+        pull_request: {
+          number: 1,
+          base: { ref: "main", sha: "abc" },
+          head: { ref: "feat/thing", sha: "def" },
+        },
+        review: {
+          state: "approved" as const,
+          body: "Looks good!",
+          html_url:
+            "https://github.com/zico-io/ts-rogue/pull/1#pullrequestreview-1",
+          user: { login: "alice", id: 1, type: "User" },
+        },
+        repository: {
+          id: 7,
+          name: "ts-rogue",
+          owner: { login: "zico-io" },
+        },
+      };
+
+      const result = pullRequestReviewVerdictContext(payload, "approved");
+
+      expect(result).toContain("**Approved**");
+      expect(result).toContain("@alice");
+      expect(result).toContain("Looks good!");
+      expect(result).toContain(payload.review.html_url);
+    });
+
+    it("formats a changes-requested verdict with fallback sender login", () => {
+      const payload = {
+        action: "submitted" as const,
+        pull_request: {
+          number: 2,
+          base: { ref: "main", sha: "abc" },
+          head: { ref: "feat/thing", sha: "def" },
+        },
+        review: {
+          state: "changes_requested" as const,
+          body: null,
+          user: undefined,
+          html_url: undefined,
+        },
+        repository: {
+          id: 7,
+          name: "ts-rogue",
+          owner: { login: "zico-io" },
+        },
+        sender: { login: "bob", id: 2, type: "User" },
+      };
+
+      const result = pullRequestReviewVerdictContext(
+        payload,
+        "changes_requested",
+      );
+
+      expect(result).toContain("**Changes requested**");
+      expect(result).toContain("@bob");
+    });
+  });
+
+  describe("handlePullRequestReviewWebhook", () => {
+    it("wakes a turn for an approval verdict with correct continuation token and state", async () => {
+      const sendFn = vi.fn().mockResolvedValue(undefined);
+      const credentials = {
+        webhookVerifier: async () => true,
+      };
+      const payload = {
+        action: "submitted",
+        installation: { id: 123 },
+        pull_request: {
+          number: 42,
+          base: { ref: "main", sha: "baseSha123" },
+          head: { ref: "feat/thing", sha: "headSha456" },
+        },
+        repository: {
+          id: 7,
+          name: "ts-rogue",
+          owner: { login: "zico-io" },
+          default_branch: "main",
+          private: false,
+        },
+        review: {
+          state: "approved",
+          body: null,
+          html_url:
+            "https://github.com/zico-io/ts-rogue/pull/42#pullrequestreview-1",
+          user: { login: "alice", id: 1, type: "User" },
+        },
+        sender: { login: "alice", id: 1, type: "User" },
+      };
+
+      const request = new Request("https://example.test/eve/v1/github", {
+        method: "POST",
+        body: JSON.stringify(payload),
+        headers: {
+          "x-github-event": "pull_request_review",
+          "x-github-delivery": "delivery-123",
+        },
+      });
+
+      const response = await handlePullRequestReviewWebhook(
+        request,
+        { send: sendFn },
+        credentials,
+      );
+
+      expect(response.ok).toBe(true);
+      expect(sendFn).toHaveBeenCalledOnce();
+      const call = sendFn.mock.calls[0];
+      expect(call[0]).toContain("**Approved**");
+      expect(call[1].continuationToken).toBe("repo:7:pull:42");
+      expect(call[1].state.pullRequestNumber).toBe(42);
+      expect(call[1].state.baseSha).toBe("baseSha123");
+      expect(call[1].state.headSha).toBe("headSha456");
+    });
+
+    it("wakes a turn for a changes-requested verdict", async () => {
+      const sendFn = vi.fn().mockResolvedValue(undefined);
+      const credentials = {
+        webhookVerifier: async () => true,
+      };
+      const payload = {
+        action: "submitted",
+        installation: { id: 123 },
+        pull_request: {
+          number: 99,
+          base: { ref: "main", sha: "baseSha" },
+          head: { ref: "feat/thing", sha: "headSha" },
+        },
+        repository: {
+          id: 7,
+          name: "ts-rogue",
+          owner: { login: "zico-io" },
+          default_branch: "main",
+          private: false,
+        },
+        review: {
+          state: "changes_requested",
+          body: "Please address these issues",
+          html_url:
+            "https://github.com/zico-io/ts-rogue/pull/99#pullrequestreview-1",
+          user: { login: "bob", id: 2, type: "User" },
+        },
+        sender: { login: "bob", id: 2, type: "User" },
+      };
+
+      const request = new Request("https://example.test/eve/v1/github", {
+        method: "POST",
+        body: JSON.stringify(payload),
+        headers: {
+          "x-github-event": "pull_request_review",
+        },
+      });
+
+      const response = await handlePullRequestReviewWebhook(
+        request,
+        { send: sendFn },
+        credentials,
+      );
+
+      expect(response.ok).toBe(true);
+      expect(sendFn).toHaveBeenCalledOnce();
+      const call = sendFn.mock.calls[0];
+      expect(call[0]).toContain("**Changes requested**");
+      expect(call[1].continuationToken).toBe("repo:7:pull:99");
+    });
+
+    it("does not call send for a commented review", async () => {
+      const sendFn = vi.fn();
+      const credentials = {
+        webhookVerifier: async () => true,
+      };
+      const payload = {
+        action: "submitted",
+        installation: { id: 123 },
+        pull_request: {
+          number: 42,
+          base: { ref: "main" },
+          head: { ref: "feat/thing" },
+        },
+        repository: {
+          id: 7,
+          name: "ts-rogue",
+          owner: { login: "zico-io" },
+        },
+        review: {
+          state: "commented",
+          body: null,
+          user: { login: "alice", id: 1, type: "User" },
+        },
+      };
+
+      const request = new Request("https://example.test/eve/v1/github", {
+        method: "POST",
+        body: JSON.stringify(payload),
+        headers: {
+          "x-github-event": "pull_request_review",
+        },
+      });
+
+      const response = await handlePullRequestReviewWebhook(
+        request,
+        { send: sendFn },
+        credentials,
+      );
+
+      expect(response.ok).toBe(true);
+      expect(sendFn).not.toHaveBeenCalled();
+    });
+
+    it("returns 401 for unverified requests", async () => {
+      const sendFn = vi.fn();
+      const credentials = {
+        webhookVerifier: async () => false,
+      };
+      const payload = {
+        action: "submitted",
+        installation: { id: 123 },
+        pull_request: {
+          number: 42,
+          base: { ref: "main" },
+          head: { ref: "feat/thing" },
+        },
+        repository: {
+          id: 7,
+          name: "ts-rogue",
+          owner: { login: "zico-io" },
+        },
+        review: {
+          state: "approved",
+          body: null,
+          user: { login: "alice", id: 1, type: "User" },
+        },
+      };
+
+      const request = new Request("https://example.test/eve/v1/github", {
+        method: "POST",
+        body: JSON.stringify(payload),
+        headers: {
+          "x-github-event": "pull_request_review",
+        },
+      });
+
+      const response = await handlePullRequestReviewWebhook(
+        request,
+        { send: sendFn },
+        credentials,
+      );
+
+      expect(response.status).toBe(401);
+      expect(sendFn).not.toHaveBeenCalled();
+    });
+
+    it("returns ok-true for malformed JSON without calling send", async () => {
+      const sendFn = vi.fn();
+      const credentials = {
+        webhookVerifier: async () => true,
+      };
+
+      const request = new Request("https://example.test/eve/v1/github", {
+        method: "POST",
+        body: "not valid json",
+        headers: {
+          "x-github-event": "pull_request_review",
+        },
+      });
+
+      const response = await handlePullRequestReviewWebhook(
+        request,
+        { send: sendFn },
+        credentials,
+      );
+
+      expect(response.ok).toBe(true);
+      expect(sendFn).not.toHaveBeenCalled();
+    });
+
+    it("returns ok-true for well-formed JSON missing required fields without calling send", async () => {
+      const sendFn = vi.fn();
+      const credentials = {
+        webhookVerifier: async () => true,
+      };
+
+      const request = new Request("https://example.test/eve/v1/github", {
+        method: "POST",
+        body: JSON.stringify({
+          action: "submitted",
+          pull_request: { number: 42 },
+          repository: { id: 7, name: "ts-rogue" }, // missing owner.login
+          review: { state: "approved", body: null },
+        }),
+        headers: {
+          "x-github-event": "pull_request_review",
+        },
+      });
+
+      const response = await handlePullRequestReviewWebhook(
+        request,
+        { send: sendFn },
+        credentials,
+      );
+
+      expect(response.ok).toBe(true);
+      expect(sendFn).not.toHaveBeenCalled();
+    });
+
+    it("still dispatches when an optional nested field has the wrong shape, since downstream reads it defensively", async () => {
+      const sendFn = vi.fn().mockResolvedValue(undefined);
+      const credentials = {
+        webhookVerifier: async () => true,
+      };
+
+      const request = new Request("https://example.test/eve/v1/github", {
+        method: "POST",
+        body: JSON.stringify({
+          action: "submitted",
+          pull_request: { number: 42, base: "main" }, // base should be an object
+          repository: { id: 7, name: "ts-rogue", owner: { login: "zico-io" } },
+          review: { state: "approved", body: null },
+        }),
+        headers: {
+          "x-github-event": "pull_request_review",
+        },
+      });
+
+      const response = await handlePullRequestReviewWebhook(
+        request,
+        { send: sendFn },
+        credentials,
+      );
+
+      expect(response.ok).toBe(true);
+      expect(sendFn).toHaveBeenCalledOnce();
+      const call = sendFn.mock.calls[0];
+      expect(call[1].state.baseRef).toBeNull();
+    });
   });
 });
