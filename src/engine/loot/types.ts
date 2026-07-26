@@ -32,6 +32,14 @@ export type EquipmentSlotName =
  */
 export type Rarity = "common" | "magic" | "rare" | "unique";
 
+/** Numeric ordering of rarities for comparison (lower = weaker); shared by the loot filter's rarity-floor check and the inventory screen's rarity sort so the two rankings can't drift out of sync. */
+export const RARITY_ORDER: Record<Rarity, number> = {
+  common: 0,
+  magic: 1,
+  rare: 2,
+  unique: 3,
+};
+
 /** Weighted rarity roll inputs; each table/pool carries its own tuning. */
 export interface RarityWeights {
   common: number;

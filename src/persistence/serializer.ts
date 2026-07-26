@@ -1,4 +1,5 @@
 import { DEFAULT_CLASS_ID } from "../data/classes";
+import { EMPTY_LOOT_FILTER } from "../engine/loot/lootFilter";
 import type { GameState, LogEntry } from "../engine/state/types";
 
 /**
@@ -19,10 +20,11 @@ export function serialize(state: GameState): string {
  * the warrior class), the tavern `recruits` pool (ROG-21, empty on old saves),
  * `activatedWaypoints` (ENG-1, defaulted to just the village so an old save
  * still has a usable fast-travel picker), plain-string log lines
- * (pre-ROG-31, upgraded to `LogEntry` with the neutral kind), and `stash`/
+ * (pre-ROG-31, upgraded to `LogEntry` with the neutral kind), `stash`/
  * `pendingLootTriage` (ENG-5, defaulted to an empty stash and no pending
- * triage) are filled in when absent. Everything is plain data so no
- * non-serializable values are introduced.
+ * triage), and `lootFilter` (ENG-17, defaulted to an empty loot filter) are
+ * filled in when absent. Everything is plain data so no non-serializable
+ * values are introduced.
  */
 export function deserialize(json: string): GameState {
   const state = JSON.parse(json) as GameState;
@@ -42,5 +44,6 @@ export function deserialize(json: string): GameState {
   if (!state.activatedWaypoints) state.activatedWaypoints = ["village"];
   if (!state.stash) state.stash = [];
   if (state.pendingLootTriage === undefined) state.pendingLootTriage = null;
+  if (!state.lootFilter) state.lootFilter = EMPTY_LOOT_FILTER;
   return state;
 }

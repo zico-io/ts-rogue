@@ -1,5 +1,6 @@
 import type { BattleEvent, BattleState } from "../combat/types";
 import type { InventoryItem, PartyMember } from "../entities/party";
+import type { LootFilterRules } from "../loot/lootFilter";
 import type { PendingLootTriage } from "../loot/pickup";
 import type { EquipmentSlotName, ItemInstance } from "../loot/types";
 import type { RngState } from "../rng/rng";
@@ -87,6 +88,12 @@ export interface GameState {
    * mandatory overlay (`LootTriageScreen`) that preempts normal play.
    */
   pendingLootTriage: PendingLootTriage | null;
+  /**
+   * Player-editable loot filter rules (ENG-17). Decides which items are
+   * auto-dismantled on pickup. Whole-object replaced via `SetLootFilter`;
+   * the future settings-pane issue (ENG-19) can refine to partial updates.
+   */
+  lootFilter: LootFilterRules;
 }
 
 /** A single-tile movement delta on the overworld grid. */
@@ -121,6 +128,8 @@ export type StepDirection = "forward" | "back";
  * backpack is at `FIELD_BACKPACK_CAP`), and `ResolveLootTriage` resolves the
  * oldest queued overflow drop in `pendingLootTriage` by dismantling either
  * the named carried item (freeing a slot for the drop) or the drop itself.
+ * ENG-17 adds `SetLootFilter` (whole-object replace for the loot filter
+ * rules persisted on `GameState.lootFilter`).
  */
 export type GameEvent =
   | {
@@ -158,4 +167,5 @@ export type GameEvent =
       instanceId: string;
     }
   | { type: "ResolveLootTriage"; action: "dismantleDrop" }
+  | { type: "SetLootFilter"; rules: LootFilterRules }
   | BattleEvent;

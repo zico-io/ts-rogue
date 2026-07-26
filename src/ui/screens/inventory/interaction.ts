@@ -20,7 +20,7 @@
 import type { InventoryItem } from "../../../engine/entities/party";
 import type { EquipmentSlotName } from "../../../engine/loot/equipment";
 import { itemBaseSlot, itemSellPrice } from "../../../engine/loot/items";
-import type { ItemInstance, Rarity } from "../../../engine/loot/types";
+import { type ItemInstance, RARITY_ORDER } from "../../../engine/loot/types";
 import type { Intent, Keymap, KeyName } from "../../scene/input";
 import type { PackEntry } from "../village/interaction";
 
@@ -42,13 +42,6 @@ export const SORT_KEYS: readonly SortKey[] = [
   "slot",
   "value",
 ];
-
-const RARITY_ORDER: Record<Rarity, number> = {
-  common: 0,
-  magic: 1,
-  rare: 2,
-  unique: 3,
-};
 
 /**
  * Sorts a pack panel's backpack (non-equipped) rows by `sortKey`, leaving the
