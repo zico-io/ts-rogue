@@ -1,3 +1,4 @@
+import type { Element } from "../combat/statusEffects";
 import type { BattleEvent, BattleState } from "../combat/types";
 import type { InventoryItem, PartyMember } from "../entities/party";
 import type { LootFilterRules } from "../loot/lootFilter";
@@ -13,10 +14,19 @@ export type LogKind = "damage" | "loot" | "quest" | "system";
 export interface LogEntry {
   text: string;
   kind: LogKind;
+
+  // Present only for damage lines carrying an elemental flavor, so the UI
+  // can color them distinctly. Omitted rather than set to `undefined` to
+  // keep GameState strictly JSON-serializable.
+  element?: Element;
 }
 
-export function entry(text: string, kind: LogKind = "system"): LogEntry {
-  return { text, kind };
+export function entry(
+  text: string,
+  kind: LogKind = "system",
+  element?: Element,
+): LogEntry {
+  return element ? { text, kind, element } : { text, kind };
 }
 
 export interface GameFlags {

@@ -44,7 +44,11 @@ export function MessageLog({
             bold={
               start + index === messages.length - 1 && message.kind === "damage"
             }
-            color={theme.msg[message.kind]}
+            color={
+              message.element
+                ? theme.element[message.element]
+                : theme.msg[message.kind]
+            }
             // biome-ignore lint/suspicious/noArrayIndexKey: append-only tail, position is identity
             key={start + index}
           >

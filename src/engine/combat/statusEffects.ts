@@ -14,6 +14,8 @@ export interface DamagePerTurn {
   frontLoaded?: boolean;
 }
 
+export type Element = "physical" | "fire" | "ice" | "lightning" | "poison";
+
 export interface StatusEffectDef {
   id: StatusEffectId;
   name: string;
@@ -21,6 +23,11 @@ export interface StatusEffectDef {
   skipsTurn?: boolean;
 
   damagePerTurn?: DamagePerTurn;
+
+  // The element of the tick-damage log line (e.g. burn reads as fire
+  // damage). Effects with no inherent element (stun, slow, the conductor
+  // states) leave this unset.
+  element?: Element;
 
   initiativePenalty?: number;
 
@@ -36,12 +43,14 @@ export const STATUS_EFFECTS: readonly StatusEffectDef[] = [
     id: "poison",
     name: "Poison",
     damagePerTurn: { amount: 3 },
+    element: "poison",
   },
   {
     id: "burn",
     name: "Burn",
 
     damagePerTurn: { amount: 5, frontLoaded: true },
+    element: "fire",
   },
   {
     id: "stun",
@@ -99,5 +108,3 @@ export interface AppliedEffect {
   chance: number;
   duration: number;
 }
-
-export type Element = "physical" | "fire" | "ice" | "lightning" | "poison";
