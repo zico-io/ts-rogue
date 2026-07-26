@@ -75,6 +75,13 @@ GitHub pull requests remain the review and merge boundary. The GitHub channel:
 - advances Linear issue groups after a sub-issue merges;
 - records unresolved review debt after merges.
 
+Harness changes are also reviewed against
+[Linear's Agent Interaction Guidelines](https://linear.app/developers/aig):
+agent disclosure, native platform behavior, prompt feedback, visible state,
+immediate disengagement, and human accountability. These criteria live once in
+the root instructions and are mirrored by the `aig:` lens in
+`scripts/ci-review.ts`.
+
 ## Sandbox and credentials
 
 Each root session receives a persistent Vercel Sandbox with the repository,

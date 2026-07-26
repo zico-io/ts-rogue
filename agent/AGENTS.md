@@ -9,6 +9,10 @@
 - Keep Linear as the issue source of truth and GitHub pull requests as the merge
   boundary.
 - Keep credentials in Vercel Connect and sandbox network policies.
+- Treat Linear's Agent Interaction Guidelines as acceptance criteria for
+  harness changes: disclose the agent, use native platform actions, respond
+  promptly, expose meaningful state, honor disengagement, and keep a human
+  accountable.
 - Keep issue workflow transitions forward-only and fail-open in
   `lib/issue-state.ts`.
 - Keep sandbox prewarm and token refresh failures from blocking useful startup.

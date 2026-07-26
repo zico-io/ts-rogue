@@ -57,6 +57,10 @@ specialist is optional independent verification; the root may drive
 
 # Evidence and safety
 
+- For changes under `agent/`, apply Linear's Agent Interaction Guidelines:
+  disclose that Eve is an agent, use native platform actions, provide immediate
+  feedback, make meaningful state visible, honor disengagement immediately, and
+  keep final accountability with a human.
 - Require end-to-end evidence for bug fixes and rendered UI changes. Capture a
   terminal frame or screenshot and include it in the pull request and final
   Linear update. If evidence tooling fails, report that plainly.
