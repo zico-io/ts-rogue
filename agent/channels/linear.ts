@@ -733,7 +733,11 @@ function createLinearDefaultEvents(options: {
       for (const action of data.actions) {
         const label = actionLabel(action);
         const parameter = actionParameter(action);
-        if (action.kind === "tool-call") {
+        if (
+          action.kind === "tool-call" ||
+          action.kind === "subagent-call" ||
+          action.kind === "remote-agent-call"
+        ) {
           state.pendingActionsByCallId = {
             ...(state.pendingActionsByCallId ?? {}),
             [action.callId]: { action: label, parameter },
@@ -866,8 +870,12 @@ function createLinearDefaultEvents(options: {
       // Existing behavior: sync agent plan from todo tool.
       await syncAgentPlanFromTodoTool(data, channel, ctx);
 
-      // New behavior: promote completed tool-call ephemeral chips to durable.
-      if (data.result.kind !== "tool-result") return;
+      // New behavior: promote completed tool-call / subagent-call ephemeral chips to durable.
+      if (
+        data.result.kind !== "tool-result" &&
+        data.result.kind !== "subagent-result"
+      )
+        return;
       const state = pendingState(channel);
       const pending = state.pendingActionsByCallId?.[data.result.callId];
       if (!pending) return;
