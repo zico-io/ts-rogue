@@ -856,14 +856,15 @@ function finalizeLost(
   rngState: RngState,
   itemUsed: string | null,
 ): GameState {
-  const clearedParty = state.party.map((member) => {
-    const cleared = { ...member };
-    // Delete rather than assign `undefined`: GameState must stay strictly
-    // JSON-serializable, and an explicit `undefined` property value fails
-    // that check even though the key would be dropped on stringify.
-    delete cleared.effects;
-    return cleared;
-  });
+  // Rest-destructure to omit `effects` entirely rather than assigning it
+  // `undefined`: GameState must stay strictly JSON-serializable, and an
+  // explicit `undefined` property value fails that check. (tickEffects and
+  // clearBattleEffects instead `delete` the key because they already hold a
+  // mutable local copy to mutate in place; this map builds a fresh object
+  // per member, so the single-expression omission is the simpler fit here.)
+  const clearedParty = state.party.map(
+    ({ effects: _effects, ...cleared }) => cleared,
+  );
   const inventory = itemUsed
     ? consumeItem(state.inventory, itemUsed)
     : state.inventory;
