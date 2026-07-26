@@ -791,10 +791,14 @@ function createLinearDefaultEvents(options: {
           rawResult = "";
         }
       }
-      // Completed tool/subagent chips are the mechanical trail of a turn,
-      // not its narrative; keep them on the rolling ephemeral status slot so
-      // they summarize "what just ran" without permanently displacing the
-      // durable thought/response prose that tells the actual story.
+      // Linear replaces an ephemeral activity with whatever the agent posts
+      // next, ephemeral or not (see "Ephemeral activities" in Linear's Agent
+      // Interaction docs) - so a durable thought (see actions.requested
+      // above) already stops being clobbered on its own. Keep the completed
+      // tool/subagent chip itself durable too: it is the native, structured
+      // audit record of what ran and what it returned (HAR-45), and losing
+      // it once the ephemeral "in flight" chip rolls over would erase that
+      // trail rather than just declutter it.
       await postActivity(
         channel,
         options,
@@ -804,7 +808,7 @@ function createLinearDefaultEvents(options: {
           parameter: pending.parameter,
           result: truncate(rawResult, MAX_ACTIVITY_TEXT_LENGTH),
         },
-        { ephemeral: true },
+        {},
       );
     },
   };

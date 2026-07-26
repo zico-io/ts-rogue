@@ -1066,7 +1066,7 @@ describe("action.result plan sync", () => {
   });
 });
 
-describe("action.result ephemeral rollup (HAR-68, was durable per HAR-45)", () => {
+describe("action.result durable chip promotion (HAR-45, preserved through HAR-68)", () => {
   const fireActionResult = async (
     data: unknown,
     pendingActionsByCallId: Record<string, unknown> = {},
@@ -1084,7 +1084,7 @@ describe("action.result ephemeral rollup (HAR-68, was durable per HAR-45)", () =
     });
   };
 
-  it("posts an ephemeral action with the stashed action, parameter, and result when a tracked tool-call completes", async () => {
+  it("posts a durable action with the stashed action, parameter, and result when a tracked tool-call completes", async () => {
     await fireActionResult(
       {
         status: "completed",
@@ -1100,7 +1100,7 @@ describe("action.result ephemeral rollup (HAR-68, was durable per HAR-45)", () =
 
     expect(createLinearAgentActivity).toHaveBeenCalledTimes(1);
     const call = vi.mocked(createLinearAgentActivity).mock.calls[0]?.[0];
-    expect(call.activity.ephemeral).toBe(true);
+    expect(call.activity.ephemeral).toBeUndefined();
     expect(call.activity.content).toEqual({
       type: "action",
       action: "bash",
@@ -1201,7 +1201,7 @@ describe("action.result ephemeral rollup (HAR-68, was durable per HAR-45)", () =
     expect(createLinearAgentActivity).toHaveBeenCalledTimes(1);
   });
 
-  it("posts a tracked subagent-call as an ephemeral rollup on subagent-result", async () => {
+  it("promotes a tracked subagent-call to durable on subagent-result", async () => {
     await fireActionResult(
       {
         status: "completed",
@@ -1222,7 +1222,7 @@ describe("action.result ephemeral rollup (HAR-68, was durable per HAR-45)", () =
 
     expect(createLinearAgentActivity).toHaveBeenCalledTimes(1);
     const call = vi.mocked(createLinearAgentActivity).mock.calls[0]?.[0];
-    expect(call.activity.ephemeral).toBe(true);
+    expect(call.activity.ephemeral).toBeUndefined();
     expect(call.activity.content).toEqual({
       type: "action",
       action: "subagent-call",
@@ -1231,7 +1231,7 @@ describe("action.result ephemeral rollup (HAR-68, was durable per HAR-45)", () =
     });
   });
 
-  it("posts a remote-agent-call request followed by subagent-result as an ephemeral rollup", async () => {
+  it("promotes a remote-agent-call request followed by subagent-result to durable", async () => {
     await fireActionResult(
       {
         status: "completed",
