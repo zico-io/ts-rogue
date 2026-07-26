@@ -1043,8 +1043,10 @@ describe("action.result durable chip promotion (HAR-45)", () => {
       type: "action",
       action: "bash",
       parameter: '{"command":"echo hello"}',
-
-      result: "done · 1 line",
+      // The stashed action/parameter are reused verbatim; only the result is
+      // now a readable summary instead of raw JSON (bash output has no exitCode
+      // here, so it reads as "done" plus the stdout line count).
+      result: "✓ done · 1 line",
     });
   });
 

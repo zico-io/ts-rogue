@@ -1,6 +1,15 @@
 import { isPlainObject } from "./is-plain-object";
 import { toolOperation } from "./tool-label";
-import { MAX_ACTIVITY_TEXT_LENGTH, truncate } from "./truncate";
+import { MAX_ACTIVITY_TEXT_LENGTH, truncatePreservingTrailingUrl } from "./truncate";
+
+// Formatter for the `parameter` and `result` fields of a Linear Agent
+// Activity `action` chip, used by `channels/linear.ts`. Without it, chips
+// render as `bash {"command":"..."}` (raw tool name + a `JSON.stringify(input)`
+// blob) with a raw `JSON.stringify(output)` result; with it they read
+// `Bash <command>` + `exit 0 · N lines`, which is what Linear's native
+// tool-call UI is built to show. (The chip's `action` label comes from
+// `toolLabel`; the channel already correlates a call's input to its result
+// by callId in its own state, so this module is pure formatting.)
 
 const asString = (value: unknown): string | undefined =>
   typeof value === "string" && value.length > 0 ? value : undefined;
@@ -22,7 +31,42 @@ const compactJson = (value: unknown): string => {
   }
 };
 
+/**
+ * Wrap multi-line text in a Markdown fenced code block.
+ * Only fences if the text actually contains newlines.
+ */
+const fenceIfMultiline = (text: string): string => {
+  if (!text.includes("\n")) return text;
+  return `\`\`\`\n${text}\n\`\`\``;
+};
+
+/**
+ * Truncation can cut a fenced code block in half, leaving an open ``` with
+ * no matching close - Linear would then render the rest of the chip as code.
+ * Re-close an odd (unclosed) fence count after truncation.
+ */
+const closeDanglingFence = (text: string): string => {
+  const fenceCount = (text.match(/```/g) ?? []).length;
+  return fenceCount % 2 === 1 ? `${text}\n\`\`\`` : text;
+};
+
 type ParamFormatter = (input: Record<string, unknown>) => string | undefined;
+
+// Subagent tool calls (the declared `playtester` subagent and the built-in
+// `agent` delegation tool) take a single `input.message` task description;
+// render each as `<Subagent name> - <first line of the task>` rather than a
+// raw JSON blob.
+const subagentFormatter =
+  (label: string): ParamFormatter =>
+  (input) => {
+    const message = asString(input.message);
+    return message === undefined ? undefined : `${label} - ${firstLine(message)}`;
+  };
+
+const SUBAGENT_LABELS: Record<string, string> = {
+  playtester: "Playtester",
+  agent: "Agent",
+};
 
 const PARAMETER_FORMATTERS: Record<string, ParamFormatter> = {
   bash: (input) => asString(input.command),
@@ -46,8 +90,14 @@ const PARAMETER_FORMATTERS: Record<string, ParamFormatter> = {
       ? asString(input.queries.filter((q) => typeof q === "string").join(", "))
       : undefined),
   load_skill: (input) => asString(input.skill),
-
+  // The list already mirrors to Linear's native Agent Plan; the chip is just a marker.
   todo: () => "Updated plan",
+  ...Object.fromEntries(
+    Object.entries(SUBAGENT_LABELS).map(([operation, label]) => [
+      operation,
+      subagentFormatter(label),
+    ]),
+  ),
 };
 
 export const toolActionParameter = (
@@ -56,8 +106,12 @@ export const toolActionParameter = (
 ): string => {
   const formatter = PARAMETER_FORMATTERS[toolOperation(toolName)];
   const formatted = formatter?.(isPlainObject(input) ? input : {});
-
-  return truncate(formatted ?? compactJson(input), MAX_ACTIVITY_TEXT_LENGTH);
+  // ponytail: unknown/MCP tools fall back to truncated JSON of the input;
+  // add a per-tool formatter above if one reads badly.
+  return truncatePreservingTrailingUrl(
+    formatted ?? compactJson(input),
+    MAX_ACTIVITY_TEXT_LENGTH,
+  );
 };
 
 const RESULT_NOUNS: Record<string, [one: string, many: string]> = {
@@ -80,19 +134,30 @@ const errorText = (output: unknown): string | undefined => {
 
 const bashResult = (output: unknown): string => {
   if (!isPlainObject(output)) return "done";
-  const parts: string[] = [];
+
   const code =
     typeof output.exitCode === "number" ? output.exitCode : undefined;
-  parts.push(code === undefined ? "done" : `exit ${code}`);
+
+  // Lead with glyph: ✓ for success, ✗ for failure
+  const glyph = code === undefined || code === 0 ? "✓" : "✗";
+
+  // Build the summary parts (without glyph) - keep the exit code detail for
+  // both success and failure; "done" is only for a code-less output.
+  const parts: string[] = [code === undefined ? "done" : `exit ${code}`];
+
   const lines = lineCount(asString(output.stdout) ?? "");
   if (lines > 0) parts.push(plural(lines, "line", "lines"));
   if (output.truncated === true) parts.push("truncated");
   const summary = parts.join(" · ");
+
   if (code !== undefined && code !== 0) {
-    const err = asString(firstLine((asString(output.stderr) ?? "").trim()));
-    if (err !== undefined) return `${summary} - ${err}`;
+    const stderr = asString((asString(output.stderr) ?? "").trim());
+    if (stderr !== undefined) {
+      // Return the glyph, summary, and the (possibly fenced) stderr text
+      return `${glyph} ${summary}\n${fenceIfMultiline(stderr)}`;
+    }
   }
-  return summary;
+  return `${glyph} ${summary}`;
 };
 
 const rawResult = (toolName: string, output: unknown): string => {
@@ -109,6 +174,13 @@ const rawResult = (toolName: string, output: unknown): string => {
     if (op === "web_fetch") return plural(output.length, "char", "chars");
     const trimmed = output.trim();
     if (trimmed.length === 0) return "done";
+
+    // Multi-line text gets fenced; short summaries don't
+    if (trimmed.includes("\n")) {
+      return fenceIfMultiline(trimmed);
+    }
+
+    // Single-line text: show it if short, otherwise summary
     return trimmed.length <= MAX_ACTIVITY_TEXT_LENGTH
       ? trimmed
       : plural(output.length, "char", "chars");
@@ -130,10 +202,15 @@ export const toolActionResult = (
 ): string => {
   if (isError === true) {
     const message = errorText(output);
-    return truncate(
-      message === undefined ? "error" : `error - ${message}`,
+    const errorMessage =
+      message === undefined ? "✗ error" : `✗ ${message}`;
+    return truncatePreservingTrailingUrl(
+      errorMessage,
       MAX_ACTIVITY_TEXT_LENGTH,
     );
   }
-  return truncate(rawResult(toolName, output), MAX_ACTIVITY_TEXT_LENGTH);
+  const result = rawResult(toolName, output);
+  return closeDanglingFence(
+    truncatePreservingTrailingUrl(result, MAX_ACTIVITY_TEXT_LENGTH),
+  );
 };
