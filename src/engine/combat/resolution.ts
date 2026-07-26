@@ -454,9 +454,14 @@ function tickSingleEffect(
   damage: number,
   actorName: string,
   logs: LogEntry[],
+  element: Element | undefined,
 ): EffectInstance | null {
   logs.push(
-    entry(`${actorName} takes ${damage} ${effectName} damage!`, "damage"),
+    entry(
+      `${actorName} takes ${damage} ${effectName} damage!`,
+      "damage",
+      element,
+    ),
   );
 
   const nextDuration = effect.duration - 1;
@@ -497,6 +502,7 @@ function tickEffects(actor: BattleEnemy | PartyMember, logs: LogEntry[]): void {
         damage,
         actor.name,
         logs,
+        def.element,
       );
       if (result !== null) {
         remaining.push(result);
@@ -612,6 +618,7 @@ function applyMemberCommand(
             entry(
               `${actor.name} hits ${target.name} for ${finalDamage}${result.crit ? " - crit!" : ""}`,
               "damage",
+              "physical",
             ),
           );
           if (target.hp === 0)
@@ -649,6 +656,7 @@ function applyMemberCommand(
             entry(
               `${actor.name} casts ${skill.name} on ${target.name} for ${finalDamage}${elementTag}!`,
               "damage",
+              skill.element ?? "physical",
             ),
           );
           if (target.hp === 0)
@@ -796,6 +804,7 @@ function advanceRound(
         entry(
           `${enemy.name} hits ${target.name} for ${finalDamage}${elementTag}${attack.crit ? " - crit!" : ""}`,
           "damage",
+          attackElement ?? "physical",
         ),
       );
 

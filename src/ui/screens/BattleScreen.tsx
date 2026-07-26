@@ -26,7 +26,12 @@ import {
   reduceBattleUi,
   resolveBattleIntent,
 } from "./battle/interaction";
-import { type PackedEnemies, packEnemyColumns } from "./battle/render";
+import {
+  type EffectBadge,
+  effectBadges,
+  type PackedEnemies,
+  packEnemyColumns,
+} from "./battle/render";
 
 export interface BattleScreenProps {
   state: GameState;
@@ -207,6 +212,7 @@ function BattleBody({
             <Text bold color={theme.accent}>
               {actor.name}
             </Text>
+            <StatusBadgeRow badges={effectBadges(actor.effects)} />
             <ActionMenu
               mode={mode}
               actions={ACTIONS}
@@ -265,10 +271,24 @@ function EnemyField({ packed }: { packed: PackedEnemies }) {
                   {col.nameLine}
                 </Text>
                 <Text color={color}>{col.hpLine}</Text>
+                <StatusBadgeRow badges={col.badges} />
               </Box>
             );
           })}
         </Box>
+      ))}
+    </Box>
+  );
+}
+
+function StatusBadgeRow({ badges }: { badges: readonly EffectBadge[] }) {
+  if (badges.length === 0) return null;
+  return (
+    <Box flexDirection="row" gap={1}>
+      {badges.map((badge) => (
+        <Text key={badge.id} color={theme.statusEffect[badge.id]}>
+          {badge.label}
+        </Text>
       ))}
     </Box>
   );
