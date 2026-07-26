@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { LootFilterRules } from "./lootFilter";
-import { dungeonTierForFloor } from "./lootFilter";
 import {
   applyLootPickup,
   applyLootPickupWithFilter,
+  buildLootFilterContext,
   queueLootTriage,
 } from "./pickup";
 import type { ItemInstance } from "./types";
@@ -21,26 +21,33 @@ function makeItem(overrides: Partial<ItemInstance> = {}): ItemInstance {
   };
 }
 
-describe("dungeonTierForFloor", () => {
-  it("returns 1 for floor 0 (edge)", () => {
-    expect(dungeonTierForFloor(0)).toBe(1);
+describe("buildLootFilterContext", () => {
+  it("derives the dungeon tier from the floor via tierForFloor", () => {
+    expect(buildLootFilterContext([{ level: 1 }], 1)).toEqual({
+      dungeonTier: 1,
+      partyLevel: 1,
+    });
+    expect(buildLootFilterContext([{ level: 1 }], 2)).toEqual({
+      dungeonTier: 2,
+      partyLevel: 1,
+    });
+    expect(buildLootFilterContext([{ level: 1 }], 5)).toEqual({
+      dungeonTier: 3,
+      partyLevel: 1,
+    });
   });
 
-  it("returns 1 for floor 1", () => {
-    expect(dungeonTierForFloor(1)).toBe(1);
+  it("defaults dungeonTier to 1 when there is no active dungeon floor", () => {
+    expect(buildLootFilterContext([{ level: 1 }], null)).toEqual({
+      dungeonTier: 1,
+      partyLevel: 1,
+    });
   });
 
-  it("returns 2 for floor 2", () => {
-    expect(dungeonTierForFloor(2)).toBe(2);
-  });
-
-  it("returns 3 for floor 3", () => {
-    expect(dungeonTierForFloor(3)).toBe(3);
-  });
-
-  it("returns 3 for floors beyond 3", () => {
-    expect(dungeonTierForFloor(4)).toBe(3);
-    expect(dungeonTierForFloor(10)).toBe(3);
+  it("uses the highest level across the party", () => {
+    expect(
+      buildLootFilterContext([{ level: 2 }, { level: 7 }, { level: 4 }], 1),
+    ).toEqual({ dungeonTier: 1, partyLevel: 7 });
   });
 });
 

@@ -13,12 +13,12 @@ import { consumeItem, healAmount, isHealItem } from "../loot/consumables";
 import { type EquipmentSlotName, equipTargetSlot } from "../loot/equipment";
 import { FIELD_BACKPACK_CAP, isFieldBackpackFull } from "../loot/inventory";
 import { describeItem, itemSellPrice } from "../loot/items";
+import { EMPTY_LOOT_FILTER, type LootFilterRules } from "../loot/lootFilter";
 import {
-  dungeonTierForFloor,
-  EMPTY_LOOT_FILTER,
-  type LootFilterRules,
-} from "../loot/lootFilter";
-import { applyLootPickupWithFilter, queueLootTriage } from "../loot/pickup";
+  applyLootPickupWithFilter,
+  buildLootFilterContext,
+  queueLootTriage,
+} from "../loot/pickup";
 import { rollChestLoot } from "../loot/resolution";
 import { Rng } from "../rng/rng";
 import {
@@ -433,10 +433,7 @@ function openChest(state: GameState): GameState {
   const chest = rollChestLoot(rng, ds.floor, state.nextItemId);
   // ENG-18: route the chest's generated item(s) through the auto-dismantle
   // filter before the cap-aware pickup pipeline.
-  const filterContext = {
-    dungeonTier: dungeonTierForFloor(ds.floor),
-    partyLevel: Math.max(...state.party.map((m) => m.level)),
-  };
+  const filterContext = buildLootFilterContext(state.party, ds.floor);
   const pickup = applyLootPickupWithFilter(
     state.items,
     chest.items,

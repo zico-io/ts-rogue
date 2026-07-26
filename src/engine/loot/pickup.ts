@@ -13,10 +13,30 @@
  * counting against the field backpack cap.
  */
 
+import { tierForFloor } from "../../data/lootTables";
 import { itemSellPrice } from "./items";
 import type { LootFilterContext, LootFilterRules } from "./lootFilter";
 import { shouldDismantle } from "./lootFilter";
 import type { ItemInstance } from "./types";
+
+/**
+ * Build the `LootFilterContext` for a pickup: the dungeon tier from the
+ * current floor (`null` outside a dungeon, e.g. an edge-case victory with no
+ * active `dungeonState`, defaults to tier 1) and the party's highest member
+ * level. Takes a structural slice of `PartyMember` (just `level`) rather than
+ * importing the full type, since that's all this needs. Shared by `OpenChest`
+ * (`state/store.ts`) and battle victory loot (`combat/resolution.ts`'s
+ * `finalizeWon`) so the two reducers can't drift.
+ */
+export function buildLootFilterContext(
+  party: readonly { level: number }[],
+  floor: number | null,
+): LootFilterContext {
+  return {
+    dungeonTier: floor === null ? 1 : tierForFloor(floor),
+    partyLevel: Math.max(...party.map((m) => m.level)),
+  };
+}
 
 /**
  * Overflow drops that couldn't fit in the field backpack, queued for a

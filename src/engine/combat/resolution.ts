@@ -42,8 +42,11 @@ import { consumeItem, healAmount, isHealItem } from "../loot/consumables";
 import { effectiveStats } from "../loot/equipment";
 import { FIELD_BACKPACK_CAP } from "../loot/inventory";
 import { describeItem } from "../loot/items";
-import { dungeonTierForFloor } from "../loot/lootFilter";
-import { applyLootPickupWithFilter, queueLootTriage } from "../loot/pickup";
+import {
+  applyLootPickupWithFilter,
+  buildLootFilterContext,
+  queueLootTriage,
+} from "../loot/pickup";
 import { rollVictoryLoot } from "../loot/resolution";
 import type { ItemInstance } from "../loot/types";
 import { Rng, type RngState } from "../rng/rng";
@@ -745,12 +748,10 @@ function finalizeWon(
   }
   // ENG-18: route victory loot through the auto-dismantle filter before the
   // cap-aware pickup pipeline.
-  const filterContext = {
-    dungeonTier: state.dungeonState
-      ? dungeonTierForFloor(state.dungeonState.floor)
-      : 1,
-    partyLevel: Math.max(...state.party.map((m) => m.level)),
-  };
+  const filterContext = buildLootFilterContext(
+    state.party,
+    state.dungeonState?.floor ?? null,
+  );
   const pickup = applyLootPickupWithFilter(
     state.items,
     loot,
