@@ -55,7 +55,7 @@ describe("effectiveStats", () => {
       armor: VIT_ARMOR,
       accessory1: AGI_RING,
     });
-    // war-blade str+5, plate-mail vit+5, copper-ring agi+1, on a warrior base
+
     expect(effectiveStats(hero)).toEqual({ str: 12, agi: 5, vit: 12, int: 2 });
   });
 });
@@ -100,7 +100,7 @@ describe("compareItem", () => {
       suffixes: [],
       implicit: null,
     };
-    // war-blade str+5 plus vicious str+5 = +10, versus the equipped +5 -> net +5
+
     expect(compareItem(hero, better)).toEqual({
       str: 5,
       agi: 0,

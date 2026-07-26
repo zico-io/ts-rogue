@@ -1,10 +1,3 @@
-/**
- * Fast-travel picker input handling (ENG-1), mirroring the village
- * overview's "house menu" pattern (`village/interaction.ts`'s
- * `OverviewUiState`/`resolveOverviewIntent`/`reduceOverviewUi`): a cursor
- * over a list, Up/Down to move it, Enter to confirm, Escape to cancel.
- */
-
 import type { Intent, Keymap, KeyName } from "../../scene/input";
 
 export interface ZoomUiState {
@@ -21,7 +14,6 @@ export interface ZoomUiResult {
 }
 
 export interface ZoomUiContext {
-  /** Number of waypoints currently listed; the cursor wraps modulo this. */
   count: number;
 }
 
@@ -32,12 +24,10 @@ const zoomKeymap: Keymap = {
   escape: { kind: "cancel" },
 };
 
-/** Resolves the `Intent` for a key press on the fast-travel picker. */
 export function resolveZoomIntent(key: KeyName): Intent | undefined {
   return zoomKeymap[key];
 }
 
-/** Pure transition function for the fast-travel picker's cursor. */
 export function reduceZoomUi(
   state: ZoomUiState,
   intent: Intent,

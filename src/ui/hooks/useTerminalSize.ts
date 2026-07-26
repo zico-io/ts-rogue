@@ -1,7 +1,6 @@
 import { useStdout } from "ink";
 import { useEffect, useState } from "react";
 
-/** Fallback terminal size when stdout is missing or reports a non-TTY size. */
 export const DEFAULT_COLUMNS = 80;
 export const DEFAULT_ROWS = 24;
 
@@ -19,13 +18,6 @@ function sizeOf(
   return { columns, rows };
 }
 
-/**
- * Reactive terminal size. Wraps Ink's `useStdout` and subscribes to the
- * stream's `resize` event (fired on SIGWINCH) so components re-render when the
- * terminal is resized or toggled fullscreen. Falls back to safe defaults when
- * stdout is absent or reports a zero size, so non-TTY/CI/test runs do not
- * break. Mirrors the subscribe-and-rerender style of `useGameState`.
- */
 export function useTerminalSize(): TerminalSize {
   const { stdout } = useStdout();
   const [size, setSize] = useState<TerminalSize>(() => sizeOf(stdout));

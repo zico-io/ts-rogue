@@ -1,11 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// Handoff pre-checks the issue for an already-live Agent Session (the
-// one-live-session-per-issue invariant), then posts a Linear comment via the
-// hand-rolled `commentCreate` mutation and anchors a fresh Agent Session to
-// that comment. These mocks stand in for the eve runtime and Linear GraphQL
-// transport so all three steps can be driven and asserted without a live
-// session.
 const { callGraphQL, createSessionOnComment } = vi.hoisted(() => ({
   callGraphQL: vi.fn(),
   createSessionOnComment: vi.fn(),
@@ -37,8 +31,6 @@ const handoffTool = (await import("../agent/tools/handoff"))
 };
 const { createLinearComment } = await import("../agent/tools/handoff");
 
-// Dispatch-auth shape `defaultLinearAuth` produces for a Linear-initiated
-// session: the caller's own Agent Session id rides in `attributes`.
 const toolCtx = (agentSessionId?: string) => ({
   session: {
     auth: {
@@ -51,16 +43,9 @@ const toolCtx = (agentSessionId?: string) => ({
   },
 });
 
-// listLiveAgentSessions now excludes sessions idle past STALE_SESSION_MS, so a
-// blocking mock session needs a recent "last active" signal to still count as
-// live. Expressed relative to Date.now() so the tests are deterministic without
-// pinning the clock; the STALE offset clears the 30-min threshold with margin.
 const RECENT = () => new Date(Date.now() - 60_000).toISOString();
 const STALE = () => new Date(Date.now() - 60 * 60_000).toISOString();
 
-// Routes the two GraphQL queries the tool now issues: the live-session
-// pre-check and the comment mutation. Sessions without their own `activities`
-// are auto-stamped as recently active so they read as live.
 const mockGraphQL = (input: {
   sessions?: readonly unknown[];
   commentId?: string;
@@ -143,7 +128,10 @@ describe("handoff tool", () => {
     });
 
     const result = await handoffTool.execute(
-      { issueId: "issue-uuid", brief: "continuation packet" },
+      {
+        issueId: "issue-uuid",
+        brief: "**Agent handoff**\n\ncontinuation packet",
+      },
       toolCtx(),
     );
 
@@ -151,8 +139,7 @@ describe("handoff tool", () => {
       expect.objectContaining({ commentId: "comment-9" }),
     );
     const commentBody = commentCreateCall()?.variables.input.body;
-    expect(commentBody).toContain("**Agent handoff**");
-    expect(commentBody).toContain("continuation packet");
+    expect(commentBody).toBe("continuation packet");
     expect(result).toEqual({
       handoffSessionId: "session-9",
       handoffSessionUrl: "https://linear.app/session-9",
@@ -275,8 +262,7 @@ describe("handoff duplicate-session guard", () => {
           status: "active",
           createdAt: STALE(),
           url: "https://linear.app/session-stalled",
-          // Explicit stale last-activity overrides the auto-stamp: silent well
-          // past STALE_SESSION_MS, so it no longer blocks a fresh session.
+
           activities: { nodes: [{ updatedAt: STALE() }] },
         },
       ],

@@ -1,12 +1,5 @@
 name: Ralph eval
 
-# End-to-end eval for ralph mode (issue groups). It drives the deployed agent
-# against a fixed Linear fixture and is authenticated, deployment-dependent, and
-# spins a real Vercel Sandbox - so it runs weekly and on demand, never on pull
-# requests. Auth is a short-lived GitHub OIDC token minted per run (no stored
-# bearer; the deployment's eve channel verifies it via oidc()). The only secret
-# is the Vercel deployment-protection bypass, which also gates the run: the job
-# self-skips until VERCEL_AUTOMATION_BYPASS_SECRET is set.
 on:
   workflow_dispatch:
   schedule:
@@ -35,7 +28,6 @@ jobs:
             echo "VERCEL_AUTOMATION_BYPASS_SECRET not set - configure deployment access to run this eval. Skipping."
             exit 0
           fi
-          # Short-lived, per-run bearer. audience must match oidc() in agent/channels/eve.ts.
           EVE_EVAL_AUTH_TOKEN="$(curl -sS \
             -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
             "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=eve-ralph-eval" | jq -r .value)"

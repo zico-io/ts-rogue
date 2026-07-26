@@ -2,16 +2,14 @@ import { isPlainObject } from "./is-plain-object";
 import { toolOperation } from "./tool-label";
 import { MAX_ACTIVITY_TEXT_LENGTH, truncatePreservingTrailingUrl } from "./truncate";
 
-// Shared formatter for the `parameter` and `result` fields of a Linear Agent
-// Activity `action` chip. Both emission points - the root channel
-// (`channels/linear.ts`) and the delegated-child relay (`hooks/relay.ts`) -
-// route through here so parent and child tool-call chips read identically.
-// Without it, chips render as `bash {\"command\":\"...\"}` (raw tool name + a
-// `JSON.stringify(input)` blob) with a raw `JSON.stringify(output)` result;
-// with it they read `Bash <command>` + `exit 0 · N lines`, which is what
-// Linear's native tool-call UI is built to show. (The chip's `action` label
-// comes from `toolLabel`; both call sites already correlate a call's input to
-// its result by callId in their own state, so this module is pure formatting.)
+// Formatter for the `parameter` and `result` fields of a Linear Agent
+// Activity `action` chip, used by `channels/linear.ts`. Without it, chips
+// render as `bash {"command":"..."}` (raw tool name + a `JSON.stringify(input)`
+// blob) with a raw `JSON.stringify(output)` result; with it they read
+// `Bash <command>` + `exit 0 · N lines`, which is what Linear's native
+// tool-call UI is built to show. (The chip's `action` label comes from
+// `toolLabel`; the channel already correlates a call's input to its result
+// by callId in its own state, so this module is pure formatting.)
 
 const asString = (value: unknown): string | undefined =>
   typeof value === "string" && value.length > 0 ? value : undefined;
@@ -52,13 +50,12 @@ const closeDanglingFence = (text: string): string => {
   return fenceCount % 2 === 1 ? `${text}\n\`\`\`` : text;
 };
 
-// --- parameter: a readable summary of the tool INPUT ------------------------
-
 type ParamFormatter = (input: Record<string, unknown>) => string | undefined;
 
-// Subagent tool calls (coder/scout/playtester/reviewer/agent) all take a
-// single `input.message` task description; render each as
-// `<Subagent name> - <first line of the task>` rather than a raw JSON blob.
+// Subagent tool calls (the declared `playtester` subagent and the built-in
+// `agent` delegation tool) take a single `input.message` task description;
+// render each as `<Subagent name> - <first line of the task>` rather than a
+// raw JSON blob.
 const subagentFormatter =
   (label: string): ParamFormatter =>
   (input) => {
@@ -67,10 +64,7 @@ const subagentFormatter =
   };
 
 const SUBAGENT_LABELS: Record<string, string> = {
-  coder: "Coder",
-  scout: "Scout",
   playtester: "Playtester",
-  reviewer: "Reviewer",
   agent: "Agent",
 };
 
@@ -98,11 +92,6 @@ const PARAMETER_FORMATTERS: Record<string, ParamFormatter> = {
   load_skill: (input) => asString(input.skill),
   // The list already mirrors to Linear's native Agent Plan; the chip is just a marker.
   todo: () => "Updated plan",
-  // Workflow's only input is a JS orchestration program, not a task message.
-  Workflow: (input) => {
-    const js = asString(input.js);
-    return js === undefined ? undefined : `Workflow - ${firstLine(js)}`;
-  },
   ...Object.fromEntries(
     Object.entries(SUBAGENT_LABELS).map(([operation, label]) => [
       operation,
@@ -124,8 +113,6 @@ export const toolActionParameter = (
     MAX_ACTIVITY_TEXT_LENGTH,
   );
 };
-
-// --- result: a readable summary of the tool OUTPUT --------------------------
 
 const RESULT_NOUNS: Record<string, [one: string, many: string]> = {
   grep: ["match", "matches"],
@@ -198,7 +185,7 @@ const rawResult = (toolName: string, output: unknown): string => {
       ? trimmed
       : plural(output.length, "char", "chars");
   }
-  // read_file may hand back `{ content }` rather than a bare string.
+
   if (op === "read_file" && isPlainObject(output)) {
     const content = asString(output.content);
     if (content !== undefined)
@@ -208,7 +195,6 @@ const rawResult = (toolName: string, output: unknown): string => {
   return json.length > 0 ? json : "done";
 };
 
-/** A readable summary of a tool's output, for the `result` field of a completed chip. */
 export const toolActionResult = (
   toolName: string,
   output: unknown,

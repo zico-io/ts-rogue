@@ -11,7 +11,6 @@ export interface InnViewProps {
   onBack: () => void;
 }
 
-/** Inn sub-view: preview the rest cost and confirm an `InnHeal` dispatch. */
 export function InnView({ state, dispatch, onBack }: InnViewProps) {
   useInput((input, key) => {
     const keyName = normalizeInkKey(input, key);

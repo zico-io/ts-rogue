@@ -85,16 +85,11 @@ function App({
   );
   const state = useGameState(store);
   const gameOver = state.flags?.gameOver ?? false;
-  // ENG-5: the full-backpack triage overlay is driven directly by
-  // `state.pendingLootTriage`, not a local open/close toggle - it's a
-  // mandatory decision, so there is nothing to close from the outside.
+
   const lootTriagePending = Boolean(state.pendingLootTriage?.drops.length);
 
   useEffect(() => pipeline.subscribe(setFatal), [pipeline]);
 
-  // Global dev-console toggle (ROG-45's `globalInput`): active whenever the
-  // dev console is enabled at all, regardless of which scene/screen owns
-  // focus, so it works from the title screen too.
   useInput((input, key) => {
     if (fatal || !devConsoleEnabled) return;
     const keyName = normalizeInkKey(input, key);
@@ -103,14 +98,6 @@ function App({
     }
   });
 
-  // Title flow: the landing view is a main menu (New Game / Continue / Settings
-  // / Quit). New Game walks class -> mode -> name, then Enter starts the run,
-  // seeded with the custom seed setting or the boot seed so `--seed` stays
-  // deterministic (ROG-16 play harness). Settings is a separate component that
-  // owns its own input, so this handler is inactive there. (Phase 6, ROG-12
-  // permadeath; ROG-17 class; title overhaul.) The actual view/cursor
-  // transitions and side effects live in the pure `reduceTitleUi` (ROG-56);
-  // this handler only normalizes Ink's input and applies the result.
   useInput(
     (input, key) => {
       if (devConsoleEnabled && input === "`") return;
@@ -163,9 +150,6 @@ function App({
     },
   );
 
-  // In-game scene switching (blocked while the game is over). Digit hotkeys
-  // and quit both come from the shared `globalInput` keymap (ROG-45), so the
-  // browser keyboard manager resolves the exact same bindings.
   useInput(
     (input, key) => {
       const keyName = normalizeInkKey(input, key);
@@ -202,9 +186,6 @@ function App({
     },
   );
 
-  // Game-over phase: Enter starts a new run (same class and permadeath mode),
-  // q quits. The class is reused from the fallen hero so a run restarts in the
-  // same class the player chose (ROG-17).
   useInput(
     (input, key) => {
       const keyName = normalizeInkKey(input, key);
@@ -231,8 +212,6 @@ function App({
     },
   );
 
-  // Clear the persisted save once the game is over so the next boot starts a
-  // fresh run. I/O lives in the persistence layer, not the engine.
   useEffect(() => {
     if (gameOver) failures.run("clear", false, clearSave);
   }, [failures, gameOver]);
@@ -240,10 +219,6 @@ function App({
   const dispatch = (event: Parameters<GameStore["dispatch"]>[0]) =>
     store.dispatch(event);
 
-  // Settings edits persist to disk immediately; local state is the source of
-  // truth for the New Game defaults. Deleting the save flips `hasSave` so the
-  // menu's Continue entry disappears. I/O is wrapped so a write failure surfaces
-  // through the incident pipeline instead of crashing the title screen.
   const updateSettings = (next: GameSettings) => {
     setSettings(next);
     failures.run("save", false, () => saveSettings(next));
@@ -345,8 +320,6 @@ function App({
     }
   }
 
-  // Root is pinned to the live terminal size so the whole tree is bounded and
-  // any rare local overflow is clipped rather than scrambling the screen.
   return (
     <Box flexDirection="column" width={columns} height={rows} overflow="hidden">
       {content}
@@ -389,9 +362,6 @@ class GameErrorBoundary extends Component<
   }
 }
 
-// Dev/headless boot flags. `--fresh` ignores any save so a session always
-// starts from a known state; `--seed=<n>` fixes the run seed instead of the
-// clock, so the tmux play harness can reproduce a session deterministically.
 const seedArg = process.argv.find((arg) => arg.startsWith("--seed="));
 const parsedSeed = seedArg
   ? Number(seedArg.slice("--seed=".length))

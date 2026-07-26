@@ -1,18 +1,3 @@
-/**
- * Dungeon generation, movement, fog-of-war, and encounter triggers
- * (PROJECT_PLAN Phase 3, ROG-9).
- *
- * A dungeon floor is a pure function of `seed + dungeonId + floor`:
- * {@link generateDungeonLayout} derives a deterministic floor seed from those
- * three inputs and feeds it to rot.js's `Map.Digger` room+corridor generator.
- * Digger consumes the *global* rot.js RNG singleton, so generation saves and
- * restores that singleton's state and reseeds it with the floor seed, keeping
- * the engine's serialized `rngState` untouched and the layout reproducible.
- * The player's wandering-encounter rolls still route through the seeded
- * `Rng` wrapper (see the `StepDungeon` reducer), so all randomness is
- * deterministic from the seed plus the event history.
- */
-
 import { RNG, Map as RotMap } from "rot-js";
 import { Rng } from "../rng/rng";
 import type {
@@ -24,24 +9,15 @@ import type {
   Point,
 } from "./types";
 
-/** Dungeon grid dimensions (fixed so the explored mask always aligns). */
 export const DUNGEON_WIDTH = 28;
 export const DUNGEON_HEIGHT = 20;
 
-/** Number of floors in a dungeon; the last floor holds the boss room. */
 export const DUNGEON_FLOORS = 3;
 
-/** Chebyshev radius (in tiles) revealed around the player on each move. */
 export const FOV_RADIUS = 3;
 
-/**
- * Per-step chance of a wandering encounter on a plain floor tile. Tuned in
- * the Phase 6 balance pass (ROG-12) to 0.12 so a floor yields a few encounters
- * across its ~20-40 walkable tiles without spamming the crawl.
- */
 export const DUNGEON_ENCOUNTER_CHANCE = 0.12;
 
-/** Facing the party starts with on every freshly entered floor. */
 export const DUNGEON_INITIAL_FACING: DungeonFacing = "north";
 
 const FACINGS: readonly DungeonFacing[] = ["north", "east", "south", "west"];
@@ -53,12 +29,10 @@ const FORWARD_DELTA: Record<DungeonFacing, Point> = {
   west: { x: -1, y: 0 },
 };
 
-/** One-tile step delta in the given facing (used by the StepDungeon reducer). */
 export function forwardDelta(facing: DungeonFacing): Point {
   return FORWARD_DELTA[facing];
 }
 
-/** Rotate a facing 90 degrees left (counter-clockwise) or right (clockwise). */
 export function rotateFacing(
   facing: DungeonFacing,
   direction: "left" | "right",
@@ -77,7 +51,6 @@ export function inDungeonBounds(layout: DungeonLayout, point: Point): boolean {
   );
 }
 
-/** Treats out-of-bounds as a wall so the FP renderer and movement agree. */
 export function isDungeonWall(layout: DungeonLayout, point: Point): boolean {
   if (!inDungeonBounds(layout, point)) return true;
   return layout.tiles[point.y][point.x].wall;
@@ -95,11 +68,6 @@ function chebyshev(a: Point, b: Point): number {
   return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
 }
 
-/**
- * Deterministic 32-bit FNV-1a hash over the string form of the parts. Used to
- * fold `seed + dungeonId + floor` into a single rot.js seed without consuming
- * the engine's `rngState`.
- */
 function hashSeed(parts: Array<number | string>): number {
   let h = 2166136261 >>> 0;
   for (const part of parts) {
@@ -112,10 +80,6 @@ function hashSeed(parts: Array<number | string>): number {
   return h >>> 0;
 }
 
-/**
- * Numeric seed for a dungeon floor, deterministic from `seed + dungeonId +
- * floor`. Clamped to >= 1 because rot.js's `setSeed` divides by seeds < 1.
- */
 export function floorSeed(
   seed: number,
   dungeonId: string,
@@ -124,11 +88,6 @@ export function floorSeed(
   return Math.max(1, hashSeed([seed, dungeonId, floor]));
 }
 
-/**
- * Structural stand-in for a rot.js `Map.Feature.Room`. rot.js does not export
- * the `Room` type from its top-level entry, so we type only the methods the
- * generator uses; the real `Room[]` from `getRooms()` is structurally compatible.
- */
 interface DungeonRoom {
   getCenter(): number[];
   getLeft(): number;
@@ -142,12 +101,6 @@ function roomCenter(room: { getCenter(): number[] }): Point {
   return { x, y };
 }
 
-/**
- * Pick the tile for the floor's objective (stairs down, or the boss marker on
- * the last floor): the center of the room farthest from the entrance. If the
- * dungeon generated a single room, fall back to that room's farthest corner so
- * the objective never lands on the entrance itself.
- */
 function objectiveTile(rooms: readonly DungeonRoom[], entrance: Point): Point {
   let best = rooms[0];
   let bestDistance = -1;
@@ -173,7 +126,6 @@ function objectiveTile(rooms: readonly DungeonRoom[], entrance: Point): Point {
   );
 }
 
-/** Random passable floor tile inside a room, avoiding the given tiles. */
 function randomRoomFloor(
   rooms: readonly DungeonRoom[],
   tiles: DungeonTile[][],
@@ -192,14 +144,7 @@ function randomRoomFloor(
   return null;
 }
 
-/**
- * Generate a deterministic dungeon floor for `seed + dungeonId + floor`.
- * Rooms + corridors come from rot.js `Map.Digger`; the entrance is the first
- * room's center, the objective (stairs down, or the boss marker on the last
- * floor) is the farthest room's center, and one or two chests are scattered on
- * random room floor tiles. Calling this twice with the same inputs always
- * returns an identical layout.
- */
+/** Deterministically generates a floor without changing rot.js's global RNG state. */
 export function generateDungeonLayout(
   seed: number,
   dungeonId: string,
@@ -207,7 +152,7 @@ export function generateDungeonLayout(
 ): DungeonLayout {
   const fseed = floorSeed(seed, dungeonId, floor);
   const isBossFloor = floor >= DUNGEON_FLOORS;
-  // Digger reads the global rot.js RNG singleton; isolate and reseed it.
+
   const saved = RNG.getState();
   try {
     RNG.setSeed(fseed);
@@ -216,8 +161,7 @@ export function generateDungeonLayout(
       roomHeight: [4, 7],
       corridorLength: [3, 8],
       dugPercentage: 0.3,
-      // Default timeLimit uses wall-clock Date.now(); override so generation
-      // terminates only on dugPercentage / wall availability (both deterministic).
+
       timeLimit: 1e12,
     });
     const tiles: DungeonTile[][] = Array.from({ length: DUNGEON_HEIGHT }, () =>
@@ -228,7 +172,7 @@ export function generateDungeonLayout(
     );
     digger.create((x, y, value) => {
       if (x < 0 || x >= DUNGEON_WIDTH || y < 0 || y >= DUNGEON_HEIGHT) return;
-      // value 0 = floor (doors are already floored by Digger), 1 = wall.
+
       tiles[y][x] = { wall: value !== 0, feature: "none" };
     });
     const rooms = digger.getRooms();
@@ -239,7 +183,6 @@ export function generateDungeonLayout(
       feature: isBossFloor ? "bossMarker" : "stairsDown",
     };
 
-    // Placements use an independent seeded wrapper (not the global singleton).
     const placement = new Rng(fseed);
     const chestCount = placement.int(1, 2);
     for (let i = 0; i < chestCount; i++) {
@@ -256,14 +199,12 @@ export function generateDungeonLayout(
   }
 }
 
-/** A fresh all-unexplored mask sized to `layout`. */
 function freshExplored(layout: DungeonLayout): boolean[][] {
   return Array.from({ length: layout.height }, () =>
     Array.from({ length: layout.width }, () => false),
   );
 }
 
-/** Reveal every tile within Chebyshev `radius` of `origin`, OR-ed into `explored`. */
 export function revealArea(
   explored: readonly (readonly boolean[])[],
   layout: DungeonLayout,
@@ -287,7 +228,6 @@ export function revealArea(
   return next;
 }
 
-/** Build the initial `DungeonState` for entering `floor` of a dungeon. */
 export function createInitialDungeonState(
   seed: number,
   dungeonId: string,

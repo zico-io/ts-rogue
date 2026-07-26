@@ -122,7 +122,7 @@ describe("buildMinimapRows (responsive)", () => {
     });
     expect(rows.length).toBeLessThanOrEqual(4);
     for (const row of rows) expect(row.length).toBeLessThanOrEqual(8);
-    // scale 6: ceil(42/6)=7 wide, ceil(21/6)=4 tall
+
     expect(rows).toHaveLength(4);
     expect(rows[0]).toHaveLength(7);
   });

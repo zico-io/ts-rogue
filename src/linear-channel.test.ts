@@ -1,11 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 
-// This module hand-rolls eve's built-in `linearChannel()` via `defineChannel`
-// so the agent-session dispatch path can reach `cancel()` before `send()`.
-// Mirrors the mocking pattern in `src/child-relay.test.ts`: stub the eve
-// building blocks, import the real module under test, and drive its route
-// handler / exported helpers directly.
-
 const { order, cancelMock, sendMock, waitUntilTasks, webhookVerifier } =
   vi.hoisted(() => ({
     order: [] as string[],
@@ -18,14 +12,10 @@ const { order, cancelMock, sendMock, waitUntilTasks, webhookVerifier } =
       return {};
     }),
     waitUntilTasks: [] as Promise<unknown>[],
-    // Bypasses signature verification for the happy-path tests (the signature
-    // math itself is exercised by eve's own tests via `signLinearWebhookBody`).
+
     webhookVerifier: vi.fn(async () => true),
   }));
 
-// Harness-owned issue lifecycle: mocked so dispatch tests can assert the
-// transition calls without the module's own GraphQL traffic muddying the
-// `callLinearGraphQL` assertions (the guard's live-session query).
 const { advanceIssueStateMock } = vi.hoisted(() => ({
   advanceIssueStateMock: vi.fn(async () => {
     order.push("advance");
@@ -49,9 +39,6 @@ vi.mock("eve/channels", () => ({
 }));
 
 vi.mock("eve/channels/linear", () => ({
-  // The duplicate-session guard's live-session pre-check (via
-  // `agent/lib/live-sessions`). Defaults to "no sessions on the issue" so
-  // the dispatch tests below exercise the pass-through path.
   callLinearGraphQL: vi.fn(async () => ({})),
   createLinearAgentActivity: vi.fn(async () => ({ id: "a", success: true })),
   createLinearAgentSessionOnComment: vi.fn(async () => ({ id: "sess-new" })),
@@ -299,10 +286,6 @@ describe("duplicate created-session guard", () => {
     vi.mocked(createLinearAgentActivity).mockClear();
   };
 
-  // listLiveAgentSessions now excludes sessions idle past STALE_SESSION_MS, so a
-  // blocking mock session needs a recent "last active" signal to count as live.
-  // Expressed relative to Date.now() for determinism without pinning the clock;
-  // createdAt stays whatever the test sets, as it only drives oldest-wins order.
   const liveSessions = (nodes: readonly unknown[]) => ({
     issue: {
       agentSessions: {
@@ -364,9 +347,9 @@ describe("duplicate created-session guard", () => {
         {
           id: "sess-0",
           status: "active",
-          createdAt: "2026-07-25T10:00:00.000Z", // older than the newcomer sess-1
+          createdAt: "2026-07-25T10:00:00.000Z",
           url: "https://linear.app/sess-0",
-          // Silent well past STALE_SESSION_MS, so it no longer blocks.
+
           activities: {
             nodes: [
               { updatedAt: new Date(Date.now() - 60 * 60_000).toISOString() },
@@ -497,7 +480,7 @@ describe("issue lifecycle sync on dispatch", () => {
               status: "active",
               createdAt: "2026-07-25T10:00:00.000Z",
               url: null,
-              // Recent activity so it counts as live and still blocks sess-1.
+
               activities: {
                 nodes: [
                   { updatedAt: new Date(Date.now() - 60_000).toISOString() },
@@ -599,9 +582,6 @@ describe("actions.requested ephemeral render", () => {
   };
 
   it("labels a subagent-call with the delegation packet's lead line, not the static tool description", async () => {
-    // The static `agent` tool description froze the ephemeral chip on
-    // meaningless text for entire child runs; the packet's first line names
-    // the delegated issue.
     const activity = await postAction({
       kind: "subagent-call",
       name: "agent",
@@ -647,13 +627,6 @@ describe("actions.requested ephemeral render", () => {
 
 describe("input.requested elicitation (HAR-17)", () => {
   it("posts a clean elicitation body with Linear's native select signal, not a hidden tracking marker", async () => {
-    // HAR-17: eve's Linear channel used to track which pending request a
-    // reply answered by appending a base64 `<!-- eve-input:... -->` blob
-    // into the same visible message body it rendered. Since eve 0.27 the
-    // runtime matches replies to pending requests itself, so
-    // `renderLinearInputRequests` renders clean prompt/option text and the
-    // tracking metadata (via `linearInputRequestSignal`) rides Linear's own
-    // `signal`/`signalMetadata` activity fields instead of the body.
     vi.mocked(createLinearAgentActivity).mockClear();
     vi.mocked(renderLinearInputRequests).mockReturnValueOnce(
       "Approve this breakdown?\n\n1. Approve\n2. Revise",
@@ -1140,10 +1113,8 @@ describe("action.result durable chip promotion (HAR-45)", () => {
       },
     );
 
-    // First call should post the durable activity
     expect(createLinearAgentActivity).toHaveBeenCalledTimes(1);
 
-    // Fire again with the same (now-consumed) callId
     // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handler directly
     await (channel as any).events["action.result"](
       {
@@ -1159,21 +1130,16 @@ describe("action.result durable chip promotion (HAR-45)", () => {
         linear: { updateSession: vi.fn() },
         state: {
           agentSessionId: "sess-1",
-          // The entry was consumed after the first call, so this is empty now
+
           pendingActionsByCallId: {},
         },
       },
     );
 
-    // Only one activity posted total (entry was consumed after first)
     expect(createLinearAgentActivity).toHaveBeenCalledTimes(1);
   });
 
-  // --- HAR-48: subagent-call / subagent-result durable promotion ---
-
   it("promotes a tracked subagent-call to durable on subagent-result", async () => {
-    // Simulate an actions.requested that stashed a pending entry for a
-    // subagent-call, then the matching action.result fires.
     await fireActionResult(
       {
         status: "completed",
@@ -1278,10 +1244,6 @@ describe("action.result durable chip promotion (HAR-45)", () => {
 });
 
 describe("authorization events surface the OAuth challenge", () => {
-  // eve parks the turn on `authorization.required` for a user-scoped
-  // `connect(...)` connection. Without these handlers the event is dropped
-  // and the Agent Session stalls with no login prompt - the exact symptom
-  // of a Linear-delegated task hanging forever.
   const linearUserAuth = {
     attributes: {},
     authenticator: "linear-agent-webhook",

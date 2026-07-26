@@ -1,11 +1,3 @@
-/**
- * Warn-only linter for the curated `.botfile/memory/` facts (the product SSOT
- * lives at `.botfile/memory/domain/product.md`). Reports format, provenance,
- * index, and freshness drift; never fails a build. Run via `pnpm docs:lint`.
- *
- * The checks are pure functions (no fs/git) so they test with zero mocks; the
- * CLI at the bottom does the fs/git I/O and feeds them plain data.
- */
 import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
@@ -24,16 +16,15 @@ export interface Violation {
 export interface Bullet {
   file: string;
   line: number;
-  /** Raw refs from the `<source: …>` tag (split on " and "), before path resolution. */
+
   refs: string[];
-  /** ISO date from the tag, or undefined when absent/malformed. */
+
   date?: string;
 }
 
 const SOURCE_TAG = /<source:([^>]*)>/;
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-/** True only for a real calendar date in YYYY-MM-DD form. */
 export function isIsoDate(value: string): boolean {
   if (!ISO_DATE.test(value)) return false;
   const [y, m, d] = value.split("-").map(Number);
@@ -45,12 +36,10 @@ export function isIsoDate(value: string): boolean {
   );
 }
 
-/** The leading path-like token of a ref, e.g. "PROJECT_PLAN.md section 2" -> "PROJECT_PLAN.md". */
 export function refPath(ref: string): string {
   return ref.trim().split(/\s+/)[0] ?? "";
 }
 
-/** Parse the `<source: a and b, YYYY-MM-DD>` tag off a fact line. */
 export function parseSourceTag(
   text: string,
 ): { refs: string[]; date?: string } | null {
@@ -71,7 +60,6 @@ function splitRefs(raw: string): string[] {
     .filter(Boolean);
 }
 
-/** Bullet lines (`- …`) from one memory file, with their parsed source tags. */
 export function parseMemoryFile(text: string, file: string): Bullet[] {
   const bullets: Bullet[] = [];
   text.split("\n").forEach((raw, i) => {
@@ -82,7 +70,6 @@ export function parseMemoryFile(text: string, file: string): Bullet[] {
   return bullets;
 }
 
-/** Every fact bullet must carry a well-formed `<source: …, YYYY-MM-DD>`. */
 export function lintFormat(text: string, file: string): Violation[] {
   const out: Violation[] = [];
   text.split("\n").forEach((raw, i) => {
@@ -108,7 +95,6 @@ export function lintFormat(text: string, file: string): Violation[] {
   return out;
 }
 
-/** Em dashes are banned repo-wide; use a plain "-". */
 export function lintEmDash(text: string, file: string): Violation[] {
   const out: Violation[] = [];
   text.split("\n").forEach((raw, i) => {
@@ -123,11 +109,6 @@ export function lintEmDash(text: string, file: string): Violation[] {
   return out;
 }
 
-/**
- * `index.md` must list every memory file and list nothing that is gone.
- * `memoryFiles` and the paths quoted in the index are both relative to the
- * memory dir (e.g. "domain/product.md").
- */
 export function checkIndex(
   indexText: string,
   memoryFiles: string[],
@@ -155,11 +136,6 @@ export function checkIndex(
   return out;
 }
 
-/**
- * A fact whose source file changed in git after the fact's date is likely
- * stale. `gitDates` maps a resolved repo path to its last-commit date (YYYY-MM-DD);
- * paths that do not resolve to a tracked file are simply absent and skipped.
- */
 export function checkFreshness(
   bullets: Bullet[],
   gitDates: Record<string, string>,
@@ -181,8 +157,6 @@ export function checkFreshness(
   }
   return out;
 }
-
-// ---- CLI (I/O only) --------------------------------------------------------
 
 function listMemoryFiles(dir: string): string[] {
   const out: string[] = [];
@@ -242,5 +216,4 @@ function main(): void {
   console.log("\n(warn-only: this never blocks a build)");
 }
 
-// Run only as a script, not when imported by the test.
 if (process.argv[1]?.endsWith("lint-memory.ts")) main();

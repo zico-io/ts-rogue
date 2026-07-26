@@ -1,20 +1,12 @@
-/**
- * Dev console command interpreter (ROG-48): extracted from `DevConsole.tsx`
- * so the browser renderer's dev console (`src/web/devConsole.ts`) can run
- * the exact same commands without importing Ink. Framework-free and pure -
- * every effect (dispatching a `GameEvent`, filing a Linear issue, crashing)
- * is returned as a signal the caller applies, never performed here.
- */
-
 import type { DebugJournalEntry } from "../../engine/state/incidents";
 import type { GameEvent, GameState, Scene } from "../../engine/state/types";
 
 export interface CommandResult {
   clear?: boolean;
   event?: GameEvent;
-  /** Signal to file a Linear issue live; the effect lives in the caller. */
+
   createIssue?: { title: string; label: string };
-  /** Signal to retry every locally queued issue. */
+
   flushIssues?: boolean;
   crash?: string;
   output: string[];

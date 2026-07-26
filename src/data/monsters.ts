@@ -1,32 +1,3 @@
-/**
- * Monster definitions (PROJECT_PLAN Phase 4, ROG-10; Phase 5, ROG-11; data
- * table named in section 7).
- *
- * Each monster is plain serializable data: base stats, HP/MP, XP/gold reward,
- * a difficulty tier, first-person ASCII art drawn facing the viewer
- * (Wizardry/Dragon Quest style - the party sees the monster looking back at
- * them), and Phase 5 loot hooks: a `lootTableRef` selecting the weighted loot
- * table rolled on victory, and an optional `implicitPoolRef` for the
- * monster-implicit pool (bosses and certain enemy types). Phase 5 battles read
- * these via the loot resolution helper in `src/engine/loot/resolution.ts`.
- *
- * Phase 6 (ROG-12) balance pass: trash mob gold was raised slightly so the
- * early game is less grindy. Slime gold 3 -> 5; Goblin gold 8 -> 12. The boss
- * gold (120) and all XP values are unchanged; the XP curve already produces a
- * satisfying few levels over a 20-30 min session.
- *
- * ROG-44: monsters with a browser battle sprite carry an optional `sprite`
- * atlas frame id alongside `ascii`; the terminal renderer keeps using `ascii`
- * unchanged.
- *
- * ENG-10 (status + element data model): a monster's basic attack carries an
- * optional `attackElement` (defaults to `physical` when omitted) and an
- * optional `attackApplies` list of status effects it may inflict on hit.
- * Resolution wiring that reads either field is out of scope for ENG-10.
- *
- * ENG-21: the slime now has `attackApplies` with a poison effect so its
- * basic attack can poison the target on a successful roll.
- */
 import type { AppliedEffect, Element } from "../engine/combat/statusEffects";
 
 export interface MonsterStats {
@@ -44,28 +15,23 @@ export interface MonsterDef {
   maxMp: number;
   xp: number;
   gold: number;
-  /** Lowest dungeon floor this monster appears on (wandering or boss). */
+
   minFloor: number;
-  /** Difficulty tier; Phase 5 loot tables and implicit pools key off this. */
+
   tier: number;
-  /** Weighted loot table rolled on victory (see `src/data/lootTables.ts`). */
+
   lootTableRef: string;
-  /** Optional monster-implicit pool (see `src/data/implicitPools.ts`). */
+
   implicitPoolRef?: string;
-  /** First-person ASCII art, line by line, facing the viewer. */
+
   ascii: readonly string[];
-  /** Accent color (hex) tinting this monster's battle art (ROG-31). */
+
   color: string;
-  /** Basic attack's damage element; defaults to `physical` when omitted. */
+
   attackElement?: Element;
-  /** Status effects this monster's basic attack may inflict on hit; omitted means none. */
+
   attackApplies?: AppliedEffect[];
-  /**
-   * Browser sprite id (ROG-44): a frame name in the Pixi atlas built by
-   * `scripts/build-atlas.ts` (`src/web/atlas.ts` loads it, `src/web/main.ts`
-   * looks sprites up by this id). Additive - optional so terminal saves and
-   * the terminal renderer, which keeps using `ascii`, are unaffected.
-   */
+
   sprite?: string;
 }
 

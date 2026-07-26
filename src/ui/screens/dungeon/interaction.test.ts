@@ -53,7 +53,7 @@ describe("resolveDungeonIntent", () => {
     expect(resolveDungeonIntent("char:y", true)).toEqual({ kind: "confirm" });
     expect(resolveDungeonIntent("escape", true)).toEqual({ kind: "cancel" });
     expect(resolveDungeonIntent("char:n", true)).toEqual({ kind: "cancel" });
-    // Normal dungeon keys don't resolve while the prompt is open.
+
     expect(resolveDungeonIntent("up", true)).toBeUndefined();
     expect(resolveDungeonIntent("char:<", true)).toBeUndefined();
   });

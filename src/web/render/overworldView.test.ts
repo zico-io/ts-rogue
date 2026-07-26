@@ -49,7 +49,6 @@ interface FakeFactory extends OverworldDrawFactory {
   blobs: FakeBlob[];
 }
 
-/** Minimal fake `OverworldDrawFactory`, mirroring `sceneView.test.ts`'s `fakeFactory()`. */
 function fakeFactory(): FakeFactory {
   const sprites: FakeSprite[] = [];
   const rects: FakeRect[] = [];
@@ -96,7 +95,6 @@ function fakeFactory(): FakeFactory {
 const SIZE = { width: 400, height: 300 };
 const TILE_PX = 20;
 
-/** Builds a minimal `OverworldMap` from a row-major grid of single-char tile codes (ROG-73 tests). */
 function mapFrom(rows: string[]): OverworldMap {
   const codes: Record<string, Tile> = {
     g: "grass",
@@ -134,9 +132,7 @@ describe("OverworldSceneView", () => {
       0,
     );
     expect(playerSprite?.setPosition).toHaveBeenCalled();
-    // Every viewport tile sprite is scaled up from its native 8px atlas
-    // frame to fill the tile cell (ROG-63); otherwise it renders at 8px and
-    // leaves the rest of the cell empty.
+
     expect(playerSprite?.setSize).toHaveBeenCalledWith(TILE_PX, TILE_PX);
   });
 
@@ -236,8 +232,7 @@ describe("OverworldSceneView", () => {
     const factory = fakeFactory();
     const view = new OverworldSceneView(factory);
     const state = newGame(1);
-    // (0,0) mountain is isolated; (3,2) mountain sits at the center of a 3x3
-    // cluster, so it should render bigger than the isolated one.
+
     const map = mapFrom(["mgggg", "ggmmm", "ggmmm", "ggmmm", "ggggg"]);
     const positioned = {
       ...state,
@@ -283,7 +278,6 @@ describe("OverworldSceneView", () => {
     };
     view.render(halfway, map, SIZE, TILE_PX);
 
-    // rects: [minimap border, ...minimap cells, meter background, meter fill]
     const meterBg = factory.rects.at(-2);
     const meterFill = factory.rects.at(-1);
     const bgWidth = meterBg?.setSize.mock.calls.at(-1)?.[0] as number;
@@ -327,9 +321,7 @@ describe("OverworldSceneView", () => {
         (call) => call[0] === "multiCellFixture",
       ),
     );
-    // A 2x2 footprint (`multiCellFixture`'s declared `multiCell`) covers 4
-    // grid cells, one sprite each - not one squished sprite, not a fifth
-    // "whole texture" sprite anywhere else.
+
     expect(footprintSprites).toHaveLength(4);
 
     const placements = footprintSprites.map((sprite) => ({
@@ -338,8 +330,6 @@ describe("OverworldSceneView", () => {
       size: sprite.setSize.mock.calls.at(-1) as [number, number],
     }));
 
-    // Every sprite reports the same 2x2 footprint and a distinct (col,row)
-    // sub-region covering all four combinations.
     for (const placement of placements) {
       expect(placement.region.wide).toBe(2);
       expect(placement.region.high).toBe(2);
@@ -350,10 +340,6 @@ describe("OverworldSceneView", () => {
       .sort();
     expect(regionKeys).toEqual(["0,0", "0,1", "1,0", "1,1"]);
 
-    // Positions form a contiguous 2x2 block anchored at (originCol,
-    // originRow) with no seams (a stray gap) or misaligned sub-tiles (a
-    // sub-region's position not lining up with its (col,row) * TILE_PX
-    // offset from the anchor).
     const byRegion = new Map(
       placements.map((p) => [`${p.region.col},${p.region.row}`, p.position]),
     );
@@ -386,7 +372,7 @@ describe("OverworldSceneView", () => {
         blob.setColor.mock.calls.some((call) => call[0] === shadowColor) &&
         blob.setAlpha.mock.calls.some((call) => call[0] === 0.32),
     );
-    // player + village + dungeonEntrance + mountain + forest, never water/grass.
+
     expect(shadowBlobs.length).toBe(5);
   });
 
@@ -561,7 +547,7 @@ describe("OverworldSceneView", () => {
 
     const blobCountAfterClear = factory.blobs.length;
     view.tick(1000);
-    // No new draw objects, and no destroyed blob gets a further mutation.
+
     expect(factory.blobs.length).toBe(blobCountAfterClear);
   });
 });

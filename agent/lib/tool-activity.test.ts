@@ -32,10 +32,7 @@ describe("toolActionParameter", () => {
   });
 
   it.each([
-    ["coder", "Coder", "Implement the gold display in the status bar"],
-    ["scout", "Scout", "Find where the player sprite is rendered."],
     ["playtester", "Playtester", "Test the new combat system"],
-    ["reviewer", "Reviewer", "Review the PR for security issues"],
     ["agent", "Agent", "Update the config file"],
   ])(
     "formats a %s subagent parameter as '<name> - <first line of message>'",
@@ -48,23 +45,17 @@ describe("toolActionParameter", () => {
 
   it("takes only the first line of a multi-line subagent message", () => {
     expect(
-      toolActionParameter("scout", {
-        message: "Find where the player sprite is rendered.\nOther details...",
+      toolActionParameter("playtester", {
+        message: "Verify the new combat system.\nOther details...",
       }),
-    ).toBe("Scout - Find where the player sprite is rendered.");
-  });
-
-  it("formats Workflow's parameter from its js input, not a message field", () => {
-    expect(
-      toolActionParameter("Workflow", { js: "await tools.coder({...})" }),
-    ).toBe("Workflow - await tools.coder({...})");
+    ).toBe("Playtester - Verify the new combat system.");
   });
 
   it("truncates long subagent messages", () => {
     const longMessage = "x".repeat(350);
-    const result = toolActionParameter("coder", { message: longMessage });
+    const result = toolActionParameter("playtester", { message: longMessage });
     expect(result.length).toBeLessThanOrEqual(301); // 300 + ellipsis
-    expect(result).toContain("Coder");
+    expect(result).toContain("Playtester");
     expect(result.endsWith("…")).toBe(true);
   });
 
@@ -81,7 +72,7 @@ describe("toolActionParameter", () => {
     );
     const long = { blob: "y".repeat(500) };
     const out = toolActionParameter("something_unknown", long);
-    expect(out.length).toBeLessThanOrEqual(301); // 300 + the ellipsis
+    expect(out.length).toBeLessThanOrEqual(301);
     expect(out.endsWith("…")).toBe(true);
   });
 

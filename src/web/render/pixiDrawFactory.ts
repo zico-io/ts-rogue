@@ -1,26 +1,7 @@
-/**
- * Real Pixi implementation of `sceneView.ts`'s `DrawFactory`. Thin adapter
- * only - all layout/keying logic lives in `SceneChromeView`, which never
- * imports `pixi.js` so it stays unit-testable without a WebGL/canvas
- * context (see `sceneView.test.ts`). One factory is bound to a single Pixi
- * `Container` (one per scene, matching `main.ts`'s per-scene containers);
- * every rect/text it creates is added as that container's child.
- *
- * Rects (ROG-64, art direction §5) can opt into a beveled 3D look - a
- * lighter top/left edge and a darker bottom/right edge derived from the
- * rect's own fill color - and a top gloss line, so the same primitive draws
- * both the windowskin panel and the HP/MP meters without hand-coding a fixed
- * bevel palette that would mismatch a meter's dynamic hp/mp color.
- * Text uses the HUD bitmap font (`font.ts`) once it's installed, falling
- * back to a plain canvas `Text` in `monospace` until then (or forever, if
- * the font failed to load) so the HUD never blocks on it.
- */
-
 import { BitmapText, Graphics, Text } from "pixi.js";
 import { HUD_FONT_FAMILY, HUD_FONT_SIZE, isHudFontReady } from "../font";
 import type { DrawFactory, RectHandle, TextHandle } from "./sceneView";
 
-/** Lightens (`amount` > 0) or darkens (`amount` < 0) a packed `0xRRGGBB` color by blending each channel toward white/black. */
 function shade(color: number, amount: number): number {
   const r = (color >> 16) & 0xff;
   const g = (color >> 8) & 0xff;
@@ -32,13 +13,11 @@ function shade(color: number, amount: number): number {
 }
 
 export interface RectOptions {
-  /** Draws a lighter top/left edge and a darker bottom/right edge, derived from the fill color. */
   bevel?: boolean;
-  /** Draws a translucent white band across the rect's top portion, on top of any bevel. */
+
   gloss?: boolean;
 }
 
-/** Builds a `DrawFactory` that adds every rect/text it creates to `container`. */
 export function createPixiDrawFactory(container: {
   addChild(child: Graphics | Text | BitmapText): void;
 }): DrawFactory {
@@ -60,10 +39,10 @@ export function createPixiDrawFactory(container: {
           );
           const light = shade(color, 0.35);
           const dark = shade(color, -0.35);
-          graphics.rect(0, 0, width, thickness).fill(light); // top
-          graphics.rect(0, 0, thickness, height).fill(light); // left
-          graphics.rect(0, height - thickness, width, thickness).fill(dark); // bottom
-          graphics.rect(width - thickness, 0, thickness, height).fill(dark); // right
+          graphics.rect(0, 0, width, thickness).fill(light);
+          graphics.rect(0, 0, thickness, height).fill(light);
+          graphics.rect(0, height - thickness, width, thickness).fill(dark);
+          graphics.rect(width - thickness, 0, thickness, height).fill(dark);
         }
         if (gloss && width > 1 && height > 2) {
           const glossHeight = Math.max(1, Math.round(height * 0.4));

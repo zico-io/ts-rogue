@@ -49,21 +49,6 @@ const SECTION_LABEL: Record<InventorySection, string> = {
   filter: "Loot Filter",
 };
 
-/**
- * The dedicated Inventory screen (ENG-3, workstream 1 of the ENG-2
- * inventory-system epic; ENG-4 adds field consumable use): the canonical
- * place to browse gear, consumables, currency, and quest items, to
- * inspect/compare/equip gear for any party member, to drink a potion outside
- * battle, and (ENG-19) to edit loot filter rules. Opened from anywhere
- * outside battle via `char:v` (see `app.tsx`'s `inventoryOpen` state,
- * mirroring `ZoomScreen`'s overlay pattern). Tab cycles the five sections;
- * the gear section reuses `village/interaction.ts`'s pack-row/compare
- * building blocks (also used by `StoreView`, which is now sell-only) rather
- * than duplicating them. The section/sort/inspect/member-index/consumable-
- * cursor/filter-cursor state machine lives in the pure `reduceInventoryUi`;
- * this component only normalizes Ink's input, resolves an intent, applies
- * the result, and dispatches the mapped event.
- */
 export function InventoryScreen({
   state,
   dispatch,
@@ -272,11 +257,6 @@ interface ComparePanelProps {
   item: ItemInstance;
 }
 
-/**
- * Side-by-side comparison of the item currently equipped in the target slot
- * versus the highlighted backpack item (ENG-14). Shows name, rarity color,
- * stat totals for each side, plus a net-delta summary line.
- */
 function ComparePanel({ member, item }: ComparePanelProps) {
   const targetSlot = equipTargetSlot(member, item);
   const slotDef = EQUIP_SLOTS.find((entry) => entry.slot === targetSlot);
@@ -287,7 +267,7 @@ function ComparePanel({ member, item }: ComparePanelProps) {
   return (
     <Box flexDirection="column" marginTop={1}>
       <Box flexDirection="row">
-        {/* Equipped column */}
+        {}
         <Box flexDirection="column" marginRight={4}>
           <Text color={theme.textMuted}>Equipped ({slotLabel})</Text>
           {equipped ? (
@@ -301,7 +281,7 @@ function ComparePanel({ member, item }: ComparePanelProps) {
             <Text color={theme.textFaint}>(empty)</Text>
           )}
         </Box>
-        {/* Highlighted column */}
+        {}
         <Box flexDirection="column">
           <Text color={theme.textMuted}>In backpack</Text>
           <Text color={theme.rarity[item.rarity]}>{describeItem(item)}</Text>
@@ -341,7 +321,6 @@ interface ConsumablesSectionProps {
   member: GameState["party"][number];
 }
 
-/** Browse owned consumable stacks and use a heal item on `member` (ENG-4). */
 function ConsumablesSection({
   entries,
   cursor,
@@ -382,31 +361,15 @@ function CurrencySection({ gold }: CurrencySectionProps) {
   return <Text color={theme.gold}>Gold: {gold}</Text>;
 }
 
-/** Quest items have no backing data model yet - explicit empty state, not a crash. */
 function QuestSection() {
   return <Text color={theme.textMuted}>(no quest items yet)</Text>;
 }
-
-// ---------------------------------------------------------------------------
-// Loot filter settings pane (ENG-19)
-// ---------------------------------------------------------------------------
 
 interface FilterSettingsSectionProps {
   rules: LootFilterRules;
   cursor: number;
 }
 
-/**
- * Renders the loot filter settings pane with 8 cursor-addressable rows:
- *
- * 0-2: Minimum rarity per dungeon tier (tier 1, tier 2, tier 3+)
- * 3:   Minimum ilvl offset vs party level
- * 4-7: Affix-type keep-list toggles (str, agi, vit, int)
- *
- * Up/down cycles the cursor, Enter/Left/Right cycles the selected row's
- * value (rarity per tier, ilvl offset, or stat toggle). The parent
- * InventoryScreen dispatches SetLootFilter on every change.
- */
 function FilterSettingsSection({ rules, cursor }: FilterSettingsSectionProps) {
   const rarityDisplay = (rarity: Rarity | undefined): string =>
     rarity ?? "none";

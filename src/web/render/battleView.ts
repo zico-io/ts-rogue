@@ -1,27 +1,3 @@
-/**
- * Pixi counterpart of `src/ui/screens/BattleScreen.tsx` +
- * `src/ui/screens/battle/{render,interaction}.ts` (ROG-51). Reuses the TUI's
- * pure `packEnemyColumns` layout helper and `BattleUiState` state machine
- * unmodified - the machine itself is already driven by
- * `BrowserKeyboardManager`'s `handleBattle` (ROG-45); this module only
- * changes how a battle looks (a keyed sprite/rect per enemy instead of
- * ASCII art, real `Text` menus instead of Ink boxes).
- *
- * Framework-free (no `pixi.js` import) behind a small `BattleDrawFactory`
- * interface, following `overworldView.ts`/`sceneView.ts`'s split so this is
- * unit-testable with a fake factory (see `battleView.test.ts`); the real
- * Pixi adapter lives in `pixiBattleDrawFactory.ts`.
- *
- * Turn feedback (floating damage numbers, a brief tint flash) is derived
- * entirely from HP deltas observed across successive `render()` calls, kept
- * as view-local instance state (`lastHp`/`floaters`/`flashes`) - the engine
- * has no floating-combat-text concept and must not grow one, since reducers
- * stay pure and `GameState` stays serializable. Aging/removing floaters and
- * reverting a flash is driven by `tick(deltaMS)`, which callers wire to a
- * Pixi `Ticker` once (see `main.ts`); it is deliberately just a linear alpha
- * fade plus a timed tint revert, not a general animation system.
- */
-
 import { findShopItem } from "../../data/shops";
 import { classSkills, type SkillDef } from "../../engine/combat/skills";
 import type { BattleEnemy, BattleState } from "../../engine/combat/types";
@@ -36,33 +12,23 @@ import {
 import { packEnemyColumns } from "../../ui/screens/battle/render";
 import { theme, toPixiColor } from "../../ui/theme";
 
-/** A positioned, destroyable draw primitive; every handle kind extends this. */
 export interface DrawHandle {
   setPosition(x: number, y: number): void;
   destroy(): void;
 }
 
-/**
- * A positioned, texture-backed enemy sprite. `setSize` gives the real Pixi
- * adapter the square art box (see `artPxFor`) to fit the sprite's native
- * texture into, preserving aspect ratio - the three battler PNGs have
- * wildly different native sizes (`battlers.ts`), so the box, not the
- * texture's own pixel dimensions, is what stays consistent (ROG-63).
- */
 export interface BattleSpriteHandle extends DrawHandle {
   setTexture(name: string): void;
   setSize(width: number, height: number): void;
-  /** `0xffffff` (no tint) leaves the texture's own colors untouched. */
+
   setTint(color: number): void;
 }
 
-/** A solid rectangle - the sprite fallback, and the selection highlight. */
 export interface BattleRectHandle extends DrawHandle {
   setSize(width: number, height: number): void;
   setColor(color: number): void;
 }
 
-/** A run of text; `width` is the rendered pixel width, used to size menu/header rows. */
 export interface BattleTextHandle extends DrawHandle {
   setText(text: string): void;
   setColor(color: number): void;
@@ -70,34 +36,23 @@ export interface BattleTextHandle extends DrawHandle {
   readonly width: number;
 }
 
-/** Renderer boundary this view draws through. */
 export interface BattleDrawFactory {
-  /** True when `name` is a real atlas frame; battles never break on a missing sprite (see module doc). */
   hasTexture(name: string): boolean;
   createSprite(): BattleSpriteHandle;
   createRect(): BattleRectHandle;
   createText(initialText: string): BattleTextHandle;
 }
 
-/** Pixel size of the region the view has to work with. */
 export interface PixelSize {
   width: number;
   height: number;
 }
 
-/**
- * Lower/upper bound on the square art box each enemy's sprite/rect is drawn
- * into. Battlers are their own scale class from the 8x8 tile atlas (loaded
- * individually by `battlers.ts`, see `pixiBattleDrawFactory.ts`'s module
- * doc), so this is just a slot size for the battle layout, not tied to any
- * tile pitch.
- */
 const MIN_ART_PX = 72;
 const MAX_ART_PX = 144;
-/** Art box scales with the available battle-content height, not width - the menu strip below it is a fixed height, so height is the scarcer dimension (ROG-66: a bigger canvas should mean a bigger stage, not the same fixed-size icons adrift in more empty space). */
+
 const ART_HEIGHT_RATIO = 0.3;
 
-/** Derives the enemy art box size from the battle content area's pixel size. */
 export function artPxFor(pixelSize: PixelSize): number {
   return Math.max(
     MIN_ART_PX,
@@ -110,20 +65,18 @@ const ROW_GAP_PX = 16;
 const NAME_ROW_PX = 18;
 const HP_ROW_PX = 16;
 const FIELD_PADDING_PX = 16;
-/** Extra margin around the selected enemy's art for the target-mode highlight rect. */
+
 const HIGHLIGHT_PAD_PX = 6;
 
 const MENU_ROW_HEIGHT_PX = 18;
 const MENU_PADDING_PX = 8;
-/** Parked off-canvas so an unselected highlight rect never draws over anything. */
+
 const HIGHLIGHT_PARK_Y = -10_000;
 
-/** Floating damage-number lifetime and drift/flash timing (see module doc - deliberately minimal). */
 const FLOATER_LIFE_MS = 700;
 const FLOATER_DRIFT_PX_PER_MS = 0.04;
 const FLASH_MS = 150;
 
-/** One in-flight floating damage number. */
 interface Floater {
   handle: BattleTextHandle;
   x: number;
@@ -131,35 +84,27 @@ interface Floater {
   elapsed: number;
 }
 
-/** An enemy's art draw object - either a real sprite or the tinted-rect fallback. */
 type ArtHandle =
   | { kind: "sprite"; handle: BattleSpriteHandle }
   | { kind: "rect"; handle: BattleRectHandle };
 
-/** Selection/defeat/own-color priority, copied from `BattleScreen.tsx`'s `EnemyField`. */
 function enemyDisplayColor(enemy: BattleEnemy, selected: boolean): string {
   if (enemy.hp <= 0) return theme.textFaint;
   if (selected) return theme.accent;
   return enemy.color ?? theme.text;
 }
 
-/**
- * Draws the enemy field (sprites/fallback rects + name/HP plates), a
- * target-mode selection highlight, the action/skill/item/target command
- * menu, and HP-delta-derived floating damage numbers / tint flashes.
- */
 export class BattleSceneView {
   private readonly artHandles = new Map<string, ArtHandle>();
   private readonly nameHandles = new Map<string, BattleTextHandle>();
   private readonly hpHandles = new Map<string, BattleTextHandle>();
   private readonly normalTint = new Map<string, number>();
-  /** Elapsed ms since a flash started, per combatant id; entry removed once reverted. */
+
   private readonly flashes = new Map<string, number>();
-  /** Last-seen HP per combatant id (enemies plus the currently displayed party member). */
+
   private readonly lastHp = new Map<string, number>();
   private floaters: Floater[] = [];
 
-  /** Current enemy art box size, recomputed from `pixelSize` at the top of every `render()` (ROG-66). */
   private artPx = MIN_ART_PX;
 
   private targetHighlight: BattleRectHandle | undefined;
@@ -169,7 +114,6 @@ export class BattleSceneView {
 
   constructor(private readonly factory: BattleDrawFactory) {}
 
-  /** Renders one frame from `state.battleState` and the live `battleUi` focus state (`keyboardManager.getState().battle`). */
   render(
     state: GameState,
     pixelSize: PixelSize,
@@ -195,7 +139,6 @@ export class BattleSceneView {
     this.drawMenu(menuRows, actor, pixelSize);
   }
 
-  /** Ages/removes floating damage numbers and reverts any expired tint flash. Wire to a Pixi `Ticker` (see `main.ts`). */
   tick(deltaMS: number): void {
     const survivors: Floater[] = [];
     for (const floater of this.floaters) {
@@ -233,7 +176,6 @@ export class BattleSceneView {
     else art.handle.setColor(color);
   }
 
-  /** Records `hp` for `id` and, if it dropped since the last render, spawns a floater and starts a flash. */
   private checkDamage(id: string, hp: number, x: number, y: number): void {
     const prev = this.lastHp.get(id);
     if (prev !== undefined && hp < prev) {
@@ -266,10 +208,6 @@ export class BattleSceneView {
       },
     );
 
-    // Center the packed field horizontally in the available width instead of
-    // always hugging the left edge (ROG-66) - with only one or two enemies
-    // the field is much narrower than a big canvas, and a left-anchored
-    // field just moves the empty void from "everywhere" to "the right side".
     const startX = Math.max(
       FIELD_PADDING_PX,
       (pixelSize.width - packed.fieldWidth) / 2,
@@ -330,7 +268,6 @@ export class BattleSceneView {
     hp.setPosition(x, y + this.artPx + NAME_ROW_PX);
   }
 
-  /** Draws a real sprite when the atlas has one for `enemy.sprite`, else a tinted placeholder rect the same size. */
   private drawEnemyArt(
     enemy: BattleEnemy,
     x: number,
@@ -381,7 +318,6 @@ export class BattleSceneView {
     }
   }
 
-  /** Positions the reusable highlight rect behind the selected enemy, or parks it off-canvas when nothing is selected. */
   private updateSelectionHighlight(
     selected: { x: number; y: number } | undefined,
   ): void {
@@ -401,14 +337,12 @@ export class BattleSceneView {
     this.targetHighlight.setColor(toPixiColor(theme.accent));
   }
 
-  /** Pixel y of the menu's top row (header row), anchoring both the menu and the actor status line above it. */
   private menuTopY(pixelSize: PixelSize, rowCount: number): number {
     return (
       pixelSize.height - (rowCount + 1) * MENU_ROW_HEIGHT_PX - MENU_PADDING_PX
     );
   }
 
-  /** Draws the acting party member's nameplate/HP line, and tracks their HP for damage floaters. */
   private drawActorStatus(
     actor: PartyMember,
     pixelSize: PixelSize,
@@ -432,7 +366,6 @@ export class BattleSceneView {
     this.actorStatus.setPosition(x, y);
   }
 
-  /** Destroys and recreates the menu's header + row text, matching `main.ts`'s existing precedent for small, infrequently-updated menus. */
   private drawMenu(
     rows: MenuRow[],
     actor: PartyMember,
@@ -464,7 +397,6 @@ interface MenuRow {
   color: number;
 }
 
-/** Builds the command menu's text rows for the current mode, mirroring `BattleScreen.tsx`'s `ActionMenu` exactly. */
 function buildMenuRows(
   battleUi: BattleUiState,
   actor: PartyMember,

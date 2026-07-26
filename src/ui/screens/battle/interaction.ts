@@ -1,20 +1,6 @@
-/**
- * Battle input handling (ROG-45; extracted from `BattleScreen.tsx`'s inline
- * `useInput` closure). The battle screen is a small state machine over four
- * modes - `action` (the Attack/Skill/Item/Defend/Flee menu), `skill`,
- * `item`, and `target` - plus a `pendingSkill` remembered while targeting a
- * skill cast. `resolveBattleIntent` maps every mode to the same small
- * keymap (Up/Down/Enter/Escape); the mode-dependent behavior lives entirely
- * in `reduceBattleUi`, mirroring the original closure's branching exactly
- * (including that Escape from the action menu is a no-op, and that
- * `target` mode falls back to `action` mode by itself once there are no
- * more alive enemies, regardless of which key was pressed).
- */
-
 import type { SkillDef } from "../../../engine/combat/skills";
 import type { Intent, Keymap, KeyName } from "../../scene/input";
 
-/** The action-menu options, in cursor order. Owned here (not `BattleScreen.tsx`) so this module stays framework-free and importable from the browser adapter. */
 export const ACTIONS = ["Attack", "Skill", "Item", "Defend", "Flee"] as const;
 
 export type BattleMode = "action" | "skill" | "item" | "target";
@@ -37,7 +23,6 @@ export const INITIAL_BATTLE_UI_STATE: BattleUiState = {
   pendingSkill: null,
 };
 
-/** Data `reduceBattleUi` needs but doesn't own, sourced from `GameState`. */
 export interface BattleUiContext {
   actorId: string;
   actorMp: number;
@@ -65,12 +50,10 @@ const battleKeymap: Keymap = {
   escape: { kind: "cancel" },
 };
 
-/** Resolves the `Intent` for a key press; the same small keymap covers every mode. */
 export function resolveBattleIntent(key: KeyName): Intent | undefined {
   return battleKeymap[key];
 }
 
-/** Pure transition function for the battle command menu's state machine. */
 export function reduceBattleUi(
   state: BattleUiState,
   intent: Intent,
@@ -198,7 +181,6 @@ export function reduceBattleUi(
     return { state };
   }
 
-  // state.mode === "target"
   if (ctx.aliveEnemyIds.length === 0) {
     return { state: { ...state, mode: "action" } };
   }

@@ -1,908 +1,148 @@
 # Eve project agent
 
-The Eve agent receives ts-rogue work through Linear and runs repository tasks in
+Eve takes ts-rogue work from Linear issues to reviewed GitHub pull requests in
 pre-warmed Vercel Sandboxes.
+
+## Quick start
+
+Requirements:
+
+- Node.js 24+
+- pnpm 10+
+- Access to the configured Vercel Connect clients
+
+```bash
+pnpm install
+pnpm eve:dev
+```
+
+Run the full repository gate before handing off changes:
+
+```bash
+pnpm check
+pnpm exec eve info
+```
+
+## How delivery works
+
+The root agent owns ordinary work end to end: it reads the Linear issue, changes
+the repository, verifies the result, pushes a branch, and opens a pull request.
+It communicates at useful milestones rather than narrating each command.
+Human-facing Linear and GitHub prose starts with substance and stays compact.
+The harness removes redundant leading Markdown headers because both platforms
+already render the project, issue, pull request, author, and activity state.
+
+The declared `playtester` subagent is available when independent terminal or web
+verification adds value. The root can also drive the same play scripts directly.
+Automatic ponytail pull-request review runs in GitHub Actions through
+`scripts/ci-review.ts`.
+
+Parent issues with independently shippable sub-issues use the `handoff` tool.
+Each ready sub-issue receives its own Linear Agent Session and predecessor
+context. Blocking relations in Linear determine readiness.
 
 ## Components
 
 | Path | Responsibility |
 | --- | --- |
-| [`agent.ts`](agent.ts) | Root and delegated coding model selection |
-| [`instructions.md`](instructions.md) | Runtime operating and delegation contract |
-| [`channels/`](channels/) | Eve, Linear, and GitHub session activity adapters |
-| [`connections/`](connections/) | Linear MCP connection (allow-listed), Vercel MCP connection (deployments/logs/errors/analytics), and Vercel REST OpenAPI connection (traces, observability queries, read-only sandbox introspection) |
-| [`hooks/`](hooks/) | Delegated-child activity relay (including the ephemeral working indicator) and turn-start sandbox prewarm |
-| [`schedules/`](schedules/) | Daily eve-version-check: bump, evaluate the changelog against the workaround audit, PR |
-| [`tools/`](tools/) | Linear Agent Session handoff updates (blocked/review/completed) and proactive self-handoff to a fresh session |
-| [`sandbox.ts`](sandbox.ts) | Root's Vercel Sandbox: bootstrap, sync, `ORIENTATION.md` brief, network policy, and token refresh |
-| [`lib/orientation.ts`](lib/orientation.ts) | Builds the pre-computed orientation brief from git state and screenshot-tooling status |
-| [`lib/sandbox.ts`](lib/sandbox.ts) | Shared sandbox-provisioning recipe (repo checkout, toolchain, GitHub auth levels, screenshot toggle) composed by the root and future subagents |
-| [`subagents/playtester/`](subagents/playtester/) | Declared specialist: checks out a branch, plays the game (`scripts/play.sh` / `scripts/play-web.mjs`) to verify acceptance criteria, returns evidence |
-| [`subagents/scout/`](subagents/scout/) | Read-only codebase-recon subagent: locates files, call paths, and utilities, and returns compressed context for a delegation packet |
-| [`subagents/reviewer/`](subagents/reviewer/) | Declared specialist: ponytail-reviews one pull request and posts the GitHub review itself |
-| [`subagents/coder/`](subagents/coder/) | Declared specialist: implements one scoped issue packet on a named branch, runs `pnpm check`, commits, and pushes the branch itself |
-
-Linear owns issue status, priority, and progress. GitHub pull requests remain the
-review and merge boundary. GitHub credentials are injected through the sandbox
-network policy rather than exposed to the agent environment. Issue workflow
-state is reconciled deterministically by the harness, not by model judgment -
-see "Issue lifecycle owned by the harness" below.
-
-### Vercel debugging connections (HAR-20)
-
-Vercel introspection is served by two connections in `connections/`, discovered
-by the model through the built-in `connection_search` tool. `connections/vercel.ts`
-is the official Vercel MCP server (`mcp.vercel.com`, Vercel Connect OAuth):
-deployments, build logs, bounded runtime logs, runtime errors, and web analytics,
-allow-listed to read-only tools. `connections/vercel-api.ts` is an OpenAPI
-connection over `https://openapi.vercel.sh` for what the MCP server does not
-expose: an OTEL trace by request id (`getProjectTrace`), the observability query
-engine that also powers the dashboard's Agent Runs / Workflow run views
-(including the `$eve.*` workflow-run tags eve writes on every
-session/turn/subagent run, see `node_modules/eve/docs/guides/instrumentation.md`),
-and listing/inspecting Sandboxes, their sessions, and the commands run inside a
-session to triage a stuck or failed sandbox. Its `operations.allow` admits only
-read operations, and an exported approval policy (`vercelApiApproval`, tested in
-`src/vercel-api-connection.test.ts`) denies `getNamedSandbox` calls carrying
-`resume: true`, which would mutate (new instance from snapshot).
-
-These connections replaced the hand-rolled `tools/vercel_*.ts` + `lib/vercel-api.ts`
-layer. Two accepted losses, and their re-add path: sandbox command logs
-(`getSessionCommandLogs`) and raw `getRuntimeLogs` are excluded because they are
-unbounded NDJSON streams a generated tool would hang on (runtime logs are covered
-by the MCP connection's `get_runtime_logs`; if command logs are missed, re-add a
-single authored tool with a bounded NDJSON reader), and `teamId`/`projectId` are
-no longer injected into requests - generated tools take them as model-supplied
-inputs, guided by ids embedded in the connection description. Those ids need no
-env vars: they are decoded from the deployment's always-present
-`VERCEL_OIDC_TOKEN` claims (`owner_id`/`project_id`), with
-`VERCEL_TEAM_ID`/`VERCEL_PROJECT_ID` kept only as optional overrides.
-
-The OpenAPI connection needs `VERCEL_TOKEN` (a Vercel API token with read access
-to this project) set as a plain environment variable in the Vercel project's
-settings. The deployment's OIDC token cannot substitute: tested 2026-07-25,
-`api.vercel.com` accepts an OIDC bearer on the `/v2/sandboxes*` endpoints but
-returns 403 `invalidToken` on `/v2/observability/*` and `/v1/projects/traces` -
-and a warm Fluid instance would serve a stale (~1h) OIDC env token anyway (the
-ROG-65 failure class). There is no way to mint an API token from inside a
-sandbox, so a human has to add it before it works in production (as of
-2026-07-25 the project has no production env vars at all, so the retired
-hand-rolled tools were never live in production either). The MCP connection instead
-needs its Vercel Connect connector provisioned once from the linked project:
-`vercel connect create mcp.vercel.com --name ts-rogue-vercel-mcp` then
-`vercel connect attach <connector-uid> --yes`; the first call in a session parks
-on an OAuth consent URL rendered natively in Linear.
-
-Orientation is pre-computed rather than rediscovered: the standing contract lives
-in `instructions.md`, the Linear session supplies the issue packet, and `onSession`
-writes an `ORIENTATION.md` brief of settled git state. The root then delegates
-substantive implementation to the declared `coder` subagent and retains review and external
-coordination. Agent Session activities carry progress and approval prompts
-without writing issue comments.
-
-The sandbox itself is created lazily by eve, on the first sandbox-touching
-tool call - which would land mid-orientation and make the model (and the
-coding child delegated after it, which shares the root's sandbox) sit
-through the full cold start serially. `hooks/prewarm-sandbox.ts` kicks the
-same memoized creation at `turn.started`, fire-and-forget, so template
-restore and `onSession`'s repo sync run concurrently with the model's first
-inference and the first `ORIENTATION.md` read awaits an already-in-flight
-handle. The kick must never be awaited in the hook: handlers run in the
-turn's emit path, so awaiting there would serialize the cold start in front
-of the model call instead of overlapping it.
-
-Each delegated child streams its tool calls, reasoning, and final message into
-the **parent** Agent Session (the single top-level card for the issue),
-`[<issue>]`-prefixed so parallel children stay attributable. Linear's activity
-feed is flat - a `thought`/`action` nests under the receiving session's open
-turn - and the relay leans on eve's native inline subagent execution rather than
-fabricating a session per child, so there is one session per ticket. The relay
-lives in a hook branching on `ctx.session.parent` because the channel adapter's
-event vocabulary still has no `subagent.called`.
-
-Child `session_update`s are unchanged and still post to the **parent** session
-(the top-level handoff surface), role-guarded in code (`tools/session_update.ts`):
-only `blocked` passes from a child, prefixed `[<issue>]`; `review` and
-`completed` return a structured refusal without posting, because ENG-2's thread
-showed a child "Completed" while nothing was pushed, then "Started" again - the
-session appeared to finish and restart.
-Eve's subagent isolation model (declared subagents inherit nothing from the root's authored slots) means the same relay must be reachable from each subagent's own `hooks/` slot. Each declared subagent (`coder`, `scout`, `reviewer`, `playtester`) re-exports the root's `hooks/relay.ts` verbatim under `agent/subagents/<id>/hooks/relay.ts` -- the shared hook already branches on `ctx.session.parent`, which is truthy inside any child session, declared or built-in-tool copy alike. The same isolation problem applies to `hooks/prewarm-sandbox.ts`: without a per-subagent re-export, declared subagents would never fire the turn-start re-mint of the GitHub auth token (parent-agent hooks do not fire inside subagent turns). `coder`, `reviewer`, and `playtester` (the three subagents whose sandboxes mint a GitHub token) each re-export the root's `hooks/prewarm-sandbox.ts` verbatim under `agent/subagents/<id>/hooks/prewarm-sandbox.ts`. `scout` is excluded: its sandbox is declared with `gitAuthLevel: "none"` and never mints a GitHub token, so wiring the turn-start re-mint hook would mint one unnecessarily.
-The delegation-path wiring is covered by
-`evals/delegation/child-session-update.eval.ts`: eve's `mockModel` scripts
-the root to delegate and the child to attempt `completed` then `blocked`, so
-a real child session runs the real hook and tool code and the eval reads a
-single `**Blocked**` activity (and no `**Completed**`) off a local mock
-Linear server. It proves wiring, not model policy - a scripted root always
-delegates - so the guard's unit tests and the contract text still carry the
-policy half.
-
-The session's progress surface is its Agent Plan (HAR-40): `instructions.md`
-requires the root's first batch to seed the durable `todo` list with the
-issue's outcome-oriented step list, and to flip steps
-`in_progress`/`completed` in the same batches that do the work.
-`syncAgentPlanFromTodoTool` (see "Agent Plan sync on Linear" below) mirrors
-every todo write into Linear's native Agent Plan, so the reader watches a
-live checklist instead of a feed of durable chat updates. `session_update`
-is reserved for the three human-handoff moments - `blocked`, `review`,
-`completed` - because it posts a durable `response`, and Linear derives
-session state from the last activity: a `response` means "work completed",
-which is exactly why the retired `started`/`progress` statuses kept flipping
-sessions to Finished while a delegated child was still running (HAR-38's
-ephemeral-chip workaround was superseded by removing the statuses
-themselves). The one-sentence reply the root pairs with each tool batch is
-still surfaced: `channels/linear.ts`'s `message.completed` handler lifts the
-first line of a tool-batch turn straight into a Linear `thought`.
-
-Because those sentences reach the reader verbatim, `instructions.md` keeps its
-message rules as terse imperatives and holds the design rationale (the
-durable-vs-transient mechanics above, the plan-as-anchor framing) here in the
-README rather than in the runtime prompt. A model told to
-write a sentence per batch will parrot whatever meta-language sits next to that
-rule; the concrete "reading `ORIENTATION.md`, checking for sub-issues, and
-grepping for a symbol are three independent lookups" example that once lived in
-the prompt is exactly the kind of procedure text that leaked into user-facing
-updates ("Plan: check for sub-issues, read ORIENTATION.md..."). The governing
-principle now in `instructions.md`'s Discipline section is that **Eve's messages
-describe the work and its status, never the contract's own mechanics** -
-orientation lookups, sub-issue checks, delegation, batching, and `pnpm check`
-are invisible plumbing, not message content. `evals/message-substance.eval.ts`
-is the regression guard: it asserts the opening batch seeds a substantive
-Agent Plan (steps about the work, not the procedure) and that any
-session_update posted does not echo those process terms.
-
-`onSession` can re-run mid-session (a new inbound Linear activity re-attaches
-the same sandbox); it does no repo resync on attach, so a reconnect can't
-silently discard an agent's in-progress feature branch or its not-yet-pushed
-commits. Bootstrap checks out `origin/main` once; from there the agent picks up
-new upstream commits itself via `git fetch origin main && git rebase origin/main`
-(see `instructions.md`), which also keeps startup off a mandatory authed network
-call that a token outage would otherwise turn into a hard failure.
-
-GitHub push access depends on a background-refreshed token (HAR-5): startup
-retries the mint a couple of times before falling back to an open,
-unauthenticated policy, and a refresh loop re-mints every 30s while degraded
-(45min once healthy), tolerating `MAX_SET_POLICY_FAILURES` consecutive
-failures before giving up. `ORIENTATION.md` reports whether auth was
-confirmed at session start, and once it is, `onSession` also auto-pushes any
-commits a prior session left stranded on the current branch
-(`AUTO_RECOVER_PUSH_COMMAND`) before the agent even starts. If push keeps
-failing anyway, `scripts/backup-unpushed-work.sh <issue-id>` patches up the
-unpushed commits so they survive even if this sandbox is discarded;
-`instructions.md` has the agent attach that patch to the Linear issue as a
-last resort before reporting the blocker.
-
-### Mid-turn steering on Linear
-
-[`channels/linear.ts`](channels/linear.ts) hand-rolls eve's built-in
-`linearChannel()` via `defineChannel` instead of re-exporting it, so it can
-reach the route-level `cancel()` primitive the convenience wrapper doesn't
-expose. On every inbound Linear Agent Session webhook (`created` and
-`prompted` alike) it now calls `cancel({ continuationToken })` unconditionally
-right before dispatching the new message, instead of letting the built-in
-behavior fold a new comment into the next turn. `cancel()` is a documented
-no-op (`"no_active_turn"`) when nothing is running, so this is safe to call on
-every message and needs no classification of "correction vs. unrelated" - a
-mid-turn Linear comment now really interrupts (`turn.cancelled` ->
-`session.waiting`) instead of silently queuing behind the current turn.
-
-Limits, by design:
-
-- It cancels unconditionally on every new inbound message. Two quick
-  follow-up comments will cancel each other's turns in sequence rather than
-  the agent inferring which one is a correction and which is unrelated.
-- Cancelling a turn recursively cancels any active subagent children too (see
-  `node_modules/eve/docs/subagents.mdx`, "Cancelling a parent also requests
-  cancellation of every active child it started, recursively"). This is also
-  how a mid-flight delegated coding subagent gets interrupted - no separate
-  subagent-interruption mechanism was built, it's inherent to turn
-  cancellation.
-- Cancellation stops work at the current step boundary; it does not undo
-  already-applied side effects (e.g. git commands the coding child already
-  ran). A cancelled mid-git-operation state is a general risk of any
-  interruption (crash, redeploy, cancel), not something specific to this
-  feature, so no new git-recovery mechanism was added for it.
-- A cancel that lands while the root is awaiting a delegated child also drops
-  the child's returned result from durable history - eve never synthesizes
-  tool results for a cancelled turn. The ENG-2 incident (HAR-11) chained this
-  with a false "the child produced nothing" verification into re-delegating
-  finished work three times. The recovery is contractual, not mechanical:
-  `instructions.md` now requires git-first grounding (`git status` +
-  `git log --oneline main..HEAD`) after every child return and at the start
-  of every resumed turn, because a child's commits are local until the root
-  pushes and the branch - not the conversation - is the record of what is
-  done. Instant steering was deliberately kept over fold-in delivery.
-
-The built-in `linearChannel()` doesn't export everything it's built from:
-`eve/channels/linear`'s barrel omits `verifyLinearRequest`,
-`createDefaultEvents`, and the inbound image attachment pair
-`attachLinearInboundImages`/`resolveLinearAccessToken` (confirmed against the
-module's own runtime exports, not just its `.d.ts` files).
-`channels/linear.ts` reimplements all of them from the de-minified built-in
-source, built only from genuinely public primitives (`signLinearWebhookBody`,
-`node:crypto`, `createLinearAgentActivity`, `renderLinearInputRequests`, and
-global `fetch`) - see the file's own comments for the exact provenance of
-each piece. The image port keeps the built-in's 0.27.3 behavior: authenticated
-`uploads.linear.app` screenshots in an inbound prompt reach the model as
-multimodal file parts, and any untrusted, failed, or non-image reference
-falls back to its original markdown text.
-
-### Agent Plan sync on Linear
-
-`channels/linear.ts` also mirrors the durable `todo` framework tool (already
-enabled by default) into Linear's Agent Plan preview
-(https://linear.app/developers/agent-interaction#agent-plans): its
-`"action.result"` event handler (`syncAgentPlanFromTodoTool`) watches for a
-completed, non-error `todo` tool call and pushes the current list into
-`AgentSession.plan` via `channel.linear.updateSession({ plan })`
-(`planFromTodoToolOutput` does the mapping - todo's `in_progress`/`cancelled`
-statuses become Linear's `inProgress`/`canceled`). Since HAR-40 this is the
-session's primary progress surface, not an additive extra: the contract
-mandates seeding the todo list in the first batch and moving it with the
-work, and `session_update` is reserved for the blocked/review/completed
-handoff moments beside it. An empty todo list is left
-alone rather than clearing an existing Linear plan, since the tool's own
-"omit `todos` to read" contract means an empty read should not blank out a
-plan the agent is still working from.
-
-#### Workaround audit (re-audited against eve 0.27.6, 2026-07-25)
-
-Every hand-rolled piece in this harness exists because eve's public surface
-misses a primitive its own internals use. This table is the checklist the
-`schedules/eve-version-check.ts` prompt evaluates new changelog entries
-against; each future audit updates the date and verdicts.
-
-| Workaround | Lives in | Gap it works around | Verdict at 0.27.6 |
-| --- | --- | --- | --- |
-| Cancel-and-steer on inbound Linear prompts | `channels/linear.ts` | Built-in dispatch has no `cancel()`; new prompts coalesce into the next turn | Still missing - the built-in route handler destructures only `{send, waitUntil}`; the 0.27.2/0.27.5 cancel/reset additions are Slack-only |
-| Webhook verification + default event handlers | `channels/linear.ts` | `verifyLinearRequest`/`createDefaultEvents` unexported from the barrel | Still unexported |
-| Inbound image attachment | `channels/linear.ts` | `attachLinearInboundImages`/`resolveLinearAccessToken` unexported | Still unexported - ported here (built-in gained it in 0.27.3) |
-| GitHub @mention gate reimplementation | `channels/github.ts` | `extractGitHubCommentTrigger`/`shouldDispatchGitHubComment` not public; custom `onComment` replaces the built-in gate wholesale | Still not public; `pull_request_review` (top-level verdict) events still unparsed |
-| Session handoff instead of quota continuation | `tools/handoff.ts` | Token-quota HITL prompt not overridable; `commentCreate` unexported | Still no public hook (0.27.1 only changed decline behavior) |
-| File-based child session-id handoff | `hooks/relay.ts` | `subagent.called` declared in the hook vocabulary but never dispatched to authored hooks/channels | Still absent from `ChannelEvents` |
-| Eager sandbox prewarm + durable token re-mint | `hooks/prewarm-sandbox.ts` | Lazy sandbox creation; no session-end hook; in-process token timers don't survive harness recycling | Unchanged |
-| Subagent models pinned off deepseek-v4-flash | `subagents/coder/agent.ts`, `subagents/scout/agent.ts` | The gateway/ai@7 stream assembler desyncs on deepseek reasoning parts (`text part <id> not found`) even with `reasoning: "none"`, and a task-mode "recoverable" model-call failure replays the entire durable turn with no retry cap - measured 15-70 min of silent replay per coder run, 4x replays on a scout (2026-07-26 runtime logs) | New - model swap to `anthropic/claude-haiku-4.5` sidesteps the failure class; assembler desync + unbounded turn replay reported upstream (vercel/eve#1227) |
-| Sandbox lifetime/timeout re-assertion, token fallback chain | `sandbox.ts` | Create-time options don't apply to resumed sandboxes (ROG-65); connect token cache staleness | Unchanged. eve 0.27.5's `workspace/` seed files were evaluated and rejected: seed paths are workspace-relative only (the files this bootstrap writes live in `~/.config` and `/etc`), and seeding `/workspace` would have broken bootstrap's `git clone` into an empty directory - HAR-34 replaced the clone with an in-place `git init`/`git remote add`/`git fetch`/`git reset --hard` sequence, which no longer requires an empty `/workspace`, but eve's `workspace/**` seed-file layout itself is not yet adopted (separate follow-up HAR-36) |
-| Vercel introspection | `connections/vercel.ts` + `connections/vercel-api.ts` | Vercel MCP server lacks sandbox/trace/observability tools; no Vercel-API credential helper in `@vercel/connect/eve` | Retired the hand-rolled `tools/vercel_*.ts` + `lib/vercel-api.ts` layer in favor of an MCP + OpenAPI connection pair. `VERCEL_TOKEN` env still required for observability/traces (OIDC bearers 403 there; sandbox endpoints would accept them). `teamId`/`projectId` now derived from OIDC claims. Accepted loss: sandbox command logs (see "Vercel debugging connections") |
-| Agent Session posting in code | `tools/session_update.ts`, `tools/handoff.ts`, `hooks/relay.ts`, `channels/linear.ts` | `mcp.linear.app` exposes no Agent Session tools (`agentActivityCreate`, `agentSessionCreateOnComment`), and hooks/channel code cannot call connection tools at all | Not replaceable by the Linear MCP connection until Linear ships agent-session MCP tools |
-| Issue workflow-state sync | `lib/issue-state.ts`, `channels/linear.ts`, `channels/github.ts` | Linear Agent Sessions never move issue state; eve has no issue-state primitive, and workflow-state queries/`issueUpdate` are not in the public barrel | New at 0.27.6 - built on the public `callLinearGraphQL` transport |
-| Human-to-agent `stop` signal | `channels/linear.ts` | eve parses `agentActivity.signal` off the wire but never inspects Linear's `stop` human-to-agent signal; a stop request reaches the model as ordinary prompt text with no guaranteed halt | New - hand-rolled: cancels the turn and confirms via a response activity without ever dispatching a new turn to the model |
-
-`ORIENTATION.md` also reports whether the sandbox's Playwright chromium
-(`scripts/play-web.mjs`'s screenshots) is confirmed working - `bootstrap`'s
-`buildBootstrapCommand` verifies the browser actually launches, not just that
-the install step ran, and records the verdict to a status file `onSession`
-folds into the brief. `instructions.md`'s contract requires a screenshot in
-any PR that changes rendered UI/visual output; this line is how the agent
-knows the tooling's state without discovering it by trial and error.
-
-`instructions.md` (HAR-6) also requires that screenshot to travel with the
-PR's changeset, not just its body: when a UI-visual PR also carries a
-`pnpm changeset` file (release-facing behavior), the agent embeds the same
-committed `docs/pr-assets/<issue-id>/` screenshot as a Markdown image inside
-that changeset. A PR body link is visible to a human reviewer but is not part
-of the changeset's content, so it would otherwise be lost the moment
-`pnpm version-packages` folds the changeset into `CHANGELOG.md` - embedding it
-in the changeset itself is what carries the visual evidence into the
-changelog.
-
-`buildBootstrapCommand` also installs the agent-facing CLI toolchain (HAR-3):
-`ripgrep`, `fd`, `bat`, `eza`, and `ast-grep` are on `PATH` in every session's
-sandbox (the root and its coding child share that sandbox), and `pi install`
-adds the [ponytail](https://github.com/DietrichGebert/ponytail) extension for
-`scripts/play.sh dev`'s interactive pi sessions. `instructions.md`'s Standing
-rules carry ponytail's YAGNI/minimal-diff ladder directly, so it governs the
-root's own decisions and the delegated coding child (both run the same
-instructions), not just pi. Having the toolchain on `PATH` was not enough by
-itself (HAR-7): the root and child kept reaching only for the built-in
-`grep`/`glob`/`read_file` tools and skipping it, plus falling into silent or
-one-at-a-time tool calls despite the batching rule already existing.
-`instructions.md`'s Discipline section now explicitly calls out `ast-grep` for
-structural (syntax-aware) searches the built-in tools can't express, pairs
-every batch of tool calls with a short immediate reply instead of silence,
-and gives the batching rule a concrete example.
-
-### Shared sandbox recipe (HAR-26)
-
-`agent/sandbox/sandbox.ts` no longer defines the provisioning building blocks
-itself: they moved to `agent/lib/sandbox.ts` so a subagent
-(`agent/subagents/<id>/sandbox.ts`, HAR-27..30) can compose them without
-duplicating this file. The root's own
-`bootstrap`/`onSession` are still written out by hand here, since only the
-root builds the `ORIENTATION.md` brief; they just call the shared
-`buildBootstrapCommand`, `resolveStartupNetworkPolicy`, `keepTokenFresh`, and
-friends instead of owning that logic inline. `lib/sandbox.ts`'s
-`buildSandboxDefinition(options)` is the one-call surface for everyone else:
-it takes a `gitAuthLevel` (`"none"` never mints or refreshes a GitHub token,
-for a subagent that only reads files already on disk from bootstrap's clone;
-`"read-only"` and `"push-capable"` both broker and keep refreshed the same
-GitHub App installation token, since the platform has no finer scope split -
-a `"read-only"` caller technically holds a token that could push, a ponytail
-gap noted in the type's own comment and fixable only once a GitHub connector
-supports narrower scopes than `["*"]`; `"push-capable"` additionally runs
-main-branch sync and stranded-push auto-recovery, for a branch-pushing
-subagent like `coder`) and a `screenshotTooling` flag (installs and verifies
-Playwright chromium during bootstrap; off by default since only the root and
-`playtester` need it). A read-only scout subagent's whole
-`sandbox.ts` is then one line:
-`export default defineSandbox(buildSandboxDefinition({ gitAuthLevel: "none" }));`
-`playtester` (HAR-29) composes the same helper with
-`{ gitAuthLevel: "read-only", screenshotTooling: true }`: it can fetch and
-check out a branch to verify but never push, and its bootstrap installs the
-same Playwright chromium the root uses for `scripts/play-web.mjs` screenshots.
-Its own `instructions.md` tells it to actually play the branch it's given
-(`scripts/play.sh` for the terminal renderer, `scripts/play-web.mjs` for the
-web renderer), verify the caller's named acceptance criteria against what
-renders, and return a verdict per criterion with evidence embedded in its
-reply - a terminal frame as a fenced text block, a web screenshot as an
-embedded `data:image/png;base64,...` Markdown image - since a declared
-subagent's sandbox is its own, not shared with its caller's. `instructions.md`'s
-end-to-end-reproduction and mandatory-screenshot rules now delegate to it
-instead of having the root or its coding child drive the play scripts inline.
-
-This is already the same class of infrastructure `pnpm pr:sandbox`
-(`scripts/pr-sandbox.sh`) uses for human PR review - both are Vercel
-Sandboxes - but they are two separate sandboxes for two separate jobs: this
-file's `defineSandbox` backs the automated agent session (root + its
-delegated `agent`-tool child, sharing one sandbox per session), while
-`pr:sandbox` provisions its own on-demand sandbox for a human to manually
-exercise a PR branch. The `agent` tool - not a `pi` subprocess - remains the
-coding-delegation path; it already inherits this sandbox's toolchain and
-`instructions.md`'s ponytail rules with no further wiring.
-
-### Seed-workspace folder layout (HAR-36)
-
-The root sandbox uses eve's folder layout, `agent/sandbox/sandbox.ts` plus
-`agent/sandbox/workspace/**`, instead of the `agent/sandbox.ts` shorthand.
-`agent/sandbox/workspace/.config/gh/hosts.yml` and
-`agent/sandbox/workspace/.gitconfig` are real, reviewable files with the same
-content `buildBootstrapCommand`'s `SEED_GH_CLI_AUTH_COMMAND` heredoc and
-`git config --global --add safe.directory '*'` line used to write with shell
-(HAR-35 relocated `gh`/git config under `/workspace` via `GH_CONFIG_DIR`/
-`GIT_CONFIG_GLOBAL`; this just replaces how that content gets there). eve
-mirrors `workspace/**` into `/workspace` before bootstrap's command ever
-runs, so the root calls `buildBootstrapCommand({ seedGitHubConfig: false })`
-to skip the now-redundant shell writes; `buildBootstrapCommand` still seeds
-them via shell by default for every subagent composing
-`buildSandboxDefinition`, since none of them have a seeded workspace of their
-own. Seed content (like authored sandbox source) is tracked automatically by
-eve's template revalidation, so editing either seed file rebuilds the
-template on the next session. Bootstrap keeps owning everything that touches
-the root filesystem or is dynamically generated - the apt HTTPS-mirror
-rewrite, `/usr/local/bin` symlinks, package installs, the verified-chromium
-check, the repository checkout (HAR-34), and `pnpm install`.
-
-### Scout subagent (HAR-27)
-
-`agent/subagents/scout/` is the first declared subagent under the HAR-27..30
-line the shared sandbox recipe was built for. It composes
-`buildSandboxDefinition({ gitAuthLevel: "none" })` for its whole `sandbox.ts`
-(no GitHub token ever minted; it only reads the repo state bootstrap already
-cloned), carries its own `instructions.md` rather than inheriting the root's
-(a declared subagent inherits nothing but its own authored slots, per
-`node_modules/eve/docs/subagents.mdx`), and has no `tools/`, `connections/`,
-or `skills/` of its own - it relies entirely on the built-in bash/read/grep/
-glob tools every session already gets. Its role is to run ahead of a
-delegation whose scope isn't yet clear, trade its own context budget for
-locating relevant files, call paths, reusable utilities, and invariants/
-gotchas, and hand back a compressed summary (capped at roughly 200 lines) sized
-to drop directly into `coder`'s packet, instead of the root exploring
-inline itself. `instructions.md`'s Delegation section makes it opt-in and
-rare: a scout runs serially in front of the coder, so on the 2026-07-26 run
-sample it added 2.5-21 minutes before implementation began, while sessions
-that skipped it dispatched their coder in under 5 - the contract now says to
-skip scout whenever the issue packet already anchors the work in code terms,
-and to reach for it only when the scope field cannot be filled at all.
-
-### Reviewer subagent (HAR-28)
-
-`agent/subagents/reviewer/` is a declared specialist built on the
-HAR-26 sandbox recipe: its own `agent.ts` (`anthropic/claude-sonnet-5`), its
-own `instructions.md` carrying the full ponytail review contract (fetch the
-diff, apply the over-engineering and conventions/stack-idioms lenses, post
-one GitHub pull-request review via `curl` with inline comments anchored to
-added or changed diff lines), and a one-line `sandbox.ts` composing
-`buildSandboxDefinition({ gitAuthLevel: "read-only" })` - enough GitHub auth
-to fetch a diff and POST a review, never push. Declared subagents inherit
-nothing from the root, so this instructions.md is a complete copy of the
-lens/posting procedure `channels/github.ts`'s `ponytailReviewContext` already
-builds per-PR, not a reference to it.
-
-The root's own "PR review turns" section in `instructions.md` no longer does
-the review inline: it now delegates the whole job to `reviewer`, passing the
-turn's review context (PR number, diff-fetch commands, the two lenses, the
-posting endpoint/JSON) as the subagent's `message` and relaying nothing else
-back. As of HAR-63, automatic per-PR review dispatch moved out of the Eve
-channel entirely into `.github/workflows/review.yml` + `scripts/ci-review.ts`,
-which call the model directly via the Vercel AI Gateway (`AI_GATEWAY_API_KEY`
-secret) with no Eve Agent Session involved, eliminating a full agent turn's
-orchestration cost for what was always a mechanical diff-review-post pipeline.
-The `reviewer` subagent and the root's own "PR review turns" section in
-`instructions.md` remain in place for any future on-demand or explicit review
-request (e.g. a human asking the agent to review a specific PR), but are no
-longer what triggers an automatic review on PR open or push. This is what
-enables a Workflow fan-out reviewing several open pull requests in parallel
-(documented in `instructions.md`'s Delegation section, guarded by
-`evals/delegation/workflow-parallel-fanout.eval.ts`)
-(`Promise.all(prs.map((n) => tools.reviewer({ message: ... })))`), which a
-bare copy of the root (the built-in `agent` tool) cannot do on its own since
-every copy carries the full root contract instead of a lean review-only one.
-
-### Review triggering moved to CI (HAR-63)
-
-HAR-63 moved the automatic per-PR review dispatch out of the Eve channel and
-into a dedicated GitHub Actions workflow, removing the following from
-`agent/channels/github.ts`:
-
-- The `ponytailReviewContext` function that built the two-lens review context
-  string for the agent turn.
-- The `REVIEW_ONLY_TURN_ATTRIBUTE` constant, `reviewOnlyAuth`, and
-  `isReviewOnlyTurn` helpers that marked these turns for special handling
-  (suppressing the duplicate trailing comment since the review was already
-  posted via curl).
-- The `if (pullRequest.action === "opened" || ...)` branch inside
-  `onPullRequest` that dispatched the review-only turn.
-- The review-only skip inside `onMessageCompleted` that prevented HAR-24's
-  duplicate trailing comment (no longer needed since no review-only turn is
-  dispatched).
-
-The automatic review now lives in `.github/workflows/review.yml` and
-`scripts/ci-review.ts`. It calls `generateText` against
-`anthropic/claude-sonnet-5` via the Vercel AI Gateway using the
-`AI_GATEWAY_API_KEY` repo secret, validates each model-proposed comment
-against the diff's actual added or changed lines before posting (GitHub
-rejects the whole review otherwise), and posts via GitHub's REST API using
-the Actions-native `GITHUB_TOKEN` - no new GitHub credential is needed, only
-the model-call credential.
-
-The explicit decision behind this split is that debt-review (HAR-18) stays on
-the existing Eve merge-wake path unchanged, because its auto-remediation step
-needs the `coder` subagent and its detection step needs `gh`/GraphQL
-thread-resolution access - neither available to a bare CI script. Only the
-plain "open or push -> lens review -> post" pipeline moved to CI; the
-merge-triggered debt audit and ralph-advance remain in the Eve channel.
-
-`scripts/ci-review.ts`'s prompt duplicates the same two-lens text as
-`agent/subagents/reviewer/instructions.md` by hand - one is a TypeScript
-template literal, the other a static markdown prompt eve loads for the
-`reviewer` subagent, so neither can import or reference the other at
-runtime. Both files carry a comment pointing at the other's location; keep
-them in sync by hand when either lens changes.
-
-### Coder subagent (HAR-30)
-
-`agent/subagents/coder/` is the declared specialist that replaces the
-built-in `agent` tool as the coding child for substantive implementation, and
-is now the single coding path: the old dynamic `codingWorkerModel` that
-swapped `deepseek/deepseek-v4-flash` onto the built-in `agent`-tool child has
-been removed, so the built-in tool's quick mechanical work just runs the root
-model and the `coder` subagent owns all substantive coding. Its own
-`agent.ts` runs `anthropic/claude-haiku-4.5`. It (and `scout`) previously ran
-`deepseek/deepseek-v4-flash`, whose interleaved reasoning parts desync the
-AI-Gateway stream assembler (`text part <id> not found`) and crash-loop the
-durable step; `reasoning: "none"` (the #138 fix) did not stop the gateway
-emitting those parts, and since a "recoverable" model-call failure in task
-mode replays the subagent's whole turn from scratch, coders measured on
-2026-07-26 spent 15-70 minutes per run replaying finished work (and ENG-19's
-scout turned a 2.5-minute recon into a 21-minute one). Swapping the model off
-deepseek removes the failure class; the assembler bug itself is tracked
-upstream (see the workaround audit). Its
-`instructions.md` is a packet-driven implementation
-contract only (trust the packet, read only task-relevant files and their
-callers, climb the ponytail ladder, respect the architecture invariants, run
-`pnpm check`, commit, push - no sizing, no ralph mode, no Linear session
-ownership), and its `sandbox.ts` composes
-`buildSandboxDefinition({ gitAuthLevel: "push-capable" })` - the first
-subagent that needs full push access rather than read-only or no GitHub auth
-at all. Its `tools/session_update.ts` re-exports the root's tool (declared
-subagents inherit no root tool slots), and the shared role guard makes
-`blocked` the only status coder can actually post - `review`/`completed`
-are refused in code.
-
-This inverts the old delegation model: a declared subagent's sandbox is not
-shared with the root, so `coder` cannot hand back local commits the way the
-built-in `agent` tool's same-sandbox child did. Instead `coder` commits and
-pushes its own feature branch, and the root fetches and verifies
-`git log origin/main..origin/<branch>` against `coder`'s report before
-opening the PR - the "child never pushes, commits stay local" rule in
-`instructions.md`'s Delegation section now applies only to the built-in
-`agent` tool, which stays enabled for quick same-sandbox mechanical work
-(a single-file edit, a merge conflict) and never for substantive
-implementation. `instructions.md` states that bright line explicitly so no
-turn spends time deciding which of the two to reach for.
-
-### Sizing gate and issue groups (ralph mode)
-
-HAR-9 added a sizing gate in front of implementation. ENG-1 showed the failure
-mode it prevents: a multi-deliverable ticket delegated whole to one coding
-child burned a 38M-token session across several restarts. The gate is a
-judgment over the issue packet alone (no new orientation reads, per
-`AGENTS.md`): an issue that cannot land as one reviewable PR is broken into a
-sub-issue plan of PR-sized workstreams first. The proposed breakdown posts as a
-`review` session_update and then parks the turn on eve's built-in
-`ask_question` tool - the stop before approval is enforced by the runtime's
-`input.requested`/`session.waiting` protocol, not by prompt discipline, and
-`channels/linear.ts` already renders the elicitation (with Linear's native
-select signal via `linearInputRequestSignal`; since eve 0.27 the runtime, not
-the channel, matches the human's reply to the pending input request). HAR-17
-tracked a further-back regression: eve's Linear channel used to append a
-base64 `<!-- eve-input:... -->` tracking blob straight into that visible
-message body, leaking a technical token into every elicitation a human saw
-(a `#99` attempt hand-rolled the fix by moving that payload into
-`signalMetadata`, but eve's own 0.27 upgrade later fixed this upstream -
-`renderLinearInputRequests` now renders clean prompt/option text and reply
-matching moved server-side - which is why `#99` closed unmerged);
-`src/linear-channel.test.ts`'s `input.requested elicitation (HAR-17)` suite
-now locks in that the posted body carries no marker text. Only
-after approval does the agent create the
-sub-issues over the Linear MCP (`save_issue` with `parentId` and `blockedBy`
-relations), which turns the ticket into an ordinary issue group.
-
-When the assigned issue has sub-issues - pre-existing or just created from an
-approved breakdown - the agent treats it as a group (ralph mode): it sequences
-them by their Linear `blocks`/`blocked by` relations, priority, and
-`PROJECT_PLAN.md` phase, then hands off every ready sub-issue at once (capped
-at three in flight) instead of driving any of them itself (HAR-15). Readiness
-is recomputed from Linear immediately before each hand-off, not trusted from
-the plan posted earlier in the turn, so a sub-issue whose blocker hasn't
-actually finished never gets a session started for it.
-
-A hand-off reuses `tools/handoff.ts` (see "Self-handoff on long sessions"
-below) rather than a bare `save_issue` delegate assignment: it posts a Linear
-comment on the sub-issue carrying a brief of what its `blocked by`
-predecessor(s) just shipped - their PR, key decisions, anything that changes
-this sub-issue's approach - and anchors a fresh Agent Session to that comment
-with `createLinearAgentSessionOnComment`. Neither `AgentSessionCreateOnIssue`
-nor `AgentSessionCreateOnComment` takes a free-text field of its own (see the
-tool's comments), so a comment is the only way to seed a fresh session with
-anything beyond its bare issue packet - the same reason `tools/handoff.ts` was
-built for self-continuation in the first place, which is why HAR-15 reuses it
-here instead of adding a second, near-identical mechanism. The agent also sets
-the sub-issue's `delegate` to `ts-rogue-eve` with `save_issue` alongside the
-hand-off, so Linear's own assignment reflects who is driving it. Each ready
-sub-issue then gets its own independent session, its own sandbox, its own
-branch, its own coding child, and its own pull request, driven end to end
-under this same `instructions.md` contract exactly as an ordinary single-issue
-task. The session that fanned work out does no git and runs no coding child
-for a sub-issue itself; it only lists, orders, hands off with context, and
-stops.
-
-This replaces an earlier design where the parent kept every sub-issue's branch
-in a `.worktrees/<id>` git worktree inside its own single sandbox and drove
-each with a batched built-in `agent`-tool child, claiming it first with an
-atomic `git push origin main:refs/heads/<branch>` to de-race a concurrently
-woken session. That model's appeal was one sandbox, one toolchain bootstrap,
-and a single narrative thread; its cost was that the parent alone carried all
-of that git bookkeeping (claim races, worktree cleanup, per-worktree unpushed-
-commit recovery), and worktree branches were invisible to the current-branch
-recovery checks that assume one branch per sandbox. Handing sub-issues to
-independently triggered sessions instead gives each one the same real sandbox
-isolation every other session already gets, at the cost of the parent's single
-narrative thread: advancing the group after a merge is now something whichever
-session owns the merged sub-issue does on its own next turn, not something the
-original parent session does centrally.
-
-Linear is the only cross-session store - order and readiness are recomputed
-from it each turn - and the merge that advances the group is still the
-existing `isMainMerge` signal in [`channels/github.ts`](channels/github.ts),
-which tags the merged issue's identifier so the session it wakes knows which
-group to advance: confirm that sub-issue Done, then hand off every newly ready
-sibling the same way, carrying forward what that merge just shipped. The
-sequencing and hand-off contract lives in [`instructions.md`](instructions.md);
-the local `evals/scoping.eval.ts` guards the sizing gate (a large synthetic
-ticket must park with a breakdown and zero implementation), and `evals/ralph`
-still guards group sequencing end to end - its `drivesIssue` assertion already
-treats a `save_issue` call naming the ready sub-issue as driving it, which
-covers the `delegate` update half of a hand-off without needing to distinguish
-it from the `handoff` tool call that carries the context.
-
-### Unattended Linear access and GitHub auth surfacing (HAR-33)
-
-The merge-wake turn above runs on the GitHub channel under whatever principal
-merged the pull request - and it must read Linear (confirm the sub-issue Done,
-recompute readiness) through the Linear MCP connection. When that connection
-was user-scoped interactive OAuth (`connect("mcp.linear.app/ts-rogue-eve-mcp")`),
-the grant was bound to the inbound principal: a GitHub sender who had never
-authorized it parked the turn on `authorization.required`, and because eve's
-GitHub defaults (unlike this repo's Linear channel since HAR-31) implement no
-`authorization.*` handlers, the park was invisible - no PR comment, no error,
-no log. Every ralph merge-advance turn stalled this way; issue groups never
-advanced past their first merged sub-issue.
-
-Two changes, both in this repo:
-
-- [`connections/linear.ts`](connections/linear.ts) resolves the Linear MCP
-  connection app-scoped:
-  `connect({ connector: "linear/ts-rogue-eve", principalType: "app" })` - the
-  same Linear agent-app token the channel and authored tools already use
-  unattended, in the exact shape eve's auth guide prescribes for acting as the
-  agent itself. No consent flow exists for app-scoped auth, so merge wakes,
-  schedules, and any other unattended turn reach Linear without a human in the
-  loop. (Linear writes are attributed to the agent app rather than the
-  delegating user, which is what agent-driven `save_issue` calls should read
-  as anyway.)
-- [`channels/github.ts`](channels/github.ts) ports HAR-31's
-  `authorization.required`/`authorization.completed` handlers so any future
-  user-scoped challenge on a GitHub-dispatched turn (the Vercel MCP connection
-  is still user-scoped) posts the authorization link as a thread comment
-  instead of parking silently. GitHub has no native auth signal like Linear's
-  "Link account" elicitation, so a plain comment is the whole affordance.
-
-### Project create/update tooling (HAR-47)
-
-`connections/linear.ts`'s allow-list previously exposed only `save_issue` as a
-write, so a request like "promote this issue to a project, and demote its
-sub-issues to normal issues" (surfaced while working ENG-9) had no tool to act
-on: `list_projects`/`get_project` are read-only, and `save_issue`'s `project`
-field only accepts an *existing* project. The Linear MCP server has always
-published `save_project` (create-if-no-`id`/update-if-`id`, mirroring
-`save_issue`'s own shape) - it just sat outside the allow-list alongside the
-other writes this repo deliberately keeps out. `save_project` is now allowed;
-`agent/lib/tool-label.ts` gained a matching friendly label, and
-`instructions.md`'s new "Promoting an issue to a project" section gives the
-model the sequencing a bare tool addition doesn't: create the project, clear
-`parentId`/set `project` on each former sub-issue, then link the original
-issue back to the project and move it to a terminal state. This is a
-human-directed action only - nothing in the sizing gate or ralph mode reaches
-for `save_project` on its own - so it needs no extra approval gate beyond the
-connection's existing `never()`.
-
-### Linear project-workflow skills (HAR-64)
-
-Two load-on-demand skills port Nico's Claude Code Linear workflows into the
-agent: `skills/linear-project-manager/SKILL.md` (scaffold/enrich/audit rich
-projects - milestones as dependency groups, native `blocks`/`blockedBy`
-relations, Decision Log / Meeting Notes documents, DAG verification) and
-`skills/linear-project-update/SKILL.md` (draft and post a project status update
-backed by a 7-day context sweep). Both are procedures over existing tools, so
-skills - not `instructions.md` sections or authored tools - are the right slot:
-eve advertises each skill's `description` and appends its body via the
-framework's `load_skill` tool only when a Linear request matches, keeping the
-always-on prompt lean.
-
-They extend `connections/linear.ts`'s project-content write surface along the
-HAR-47 line. `save_milestone`, `save_document`, and `create_issue_label` are the
-writes the scaffolding procedure needs; `save_status_update` (plus the read
-`get_status_updates`) is what the update skill posts. Each is a project-content
-object exactly as `save_project` is - not an Agent-Session activity - so each
-belongs in the MCP allow-list. In particular a project *status update* is
-Linear's project health feed and flips no session lifecycle state, so it is
-unlike `save_comment` (a session post), which stays out and is routed through
-the authored `session_update`/`handoff` tools. `lib/tool-label.ts` gained a
-friendly label per new write. The connection keeps `approval: never()`: both
-skills are reachable only from an explicit human request and each parks on the
-runtime's `ask_question` for approval before it writes, so no extra gate is
-warranted - the same reasoning as `save_project`.
-
-Two deliberate scope choices (decided with the requester): the update flow is
-**on-demand only** - triggered by a human request, mention, or the Linear
-"Reminder to post update" arriving on the existing Linear channel, with no cron
-schedule - and its context sweep reads **Linear + merged GitHub PRs only**. The
-source skill's Slack and Notion legs are dropped (no connection); the GitHub leg
-runs `gh` inside the agent's sandbox (its own auth) against `zico-io/ts-rogue`,
-never an assumed host `gh`, and is skipped-and-noted on failure rather than
-fatal. The source's stale `brand-voice` cross-reference is replaced with a short
-ts-rogue voice section inline in the skill.
-
-### Handoff to a fresh session (HAR-12, HAR-15)
-
-HAR-12 asked for eve's own token-quota HITL (a continue/stop prompt raised
-when a session crosses its configured `maxInputTokensPerSession`/
-`maxOutputTokensPerSession`) to auto-compact and continue instead. That
-prompt, the quota check, and the budget-reset logic all live inside the `eve`
-package's harness internals (`session-limit-enforcement`/
-`session-limit-continuation`); no released version exposes a config, hook, or
-channel-event API that lets this repo override or auto-answer it, and
-`agent/hooks/*` are deliberately observe-only (see above), so they cannot
-resolve a pending input request either.
-
-`tools/handoff.ts` sidesteps the problem instead of solving it upstream: it
-gives the root agent a way to voluntarily end its own session before ever
-reaching that quota, rather than waiting to be asked. Calling it posts the
-model-authored `brief` (a continuation packet - what's done, evidence, what's
-left, the next action) as a Linear comment via a hand-rolled `commentCreate`
-mutation (not in `eve/channels/linear`'s public barrel, so it's built against
-the barrel's public `callLinearGraphQL` transport the same way
-`channels/linear.ts` hand-rolls other de-minified pieces), then calls the
-barrel-exported `createLinearAgentSessionOnComment` to anchor a brand-new
-Agent Session to that comment. The new session gets its own empty context
-window and its own fresh token quota; eve's existing webhook delivery to
-`channels/linear.ts` picks up its `created` event the same way it would for a
-human-initiated session, so no extra dispatch wiring was needed.
-`instructions.md` tells the root to reach for this proactively on a session
-that has been running unusually long - a deep delegation chain or a slow
-implementation - rather than treating quota exhaustion as something that
-happens to it.
-
-HAR-15 reuses the same tool and mutation chain for a second purpose: handing a
-now-ready sub-issue off to its own fresh session in ralph mode, carrying
-forward the context (what its predecessor shipped, and why) that a bare
-`save_issue` delegate assignment could not deliver. The tool already took an
-arbitrary `issueId`, not "the current issue" specifically, so nothing about
-`tools/handoff.ts` itself needed to change beyond broadening its description
-and de-specializing the fixed comment header (the "why this session exists"
-framing now lives entirely in the model-authored `brief`, which differs by
-caller: a continuation packet for self-handoff, a predecessor's shipped
-context for a dependency unlock).
-
-### Issue lifecycle owned by the harness
-
-Linear issue workflow state used to drift because every transition depended on
-the model choosing to call `save_issue`. Four transitions are now reconciled
-in code, all through `lib/issue-state.ts` (`advanceIssueState`, hand-rolled
-over the public `callLinearGraphQL` transport like `lib/live-sessions.ts`):
-
-- **Session created -> In Progress**, cascading to an unstarted parent so a
-  group's parent never sits in Todo while sub-issues are in flight. Runs in
-  `channels/linear.ts`'s `dispatchAgentSession` *after* `send()` (state sync
-  never delays dispatch; the `waitUntil`-tracked promise keeps it alive) and
-  only for `created` events - every `prompted` event follows a created one
-  that already synced. A guard-declined duplicate session never reaches it.
-- **PR opened / ready for review -> In Review**, keyed off
-  `linearRefFromPullRequest` in `channels/github.ts`'s
-  `onPullRequestWithStateSync` wrapper (eve runs `onPullRequest` under
-  `waitUntil` and accepts an async result). Skipped silently when the team
-  has no started-type state named like "review". `synchronize` is excluded -
-  state was set at open.
-- **PR merged to main -> Done**, same wrapper. The sync deliberately completes
-  before the dispatch decision returns, so the woken ralph-advance turn
-  already observes the merged sub-issue Done when it recomputes readiness.
-- **Session failed -> Blocked** (`session.failed` only - `turn.failed` is
-  recoverable), so an unrecoverably dead session never leaves its issue
-  falsely In Progress. Skipped silently when the team has no state named
-  like "Blocked".
-
-Every transition is forward-only and idempotent: state types rank
-triage/backlog/unstarted < started < completed/canceled, and within
-started-type states board `position` decides (In Progress before In Review on
-Linear defaults - a team ordered otherwise just skips the transition, never
-downgrades). Done and Canceled are terminal; only Blocked may move an issue
-sideways, and never out of a terminal state. `advanceIssueState` never
-throws: a Linear outage degrades to a skipped transition, never a blocked
-dispatch, a suppressed review, or a lost ralph wake. The model keeps exactly one
-state-transition duty: moving a group parent to Done when all sub-issues are
-Done (`instructions.md`, Issue groups) - the harness cascades only In
-Progress to parents, never Done.
-
-### One live session per issue (duplicate-delegation guard)
-
-Two live Agent Sessions on one issue means two sandboxes, two branches, and
-two coding children racing on the same work - exactly what happened on HAR-26
-when a human assigned the agent as the issue's delegate while a
-handoff-created session was already running. Linear itself keeps no such
-invariant, and eve keys sessions by Agent Session id, not issue, so the guard
-is two-sided here, with `lib/live-sessions.ts` (`listLiveAgentSessions`, a
-`callLinearGraphQL` query for the issue's non-terminal sessions - `pending`/
-`active`/`awaitingInput` count as live; `complete`/`error`/`stale` do not) as
-the shared pre-check:
-
-- **At creation** - `tools/handoff.ts` refuses to create the comment or the
-  session when the issue already has another live session, returning
-  `alreadyLive` with that session's id and URL so the model reports instead
-  of duplicating. The caller's own session is excluded (its id rides in the
-  dispatch-auth attributes `defaultLinearAuth` stamps), since
-  self-continuation hands off the very issue the caller is still live on.
-- **At dispatch** - `channels/linear.ts` (`guardedOnAgentSession`, the third
-  behavior change vs. the built-in channel) declines a `created` webhook for
-  an issue that already has an older live session: it posts one `response`
-  activity pointing at the live session (a `response` is how sessions
-  conclude in Linear's protocol, so the duplicate lands `complete` instead of
-  stuck `pending` - `AgentSessionUpdateInput` has no status field to set
-  directly) and returns `null` so no eve session spins up. Agent-created
-  sessions (`creatorId === appUserId`) are exempt: the handoff tool already
-  gated them, and guarding them here would decline every self-continuation
-  successor, whose predecessor is still live when the successor's `created`
-  webhook arrives. Oldest `createdAt` wins, so two near-simultaneous
-  sessions cannot both decline each other.
-
-Both sides fail open (missing issue id, GraphQL failure): a flaky pre-check
-must never block a legitimate delegation or leave a fresh session silently
-undispatched. `prompted` events are never guarded - re-prompting an existing
-session is an explicit human act. Residual gap: the agent assigning itself as
-delegate via a bare `save_issue` bypasses both guards; `instructions.md`
-already mandates `handoff` over bare delegate assignment.
-
-### Review-feedback turns (HAR-16)
-
-The `.github/workflows/review.yml` CI workflow (HAR-63) now posts the
-auto-review when a pull request opens or leaves draft, replacing the former
-`onPullRequest` dispatch in `channels/github.ts`. The posted inline comments,
-and any a human reviewer leaves the same way, arrive back at eve as
-`pull_request_review_comment` webhook events - the only granularity of
-"pull request review" eve's public `githubChannel` API parses; the coarser
-`pull_request_review` event (a review submitted with only a top-level
-verdict/body and no inline comments) isn't parsed by eve at all as of the
-version pinned here, so that case cannot wake a turn without a bespoke
-verified webhook route - out of scope for this change.
-
-Before HAR-16, `onComment` was unset, so eve's built-in mention gate applied
-to every comment kind: review feedback sat unanswered unless a human
-remembered to type `@ts-rogue-eve` in the review. `channels/github.ts` now
-supplies its own `onComment`, dispatching when `ctx.conversation.kind ===
-"review_thread"` (an inline review comment) and it is a new finding, while
-reimplementing the mention check (`isBotMentioned`) for every other comment
-kind, since providing `onComment` replaces eve's built-in gate entirely
-rather than layering on top of it. The reimplementation is scoped to the
-mention regex alone - the bot-authored/self-comment loop guard needs no
-reimplementation, because eve applies that (`isIgnoredInboundComment`) before
-ever calling `onComment`, confirmed by reading `dispatch.js`'s
-`dispatchPullRequestReviewComment`. As with `channels/linear.ts`'s earlier
-precedent, the reimplemented pieces are not part of eve's public
-`./channels/github` export surface (only `defaultGitHubAuth` ships from
-`defaults.js`; `inbound.js`'s `extractGitHubCommentTrigger` and
-`shouldDispatchGitHubComment` have no public subpath), so this is ported from
-the installed package's own de-minified source rather than guessed at.
-
-"New finding" excludes replies within an already-open review thread: GitHub
-fires the same `pull_request_review_comment` webhook for every later reply
-in a thread, and a reply is conversation about a finding already surfaced,
-not a fresh one that needs its own turn. The webhook payload marks a reply
-with `in_reply_to_id`; eve's normalized `GitHubComment` drops that field, so
-`isNewReviewFinding` reads it off `comment.raw` directly, the same escape
-hatch `onPullRequest` already uses for fields the normalized event omits.
-
-The dispatched turn carries a short context string pointing at
-`instructions.md`'s "PR review-feedback turns" section rather than
-repeating the procedure inline, the same pattern `ponytailReviewContext`
-already used for "PR review turns". That section tells the agent to check
-out the pull request's branch with `gh pr checkout`, ground itself with
-`git log`/`git status` before changing anything, fix and push a follow-up
-commit when the feedback names a concrete change (or reply in the thread
-otherwise), and skip orientation, sizing, delegation, and `session_update` -
-this turn has no Linear Agent Session, only the GitHub conversation the
-comment arrived on.
-
-### Debt-review turns after merge (HAR-18)
-
-Every merge to main already wakes a turn (the same `isMainMerge` branch in
-`channels/github.ts` that handles ralph-advance).  Rather than adding a new
-schedule, webhook hook, or durable counter file, the debt-review context is
-appended unconditionally to that existing turn's context array - the woken
-session determines whether unresolved review threads exist via a GraphQL query
-(the only API surface that exposes thread resolution state; REST's
-`/repos/{owner}/{repo}/pulls/{number}/comments` endpoint has no
-resolved/unresolved field).
-
-The debt ledger is GitHub's own labeled-issue count: `gh issue list
---label tech-debt --state open` returns the number, self-resetting when the
-remediation PR merges (its body includes `Closes #<n>` for each resolved
-issue, so merging closes them and the count drops).  No separate storage,
-counter file, or Linear custom field was added.
-
-Remediation reuses the existing `coder` subagent with a packet naming every
-open debt issue to fix, rather than adding a new dispatch path.  The
-`debtReviewContext` function follows the same pattern as
-`ponytailReviewContext` (now removed per HAR-63) and `REVIEW_FEEDBACK_CONTEXT`:
-it embeds the threshold constants and a reference to the "PR merge debt-review
-turns" section in `instructions.md` instead of repeating the procedure inline.
+| `agent.ts` | Root model configuration |
+| `instructions.md` | Stable identity, safety boundaries, and delivery contract |
+| `channels/` | Eve, Linear, and GitHub message adapters |
+| `connections/` | Allow-listed Linear and read-only Vercel capabilities |
+| `hooks/prewarm-sandbox.ts` | Starts sandbox creation and refreshes brokered GitHub auth |
+| `sandbox/` and `lib/sandbox.ts` | Vercel Sandbox bootstrap, network policy, token refresh, and recovery |
+| `lib/orientation.ts` | Builds the session's concise `ORIENTATION.md` brief |
+| `skills/` | Optional Eve and Linear project procedures |
+| `subagents/playtester/` | Independent terminal and web acceptance verification |
+| `tools/handoff.ts` | Starts an informed successor Agent Session |
+| `tools/session_update.ts` | Posts blocked, review, and completion activities |
+| `schedules/eve-version-check.ts` | Checks for Eve upgrades and audits framework workarounds |
+
+## Linear and GitHub
+
+Linear owns issue status, priority, dependencies, and Agent Session activities.
+The harness moves an issue forward when work starts, a pull request opens, a
+pull request merges, or a session fails. These transitions are forward-only and
+must not block dispatch when Linear is unavailable.
+
+The custom Linear channel preserves capabilities not exposed together by Eve's
+built-in wrapper: immediate cancel-and-steer, stop signals, duplicate-session
+protection, Agent Plan synchronization, and lifecycle updates. It also retains
+the built-in behavior for verified webhooks, inbound Linear images, activities,
+authorization prompts, and proactive sessions.
+
+GitHub pull requests remain the review and merge boundary. The GitHub channel:
+
+- wakes Eve for actionable inline review feedback;
+- advances Linear state when pull requests open or merge;
+- advances Linear issue groups after a sub-issue merges;
+- records unresolved review debt after merges.
+
+Harness changes are also reviewed against
+[Linear's Agent Interaction Guidelines](https://linear.app/developers/aig):
+agent disclosure, native platform behavior, prompt feedback, visible state,
+immediate disengagement, and human accountability. These criteria live once in
+the root instructions and are mirrored by the `aig:` lens in
+`scripts/ci-review.ts`.
+
+## Sandbox and credentials
+
+Each root session receives a persistent Vercel Sandbox with the repository,
+locked dependencies, Git, GitHub CLI, terminal tooling, and Playwright.
+`ORIENTATION.md` summarizes branch state, unpushed commits, linked worktrees,
+GitHub authentication, and screenshot availability.
+
+GitHub credentials are injected by sandbox network policy and never enter the
+process environment or repository. Startup tolerates temporary token-mint
+failure, retries in the background, and recovers stranded commits when access
+returns.
+
+The playtester has its own read-only, screenshot-enabled sandbox. Declared
+subagents do not inherit root slots, so its sandbox and prewarm hook are authored
+under its own directory.
+
+## Connections
+
+| Connection | Purpose | Credential |
+| --- | --- | --- |
+| Linear MCP | Issues, projects, milestones, documents, and status updates | Vercel Connect app principal |
+| Vercel MCP | Deployments, logs, errors, and analytics | Vercel Connect |
+| Vercel OpenAPI | Traces, observability queries, and read-only sandbox inspection | `VERCEL_TOKEN` |
+
+The OpenAPI connection derives default team and project identifiers from
+`VERCEL_OIDC_TOKEN`; `VERCEL_TEAM_ID` and `VERCEL_PROJECT_ID` may override
+them. Resuming a named sandbox is denied because it mutates external state.
+
+See [WORKAROUNDS.md](WORKAROUNDS.md) for framework gaps that must be checked
+when Eve changes.
+
+## Skills
+
+- `eve` routes Eve framework work to the documentation bundled with the pinned
+  package.
+- `linear-project-manager` creates or reshapes Linear projects after a human
+  approves a broad external write.
+- `linear-project-update` drafts or posts grounded project status updates.
+
+Skills supply optional procedures only. Their tools remain controlled by the
+connection allow-lists and approval policies.
 
 ## Development
 
-Run the local agent with:
+| Task | Command |
+| --- | --- |
+| Run the local agent | `pnpm eve:dev` |
+| Run unit tests | `pnpm test:unit` |
+| Run all checks | `pnpm check` |
+| Inspect discovered Eve surfaces | `pnpm exec eve info` |
+| Run all Eve evals | `pnpm exec eve eval` |
+| Run the Linear issue-group eval | `pnpm exec eve eval ralph --url https://<deployment>` |
 
-```bash
-pnpm eve:dev
-```
+The deployed issue-group eval needs `EVE_EVAL_AUTH_TOKEN`. CI targets the
+production alias and uses GitHub OIDC plus
+`VERCEL_AUTOMATION_BYPASS_SECRET`.
 
-Agent integrations and sandbox behavior are covered by the root-level Vitest
-suite. Run `pnpm test:unit` or the complete `pnpm check` before handoff.
-
-Ralph mode has an end-to-end eval in [`evals/ralph`](../evals/ralph) that drives
-the real agent against a dedicated Linear group and asserts it sequences and
-hands off the ready sub-issue first. It skips unless the fixture is set; run it
-against a sandbox-reachable target:
-
-```bash
-EVE_EVAL_AUTH_TOKEN=<bearer> eve eval ralph --url https://<deployment>
-```
-
-The fixture is a fixed do-not-delete Linear group (identifiers in
-[`evals/ralph/shared.ts`](../evals/ralph/shared.ts)), so it is code, not config.
-CI runs this weekly and on demand via
-[`.github/workflows/ralph-eval.yml`](../.github/workflows/ralph-eval.yml),
-targeting the `bob-v0` production alias. Deployment auth is a short-lived GitHub
-OIDC token minted per run and verified by `oidc()` in
-[`channels/eve.ts`](channels/eve.ts) - no stored bearer. The only secret is
-`VERCEL_AUTOMATION_BYPASS_SECRET` (the Vercel protection bypass), which also
-gates the run: the job self-skips until it is set.
-
-Repository workflow and requirements live in the [root README](../README.md).
+Repository-wide development requirements live in
+[CONTRIBUTING.md](../CONTRIBUTING.md). Current framework-gap maintenance lives
+in [WORKAROUNDS.md](WORKAROUNDS.md); historical incidents remain in Git and
+Linear.
