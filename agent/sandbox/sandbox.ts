@@ -19,13 +19,12 @@ import {
   resolveBootstrapNetworkPolicy,
   resolveStartupNetworkPolicy,
   SANDBOX_TIMEOUT_MS,
-  SYNC_MAIN_COMMAND,
   TOKEN_MINT_TIMEOUT_MS,
   TOKEN_REFRESH_MS,
   TOKEN_RETRY_MS,
   type TokenRefreshTiming,
-  withTimeout,
   WORKSPACE_GIT_CONFIG_ENV,
+  withTimeout,
 } from "../lib/sandbox";
 
 // Re-exported so downstream imports (src/sandbox-token-refresh.test.ts,
@@ -44,20 +43,22 @@ export {
   resolveBootstrapNetworkPolicy,
   resolveStartupNetworkPolicy,
   SANDBOX_TIMEOUT_MS,
-  SYNC_MAIN_COMMAND,
   TOKEN_MINT_TIMEOUT_MS,
   TOKEN_REFRESH_MS,
   TOKEN_RETRY_MS,
   type TokenRefreshTiming,
-  withTimeout,
   WORKSPACE_GIT_CONFIG_ENV,
+  withTimeout,
 };
 
 /** Reads back the bootstrap-written screenshot-tooling status; always exits 0 (missing file reads as unavailable via `parseScreenshotToolingStatus`). */
 const READ_SCREENSHOT_STATUS_COMMAND = `cat ${SCREENSHOT_STATUS_PATH} 2>/dev/null || true`;
 
 export default defineSandbox({
-  backend: vercel({ timeout: SANDBOX_TIMEOUT_MS, env: WORKSPACE_GIT_CONFIG_ENV }),
+  backend: vercel({
+    timeout: SANDBOX_TIMEOUT_MS,
+    env: WORKSPACE_GIT_CONFIG_ENV,
+  }),
   revalidationKey: dependencyRevalidationKey,
   async bootstrap({ use }) {
     // Fail loudly if GitHub auth can't be minted: bootstrap must clone a
@@ -88,9 +89,6 @@ export default defineSandbox({
       networkPolicy: policy,
       timeout: SANDBOX_TIMEOUT_MS,
     });
-    const sync = await sandbox.run({ command: SYNC_MAIN_COMMAND });
-    if (sync.exitCode !== 0)
-      throw new Error(sync.stderr || "Sandbox repository sync failed");
     // Flush any commits stranded by a prior push failure now that auth is
     // confirmed, before the agent even starts (see AUTO_RECOVER_PUSH_COMMAND).
     // Best-effort and skipped entirely when unauthenticated, since it would

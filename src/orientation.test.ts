@@ -264,7 +264,7 @@ describe("buildOrientationBrief", () => {
     expect(brief).not.toContain("GitHub auth");
   });
 
-  it("never flags unpushed commits on main (SYNC_MAIN_COMMAND already keeps it current)", () => {
+  it("never flags unpushed commits on main (main tracks origin; unpushed-on-main isn't actionable)", () => {
     const brief = buildOrientationBrief({
       branch: "main",
       headSha: "abc1234",
