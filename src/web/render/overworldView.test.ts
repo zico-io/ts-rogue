@@ -3,6 +3,7 @@ import { newGame } from "../../engine/state/store";
 import { generateOverworldMap } from "../../engine/world/overworld";
 import type { OverworldMap, Tile } from "../../engine/world/types";
 import { theme, toPixiColor } from "../../ui/theme";
+import { GRASS_DECORATIONS } from "../../ui/tiles/overworldVariants";
 import type {
   BlobHandle,
   MultiCellRegion,
@@ -228,6 +229,80 @@ describe("OverworldSceneView", () => {
     expect(shoreRects.length).toBe(0);
   });
 
+  function decorationSprites(factory: FakeFactory) {
+    return factory.sprites.filter((sprite) =>
+      (GRASS_DECORATIONS as readonly string[]).includes(
+        sprite.setTexture.mock.calls.at(-1)?.[0] as string,
+      ),
+    );
+  }
+
+  it("scatters grass-decoration sprites over a subset of grass tiles (WEB-6)", () => {
+    const factory = fakeFactory();
+    const view = new OverworldSceneView(factory);
+    const state = newGame(1);
+    const rows = Array.from({ length: 12 }, () => "g".repeat(12));
+    const map = mapFrom(rows);
+    const positioned = {
+      ...state,
+      worldState: { ...state.worldState, player: { x: 0, y: 0 } },
+    };
+
+    view.render(positioned, map, SIZE, TILE_PX);
+
+    const decorations = decorationSprites(factory);
+    expect(decorations.length).toBeGreaterThan(0);
+    expect(decorations.length).toBeLessThan(12 * 12);
+  });
+
+  it("draws no grass-decoration sprites over a water-only viewport (WEB-6)", () => {
+    const factory = fakeFactory();
+    const view = new OverworldSceneView(factory);
+    const state = newGame(1);
+    const map = mapFrom(["wwwww", "wwwww", "wwwww", "wwwww", "wwwww"]);
+    const positioned = {
+      ...state,
+      worldState: { ...state.worldState, player: { x: 0, y: 0 } },
+    };
+
+    view.render(positioned, map, SIZE, TILE_PX);
+
+    expect(decorationSprites(factory).length).toBe(0);
+  });
+
+  it("destroys grass-decoration sprites left behind when the viewport shrinks (WEB-6)", () => {
+    const factory = fakeFactory();
+    const view = new OverworldSceneView(factory);
+    const state = newGame(1);
+    const rows = Array.from({ length: 12 }, () => "g".repeat(12));
+    const map = mapFrom(rows);
+    const positioned = {
+      ...state,
+      worldState: { ...state.worldState, player: { x: 0, y: 0 } },
+    };
+
+    view.render(positioned, map, SIZE, TILE_PX);
+    const decoratedBefore = decorationSprites(factory).length;
+    expect(decoratedBefore).toBeGreaterThan(0);
+
+    view.render(positioned, map, { width: 20, height: 20 }, TILE_PX);
+    const destroyedDecorations = factory.sprites.filter(
+      (sprite) =>
+        (GRASS_DECORATIONS as readonly string[]).includes(
+          sprite.setTexture.mock.calls.at(-1)?.[0] as string,
+        ) && sprite.destroy.mock.calls.length > 0,
+    );
+    expect(destroyedDecorations.length).toBeGreaterThan(0);
+  });
+
+  function spriteWithLastTexture(factory: FakeFactory, name: string) {
+    const sprite = factory.sprites.find(
+      (candidate) => candidate.setTexture.mock.calls.at(-1)?.[0] === name,
+    );
+    if (!sprite) throw new Error(`no sprite last-textured "${name}"`);
+    return sprite;
+  }
+
   it("scales a mountain tile larger the more same-type neighbors it has (ROG-73)", () => {
     const factory = fakeFactory();
     const view = new OverworldSceneView(factory);
@@ -241,8 +316,8 @@ describe("OverworldSceneView", () => {
 
     view.render(positioned, map, SIZE, TILE_PX);
 
-    const isolated = factory.sprites[0 * 5 + 0];
-    const clustered = factory.sprites[2 * 5 + 3];
+    const isolated = spriteWithLastTexture(factory, "mountainSmall");
+    const clustered = spriteWithLastTexture(factory, "mountainLarge");
     const isolatedSize = isolated.setSize.mock.calls.at(-1)?.[0] as number;
     const clusteredSize = clustered.setSize.mock.calls.at(-1)?.[0] as number;
     expect(clusteredSize).toBeGreaterThan(isolatedSize);
@@ -260,8 +335,8 @@ describe("OverworldSceneView", () => {
 
     view.render(positioned, map, SIZE, TILE_PX);
 
-    const isolated = factory.sprites[0 * 5 + 0];
-    const clustered = factory.sprites[2 * 5 + 3];
+    const isolated = spriteWithLastTexture(factory, "mountainSmall");
+    const clustered = spriteWithLastTexture(factory, "mountainLarge");
     expect(isolated.setTexture.mock.calls.at(-1)?.[0]).toBe("mountainSmall");
     expect(clustered.setTexture.mock.calls.at(-1)?.[0]).toBe("mountainLarge");
   });

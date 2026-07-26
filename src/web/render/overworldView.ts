@@ -9,6 +9,7 @@ import {
 import { theme, toPixiColor } from "../../ui/theme";
 import {
   clusterScale,
+  grassDecoration,
   landmarkScale,
   mountainTexture,
   type Sides,
@@ -103,6 +104,8 @@ const SHIMMER_MIN_ALPHA = 0.15;
 const SHIMMER_MAX_ALPHA = 0.75;
 const SHIMMER_SIZE_RATIO = 0.22;
 
+const DECORATION_SIZE_RATIO = 0.4;
+
 const AMBIENT_POOL_SIZE = 12;
 const LEAF_PX = 9;
 const FIREFLY_PX = 5;
@@ -180,6 +183,7 @@ export class OverworldSceneView {
   private readonly propShadows = new Map<string, BlobHandle>();
   private readonly markerPulses = new Map<string, MarkerPulse>();
   private readonly waterShimmers = new Map<string, WaterShimmer>();
+  private readonly grassDecorations = new Map<string, SpriteHandle>();
   private ambientParticles: AmbientParticle[] = [];
   private viewportBounds: Bounds = { x: 0, y: 0, width: 0, height: 0 };
   private elapsed = 0;
@@ -226,6 +230,7 @@ export class OverworldSceneView {
     const seenShadows = new Set<string>();
     const seenPulses = new Set<string>();
     const seenShimmers = new Set<string>();
+    const seenDecorations = new Set<string>();
 
     const viewportAreaWidth = Math.max(1, minimapBoxX - MINIMAP_GAP_PX);
     const viewportCols = Math.max(1, Math.floor(viewportAreaWidth / tilePx));
@@ -254,6 +259,7 @@ export class OverworldSceneView {
       seenShadows,
       seenPulses,
       seenShimmers,
+      seenDecorations,
     );
     if (debugFixture) {
       this.drawFootprint(
@@ -271,6 +277,7 @@ export class OverworldSceneView {
     this.pruneStaleShadows(seenShadows);
     this.pruneStaleMarkerPulses(seenPulses);
     this.pruneStaleWaterShimmers(seenShimmers);
+    this.pruneStaleDecorations(seenDecorations);
 
     this.viewportBounds = {
       x: viewportOffsetX,
@@ -343,6 +350,7 @@ export class OverworldSceneView {
     seenShadows: Set<string>,
     seenPulses: Set<string>,
     seenShimmers: Set<string>,
+    seenDecorations: Set<string>,
   ): { hasLeaves: boolean; hasFireflies: boolean } {
     let hasForest = false;
     let hasGrassOrForest = false;
@@ -474,6 +482,30 @@ export class OverworldSceneView {
             cellX + tilePx * offsetXFrac - shimmerSize / 2,
             cellY + tilePx * offsetYFrac - shimmerSize / 2,
           );
+        }
+
+        if (!isPlayer && terrain === "grass") {
+          const decoration = grassDecoration(cell.x, cell.y);
+          if (decoration) {
+            seenDecorations.add(cell.key);
+            let sprite = this.grassDecorations.get(cell.key);
+            if (!sprite) {
+              sprite = this.factory.createSprite();
+              this.grassDecorations.set(cell.key, sprite);
+            }
+            const decorationSize = tilePx * DECORATION_SIZE_RATIO;
+            const offsetXFrac =
+              0.25 + hash01(cell.x * 47 + 3, cell.y * 61 + 8) * 0.5;
+            const offsetYFrac =
+              0.25 + hash01(cell.x * 71 + 13, cell.y * 89 + 4) * 0.5;
+            sprite.setTexture(decoration);
+            sprite.setTint(0xffffff);
+            sprite.setSize(decorationSize, decorationSize);
+            sprite.setPosition(
+              cellX + tilePx * offsetXFrac - decorationSize / 2,
+              cellY + tilePx * offsetYFrac - decorationSize / 2,
+            );
+          }
         }
 
         this.drawShoreFringe(map, cell, cellX, cellY, tilePx, seenShoreRects);
@@ -652,6 +684,15 @@ export class OverworldSceneView {
       if (!seen.has(key)) {
         shimmer.handle.destroy();
         this.waterShimmers.delete(key);
+      }
+    }
+  }
+
+  private pruneStaleDecorations(seen: Set<string>): void {
+    for (const [key, sprite] of this.grassDecorations) {
+      if (!seen.has(key)) {
+        sprite.destroy();
+        this.grassDecorations.delete(key);
       }
     }
   }

@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { OverworldMap, Tile } from "../../engine/world/types";
 import {
   clusterScale,
+  GRASS_DECORATIONS,
+  grassDecoration,
   hasShore,
   landmarkScale,
   mountainTexture,
@@ -127,5 +129,45 @@ describe("landmarkScale", () => {
     const scales = new Set<number>();
     for (let x = 0; x < 10; x++) scales.add(landmarkScale(x, 0));
     expect(scales.size).toBeGreaterThan(1);
+  });
+});
+
+describe("grassDecoration", () => {
+  it("is deterministic for the same coordinate", () => {
+    expect(grassDecoration(3, 9)).toBe(grassDecoration(3, 9));
+  });
+
+  it("leaves most grass tiles plain", () => {
+    let decorated = 0;
+    const total = 40 * 40;
+    for (let x = 0; x < 40; x++) {
+      for (let y = 0; y < 40; y++) {
+        if (grassDecoration(x, y) !== undefined) decorated++;
+      }
+    }
+    expect(decorated).toBeGreaterThan(0);
+    expect(decorated / total).toBeLessThan(0.3);
+  });
+
+  it("only ever returns a declared decoration tile", () => {
+    for (let x = 0; x < 40; x++) {
+      for (let y = 0; y < 40; y++) {
+        const decoration = grassDecoration(x, y);
+        if (decoration !== undefined) {
+          expect(GRASS_DECORATIONS).toContain(decoration);
+        }
+      }
+    }
+  });
+
+  it("uses more than one decoration across many tiles", () => {
+    const seen = new Set<string>();
+    for (let x = 0; x < 40; x++) {
+      for (let y = 0; y < 40; y++) {
+        const decoration = grassDecoration(x, y);
+        if (decoration !== undefined) seen.add(decoration);
+      }
+    }
+    expect(seen.size).toBeGreaterThan(1);
   });
 });
