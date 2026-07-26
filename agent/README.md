@@ -52,7 +52,7 @@ context. Blocking relations in Linear determine readiness.
 | `hooks/prewarm-sandbox.ts` | Starts sandbox creation and refreshes brokered GitHub auth |
 | `sandbox/` and `lib/sandbox.ts` | Vercel Sandbox bootstrap, network policy, token refresh, and recovery |
 | `lib/orientation.ts` | Builds the session's concise `ORIENTATION.md` brief |
-| `skills/` | Optional Eve and Linear project procedures |
+| `skills/` | Optional Eve, Linear project, and README-hygiene procedures |
 | `subagents/playtester/` | Independent terminal and web acceptance verification |
 | `tools/handoff.ts` | Starts an informed successor Agent Session |
 | `tools/session_update.ts` | Posts blocked, review, and completion activities |
