@@ -51,15 +51,31 @@ const toolCtx = (agentSessionId?: string) => ({
   },
 });
 
+// listLiveAgentSessions now excludes sessions idle past STALE_SESSION_MS, so a
+// blocking mock session needs a recent "last active" signal to still count as
+// live. Expressed relative to Date.now() so the tests are deterministic without
+// pinning the clock; the STALE offset clears the 30-min threshold with margin.
+const RECENT = () => new Date(Date.now() - 60_000).toISOString();
+const STALE = () => new Date(Date.now() - 60 * 60_000).toISOString();
+
 // Routes the two GraphQL queries the tool now issues: the live-session
-// pre-check and the comment mutation.
+// pre-check and the comment mutation. Sessions without their own `activities`
+// are auto-stamped as recently active so they read as live.
 const mockGraphQL = (input: {
   sessions?: readonly unknown[];
   commentId?: string;
 }) => {
+  const nodes = (input.sessions ?? []).map((session) =>
+    session && typeof session === "object" && !("activities" in session)
+      ? {
+          ...session,
+          activities: { nodes: [{ updatedAt: RECENT() }] },
+        }
+      : session,
+  );
   callGraphQL.mockImplementation(async (call: { queryName: string }) =>
     call.queryName === "IssueLiveAgentSessions"
-      ? { issue: { agentSessions: { nodes: input.sessions ?? [] } } }
+      ? { issue: { agentSessions: { nodes } } }
       : {
           commentCreate: {
             success: true,
@@ -249,5 +265,30 @@ describe("handoff duplicate-session guard", () => {
     );
 
     expect(result).toMatchObject({ handoffSessionId: "session-new" });
+  });
+
+  it("creates a session when the only live-status session is stale (idle past the threshold)", async () => {
+    mockGraphQL({
+      sessions: [
+        {
+          id: "session-stalled",
+          status: "active",
+          createdAt: STALE(),
+          url: "https://linear.app/session-stalled",
+          // Explicit stale last-activity overrides the auto-stamp: silent well
+          // past STALE_SESSION_MS, so it no longer blocks a fresh session.
+          activities: { nodes: [{ updatedAt: STALE() }] },
+        },
+      ],
+    });
+    createSessionOnComment.mockResolvedValue({ id: "session-new" });
+
+    const result = await handoffTool.execute(
+      { issueId: "issue-uuid", brief: "packet" },
+      toolCtx(),
+    );
+
+    expect(result).toMatchObject({ handoffSessionId: "session-new" });
+    expect(createSessionOnComment).toHaveBeenCalled();
   });
 });

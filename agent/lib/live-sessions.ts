@@ -16,8 +16,19 @@ export interface LiveAgentSession {
 
 // Linear's AgentSessionStatus values that mean the session is still doing or
 // awaiting work. `complete`, `error`, and `stale` sessions are dead and never
-// block a new one.
+// block a new one. Status alone is not enough: a live-status session idle
+// beyond STALE_SESSION_MS is also excluded (see below) - Linear does not
+// promptly demote a wedged session, so trusting status alone let a stalled
+// session block every new launch forever.
 const LIVE_STATUSES = new Set(["pending", "active", "awaitingInput"]);
+
+// A session in a live status but silent for this long is treated as dead.
+// Linear does not promptly transition a stalled session out of
+// active/awaitingInput, so without this a wedged session (e.g. the git-auth
+// stall fixed in a101015) blocks every new launch forever. 30 min clears any
+// real turn's activity cadence and the ~10-min token-retry endurance, so a
+// working session is never misjudged.
+export const STALE_SESSION_MS = 30 * 60 * 1000;
 
 /**
  * Lists an issue's live Agent Sessions, oldest first (`createdAt` ascending,
@@ -28,7 +39,11 @@ const LIVE_STATUSES = new Set(["pending", "active", "awaitingInput"]);
 export const listLiveAgentSessions = async (input: {
   readonly credentials: LinearChannelConfig["credentials"];
   readonly issueId: string;
+  // Wall clock for the staleness check; defaults to Date.now(). Injectable so
+  // tests can assert age-based exclusion deterministically.
+  readonly now?: number;
 }): Promise<readonly LiveAgentSession[]> => {
+  const now = input.now ?? Date.now();
   const data = await callLinearGraphQL<{
     issue?: {
       agentSessions?: {
@@ -37,6 +52,7 @@ export const listLiveAgentSessions = async (input: {
           status?: string;
           createdAt?: string;
           url?: string | null;
+          activities?: { nodes?: readonly { updatedAt?: string }[] };
         }[];
       };
     };
@@ -46,7 +62,10 @@ export const listLiveAgentSessions = async (input: {
       query IssueLiveAgentSessions($issueId: String!) {
         issue(id: $issueId) {
           agentSessions(first: 50) {
-            nodes { id status createdAt url }
+            nodes {
+              id status createdAt url
+              activities(last: 1) { nodes { updatedAt } }
+            }
           }
         }
       }
@@ -56,20 +75,32 @@ export const listLiveAgentSessions = async (input: {
   });
   const nodes = data.issue?.agentSessions?.nodes ?? [];
   return nodes
-    .flatMap((node) =>
-      typeof node.id === "string" &&
-      typeof node.status === "string" &&
-      LIVE_STATUSES.has(node.status)
-        ? [
-            {
-              id: node.id,
-              createdAt:
-                typeof node.createdAt === "string" ? node.createdAt : "",
-              url: node.url ?? null,
-            },
-          ]
-        : [],
-    )
+    .flatMap((node) => {
+      if (
+        typeof node.id !== "string" ||
+        typeof node.status !== "string" ||
+        !LIVE_STATUSES.has(node.status)
+      ) {
+        return [];
+      }
+      // Most recent activity is the truest "last active" signal; fall back to
+      // the session's own createdAt when it has no activities yet (a genuinely
+      // new pending session). An unparseable timestamp (NaN) is NOT treated as
+      // stale, so a parse glitch can never silently drop a real session.
+      const lastActiveIso =
+        node.activities?.nodes?.[0]?.updatedAt ?? node.createdAt;
+      const lastActiveMs = Date.parse(lastActiveIso ?? "");
+      if (Number.isFinite(lastActiveMs) && now - lastActiveMs > STALE_SESSION_MS) {
+        return [];
+      }
+      return [
+        {
+          id: node.id,
+          createdAt: typeof node.createdAt === "string" ? node.createdAt : "",
+          url: node.url ?? null,
+        },
+      ];
+    })
     .sort((a, b) =>
       a.createdAt === b.createdAt
         ? a.id.localeCompare(b.id)

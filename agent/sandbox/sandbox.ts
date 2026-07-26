@@ -16,6 +16,7 @@ import {
   MAX_MINT_FAILURES,
   MAX_SET_POLICY_FAILURES,
   mintFreshPolicy,
+  resolveBootstrapNetworkPolicy,
   resolveStartupNetworkPolicy,
   SANDBOX_TIMEOUT_MS,
   SYNC_MAIN_COMMAND,
@@ -40,6 +41,7 @@ export {
   MAX_MINT_FAILURES,
   MAX_SET_POLICY_FAILURES,
   mintFreshPolicy,
+  resolveBootstrapNetworkPolicy,
   resolveStartupNetworkPolicy,
   SANDBOX_TIMEOUT_MS,
   SYNC_MAIN_COMMAND,
@@ -58,7 +60,11 @@ export default defineSandbox({
   backend: vercel({ timeout: SANDBOX_TIMEOUT_MS, env: WORKSPACE_GIT_CONFIG_ENV }),
   revalidationKey: dependencyRevalidationKey,
   async bootstrap({ use }) {
-    const { policy } = await resolveStartupNetworkPolicy();
+    // Fail loudly if GitHub auth can't be minted: bootstrap must clone a
+    // private repo, so coming up on the unauthenticated fallback would abort
+    // the clone mid-chain and leave an empty /workspace (see
+    // resolveBootstrapNetworkPolicy).
+    const policy = await resolveBootstrapNetworkPolicy();
     const sandbox = await use({ networkPolicy: policy });
     const setup = await sandbox.run({
       // This folder-layout sandbox mirrors `workspace/**` (this directory's

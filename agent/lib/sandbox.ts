@@ -52,10 +52,14 @@ export const MAX_MINT_FAILURES = 20;
 // was gone (ROG-65). 5h is the Vercel Sandbox platform ceiling.
 export const SANDBOX_TIMEOUT_MS = 5 * 60 * 60 * 1000;
 
-// Unauthenticated fallback: allow every host with no header injection. Public
-// clone/fetch and the npm registry still work; only authenticated `git push`
-// loses its credential - a recoverable, late-phase blocker the agent already
-// surfaces - instead of the whole session hanging on a token blip.
+// Unauthenticated fallback: allow every host with no header injection. The
+// model loop, the npm registry, and Linear activity posting all keep working;
+// what does NOT is any git operation against origin - it's a PRIVATE repo, so
+// without the brokered token clone/fetch/push all fail auth. That's tolerable
+// for onSession (the repo is already checked out and keepTokenFresh heals push
+// later), but fatal for bootstrap's initial clone - which is why
+// resolveBootstrapNetworkPolicy refuses to come up on this fallback instead of
+// leaving a half-populated /workspace behind.
 export const OPEN_NETWORK_POLICY: SandboxNetworkPolicy = { allow: { "*": [] } };
 
 export async function githubNetworkPolicy(): Promise<SandboxNetworkPolicy> {
@@ -145,6 +149,38 @@ export async function resolveStartupNetworkPolicy(
   } catch {
     return { policy: OPEN_NETWORK_POLICY, authed: false };
   }
+}
+
+/**
+ * Bootstrap variant of {@link resolveStartupNetworkPolicy}. The first-ever
+ * provision has to clone a PRIVATE repo, and that cannot happen under the
+ * unauthenticated OPEN fallback: the `&&`-chained `git fetch origin main` in
+ * {@link buildBootstrapCommand} aborts the chain, so `git reset --hard` and
+ * `pnpm install` never run and /workspace is left a bare `.git` skeleton with
+ * no source tree and no dependencies. A subagent handed that workspace sees
+ * every file read/grep come back empty and every git op fail with
+ * `could not read Username for 'https://github.com'`, which reads as "all my
+ * tools are broken" rather than the real cause. So unlike `onSession` - which
+ * may legitimately start unauthenticated on an ALREADY-checked-out repo and let
+ * {@link keepTokenFresh} heal push later - bootstrap fails loudly with the
+ * actual reason. Recovery is a retry on a fresh invocation, whose turn-start
+ * OIDC re-mint (hooks/prewarm-sandbox.ts) is the path that heals auth.
+ */
+export async function resolveBootstrapNetworkPolicy(
+  resolve: () => Promise<{
+    policy: SandboxNetworkPolicy;
+    authed: boolean;
+  }> = resolveStartupNetworkPolicy,
+): Promise<SandboxNetworkPolicy> {
+  const { policy, authed } = await resolve();
+  if (!authed) {
+    throw new Error(
+      "Sandbox bootstrap aborted: GitHub auth could not be minted, so the " +
+        "private-repo checkout would fail and leave an empty /workspace. Retry " +
+        "once GitHub auth is healthy - a fresh invocation re-mints the token.",
+    );
+  }
+  return policy;
 }
 
 /** Timing for {@link keepTokenFresh}. A bare number sets every cadence equal. */
@@ -536,9 +572,11 @@ export function buildSandboxDefinition(
     revalidationKey: dependencyRevalidationKey,
     async bootstrap({ use }) {
       // Bootstrap always needs an authed clone regardless of the subagent's
-      // own ongoing gitAuthLevel, since the repo clone itself needs auth -
-      // this mirrors the root's current behavior exactly, just relocated.
-      const { policy } = await resolveStartupNetworkPolicy();
+      // own ongoing gitAuthLevel, since the private-repo checkout itself needs
+      // auth. resolveBootstrapNetworkPolicy throws loudly rather than coming up
+      // on the unauthenticated fallback, which would abort the clone mid-chain
+      // and leave an empty /workspace.
+      const policy = await resolveBootstrapNetworkPolicy();
       const sandbox = await use({ networkPolicy: policy });
       const setup = await sandbox.run({
         command: buildBootstrapCommand({

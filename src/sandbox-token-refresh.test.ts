@@ -19,6 +19,7 @@ import {
   MAX_MINT_FAILURES,
   MAX_SET_POLICY_FAILURES,
   mintFreshPolicy,
+  resolveBootstrapNetworkPolicy,
   resolveStartupNetworkPolicy,
   SYNC_MAIN_COMMAND,
   WORKSPACE_GIT_CONFIG_ENV,
@@ -371,6 +372,27 @@ describe("resolveStartupNetworkPolicy", () => {
     expect(res.authed).toBe(false);
     expect(res.policy).toEqual({ allow: { "*": [] } });
     vi.useRealTimers();
+  });
+});
+
+describe("resolveBootstrapNetworkPolicy", () => {
+  const authedPolicy = { allow: { x: [] } } as SandboxNetworkPolicy;
+
+  it("returns the policy when the mint came up authed", async () => {
+    const policy = await resolveBootstrapNetworkPolicy(() =>
+      Promise.resolve({ policy: authedPolicy, authed: true }),
+    );
+    expect(policy).toEqual(authedPolicy);
+  });
+
+  it("throws loudly instead of cloning a private repo unauthenticated", async () => {
+    // The unauthenticated OPEN fallback would abort the clone mid-chain and
+    // leave an empty /workspace; bootstrap must fail with the real cause.
+    await expect(
+      resolveBootstrapNetworkPolicy(() =>
+        Promise.resolve({ policy: { allow: { "*": [] } }, authed: false }),
+      ),
+    ).rejects.toThrow(/GitHub auth could not be minted/);
   });
 });
 
