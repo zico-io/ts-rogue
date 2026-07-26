@@ -604,10 +604,7 @@ function createLinearDefaultEvents(options: {
       const pending = state.pendingToolCallMessage;
       state.pendingToolCallMessage = null;
       if (pending) {
-        // Prose the model wrote before reaching for a tool is the durable
-        // narrative of the session; post it non-ephemeral so it survives
-        // the ephemeral action chips that follow (see the "tool actions"
-        // branch below), rather than being replaced by them.
+        // Durable, not ephemeral - see HAR-68.
         await postActivity(
           channel,
           options,
@@ -791,14 +788,9 @@ function createLinearDefaultEvents(options: {
           rawResult = "";
         }
       }
-      // Linear replaces an ephemeral activity with whatever the agent posts
-      // next, ephemeral or not (see "Ephemeral activities" in Linear's Agent
-      // Interaction docs) - so a durable thought (see actions.requested
-      // above) already stops being clobbered on its own. Keep the completed
-      // tool/subagent chip itself durable too: it is the native, structured
-      // audit record of what ran and what it returned (HAR-45), and losing
-      // it once the ephemeral "in flight" chip rolls over would erase that
-      // trail rather than just declutter it.
+      // Durable (HAR-45's audit record): Linear replaces an ephemeral
+      // activity with whatever posts next, ephemeral or not, so the durable
+      // thought above already stops it from being clobbered (HAR-68).
       await postActivity(
         channel,
         options,
