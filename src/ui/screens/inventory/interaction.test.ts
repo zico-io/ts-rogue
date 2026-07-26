@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { createStartingHero } from "../../../engine/entities/party";
+import { EMPTY_LOOT_FILTER } from "../../../engine/loot/lootFilter";
 import type { ItemInstance } from "../../../engine/loot/types";
 import { buildPackEntries } from "../village/interaction";
 import {
+  cycleFilterRow,
   INITIAL_INVENTORY_UI_STATE,
   type InventoryUiContext,
   type InventoryUiState,
@@ -35,6 +37,7 @@ function ctx(overrides: Partial<InventoryUiContext> = {}): InventoryUiContext {
     memberId: "hero-1",
     packEntries: buildPackEntries(createStartingHero(), []),
     consumables: [],
+    lootFilter: EMPTY_LOOT_FILTER,
     ...overrides,
   };
 }
@@ -103,10 +106,37 @@ describe("resolveInventoryIntent", () => {
       expect(resolveInventoryIntent(section, "up")).toBeUndefined();
     }
   });
+
+  it("filter section binds up/down/left/right/enter, not item actions", () => {
+    expect(resolveInventoryIntent("filter", "up")).toEqual({
+      kind: "menuUp",
+    });
+    expect(resolveInventoryIntent("filter", "down")).toEqual({
+      kind: "menuDown",
+    });
+    expect(resolveInventoryIntent("filter", "left")).toEqual({
+      kind: "menuLeft",
+    });
+    expect(resolveInventoryIntent("filter", "right")).toEqual({
+      kind: "menuRight",
+    });
+    expect(resolveInventoryIntent("filter", "enter")).toEqual({
+      kind: "confirm",
+    });
+    expect(resolveInventoryIntent("filter", "escape")).toEqual({
+      kind: "cancel",
+    });
+    expect(resolveInventoryIntent("filter", "tab")).toEqual({
+      kind: "switchMode",
+    });
+    expect(resolveInventoryIntent("filter", "char:e")).toBeUndefined();
+    expect(resolveInventoryIntent("filter", "char:u")).toBeUndefined();
+    expect(resolveInventoryIntent("filter", "char:r")).toBeUndefined();
+  });
 });
 
 describe("reduceInventoryUi - section cycling", () => {
-  it("Tab cycles gear -> consumables -> currency -> quest -> gear", () => {
+  it("Tab cycles gear -> consumables -> currency -> quest -> filter -> gear", () => {
     let s = state({ section: "gear" });
     s = reduceInventoryUi(s, { kind: "switchMode" }, ctx()).state;
     expect(s.section).toBe("consumables");
@@ -115,15 +145,18 @@ describe("reduceInventoryUi - section cycling", () => {
     s = reduceInventoryUi(s, { kind: "switchMode" }, ctx()).state;
     expect(s.section).toBe("quest");
     s = reduceInventoryUi(s, { kind: "switchMode" }, ctx()).state;
+    expect(s.section).toBe("filter");
+    s = reduceInventoryUi(s, { kind: "switchMode" }, ctx()).state;
     expect(s.section).toBe("gear");
   });
 
-  it("resets packCursor, consumableCursor, and inspecting on section switch", () => {
+  it("resets packCursor, consumableCursor, filterCursor, and inspecting on section switch", () => {
     const result = reduceInventoryUi(
       state({
         section: "gear",
         packCursor: 3,
         consumableCursor: 2,
+        filterCursor: 5,
         inspecting: true,
       }),
       { kind: "switchMode" },
@@ -131,6 +164,7 @@ describe("reduceInventoryUi - section cycling", () => {
     );
     expect(result.state.packCursor).toBe(0);
     expect(result.state.consumableCursor).toBe(0);
+    expect(result.state.filterCursor).toBe(0);
     expect(result.state.inspecting).toBe(false);
   });
 
@@ -140,6 +174,7 @@ describe("reduceInventoryUi - section cycling", () => {
       "consumables",
       "currency",
       "quest",
+      "filter",
     ] as const) {
       const result = reduceInventoryUi(
         state({ section }),
@@ -415,5 +450,188 @@ describe("reduceInventoryUi - consumables cursor and use", () => {
       ctx({ consumables: [] }),
     );
     expect(result.effect).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Loot filter settings pane (ENG-19)
+// ---------------------------------------------------------------------------
+
+describe("reduceInventoryUi - filter section cursor movement", () => {
+  it("up/down cycle the filter cursor wrapping through 8 rows", () => {
+    let s = state({ section: "filter", filterCursor: 0 });
+    s = reduceInventoryUi(s, { kind: "menuUp" }, ctx()).state;
+    expect(s.filterCursor).toBe(7);
+    s = reduceInventoryUi(s, { kind: "menuDown" }, ctx()).state;
+    expect(s.filterCursor).toBe(0);
+    s = reduceInventoryUi(s, { kind: "menuDown" }, ctx()).state;
+    expect(s.filterCursor).toBe(1);
+    s = reduceInventoryUi(s, { kind: "menuDown" }, ctx()).state;
+    expect(s.filterCursor).toBe(2);
+  });
+
+  it("filter section ignores gear-only intents like cycleSort", () => {
+    const result = reduceInventoryUi(
+      state({ section: "filter" }),
+      { kind: "cycleSort" },
+      ctx(),
+    );
+    expect(result.effect).toBeUndefined();
+    expect(result.state.section).toBe("filter");
+  });
+});
+
+describe("reduceInventoryUi - filter section value changes", () => {
+  it("Enter on a rarity tier row (cursor=0) cycles rarity forward and emits setLootFilter", () => {
+    const result = reduceInventoryUi(
+      state({ section: "filter", filterCursor: 0 }),
+      { kind: "confirm" },
+      ctx(),
+    );
+    expect(result.effect).toBeDefined();
+    expect(result.effect!.type).toBe("setLootFilter");
+    const rules = (result.effect as { type: "setLootFilter"; rules: unknown })
+      .rules;
+    // Starting from empty (no floor -> undefined), cycle forward -> "common"
+    expect(rules).toHaveProperty("minRarityByTier");
+    expect(
+      (rules as { minRarityByTier: Record<number, string> }).minRarityByTier[1],
+    ).toBe("common");
+  });
+
+  it("Enter on a rarity tier row (cursor=1) cycles rarity forward and emits setLootFilter", () => {
+    const result = reduceInventoryUi(
+      state({ section: "filter", filterCursor: 1 }),
+      { kind: "confirm" },
+      ctx(),
+    );
+    const rules = (result.effect as { type: "setLootFilter"; rules: unknown })
+      .rules;
+    expect(
+      (rules as { minRarityByTier: Record<number, string> }).minRarityByTier[2],
+    ).toBe("common");
+  });
+
+  it("Enter on an affix toggle row (cursor=4) toggles stat ON and emits setLootFilter", () => {
+    const result = reduceInventoryUi(
+      state({ section: "filter", filterCursor: 4 }),
+      { kind: "confirm" },
+      ctx(),
+    );
+    const rules = (
+      result.effect as {
+        type: "setLootFilter";
+        rules: { keepAffixStats: string[] };
+      }
+    ).rules;
+    expect(rules.keepAffixStats).toEqual(["str"]);
+  });
+
+  it("Enter again on same affix row toggles stat OFF", () => {
+    const ctxWithStr = ctx({
+      lootFilter: { minRarityByTier: {}, keepAffixStats: ["str"] },
+    });
+    const result = reduceInventoryUi(
+      state({ section: "filter", filterCursor: 4 }),
+      { kind: "confirm" },
+      ctxWithStr,
+    );
+    const rules = (
+      result.effect as {
+        type: "setLootFilter";
+        rules: { keepAffixStats: string[] };
+      }
+    ).rules;
+    expect(rules.keepAffixStats).toEqual([]);
+  });
+
+  it("Left on a ilvl offset row (cursor=3) cycles back and emits setLootFilter", () => {
+    const ctxWithOffset = ctx({
+      lootFilter: { minRarityByTier: {}, minIlvlOffset: 0, keepAffixStats: [] },
+    });
+    const result = reduceInventoryUi(
+      state({ section: "filter", filterCursor: 3 }),
+      { kind: "menuLeft" },
+      ctxWithOffset,
+    );
+    const rules = (
+      result.effect as {
+        type: "setLootFilter";
+        rules: { minIlvlOffset: number | undefined };
+      }
+    ).rules;
+    // Starting from 0, cycle back -> -3 (since array is [undefined, -5, -3, 0, 3, 5, 10])
+    expect(rules.minIlvlOffset).toBe(-3);
+  });
+
+  it("Right on default empty filter cycles rarity forward for tier 1 and emits setLootFilter", () => {
+    const result = reduceInventoryUi(
+      state({ section: "filter", filterCursor: 0 }),
+      { kind: "menuRight" },
+      ctx(),
+    );
+    const rules = (
+      result.effect as {
+        type: "setLootFilter";
+        rules: { minRarityByTier: Record<number, string> };
+      }
+    ).rules;
+    expect(rules.minRarityByTier[1]).toBe("common");
+  });
+});
+
+describe("cycleFilterRow", () => {
+  it("returns a new object, not mutating the original", () => {
+    const original = EMPTY_LOOT_FILTER;
+    const result = cycleFilterRow(original, 4, 1);
+    expect(result).not.toBe(original);
+    expect(original.keepAffixStats).toEqual([]);
+  });
+
+  it("cycles tier 1 rarity from undefined -> common -> magic -> rare -> unique -> undefined", () => {
+    const base = EMPTY_LOOT_FILTER;
+    const step1 = cycleFilterRow(base, 0, 1);
+    expect(step1.minRarityByTier[1]).toBe("common");
+    const step2 = cycleFilterRow(step1, 0, 1);
+    expect(step2.minRarityByTier[1]).toBe("magic");
+    const step3 = cycleFilterRow(step2, 0, 1);
+    expect(step3.minRarityByTier[1]).toBe("rare");
+    const step4 = cycleFilterRow(step3, 0, 1);
+    expect(step4.minRarityByTier[1]).toBe("unique");
+    const step5 = cycleFilterRow(step4, 0, 1);
+    expect(step5.minRarityByTier[1]).toBeUndefined();
+  });
+
+  it("cycles ilvl offset from undefined -> -5 -> -3 -> 0 -> 3 -> 5 -> 10 -> undefined", () => {
+    const base = EMPTY_LOOT_FILTER;
+    const step1 = cycleFilterRow(base, 3, 1);
+    expect(step1.minIlvlOffset).toBe(-5);
+    const step2 = cycleFilterRow(step1, 3, 1);
+    expect(step2.minIlvlOffset).toBe(-3);
+    const step3 = cycleFilterRow(step2, 3, 1);
+    expect(step3.minIlvlOffset).toBe(0);
+    const step4 = cycleFilterRow(step3, 3, 1);
+    expect(step4.minIlvlOffset).toBe(3);
+    const step5 = cycleFilterRow(step4, 3, 1);
+    expect(step5.minIlvlOffset).toBe(5);
+    const step6 = cycleFilterRow(step5, 3, 1);
+    expect(step6.minIlvlOffset).toBe(10);
+    const step7 = cycleFilterRow(step6, 3, 1);
+    expect(step7.minIlvlOffset).toBeUndefined();
+  });
+
+  it("toggles affix stat on and off", () => {
+    const base = EMPTY_LOOT_FILTER;
+    const on = cycleFilterRow(base, 4, 1);
+    expect(on.keepAffixStats).toEqual(["str"]);
+    const off = cycleFilterRow(on, 4, 1);
+    expect(off.keepAffixStats).toEqual([]);
+  });
+
+  it("toggles a different affix stat without affecting others", () => {
+    const base = EMPTY_LOOT_FILTER;
+    const onStr = cycleFilterRow(base, 4, 1);
+    const onStrAgi = cycleFilterRow(onStr, 5, 1);
+    expect(onStrAgi.keepAffixStats).toEqual(["str", "agi"]);
   });
 });
