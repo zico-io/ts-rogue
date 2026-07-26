@@ -11,7 +11,7 @@ import {
 } from "../entities/recruits";
 import { consumeItem, healAmount, isHealItem } from "../loot/consumables";
 import { type EquipmentSlotName, equipTargetSlot } from "../loot/equipment";
-import { FIELD_BACKPACK_CAP } from "../loot/inventory";
+import { FIELD_BACKPACK_CAP, isFieldBackpackFull } from "../loot/inventory";
 import { describeItem, itemSellPrice } from "../loot/items";
 import { applyLootPickup, queueLootTriage } from "../loot/pickup";
 import { rollChestLoot } from "../loot/resolution";
@@ -856,7 +856,7 @@ function withdrawItem(state: GameState, instanceId: string): GameState {
       log: [...state.log, entry("There is nothing to withdraw")],
     };
   }
-  if (state.items.length >= FIELD_BACKPACK_CAP) {
+  if (isFieldBackpackFull(state.items)) {
     return {
       ...state,
       log: [

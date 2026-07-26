@@ -517,7 +517,7 @@ export function reduceTavernUi(
 // ---------------------------------------------------------------------------
 
 /** Extracts the always-populated `backpack`-kind rows (no equipped slots here). */
-type BackpackEntry = Extract<PackEntry, { kind: "backpack" }>;
+export type BackpackEntry = Extract<PackEntry, { kind: "backpack" }>;
 
 /**
  * Builds the Stash view's pane rows from a flat gear array (ENG-5). Unlike
@@ -527,7 +527,9 @@ type BackpackEntry = Extract<PackEntry, { kind: "backpack" }>;
  * that shape lets both panes flow straight through the Inventory screen's
  * `sortPackEntries` without a separate sort implementation.
  */
-export function buildStashEntries(items: readonly ItemInstance[]): PackEntry[] {
+export function buildStashEntries(
+  items: readonly ItemInstance[],
+): BackpackEntry[] {
   return items.map((item) => ({ kind: "backpack" as const, item }));
 }
 

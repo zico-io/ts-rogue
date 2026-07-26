@@ -12,9 +12,9 @@ import { normalizeInkKey } from "../../hooks/normalizeInkKey";
 import { theme } from "../../theme";
 import { SORT_KEYS, sortPackEntries } from "../inventory/interaction";
 import {
+  type BackpackEntry,
   buildStashEntries,
   INITIAL_STASH_UI_STATE,
-  type PackEntry,
   reduceStashUi,
   resolveStashIntent,
   type StashUiState,
@@ -44,16 +44,10 @@ export function StashView({ state, dispatch, onBack }: StashViewProps) {
   const backpackEntries = sortPackEntries(
     buildStashEntries(state.items),
     stashUi.sortKey,
-  ).filter(
-    (entry): entry is Extract<PackEntry, { kind: "backpack" }> =>
-      entry.kind === "backpack",
   );
   const stashEntries = sortPackEntries(
     buildStashEntries(state.stash),
     stashUi.sortKey,
-  ).filter(
-    (entry): entry is Extract<PackEntry, { kind: "backpack" }> =>
-      entry.kind === "backpack",
   );
   const backpackIndex = Math.min(
     stashUi.backpackCursor,
@@ -126,7 +120,7 @@ export function StashView({ state, dispatch, onBack }: StashViewProps) {
 }
 
 interface GearPanelProps {
-  entries: readonly Extract<PackEntry, { kind: "backpack" }>[];
+  entries: readonly BackpackEntry[];
   cursor: number;
   action: string;
 }
