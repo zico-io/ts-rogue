@@ -12,9 +12,9 @@ import {
 
 // Surfaces each `agent()` call the `Workflow` tool dispatches from inside its
 // one durable step (HAR-70). Without this, a human watching the Linear Agent
-// Session sees only the step's opaque synthesized result - a regression
-// against Linear's Agent Interaction Guidelines (meaningful intermediate
-// state, not just start/finish).
+// Session sees only the step's opaque synthesized result. That is a
+// regression against Linear's Agent Interaction Guidelines (meaningful
+// intermediate state, not just start/finish).
 //
 // `subagent.called`/`subagent.completed` fire only for calls a running
 // Workflow program dispatches (eve's protocol layer documents
@@ -43,7 +43,7 @@ const pendingCalls = defineState<Record<string, PendingAction>>(
 const errorMessage = (err: unknown): string =>
   err instanceof Error ? err.message : String(err);
 
-export const agentSessionIdFromContext = (ctx: HookContext): string | null => {
+const agentSessionIdFromContext = (ctx: HookContext): string | null => {
   const token = ctx.channel?.continuationToken;
   return token?.startsWith(LINEAR_CONTINUATION_PREFIX)
     ? token.slice(LINEAR_CONTINUATION_PREFIX.length)
