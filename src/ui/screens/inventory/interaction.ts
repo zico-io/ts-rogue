@@ -24,7 +24,7 @@
 import type { InventoryItem } from "../../../engine/entities/party";
 import type { EquipmentSlotName } from "../../../engine/loot/equipment";
 import { itemBaseSlot, itemSellPrice } from "../../../engine/loot/items";
-import { type LootFilterRules } from "../../../engine/loot/lootFilter";
+import type { LootFilterRules } from "../../../engine/loot/lootFilter";
 import {
   type ItemInstance,
   type ItemStat,
@@ -148,15 +148,15 @@ const ILVL_OFFSET_VALUES: readonly (number | undefined)[] = [
  */
 export const ALL_STATS: readonly ItemStat[] = ["str", "agi", "vit", "int"];
 
+/** Row 0/1/2 -> tier 1/2/3 (tier 3 represents "tier 3+"); other rows -> undefined. */
+const TIER_BY_ROW = [1, 2, 3] as const;
+
 /**
  * Returns the dungeon tier key for a given filter row index.
  * Row 0 -> tier 1, row 1 -> tier 2, row 2 -> tier 3+ (represented as key 3).
  */
 function tierForFilterRow(row: number): number | undefined {
-  if (row === 0) return 1;
-  if (row === 1) return 2;
-  if (row === 2) return 3;
-  return undefined;
+  return TIER_BY_ROW[row];
 }
 
 /**
@@ -216,10 +216,6 @@ export function cycleFilterRow(
 
   return current;
 }
-
-// ---------------------------------------------------------------------------
-// End filter pane constants
-// ---------------------------------------------------------------------------
 
 export interface InventoryUiState {
   section: InventorySection;

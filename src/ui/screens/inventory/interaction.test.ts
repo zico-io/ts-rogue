@@ -488,8 +488,8 @@ describe("reduceInventoryUi - filter section value changes", () => {
       { kind: "confirm" },
       ctx(),
     );
-    expect(result.effect).toBeDefined();
-    expect(result.effect!.type).toBe("setLootFilter");
+    if (!result.effect) throw new Error("expected a setLootFilter effect");
+    expect(result.effect.type).toBe("setLootFilter");
     const rules = (result.effect as { type: "setLootFilter"; rules: unknown })
       .rules;
     // Starting from empty (no floor -> undefined), cycle forward -> "common"
