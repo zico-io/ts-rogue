@@ -6,6 +6,7 @@ import type { GameEvent, GameState, Scene } from "../state/types";
 import { createInitialDungeonState } from "../world/dungeon";
 import { generateOverworldMap } from "../world/overworld";
 import {
+  applyInitiativePenalty,
   atkFrom,
   computeDamage,
   defFrom,
@@ -18,6 +19,7 @@ import {
   pickEnemyGroup,
   resolveAttack,
   rollInitiative,
+  SHOCKED_VULNERABLE_MULTIPLIER,
   spdFrom,
   startBattle,
   xpToNext,
@@ -685,7 +687,11 @@ describe("ENG-21 status effects and element on hit", () => {
     const effects = enemy?.effects ?? [];
     const wet = effects.find((e) => e.effectId === "wet");
     expect(wet).toBeDefined();
-    expect(wet?.duration).toBe(3);
+    // Applied at duration 3, then ticked once more this same dispatch when
+    // advanceRound reaches the slime's own turn before pausing on the hero
+    // again (ENG-23 generalized tickEffects to decrement every effect, not
+    // just damaging ones) - same pattern as the poison test above.
+    expect(wet?.duration).toBe(2);
     expect(wet?.potency).toBe(1);
   });
 
@@ -1022,5 +1028,221 @@ describe("ENG-22 effects cleared on battle end", () => {
     const after = reduce(fastState, { type: "BattleFlee" });
     expect(after.battleState).toBeNull();
     expect(after.party[0].effects).toBeUndefined();
+  });
+});
+/* -------------------------------------------------------------------------- */
+/* ENG-23: Turn-loop skip & initiative reorder for status effects            */
+/* -------------------------------------------------------------------------- */
+describe("ENG-23 applyInitiativePenalty", () => {
+  it("moves a combatant later by the penalty positions (clamped to end)", () => {
+    const order = ["A", "B", "C", "D"];
+    // B moves 3 positions later -> [A, C, D, B]
+    expect(applyInitiativePenalty(order, "B", 3)).toEqual(["A", "C", "D", "B"]);
+    // B moves 0 positions -> unchanged
+    expect(applyInitiativePenalty(order, "B", 0)).toEqual(["A", "B", "C", "D"]);
+    // B moves 99 positions -> clamped to end
+    expect(applyInitiativePenalty(order, "B", 99)).toEqual([
+      "A",
+      "C",
+      "D",
+      "B",
+    ]);
+    // Unknown id returns a copy of the original order
+    expect(applyInitiativePenalty(order, "X", 2)).toEqual(["A", "B", "C", "D"]);
+    // Last element moved further back stays at end
+    expect(applyInitiativePenalty(order, "D", 1)).toEqual(["A", "B", "C", "D"]);
+  });
+});
+describe("ENG-23 turn skip", () => {
+  it("a stunned party member skips their turn and the battle moves past them", () => {
+    const slime = makeEnemy(
+      "slime-1",
+      "slime",
+      "Slime",
+      999,
+      { str: 1, agi: 1, vit: 1, int: 1 },
+      5,
+      3,
+    );
+    const hero = { ...createStartingHero(), hp: 30, mp: 99 };
+    let state = stateInBattle(42, slime, hero);
+    // Attach stun to the hero with duration 2.
+    state = {
+      ...state,
+      party: [
+        {
+          ...state.party[0],
+          effects: [
+            {
+              effectId: "stun" as const,
+              duration: 2,
+              potency: 1,
+              initialDuration: 2,
+            },
+          ],
+        },
+      ],
+    };
+    // First dispatch: hero defends (command resolves normally), advanceRound
+    // runs slime's turn. Round wraps back to hero: tickEffects ticks stun
+    // (duration 2 -> 1), shouldSkipTurn sees skipsTurn, logs skip, continues
+    // past hero to slime again. Then wraps to hero again: tickEffects ticks
+    // stun (duration 1 -> 0, expires), hero is no longer skipped, pause.
+    state = reduce(state, { type: "BattleDefend" });
+    expect(state.battleState?.status).toBe("ongoing");
+    // The skip log should be present, and the hero should not have taken
+    // damage from slime attacks (since stunned hero was skipped past before
+    // the slime attacked, the slime got no extra turns). Wait - actually
+    // the slime does get its normal turn. Let's just check the skip log.
+    expect(
+      state.log.some(
+        (l) => l.text.includes("is stun") && l.text.includes("can't move"),
+      ),
+    ).toBe(true);
+  });
+  it("a stunned enemy skips its attack and does no damage", () => {
+    const slime = makeEnemy(
+      "slime-1",
+      "slime",
+      "Slime",
+      999,
+      { str: 4, agi: 3, vit: 4, int: 1 },
+      5,
+      3,
+    );
+    const hero = { ...createStartingHero(), hp: 30, mp: 99 };
+    let state = stateInBattle(42, slime, hero);
+    // Attach stun to the slime.
+    state = {
+      ...state,
+      battleState: {
+        ...state.battleState!,
+        enemies: [
+          {
+            ...state.battleState!.enemies[0],
+            effects: [
+              {
+                effectId: "stun" as const,
+                duration: 2,
+                potency: 1,
+                initialDuration: 2,
+              },
+            ],
+          },
+        ],
+      },
+    };
+    // Hero attacks. After resolve, advanceRound: slime's turn, tickEffects
+    // ticks stun (2 -> 1), shouldSkipTurn returns true, skip logged, no
+    // attack. Round wraps to hero, pause for command.
+    const after = reduce(state, {
+      type: "BattleAttack",
+      targetId: "slime-1",
+    });
+    expect(after.battleState?.status).toBe("ongoing");
+    expect(
+      after.log.some(
+        (l) =>
+          l.text.includes("Slime") &&
+          l.text.includes("stun") &&
+          l.text.includes("can't move"),
+      ),
+    ).toBe(true);
+    // Hero should not have taken damage from slime's skipped attack.
+    expect(after.party[0].hp).toBe(30);
+  });
+});
+describe("ENG-23 shocked stun-lite and damage vulnerability", () => {
+  it("multiplies incoming damage by SHOCKED_VULNERABLE_MULTIPLIER", () => {
+    // Same seed/hero/slime for both runs so hit/crit/variance rolls match;
+    // the only difference is the shocked effect on the target.
+    const buildSlime = () =>
+      makeEnemy(
+        "slime-1",
+        "slime",
+        "Slime",
+        999,
+        { str: 4, agi: 3, vit: 4, int: 1 },
+        5,
+        3,
+      );
+    const hero = createStartingHero("warrior", "hero-1", "Warrior");
+    const baseline = stateInBattle(42, buildSlime(), hero);
+    const shockedBase = stateInBattle(42, buildSlime(), hero);
+    const shocked: GameState = {
+      ...shockedBase,
+      battleState: {
+        ...shockedBase.battleState!,
+        enemies: [
+          {
+            ...shockedBase.battleState!.enemies[0],
+            effects: [
+              {
+                effectId: "shocked" as const,
+                duration: 2,
+                potency: 1,
+                initialDuration: 2,
+              },
+            ],
+          },
+        ],
+      },
+    };
+    const afterBaseline = reduce(baseline, {
+      type: "BattleAttack",
+      targetId: "slime-1",
+    });
+    const afterShocked = reduce(shocked, {
+      type: "BattleAttack",
+      targetId: "slime-1",
+    });
+    const baselineDamage =
+      999 - (afterBaseline.battleState?.enemies[0].hp ?? 999);
+    const shockedDamage =
+      999 - (afterShocked.battleState?.enemies[0].hp ?? 999);
+    expect(baselineDamage).toBeGreaterThan(0);
+    expect(shockedDamage).toBe(
+      Math.ceil(baselineDamage * SHOCKED_VULNERABLE_MULTIPLIER),
+    );
+  });
+  it("a shocked actor's stun-lite check can skip their turn", () => {
+    // Seed 1 with a fixed loop of defends deterministically triggers the
+    // shocked skip roll (shocked's skipChance = 0.5) at least once.
+    const slime = makeEnemy(
+      "slime-1",
+      "slime",
+      "Slime",
+      999,
+      { str: 1, agi: 1, vit: 1, int: 1 },
+      5,
+      3,
+    );
+    const hero = { ...createStartingHero(), hp: 99, mp: 99 };
+    let state = stateInBattle(1, slime, hero);
+    state = {
+      ...state,
+      party: [
+        {
+          ...state.party[0],
+          effects: [
+            {
+              effectId: "shocked" as const,
+              duration: 5,
+              potency: 1,
+              initialDuration: 5,
+            },
+          ],
+        },
+      ],
+    };
+    let sawSkip = false;
+    for (let i = 0; i < 6; i++) {
+      state = reduce(state, { type: "BattleDefend" });
+      if (state.log.some((l) => l.text.includes("seizes up"))) {
+        sawSkip = true;
+        break;
+      }
+    }
+    expect(sawSkip).toBe(true);
   });
 });
