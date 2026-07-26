@@ -103,6 +103,7 @@ durable `session_update`s. Those child updates are also role-guarded in code
 `[<issue>]`; `review` and `completed` return a structured refusal without
 posting, because ENG-2's thread showed a child "Completed" while nothing was
 pushed, then "Started" again - the session appeared to finish and restart.
+Eve's subagent isolation model (declared subagents inherit nothing from the root's authored slots) means the same relay must be reachable from each subagent's own `hooks/` slot. Each declared subagent (`coder`, `scout`, `reviewer`, `playtester`) re-exports the root's `hooks/child-relay.ts` verbatim under `agent/subagents/<id>/hooks/child-relay.ts` -- the shared hook already branches on `ctx.session.parent`, which is truthy inside any child session, declared or built-in-tool copy alike.
 The delegation-path wiring is covered by
 `evals/delegation/child-session-update.eval.ts`: eve's `mockModel` scripts
 the root to delegate and the child to attempt `completed` then `blocked`, so
