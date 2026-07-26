@@ -102,11 +102,8 @@ const reviewSchema = z.object({
 /**
  * Build the review prompt from the diff and the two-lens instructions.
  *
- * The lens text below is a hand-synced copy of the same two lenses in
- * `agent/subagents/reviewer/instructions.md` - that file is a static markdown
- * prompt eve loads for the `reviewer` subagent, so it can't import this
- * module's constant, and this module can't render markdown as its own
- * prompt. Keep both in sync by hand when editing either lens.
+ * Hand-synced with `agent/subagents/reviewer/instructions.md`'s lenses - see
+ * agent/README.md's "Review triggering moved to CI (HAR-63)" section for why.
  */
 function buildPrompt(diff: string): string {
   return `You ponytail-review exactly one pull request per invocation for ts-rogue, a TypeScript terminal dungeon crawler.
