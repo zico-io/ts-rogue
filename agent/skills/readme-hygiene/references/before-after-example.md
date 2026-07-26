@@ -24,7 +24,7 @@ If you're upgrading from the old Ruby service, first export your keys with
 
 ## Setup
 Run `npm install` and then `npm start`. (Note: we now use pnpm, so actually
-run `pnpm install`.) You'll need Node — we're currently on 18 but planning
+run `pnpm install`.) You'll need Node - we're currently on 18 but planning
 to move to 20 soon.
 
 ## Roadmap
@@ -41,7 +41,7 @@ Set STRIPE_KEY=sk_test_abc123 in your environment.
 
 **Broken**
 - `npm install` / `npm start` contradict the real `pnpm` manager.
-- Node "18" is wrong — `.nvmrc` says 20.
+- Node "18" is wrong - `.nvmrc` says 20.
 - Hardcoded secret value `sk_test_abc123`.
 
 **Stale/clutter**

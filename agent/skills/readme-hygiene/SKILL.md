@@ -14,7 +14,7 @@ Use when the user wants to:
 - Remove clutter: changelog history, migration notes, resolved TODOs, dead links, aspirational/unshipped features.
 - Establish a repeatable standard that keeps READMEs evergreen over time.
 
-Do NOT use this for `AGENTS.md`, `CLAUDE.md`, `.cursorrules`, or other agent-facing instruction files — those follow different rules (terse, machine-oriented, convention-dumping). READMEs are for humans.
+Do NOT use this for `AGENTS.md`, `CLAUDE.md`, `.cursorrules`, or other agent-facing instruction files - those follow different rules (terse, machine-oriented, convention-dumping). READMEs are for humans.
 
 ## Core Principle: Evergreen, Not a Diary
 
@@ -23,11 +23,11 @@ A README describes **what is true right now**, written for a human who has never
 - **Evergreen**: reads correctly regardless of when someone opens it. No "recently", "new!", "as of v2.3", "coming soon", dated announcements, or migration walkthroughs.
 - **Current state only**: every command, path, requirement, and feature described must exist in the code *today*. If it is not shipped, it is not in the README.
 - **History lives elsewhere**: changelogs → `CHANGELOG.md` or release notes; migration guides → `MIGRATING.md` or `/docs`; roadmap → issues/project board; decisions → ADRs. Link to them; do not inline them.
-- **Concise**: the README answers "what is this, how do I run it, where do I go next" — nothing more. Depth belongs in `/docs`.
+- **Concise**: the README answers "what is this, how do I run it, where do I go next" - nothing more. Depth belongs in `/docs`.
 
 ## The Two Modes
 
-### Mode A — Review / Audit an existing README
+### Mode A - Review / Audit an existing README
 
 1. **Read the README fully.** Also read `package.json` (scripts, engines, name), lockfile / manager, `.nvmrc`, entry points, and the top-level directory tree. The goal is to compare claims against reality.
 2. **Verify every factual claim against the code.** For each command, path, port, env var, requirement, and named feature, confirm it exists. Flag anything unverifiable.
@@ -38,7 +38,7 @@ A README describes **what is true right now**, written for a human who has never
 4. **Report findings first** with specific line references and the fix for each. Then, if asked (or if the intent was "clean it up"), produce the rewritten README.
 5. **Never invent facts.** If a command or requirement can't be confirmed from the repo, mark it `NEEDS VERIFICATION` rather than guessing.
 
-### Mode B — Write / Rewrite a README
+### Mode B - Write / Rewrite a README
 
 1. Gather ground truth from the repo (manager, scripts, engines, layout, entry point, env example). Do not copy claims from an old README without verifying them.
 2. Follow the structure in "Evergreen README Structure" below. Include only sections that apply.
@@ -48,13 +48,13 @@ A README describes **what is true right now**, written for a human who has never
 
 ## Evergreen README Structure
 
-Order matters — a reader should reach "how do I run it" fast. Omit sections that don't apply; do not pad.
+Order matters - a reader should reach "how do I run it" fast. Omit sections that don't apply; do not pad.
 
 1. **Title + one-line description.** What it is, in one sentence. No taglines about how new/modern it is.
-2. **(Optional) Status badges.** CI, coverage, license — only if they auto-update. Never hand-written version text.
+2. **(Optional) Status badges.** CI, coverage, license - only if they auto-update. Never hand-written version text.
 3. **Quick start.** The minimal copy-paste path from clone to running. This is the most important section.
 4. **Requirements.** Runtime versions, package manager, external services (DB, etc.). Pull versions from `.nvmrc` / `engines`.
-5. **Repository layout.** A short table of top-level dirs and what each is — only if the structure isn't obvious.
+5. **Repository layout.** A short table of top-level dirs and what each is - only if the structure isn't obvious.
 6. **Common tasks / scripts.** A table mapping intent → command, sourced from real `package.json` scripts.
 7. **Configuration.** Point to `.env.example`; describe required env vars by name. Never hardcode secret values.
 8. **Pointers, not content.** Link out to `CONTRIBUTING.md`, `SECURITY.md`, `LICENSE`, `/docs`, `CHANGELOG.md`. Keep the README from absorbing their content.
@@ -100,5 +100,5 @@ Remove or rewrite anything that anchors the doc to a moment in time:
 
 ## References
 
-- `references/hygiene-checklist.md` — the full pass/fail checklist to run in Mode A. Read before auditing.
-- `references/before-after-example.md` — a worked before/after showing clutter removal and relocation. Read when the user wants to see the standard applied or needs a model to follow.
+- `references/hygiene-checklist.md` - the full pass/fail checklist to run in Mode A. Read before auditing.
+- `references/before-after-example.md` - a worked before/after showing clutter removal and relocation. Read when the user wants to see the standard applied or needs a model to follow.

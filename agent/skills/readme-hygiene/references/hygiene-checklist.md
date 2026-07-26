@@ -2,7 +2,7 @@
 
 Run every item during an audit (Mode A). Mark each ✅ pass / ❌ fail / ⚠️ needs verification, with a location and fix for every non-pass.
 
-## 1. Accuracy vs. the code (highest priority — these actively mislead)
+## 1. Accuracy vs. the code (highest priority - these actively mislead)
 
 - [ ] Every command shown actually exists (cross-check `package.json` scripts / Makefile / task runner).
 - [ ] The package manager shown matches the real lockfile (`pnpm-lock.yaml` → `pnpm`, etc.).
@@ -29,7 +29,7 @@ Run every item during an audit (Mode A). Mark each ✅ pass / ❌ fail / ⚠️ 
 - [ ] No migration or upgrade walkthroughs → `MIGRATING.md` / `/docs`.
 - [ ] No design rationale / "why we chose X" essays → ADRs in `/docs/adr`.
 - [ ] No long API reference or tutorials inline → `/docs`.
-- [ ] No resolved TODOs, obsolete caveats, or dead workarounds (delete — they live in git history).
+- [ ] No resolved TODOs, obsolete caveats, or dead workarounds (delete - they live in git history).
 - [ ] No duplicated content that also lives in CONTRIBUTING / SECURITY / docs → link instead.
 
 ## 4. Completeness (a newcomer must not be blocked)
@@ -46,7 +46,7 @@ Run every item during an audit (Mode A). Mark each ✅ pass / ❌ fail / ⚠️ 
 - [ ] "How do I run it" is reachable near the top, before reference material.
 - [ ] Tables/short command blocks used instead of long paragraphs where possible.
 - [ ] README is a snapshot + pointers, not an encyclopedia; depth pushed to `/docs`.
-- [ ] Every fenced code block declares a language identifier (markdownlint MD040) — `text` for directory trees / plain output, `bash`, `ts`, `json`, etc. otherwise.
+- [ ] Every fenced code block declares a language identifier (markdownlint MD040) - `text` for directory trees / plain output, `bash`, `ts`, `json`, etc. otherwise.
 - [ ] No secret values, tokens, or PHI/PII hardcoded anywhere.
 
 ## Severity mapping for the report
@@ -54,4 +54,4 @@ Run every item during an audit (Mode A). Mark each ✅ pass / ❌ fail / ⚠️ 
 - **Broken** = any ❌ in section 1 (wrong commands, dead links, missing paths, unshipped features).
 - **Stale/clutter** = any ❌ in sections 2–3 (time-anchored language, history, duplication).
 - **Missing** = any ❌ in section 4 (newcomer blockers).
-- Section 5 items are **polish** — note but don't over-weight.
+- Section 5 items are **polish** - note but don't over-weight.
