@@ -15,10 +15,15 @@ import {
   keepTokenFresh,
   MAX_MINT_FAILURES,
   MAX_SET_POLICY_FAILURES,
+  MIN_TOKEN_REFRESH_MS,
+  type MintedGitHubPolicy,
   mintFreshPolicy,
+  mintFreshPolicyWithExpiry,
+  nextRefreshDelayMs,
   resolveBootstrapNetworkPolicy,
   resolveStartupNetworkPolicy,
   SANDBOX_TIMEOUT_MS,
+  TOKEN_EXPIRY_BUFFER_MS,
   TOKEN_MINT_TIMEOUT_MS,
   TOKEN_REFRESH_MS,
   TOKEN_RETRY_MS,
@@ -34,10 +39,15 @@ export {
   keepTokenFresh,
   MAX_MINT_FAILURES,
   MAX_SET_POLICY_FAILURES,
+  MIN_TOKEN_REFRESH_MS,
+  type MintedGitHubPolicy,
   mintFreshPolicy,
+  mintFreshPolicyWithExpiry,
+  nextRefreshDelayMs,
   resolveBootstrapNetworkPolicy,
   resolveStartupNetworkPolicy,
   SANDBOX_TIMEOUT_MS,
+  TOKEN_EXPIRY_BUFFER_MS,
   TOKEN_MINT_TIMEOUT_MS,
   TOKEN_REFRESH_MS,
   TOKEN_RETRY_MS,
@@ -97,7 +107,7 @@ export default defineSandbox({
         });
     } catch {}
 
-    keepTokenFresh(sandbox, mintFreshPolicy, {
+    keepTokenFresh(sandbox, mintFreshPolicyWithExpiry, {
       initialMs: authed ? TOKEN_REFRESH_MS : TOKEN_RETRY_MS,
     });
   },
