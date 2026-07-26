@@ -3,6 +3,7 @@ import type { GameEvent, GameState } from "../../engine/state/types";
 import type { FailureBoundary } from "../../lib/incidents";
 import { ChurchView } from "./village/ChurchView";
 import { InnView } from "./village/InnView";
+import { StashView } from "./village/StashView";
 import { StoreView } from "./village/StoreView";
 import { TavernView } from "./village/TavernView";
 import type { VillageBuilding } from "./village/types";
@@ -45,6 +46,8 @@ export function VillageScreen({
       return <StoreView dispatch={dispatch} onBack={onBack} state={state} />;
     case "tavern":
       return <TavernView dispatch={dispatch} onBack={onBack} state={state} />;
+    case "stash":
+      return <StashView dispatch={dispatch} onBack={onBack} state={state} />;
     case null:
       return (
         <VillageOverview

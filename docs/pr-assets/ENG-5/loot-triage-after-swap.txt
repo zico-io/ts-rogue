@@ -1,0 +1,40 @@
+┌─ Backpack Full ──────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Your backpack is full. This drop awaits a decision.                                                                  │
+│                                                                                                                      │
+│ Magic Copper Ring - +1 AGI                                                                                           │
+│                                                                                                                      │
+│ [s] Swap: dismantle a carried item for gold, then carry this instead.                                                │
+│ [d] Dismantle: sell this drop for gold and keep your current backpack.                                               │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│ Hero     Lv1  HP ██████████ 24/24   MP ██████ 6/6                                                                    │
+│ Gold 75                                                                                                              │
+│ s to swap (dismantle a carried item), d to dismantle the drop.                                                       │
+│ ┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐ │
+│ │ Started new game with seed 42                                                                                    │ │
+│ │ Dismantled Common War Blade for 25 gold.                                                                         │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘

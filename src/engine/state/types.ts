@@ -1,5 +1,6 @@
 import type { BattleEvent, BattleState } from "../combat/types";
 import type { InventoryItem, PartyMember } from "../entities/party";
+import type { PendingLootTriage } from "../loot/pickup";
 import type { EquipmentSlotName, ItemInstance } from "../loot/types";
 import type { RngState } from "../rng/rng";
 import type { DungeonState, WorldState } from "../world/types";
@@ -73,6 +74,19 @@ export interface GameState {
   /** `null` outside battle; set by the encounter trigger points in the store. */
   battleState: BattleState | null;
   flags: GameFlags;
+  /**
+   * Unlimited village storage for generated gear (ENG-5). Deposited items
+   * leave `items` (the field backpack) entirely, so they never count
+   * against `FIELD_BACKPACK_CAP` (`engine/loot/inventory.ts`).
+   */
+  stash: ItemInstance[];
+  /**
+   * Overflow gear drops awaiting a swap-or-dismantle decision (ENG-5),
+   * queued when the field backpack was already full at pickup time.
+   * `null` when nothing is pending. The UI treats a non-null queue as a
+   * mandatory overlay (`LootTriageScreen`) that preempts normal play.
+   */
+  pendingLootTriage: PendingLootTriage | null;
 }
 
 /** A single-tile movement delta on the overworld grid. */
@@ -101,6 +115,12 @@ export type StepDirection = "forward" | "back";
  * it is blocked while inside a dungeon or battle - evac first. ENG-4 adds
  * `UseFieldItem` (consume a heal item on a chosen party member from the
  * inventory screen, outside battle - battle's own item command is unchanged).
+ * ENG-5 adds the stash and full-backpack-triage events:
+ * `DepositItem`/`WithdrawItem` move a generated item between the field
+ * backpack and the unlimited village stash (withdraw refuses once the field
+ * backpack is at `FIELD_BACKPACK_CAP`), and `ResolveLootTriage` resolves the
+ * oldest queued overflow drop in `pendingLootTriage` by dismantling either
+ * the named carried item (freeing a slot for the drop) or the drop itself.
  */
 export type GameEvent =
   | {
@@ -130,4 +150,12 @@ export type GameEvent =
   | { type: "ExitDungeon" }
   | { type: "Zoom"; waypointId: string }
   | { type: "UseFieldItem"; itemId: string; memberId: string }
+  | { type: "DepositItem"; instanceId: string }
+  | { type: "WithdrawItem"; instanceId: string }
+  | {
+      type: "ResolveLootTriage";
+      action: "dismantleCarried";
+      instanceId: string;
+    }
+  | { type: "ResolveLootTriage"; action: "dismantleDrop" }
   | BattleEvent;

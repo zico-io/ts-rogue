@@ -11,7 +11,9 @@ import {
 } from "../entities/recruits";
 import { consumeItem, healAmount, isHealItem } from "../loot/consumables";
 import { type EquipmentSlotName, equipTargetSlot } from "../loot/equipment";
+import { FIELD_BACKPACK_CAP } from "../loot/inventory";
 import { describeItem, itemSellPrice } from "../loot/items";
+import { applyLootPickup, queueLootTriage } from "../loot/pickup";
 import { rollChestLoot } from "../loot/resolution";
 import { Rng } from "../rng/rng";
 import {
@@ -96,6 +98,8 @@ export function newGame(seed: number, options?: NewGameOptions): GameState {
     dungeonState: null,
     battleState: null,
     flags: { permadeath: options?.permadeath ?? false, gameOver: false },
+    stash: [],
+    pendingLootTriage: null,
   };
   // Populate the tavern immediately so a fresh run has recruits to hire.
   return rollRecruits(base);
@@ -418,22 +422,37 @@ function openChest(state: GameState): GameState {
   // floor's chest loot table, routed through the seeded RNG so saves agree.
   const rng = new Rng(state.seed, state.rngState);
   const chest = rollChestLoot(rng, ds.floor, state.nextItemId);
-  const items = chest.items.length
-    ? [...state.items, ...chest.items]
-    : state.items;
+  // ENG-5: route the chest's generated item(s) through the cap-aware pickup
+  // pipeline rather than extending `items` unconditionally - a full field
+  // backpack queues the drop for triage instead of silently over-capping.
+  const pickup = applyLootPickup(state.items, chest.items, FIELD_BACKPACK_CAP);
+  const pendingLootTriage = queueLootTriage(
+    state.pendingLootTriage,
+    pickup.queued,
+  );
   let message = chestLootMessage(loot);
   if (chest.items.length > 0) {
     message = `${message.replace(/!$/, "")}, plus ${describeItem(chest.items[0])}!`;
+  }
+  const logs = [...state.log, entry(message, "loot")];
+  if (pickup.queued.length > 0) {
+    logs.push(
+      entry(
+        `Your backpack is full - ${pickup.queued.length} item(s) await a swap-or-dismantle decision`,
+        "loot",
+      ),
+    );
   }
   return {
     ...state,
     rngState: rng.getState(),
     gold: state.gold + loot.gold,
     inventory,
-    items,
+    items: pickup.items,
     nextItemId: chest.nextId,
     dungeonState: { ...ds, layout },
-    log: [...state.log, entry(message, "loot")],
+    pendingLootTriage,
+    log: logs,
   };
 }
 
@@ -798,6 +817,131 @@ function sellItem(state: GameState, instanceId: string): GameState {
   };
 }
 
+/* -------------------------------------------------------------------------- */
+/* ENG-5: village stash and full-backpack triage                              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * `DepositItem` reducer (ENG-5). Moves one generated item from the field
+ * backpack into the unlimited village stash. Depositing always succeeds
+ * (the stash has no cap) and never touches gold - it's a pure relocation.
+ */
+function depositItem(state: GameState, instanceId: string): GameState {
+  const item = state.items.find((entry) => entry.instanceId === instanceId);
+  if (!item) {
+    return {
+      ...state,
+      log: [...state.log, entry("There is nothing to stash")],
+    };
+  }
+  return {
+    ...state,
+    items: state.items.filter((entry) => entry.instanceId !== instanceId),
+    stash: [...state.stash, item],
+    log: [...state.log, entry(`Stashed ${describeItem(item)}.`, "loot")],
+  };
+}
+
+/**
+ * `WithdrawItem` reducer (ENG-5). Moves one item from the stash back into
+ * the field backpack; refused (log line, no state change) once the field
+ * backpack is already at `FIELD_BACKPACK_CAP` so withdrawing can never
+ * itself push `items` past the cap.
+ */
+function withdrawItem(state: GameState, instanceId: string): GameState {
+  const item = state.stash.find((entry) => entry.instanceId === instanceId);
+  if (!item) {
+    return {
+      ...state,
+      log: [...state.log, entry("There is nothing to withdraw")],
+    };
+  }
+  if (state.items.length >= FIELD_BACKPACK_CAP) {
+    return {
+      ...state,
+      log: [
+        ...state.log,
+        entry(
+          `Backpack is full (${FIELD_BACKPACK_CAP}/${FIELD_BACKPACK_CAP}) - stash or dismantle something first`,
+        ),
+      ],
+    };
+  }
+  return {
+    ...state,
+    stash: state.stash.filter((entry) => entry.instanceId !== instanceId),
+    items: [...state.items, item],
+    log: [...state.log, entry(`Withdrew ${describeItem(item)}.`, "loot")],
+  };
+}
+
+/**
+ * `ResolveLootTriage` reducer (ENG-5). Resolves the oldest queued drop in
+ * `state.pendingLootTriage.drops`: `dismantleDrop` sells the drop itself for
+ * gold and discards it, leaving `items` untouched; `dismantleCarried` sells
+ * the named carried item instead, removes it from `items`, and moves the
+ * drop into the freed slot. Either way the queue advances by one, and
+ * `pendingLootTriage` resets to `null` once it empties. No-ops (with a log
+ * line) when nothing is pending, or when `dismantleCarried` names an
+ * instance that isn't actually carried.
+ */
+function resolveLootTriage(
+  state: GameState,
+  event: Extract<GameEvent, { type: "ResolveLootTriage" }>,
+): GameState {
+  const pending = state.pendingLootTriage;
+  if (!pending || pending.drops.length === 0) {
+    return {
+      ...state,
+      log: [...state.log, entry("There is nothing awaiting triage")],
+    };
+  }
+  const [drop, ...restDrops] = pending.drops;
+  const nextPending = restDrops.length ? { drops: restDrops } : null;
+
+  if (event.action === "dismantleDrop") {
+    const proceeds = itemSellPrice(drop);
+    return {
+      ...state,
+      gold: state.gold + proceeds,
+      pendingLootTriage: nextPending,
+      log: [
+        ...state.log,
+        entry(`Dismantled ${describeItem(drop)} for ${proceeds} gold.`, "loot"),
+      ],
+    };
+  }
+
+  // action === "dismantleCarried"
+  const carried = state.items.find(
+    (entry) => entry.instanceId === event.instanceId,
+  );
+  if (!carried) {
+    return {
+      ...state,
+      log: [...state.log, entry("There is nothing to dismantle")],
+    };
+  }
+  const proceeds = itemSellPrice(carried);
+  const items = [
+    ...state.items.filter((entry) => entry.instanceId !== event.instanceId),
+    drop,
+  ];
+  return {
+    ...state,
+    gold: state.gold + proceeds,
+    items,
+    pendingLootTriage: nextPending,
+    log: [
+      ...state.log,
+      entry(
+        `Dismantled ${describeItem(carried)} for ${proceeds} gold.`,
+        "loot",
+      ),
+    ],
+  };
+}
+
 /** Pure reducer: never mutates `state`. All state transitions route through here. */
 export function reduce(state: GameState, event: GameEvent): GameState {
   switch (event.type) {
@@ -850,6 +994,12 @@ export function reduce(state: GameState, event: GameEvent): GameState {
       return zoom(state, event.waypointId);
     case "UseFieldItem":
       return applyFieldItemUse(state, event.itemId, event.memberId);
+    case "DepositItem":
+      return depositItem(state, event.instanceId);
+    case "WithdrawItem":
+      return withdrawItem(state, event.instanceId);
+    case "ResolveLootTriage":
+      return resolveLootTriage(state, event);
     case "BattleAttack":
     case "BattleSkill":
     case "BattleItem":

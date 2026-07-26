@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { deserialize, serialize } from "../../persistence/save";
 import { atkFrom, startBattle } from "../combat/resolution";
 import type { PartyMember } from "../entities/party";
+import { FIELD_BACKPACK_CAP } from "../loot/inventory";
 import { describeItem, itemSellPrice } from "../loot/items";
 import type { ItemInstance } from "../loot/types";
 import { Rng } from "../rng/rng";
@@ -1034,6 +1035,238 @@ describe("Phase 5 loot, equip, and sell", () => {
       expect(state.items.length).toBe(itemsBefore + 1);
       expect(state.nextItemId).toBe(nextBefore + 1);
       expect(state.log.at(-1)?.text).toMatch(/You open the chest and find/);
+    });
+  });
+
+  describe("DepositItem/WithdrawItem (ENG-5 village stash)", () => {
+    it("moves an item from the field backpack to the stash and back", () => {
+      const item = makeItem({ instanceId: "itm-d", baseId: "war-blade" });
+      const before = { ...newGame(1), items: [item] };
+      const deposited = reduce(before, {
+        type: "DepositItem",
+        instanceId: "itm-d",
+      });
+      expect(deposited.items).toHaveLength(0);
+      expect(deposited.stash.map((i) => i.instanceId)).toEqual(["itm-d"]);
+      expect(deposited.log.at(-1)?.text).toMatch(/^Stashed/);
+
+      const withdrawn = reduce(deposited, {
+        type: "WithdrawItem",
+        instanceId: "itm-d",
+      });
+      expect(withdrawn.stash).toHaveLength(0);
+      expect(withdrawn.items.map((i) => i.instanceId)).toEqual(["itm-d"]);
+      expect(withdrawn.log.at(-1)?.text).toMatch(/^Withdrew/);
+    });
+
+    it("no-ops depositing an unknown instance id", () => {
+      const before = newGame(1);
+      const after = reduce(before, {
+        type: "DepositItem",
+        instanceId: "nope",
+      });
+      expect(after.items).toEqual(before.items);
+      expect(after.stash).toEqual(before.stash);
+      expect(after.log.at(-1)?.text).toBe("There is nothing to stash");
+    });
+
+    it("no-ops withdrawing an unknown instance id", () => {
+      const before = newGame(1);
+      const after = reduce(before, {
+        type: "WithdrawItem",
+        instanceId: "nope",
+      });
+      expect(after.log.at(-1)?.text).toBe("There is nothing to withdraw");
+    });
+
+    it("refuses to withdraw once the field backpack is at cap, leaving the item in the stash", () => {
+      const item = makeItem({ instanceId: "itm-w" });
+      const filler = Array.from({ length: FIELD_BACKPACK_CAP }, (_, i) =>
+        makeItem({ instanceId: `f-${i}` }),
+      );
+      const before = { ...newGame(1), items: filler, stash: [item] };
+      const after = reduce(before, {
+        type: "WithdrawItem",
+        instanceId: "itm-w",
+      });
+      expect(after.items).toHaveLength(FIELD_BACKPACK_CAP);
+      expect(after.stash.map((i) => i.instanceId)).toEqual(["itm-w"]);
+      expect(after.log.at(-1)?.text).toMatch(/Backpack is full/);
+    });
+
+    it("stashed items never count against the field backpack cap", () => {
+      const stashed = Array.from({ length: 50 }, (_, i) =>
+        makeItem({ instanceId: `s-${i}` }),
+      );
+      const state = { ...newGame(1), stash: stashed };
+      expect(state.items).toHaveLength(0);
+      expect(state.stash).toHaveLength(50);
+    });
+  });
+
+  describe("ResolveLootTriage (ENG-5 full-backpack triage)", () => {
+    function fullBackpackState(drops: ItemInstance[]): GameState {
+      const filler = Array.from({ length: FIELD_BACKPACK_CAP }, (_, i) =>
+        makeItem({ instanceId: `f-${i}` }),
+      );
+      return {
+        ...newGame(1),
+        items: filler,
+        pendingLootTriage: { drops },
+      };
+    }
+
+    it("dismantleDrop sells the queued drop for gold and leaves items untouched", () => {
+      const drop = makeItem({
+        instanceId: "drop-1",
+        baseId: "war-blade",
+        rarity: "rare",
+      });
+      const before = fullBackpackState([drop]);
+      const after = reduce(before, {
+        type: "ResolveLootTriage",
+        action: "dismantleDrop",
+      });
+      expect(after.items.map((i) => i.instanceId)).toEqual(
+        before.items.map((i) => i.instanceId),
+      );
+      expect(after.gold).toBe(before.gold + itemSellPrice(drop));
+      expect(after.pendingLootTriage).toBeNull();
+      expect(after.log.at(-1)?.text).toBe(
+        `Dismantled ${describeItem(drop)} for ${itemSellPrice(drop)} gold.`,
+      );
+    });
+
+    it("dismantleCarried sells the named carried item and swaps in the drop", () => {
+      const drop = makeItem({
+        instanceId: "drop-1",
+        baseId: "war-blade",
+        rarity: "rare",
+      });
+      const before = fullBackpackState([drop]);
+      const carried = before.items[0];
+      const after = reduce(before, {
+        type: "ResolveLootTriage",
+        action: "dismantleCarried",
+        instanceId: carried.instanceId,
+      });
+      expect(after.items).toHaveLength(FIELD_BACKPACK_CAP);
+      expect(after.items.map((i) => i.instanceId)).not.toContain(
+        carried.instanceId,
+      );
+      expect(after.items.map((i) => i.instanceId)).toContain("drop-1");
+      expect(after.gold).toBe(before.gold + itemSellPrice(carried));
+      expect(after.pendingLootTriage).toBeNull();
+    });
+
+    it("no-ops dismantleCarried when the named instance isn't actually carried", () => {
+      const drop = makeItem({ instanceId: "drop-1" });
+      const before = fullBackpackState([drop]);
+      const after = reduce(before, {
+        type: "ResolveLootTriage",
+        action: "dismantleCarried",
+        instanceId: "not-carried",
+      });
+      expect(after.gold).toBe(before.gold);
+      expect(after.pendingLootTriage).toEqual(before.pendingLootTriage);
+      expect(after.log.at(-1)?.text).toBe("There is nothing to dismantle");
+    });
+
+    it("advances to the next queued drop without clearing until the queue empties", () => {
+      const drop1 = makeItem({ instanceId: "drop-1" });
+      const drop2 = makeItem({ instanceId: "drop-2" });
+      const before = fullBackpackState([drop1, drop2]);
+      const after = reduce(before, {
+        type: "ResolveLootTriage",
+        action: "dismantleDrop",
+      });
+      expect(after.pendingLootTriage?.drops.map((i) => i.instanceId)).toEqual([
+        "drop-2",
+      ]);
+    });
+
+    it("no-ops when nothing is pending", () => {
+      const before = newGame(1);
+      const after = reduce(before, {
+        type: "ResolveLootTriage",
+        action: "dismantleDrop",
+      });
+      expect(after.gold).toBe(before.gold);
+      expect(after.log.at(-1)?.text).toBe("There is nothing awaiting triage");
+    });
+  });
+
+  describe("OpenChest overflow queues triage instead of over-capping (ENG-5)", () => {
+    it("queues the chest's generated item when the backpack is already full", () => {
+      let state = withToughHero(enterDungeon(1234));
+      const chest = findDungeonTile(state, "chest");
+      expect(chest).toBeDefined();
+      state = walkTo(state, chest ?? { x: 0, y: 0 });
+      const filler = Array.from({ length: FIELD_BACKPACK_CAP }, (_, i) =>
+        makeItem({ instanceId: `f-${i}` }),
+      );
+      state = { ...state, items: filler };
+      const nextBefore = state.nextItemId;
+      state = reduce(state, { type: "OpenChest" });
+      expect(state.items).toHaveLength(FIELD_BACKPACK_CAP);
+      expect(state.nextItemId).toBe(nextBefore + 1);
+      expect(state.pendingLootTriage?.drops).toHaveLength(1);
+      expect(state.log.at(-1)?.text).toMatch(/backpack is full/i);
+    });
+  });
+
+  describe("finalizeWon overflow queues triage instead of over-capping (ENG-5)", () => {
+    it("queues victory loot for triage when the backpack is already full", () => {
+      let state = withToughHero(enterDungeon(1234));
+      for (let floor = 1; floor < 3; floor++) {
+        const stairs = findDungeonTile(state, "stairsDown");
+        state = walkTo(state, stairs ?? { x: 0, y: 0 });
+        state = reduce(state, { type: "DescendStairs" });
+      }
+      const boss = findDungeonTile(state, "bossMarker");
+      state = walkTo(state, boss ?? { x: 0, y: 0 });
+      expect(state.scene).toBe("battle");
+      const filler = Array.from({ length: FIELD_BACKPACK_CAP }, (_, i) =>
+        makeItem({ instanceId: `f-${i}` }),
+      );
+      state = { ...state, items: filler };
+      const after = fightToResolution(state);
+      expect(after.items).toHaveLength(FIELD_BACKPACK_CAP);
+      expect(after.pendingLootTriage?.drops.length).toBeGreaterThanOrEqual(1);
+      expect(after.log.some((l) => /backpack is full/i.test(l.text))).toBe(
+        true,
+      );
+    });
+  });
+
+  describe("save/load: stash and field cap round-trip independently (ENG-5)", () => {
+    it("round-trips stash and pendingLootTriage separately from the field backpack", () => {
+      const stashed = Array.from({ length: 5 }, (_, i) =>
+        makeItem({ instanceId: `s-${i}` }),
+      );
+      const drop = makeItem({ instanceId: "drop-x" });
+      const before: GameState = {
+        ...newGame(1),
+        items: [makeItem({ instanceId: "carried-1" })],
+        stash: stashed,
+        pendingLootTriage: { drops: [drop] },
+      };
+      const after = deserialize(serialize(before));
+      expect(after.stash).toHaveLength(5);
+      expect(after.items).toHaveLength(1);
+      expect(after.pendingLootTriage?.drops.map((i) => i.instanceId)).toEqual([
+        "drop-x",
+      ]);
+    });
+
+    it("back-fills stash and pendingLootTriage for saves that predate them", () => {
+      const before = newGame(1);
+      const legacy = JSON.parse(serialize(before));
+      delete legacy.stash;
+      delete legacy.pendingLootTriage;
+      const restored = deserialize(JSON.stringify(legacy));
+      expect(restored.stash).toEqual([]);
+      expect(restored.pendingLootTriage).toBeNull();
     });
   });
 

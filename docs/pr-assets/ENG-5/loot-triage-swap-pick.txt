@@ -1,0 +1,40 @@
+┌─ Backpack Full ──────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Your backpack is full. 2 drops await a decision.                                                                     │
+│                                                                                                                      │
+│ Rare Leather Vest - +3 VIT                                                                                           │
+│                                                                                                                      │
+│ > Common War Blade - sell 25g                                                                                        │
+│   Common War Blade - sell 25g                                                                                        │
+│   Common War Blade - sell 25g                                                                                        │
+│   Common War Blade - sell 25g                                                                                        │
+│   Common War Blade - sell 25g                                                                                        │
+│   Common War Blade - sell 25g                                                                                        │
+│   Common War Blade - sell 25g                                                                                        │
+│   Common War Blade - sell 25g                                                                                        │
+│   Common War Blade - sell 25g                                                                                        │
+│   Common War Blade - sell 25g                                                                                        │
+│   Common War Blade - sell 25g                                                                                        │
+│   Common War Blade - sell 25g                                                                                        │
+│   Common War Blade - sell 25g                                                                                        │
+│   Common War Blade - sell 25g                                                                                        │
+│   Common War Blade - sell 25g                                                                                        │
+│   Common War Blade - sell 25g                                                                                        │
+│   Common War Blade - sell 25g                                                                                        │
+│   Common War Blade - sell 25g                                                                                        │
+│   Common War Blade - sell 25g                                                                                        │
+│   Common War Blade - sell 25g                                                                                        │
+│                                                                                                                      │
+│ Hero     Lv1  HP ██████████ 24/24   MP ██████ 6/6                                                                    │
+│ Gold 50                                                                                                              │
+│ Up/down to pick a carried item, Enter to dismantle it and take the drop, Esc to go back.                             │
+│ ┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐ │
+│ │ Started new game with seed 42                                                                                    │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ │                                                                                                                  │ │
+│ └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘

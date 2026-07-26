@@ -1,0 +1,40 @@
+
+
+
+
+
+
+
+
+
+
+
+
+                                     █████  ████       ████   ███   ████ █   █ █████
+                                       █   █           █   █ █   █ █     █   █ █
+                                       █    ███   ███  ████  █   █ █  ██ █   █ ███
+                                       █       █       █  █  █   █ █   █ █   █ █
+                                       █   ████        █   █  ███   ███   ███  █████
+                                               A terminal dungeon crawler.
+
+                                                        > New Game
+                                                          Continue
+                                                          Settings
+                                                          Quit
+
+                                           Up/Down to choose, Enter to select.
+
+                                                         v0.0.0
+
+                                            Dev console: press ` to switch.
+
+
+
+
+
+
+
+
+
+
+
