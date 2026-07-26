@@ -4,6 +4,7 @@
     "includes": [
       "src/**",
       "agent/**",
+      "scripts/**",
       "!src/web/.next/**",
       "!src/web/next-env.d.ts",
       "!src/web/tsconfig.json"

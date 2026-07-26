@@ -16,7 +16,7 @@ describe("parseDiffAddedLines", () => {
 
     const result = parseDiffAddedLines(diff);
     expect([...result.keys()]).toEqual(["src/foo.ts"]);
-    expect([...result.get("src/foo.ts")!]).toEqual([2, 3, 4]);
+    expect([...(result.get("src/foo.ts") ?? new Set())]).toEqual([2, 3, 4]);
   });
 
   it("records only + lines, not - lines, and context advances the counter", () => {
@@ -35,7 +35,7 @@ describe("parseDiffAddedLines", () => {
     ].join("\n");
 
     const result = parseDiffAddedLines(diff);
-    const lines = result.get("src/bar.ts")!;
+    const lines = result.get("src/bar.ts") ?? new Set();
     // Hunk starts at new-line 10.
     //   line 10: " " (context) -> counter becomes 11
     //   line 11: "-" (removed) -> counter stays 11
@@ -61,7 +61,7 @@ describe("parseDiffAddedLines", () => {
     ].join("\n");
 
     const result = parseDiffAddedLines(diff);
-    const lines = result.get("src/multi.ts")!;
+    const lines = result.get("src/multi.ts") ?? new Set();
     // Hunk 1: new-line starts at 1 -> record 1, 2
     // Hunk 2: new-line starts at 12 -> record 12, 13
     expect([...lines]).toEqual([1, 2, 12, 13]);
@@ -85,8 +85,8 @@ describe("parseDiffAddedLines", () => {
 
     const result = parseDiffAddedLines(diff);
     expect([...result.keys()]).toEqual(["src/a.ts", "src/b.ts"]);
-    expect([...result.get("src/a.ts")!]).toEqual([1]);
-    expect([...result.get("src/b.ts")!]).toEqual([6]);
+    expect([...(result.get("src/a.ts") ?? new Set())]).toEqual([1]);
+    expect([...(result.get("src/b.ts") ?? new Set())]).toEqual([6]);
   });
 });
 

@@ -1,6 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { generateText } from "ai";
-import { gateway } from "ai";
+import { gateway, generateText } from "ai";
 import { z } from "zod";
 
 // ---------------------------------------------------------------
@@ -219,7 +218,7 @@ async function main() {
   const validLines = parseDiffAddedLines(diff);
   const filteredComments = parsed.comments.filter((c) => {
     const fileLines = validLines.get(c.path);
-    if (!fileLines || !fileLines.has(c.line)) {
+    if (!fileLines?.has(c.line)) {
       console.warn(
         `[ci-review] Dropping comment for ${c.path}:${c.line} - not in diff added lines`,
       );
