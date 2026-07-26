@@ -32,6 +32,7 @@
     "version-packages": "changeset version"
   },
   "dependencies": {
+    "@libsql/client": "0.17.4",
     "@vercel/connect": "0.4.0",
     "ai": "^7.0.37",
     "eve": "catalog:",
