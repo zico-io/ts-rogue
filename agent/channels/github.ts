@@ -388,21 +388,20 @@ export const onPullRequest = (
 ) => {
   if (isMainMerge(pullRequest)) {
     const ref = linearRefFromPullRequest(pullRequest);
-    const contextEntries = ref
-      ? [MAIN_MERGE_SYNCED, ralphAdvanceContext(ref)]
-      : [MAIN_MERGE_SYNCED];
     // Every merge to main also wakes a debt-review turn: this context entry
     // tells the woken turn to audit unresolved review threads and file debt
     // issues. The webhook handler makes no API call itself - the GraphQL
     // query runs inside the woken turn (which has gh CLI access). This runs
     // unconditionally alongside the ralph-advance and main-synced entries
     // since only the turn can determine whether unresolved threads exist.
-    contextEntries.push(
-      debtReviewContext(pullRequest.pullRequestNumber),
-    );
     return {
       auth: defaultGitHubAuth(context),
-      context: contextEntries,
+      context: [
+        ...(ref
+          ? [MAIN_MERGE_SYNCED, ralphAdvanceContext(ref)]
+          : [MAIN_MERGE_SYNCED]),
+        debtReviewContext(pullRequest.pullRequestNumber),
+      ],
     };
   }
   // Auto ponytail-review on a newly opened / newly ready pull request, and
