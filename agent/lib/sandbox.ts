@@ -8,9 +8,9 @@ import type {
   SandboxSession,
 } from "eve/sandbox";
 import {
-  vercel,
   type VercelSandboxBootstrapUseOptions,
   type VercelSandboxSessionUseOptions,
+  vercel,
 } from "eve/sandbox/vercel";
 
 import { SCREENSHOT_STATUS_PATH } from "./orientation";
@@ -444,9 +444,9 @@ export function buildBootstrapCommand(options?: {
     // downloading history; `git reset --hard origin/main` overwrites the
     // working tree to match the fetched commit. Untracked files in pre-existing
     // paths like .eve/ are left in place because reset --hard only touches
-    // tracked paths. SYNC_MAIN_COMMAND and AUTO_RECOVER_PUSH_COMMAND are
-    // unaffected since HEAD stays attached to a local branch named main and
-    // /workspace remains the repo root.
+    // tracked paths. AUTO_RECOVER_PUSH_COMMAND is unaffected since HEAD stays
+    // attached to a local branch named main and /workspace remains the repo
+    // root.
     "git init -q -b main .",
     "git remote add origin https://github.com/zico-io/ts-rogue.git",
     "git fetch --depth 1 origin main",
@@ -455,25 +455,6 @@ export function buildBootstrapCommand(options?: {
     ...(screenshotTooling ? [installScreenshotTooling] : []),
   ].join(" && ");
 }
-
-/**
- * Resyncs local `main` to `origin/main` - but only when HEAD is already on
- * `main`. `onSession` can re-run mid-session (e.g. a new inbound Linear
- * activity re-attaches the same sandbox), and unconditionally
- * `git checkout -B main FETCH_HEAD` here used to discard whatever branch and
- * commits the agent had checked out in between, with no warning, the moment
- * the sandbox reconnected - including commits that hadn't been pushed yet
- * (e.g. during a transient GitHub-auth outage). Once the agent has moved off
- * `main` onto its own branch, this leaves it alone; the agent's own
- * `git fetch origin main && git rebase origin/main` (see `instructions.md`)
- * is how it picks up new upstream commits from there.
- */
-export const SYNC_MAIN_COMMAND = [
-  "git fetch --depth 1 origin main",
-  'CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)"',
-  'if [ "$CURRENT_BRANCH" = "main" ]; then git checkout -B main FETCH_HEAD; ' +
-    "else echo \"onSession: HEAD is on '$CURRENT_BRANCH', not main - leaving it in place instead of resyncing\"; fi",
-].join(" && ");
 
 /**
  * Best-effort recovery for commits stranded by a prior push failure (HAR-5):
@@ -568,7 +549,10 @@ export function buildSandboxDefinition(
   VercelSandboxSessionUseOptions
 > {
   return {
-    backend: vercel({ timeout: SANDBOX_TIMEOUT_MS, env: WORKSPACE_GIT_CONFIG_ENV }),
+    backend: vercel({
+      timeout: SANDBOX_TIMEOUT_MS,
+      env: WORKSPACE_GIT_CONFIG_ENV,
+    }),
     revalidationKey: dependencyRevalidationKey,
     async bootstrap({ use }) {
       // Bootstrap always needs an authed clone regardless of the subagent's
@@ -594,9 +578,6 @@ export function buildSandboxDefinition(
         networkPolicy: policy,
         timeout: SANDBOX_TIMEOUT_MS,
       });
-      const sync = await sandbox.run({ command: SYNC_MAIN_COMMAND });
-      if (sync.exitCode !== 0)
-        throw new Error(sync.stderr || "Sandbox repository sync failed");
       if (options.gitAuthLevel === "push-capable" && authed) {
         try {
           await sandbox.run({ command: AUTO_RECOVER_PUSH_COMMAND });
