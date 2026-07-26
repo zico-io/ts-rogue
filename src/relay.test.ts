@@ -328,8 +328,11 @@ describe("relay hook", () => {
     expect(contentOf(1)).toEqual({
       type: "action",
       action: "Bash",
-      parameter: JSON.stringify({ command: "echo hi" }),
-      result: JSON.stringify({ stdout: "hi\n" }),
+      // Readable parameter (stashed at actions.requested) and result summary,
+      // not raw JSON blobs. No exitCode in this synthetic output, so it reads
+      // as "done" plus the stdout line count.
+      parameter: "echo hi",
+      result: "done · 2 lines",
     });
   });
 
