@@ -1,5 +1,5 @@
 import { classSkills } from "../../engine/combat/skills";
-import { isHealItem } from "../../engine/loot/consumables";
+import { isUsableBattleItem } from "../../engine/loot/consumables";
 import type { GameStore } from "../../engine/state/store";
 import { generateOverworldMap } from "../../engine/world/overworld";
 import { activatedWaypointList } from "../../engine/world/waypoints";
@@ -262,8 +262,8 @@ export class BrowserKeyboardManager {
       aliveEnemyIds: bs.enemies
         .filter((enemy) => enemy.hp > 0)
         .map((enemy) => enemy.id),
-      healItemIds: state.inventory
-        .filter((entry) => isHealItem(entry.itemId))
+      usableItemIds: state.inventory
+        .filter((entry) => isUsableBattleItem(entry.itemId))
         .map((entry) => entry.itemId),
     });
 

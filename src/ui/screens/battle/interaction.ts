@@ -28,7 +28,7 @@ export interface BattleUiContext {
   actorMp: number;
   knownSkills: readonly SkillDef[];
   aliveEnemyIds: readonly string[];
-  healItemIds: readonly string[];
+  usableItemIds: readonly string[];
 }
 
 export type BattleUiEffect =
@@ -154,8 +154,8 @@ export function reduceBattleUi(
   }
 
   if (state.mode === "item") {
-    if (ctx.healItemIds.length === 0) return { state };
-    const itemCount = ctx.healItemIds.length;
+    if (ctx.usableItemIds.length === 0) return { state };
+    const itemCount = ctx.usableItemIds.length;
     if (intent.kind === "menuUp") {
       return {
         state: {
@@ -170,7 +170,7 @@ export function reduceBattleUi(
       };
     }
     if (intent.kind === "confirm") {
-      const itemId = ctx.healItemIds[state.itemCursor];
+      const itemId = ctx.usableItemIds[state.itemCursor];
       if (itemId) {
         return {
           state: INITIAL_BATTLE_UI_STATE,

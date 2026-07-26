@@ -2,7 +2,12 @@ import { DEFAULT_CLASS_ID, findClass } from "../../data/classes";
 import { findMonster, MONSTERS, type MonsterDef } from "../../data/monsters";
 import { findShopItem } from "../../data/shops";
 import type { InventoryItem, PartyMember } from "../entities/party";
-import { consumeItem, healAmount, isHealItem } from "../loot/consumables";
+import {
+  consumeItem,
+  curedEffects,
+  healAmount,
+  isUsableBattleItem,
+} from "../loot/consumables";
 import { effectiveStats } from "../loot/equipment";
 import { FIELD_BACKPACK_CAP } from "../loot/inventory";
 import { describeItem } from "../loot/items";
@@ -338,7 +343,9 @@ function validateCommand(
     }
     case "item": {
       const owned = inventory.find((entry) => entry.itemId === command.itemId);
-      return !!owned && owned.quantity > 0 && isHealItem(command.itemId);
+      return (
+        !!owned && owned.quantity > 0 && isUsableBattleItem(command.itemId)
+      );
     }
     case "defend":
       return true;
@@ -377,6 +384,43 @@ function applyEffect(
     potency,
     initialDuration: duration,
   });
+}
+
+// Cure items and Heal-cleanse (see the "skill" case below) both remove
+// effect instances outright rather than ticking them out naturally.
+function removeEffects(
+  target: BattleEnemy | PartyMember,
+  effectIds: readonly StatusEffectId[],
+): StatusEffectId[] {
+  if (!target.effects || target.effects.length === 0) return [];
+  const removed: StatusEffectId[] = [];
+  const remaining = target.effects.filter((effect) => {
+    if (!effectIds.includes(effect.effectId)) return true;
+    removed.push(effect.effectId);
+    return false;
+  });
+  if (remaining.length > 0) {
+    target.effects = remaining;
+  } else {
+    delete target.effects;
+  }
+  return removed;
+}
+
+function cleanseAllEffects(
+  target: BattleEnemy | PartyMember,
+): StatusEffectId[] {
+  if (!target.effects || target.effects.length === 0) return [];
+  return removeEffects(
+    target,
+    target.effects.map((effect) => effect.effectId),
+  );
+}
+
+function describeCured(cured: readonly StatusEffectId[]): string {
+  return cured
+    .map((effectId) => findStatusEffect(effectId)?.name ?? effectId)
+    .join(" and ");
 }
 
 function formatElementTag(element: Element | undefined): string {
@@ -618,16 +662,41 @@ function applyMemberCommand(
         logs.push(
           entry(`${actor.name} casts ${skill.name} and recovers ${heal} HP.`),
         );
+        // Heal-cleanse decision (documented in src/engine/combat/skills.ts):
+        // every Heal-kind skill also scrubs the caster's own status effects,
+        // rewarding the MP spend with a full reset that a single-status
+        // cure item does not offer.
+        const cleansed = cleanseAllEffects(actor);
+        if (cleansed.length > 0) {
+          logs.push(
+            entry(`${actor.name} is cleansed of ${describeCured(cleansed)}!`),
+          );
+        }
       }
       break;
     }
     case "item": {
       const heal = healAmount(command.itemId);
+      const cures = curedEffects(command.itemId);
+      const name = findShopItem(command.itemId)?.name ?? command.itemId;
       if (heal > 0) {
         actor.hp = Math.min(actor.maxHp, actor.hp + heal);
         itemUsed = command.itemId;
-        const name = findShopItem(command.itemId)?.name ?? command.itemId;
         logs.push(entry(`${actor.name} uses ${name} and recovers ${heal} HP.`));
+      } else if (cures.length > 0) {
+        itemUsed = command.itemId;
+        const removed = removeEffects(actor, cures);
+        if (removed.length > 0) {
+          logs.push(
+            entry(
+              `${actor.name} uses ${name} and is cured of ${describeCured(removed)}!`,
+            ),
+          );
+        } else {
+          logs.push(
+            entry(`${actor.name} uses ${name}, but there was nothing to cure.`),
+          );
+        }
       } else {
         logs.push(
           entry(`${actor.name} uses ${command.itemId}... nothing happens.`),

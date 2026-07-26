@@ -2,7 +2,10 @@ import { findShopItem } from "../../data/shops";
 import { classSkills, type SkillDef } from "../../engine/combat/skills";
 import type { BattleEnemy, BattleState } from "../../engine/combat/types";
 import type { PartyMember } from "../../engine/entities/party";
-import { healAmount, isHealItem } from "../../engine/loot/consumables";
+import {
+  battleItemEffectLabel,
+  isUsableBattleItem,
+} from "../../engine/loot/consumables";
 import type { GameState } from "../../engine/state/types";
 import {
   ACTIONS,
@@ -128,11 +131,11 @@ export class BattleSceneView {
       state.party.find((member) => member.id === bs.activeMemberId) ??
       state.party[0];
     const knownSkills = classSkills(actor.classId);
-    const healItems = state.inventory.filter((entryItem) =>
-      isHealItem(entryItem.itemId),
+    const usableItems = state.inventory.filter((entryItem) =>
+      isUsableBattleItem(entryItem.itemId),
     );
 
-    const menuRows = buildMenuRows(battleUi, actor, knownSkills, healItems);
+    const menuRows = buildMenuRows(battleUi, actor, knownSkills, usableItems);
 
     this.drawEnemies(bs, battleUi, pixelSize);
     this.drawActorStatus(actor, pixelSize, menuRows.length);
@@ -401,7 +404,7 @@ function buildMenuRows(
   battleUi: BattleUiState,
   actor: PartyMember,
   knownSkills: readonly SkillDef[],
-  healItems: GameState["inventory"],
+  usableItems: GameState["inventory"],
 ): MenuRow[] {
   const mode: BattleMode = battleUi.mode;
 
@@ -422,16 +425,16 @@ function buildMenuRows(
   }
 
   if (mode === "item") {
-    if (healItems.length === 0) {
+    if (usableItems.length === 0) {
       return [
         { text: "(no usable items)", color: toPixiColor(theme.textFaint) },
       ];
     }
-    return healItems.map((item, index) => {
+    return usableItems.map((item, index) => {
       const selected = index === battleUi.itemCursor;
       const name = findShopItem(item.itemId)?.name ?? item.itemId;
       return {
-        text: `${selected ? "> " : "  "}${name} x${item.quantity} - heal ${healAmount(item.itemId)}`,
+        text: `${selected ? "> " : "  "}${name} x${item.quantity} - ${battleItemEffectLabel(item.itemId)}`,
         color: selected ? toPixiColor(theme.accent) : toPixiColor(theme.text),
       };
     });

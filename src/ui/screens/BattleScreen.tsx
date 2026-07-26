@@ -9,7 +9,10 @@ import {
 } from "../../engine/combat/resolution";
 import { classSkills, type SkillDef } from "../../engine/combat/skills";
 import type { BattleState } from "../../engine/combat/types";
-import { healAmount, isHealItem } from "../../engine/loot/consumables";
+import {
+  battleItemEffectLabel,
+  isUsableBattleItem,
+} from "../../engine/loot/consumables";
 import type { GameEvent, GameState } from "../../engine/state/types";
 import { MessageLog } from "../components/MessageLog";
 import { Screen, useScreenContent } from "../components/Screen";
@@ -46,7 +49,9 @@ export function BattleScreen({ state, dispatch }: BattleScreenProps) {
   const knownSkills = classSkills(actor.classId);
 
   const aliveEnemies = bs ? bs.enemies.filter((enemy) => enemy.hp > 0) : [];
-  const healItems = state.inventory.filter((entry) => isHealItem(entry.itemId));
+  const usableItems = state.inventory.filter((entry) =>
+    isUsableBattleItem(entry.itemId),
+  );
 
   useInput((input, key) => {
     if (bs?.status !== "ongoing" || !bs?.awaitingCommand) return;
@@ -61,7 +66,7 @@ export function BattleScreen({ state, dispatch }: BattleScreenProps) {
       actorMp: actor.mp,
       knownSkills,
       aliveEnemyIds: aliveEnemies.map((enemy) => enemy.id),
-      healItemIds: healItems.map((entry) => entry.itemId),
+      usableItemIds: usableItems.map((entry) => entry.itemId),
     });
 
     switch (result.effect?.type) {
@@ -109,7 +114,7 @@ export function BattleScreen({ state, dispatch }: BattleScreenProps) {
     <Screen
       state={state}
       title="Battle"
-      hint={hintFor(battleUi.mode, healItems.length)}
+      hint={hintFor(battleUi.mode, usableItems.length)}
       showLog={false}
     >
       <BattleBody
@@ -117,7 +122,7 @@ export function BattleScreen({ state, dispatch }: BattleScreenProps) {
         bs={bs}
         actor={actor}
         aliveEnemies={aliveEnemies}
-        healItems={healItems}
+        usableItems={usableItems}
         mode={battleUi.mode}
         actionCursor={battleUi.actionCursor}
         skillCursor={battleUi.skillCursor}
@@ -134,7 +139,7 @@ interface BattleBodyProps {
   bs: BattleState;
   actor: GameState["party"][number];
   aliveEnemies: BattleState["enemies"];
-  healItems: GameState["inventory"];
+  usableItems: GameState["inventory"];
   mode: BattleMode;
   actionCursor: number;
   skillCursor: number;
@@ -148,7 +153,7 @@ function BattleBody({
   bs,
   actor,
   aliveEnemies,
-  healItems,
+  usableItems,
   mode,
   actionCursor,
   skillCursor,
@@ -209,7 +214,7 @@ function BattleBody({
               skills={skills}
               skillCursor={skillCursor}
               heroMp={actor.mp}
-              healItems={healItems}
+              usableItems={usableItems}
               itemCursor={itemCursor}
             />
           </Box>
@@ -276,7 +281,7 @@ interface ActionMenuProps {
   skills: readonly SkillDef[];
   skillCursor: number;
   heroMp: number;
-  healItems: GameState["inventory"];
+  usableItems: GameState["inventory"];
   itemCursor: number;
 }
 
@@ -287,7 +292,7 @@ function ActionMenu({
   skills,
   skillCursor,
   heroMp,
-  healItems,
+  usableItems,
   itemCursor,
 }: ActionMenuProps) {
   if (mode === "skill") {
@@ -316,7 +321,7 @@ function ActionMenu({
   }
 
   if (mode === "item") {
-    if (healItems.length === 0) {
+    if (usableItems.length === 0) {
       return (
         <Box flexDirection="column">
           <Text color={theme.textFaint}>(no usable items)</Text>
@@ -325,14 +330,14 @@ function ActionMenu({
     }
     return (
       <Box flexDirection="column">
-        {healItems.map((entry, index) => (
+        {usableItems.map((entry, index) => (
           <Text
             color={index === itemCursor ? theme.accent : undefined}
             key={entry.itemId}
           >
             {index === itemCursor ? "> " : "  "}
             {findShopItem(entry.itemId)?.name ?? entry.itemId} x{entry.quantity}{" "}
-            - heal {healAmount(entry.itemId)}
+            - {battleItemEffectLabel(entry.itemId)}
           </Text>
         ))}
       </Box>
@@ -374,14 +379,14 @@ function initiativeNames(
   });
 }
 
-function hintFor(mode: BattleMode, healItemCount: number): string {
+function hintFor(mode: BattleMode, usableItemCount: number): string {
   switch (mode) {
     case "action":
       return "Up/Down to choose, Enter to confirm.";
     case "skill":
       return "Up/Down to choose a skill, Enter to cast, Esc to go back.";
     case "item":
-      return healItemCount === 0
+      return usableItemCount === 0
         ? "No usable items - Esc to go back."
         : "Up/Down to choose an item, Enter to use, Esc to go back.";
     case "target":
