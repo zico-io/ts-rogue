@@ -1,18 +1,6 @@
-/**
- * Affix definitions (PROJECT_PLAN Phase 5, ROG-11; data table named in section
- * 7). Prefixes and suffixes with value ranges and item-level gates. The combat
- * resolver never reads these directly; the loot resolution helper rolls them
- * onto generated items. `ilvl` gates rolling (an affix only rolls onto an item
- * whose ilvl is >= the affix's ilvl) so deeper content unlocks stronger
- * affixes and supports endless powerscaling. Signature affixes (id prefix
- * `sig-`) are never rolled from the pool - they are attached explicitly as a
- * monster-implicit item's fixed implicit, so their `weight` is irrelevant.
- */
-
 import type { AffixDef } from "../engine/loot/types";
 
 export const AFFIXES: readonly AffixDef[] = [
-  // Prefixes (prepend to the base name)
   {
     id: "brute",
     kind: "prefix",
@@ -93,7 +81,7 @@ export const AFFIXES: readonly AffixDef[] = [
     ilvl: 8,
     weight: 5,
   },
-  // Suffixes (append to the base name)
+
   {
     id: "of-might",
     kind: "suffix",
@@ -164,7 +152,7 @@ export const AFFIXES: readonly AffixDef[] = [
     ilvl: 8,
     weight: 4,
   },
-  // Signature affixes (attached explicitly as a monster-implicit item's implicit)
+
   {
     id: "sig-might",
     kind: "prefix",

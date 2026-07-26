@@ -24,7 +24,6 @@ import {
   WORKSPACE_GIT_CONFIG_ENV,
 } from "../agent/sandbox/sandbox";
 
-// Runs a git command in `cwd`, returning trimmed stdout; throws on failure.
 function git(cwd: string, args: string[]): string {
   return execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
 }
@@ -72,8 +71,8 @@ describe("keepTokenFresh", () => {
     };
 
     keepTokenFresh(sandbox, mintPolicy, 1000);
-    await vi.advanceTimersByTimeAsync(1000); // mint rejects, reschedules, no apply
-    await vi.advanceTimersByTimeAsync(1000); // mint resolves, policy applied
+    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(1000);
 
     expect(applied).toEqual([good]);
     vi.useRealTimers();
@@ -102,13 +101,13 @@ describe("keepTokenFresh", () => {
       retryMs: 1000,
       initialMs: 1000,
     });
-    await vi.advanceTimersByTimeAsync(1000); // first attempt fails -> retry cadence
+    await vi.advanceTimersByTimeAsync(1000);
     expect(applied).toEqual([]);
-    await vi.advanceTimersByTimeAsync(1000); // retry succeeds -> applies, slow cadence
+    await vi.advanceTimersByTimeAsync(1000);
     expect(applied).toEqual([good]);
-    await vi.advanceTimersByTimeAsync(1000); // still inside refreshMs, no new mint
+    await vi.advanceTimersByTimeAsync(1000);
     expect(applied).toEqual([good]);
-    await vi.advanceTimersByTimeAsync(9000); // reach refreshMs -> mint + apply again
+    await vi.advanceTimersByTimeAsync(9000);
     expect(applied).toEqual([good, good]);
     vi.useRealTimers();
   });
@@ -121,7 +120,7 @@ describe("keepTokenFresh", () => {
     const sandbox = {
       setNetworkPolicy: (policy: SandboxNetworkPolicy) => {
         call++;
-        // First apply blips; refresh must not die on it.
+
         if (call === 1) return Promise.reject(new Error("transient blip"));
         applied.push(policy);
         return Promise.resolve();
@@ -129,11 +128,11 @@ describe("keepTokenFresh", () => {
     };
 
     keepTokenFresh(sandbox, () => Promise.resolve(good), 1000);
-    await vi.advanceTimersByTimeAsync(1000); // apply blips -> retry scheduled
+    await vi.advanceTimersByTimeAsync(1000);
     expect(applied).toEqual([]);
-    await vi.advanceTimersByTimeAsync(1000); // retry applies successfully
+    await vi.advanceTimersByTimeAsync(1000);
     expect(applied).toEqual([good]);
-    await vi.advanceTimersByTimeAsync(1000); // and keeps refreshing afterward
+    await vi.advanceTimersByTimeAsync(1000);
     expect(applied).toEqual([good, good]);
     vi.useRealTimers();
   });
@@ -153,7 +152,7 @@ describe("keepTokenFresh", () => {
       () => Promise.resolve({ allow: {} } as SandboxNetworkPolicy),
       1000,
     );
-    // Advance well past the bounded retries; the chain must stop, not loop forever.
+
     await vi.advanceTimersByTimeAsync(1000 * (MAX_SET_POLICY_FAILURES + 5));
 
     expect(calls).toBe(MAX_SET_POLICY_FAILURES);
@@ -161,10 +160,6 @@ describe("keepTokenFresh", () => {
   });
 
   it("gives up after MAX_MINT_FAILURES consecutive mint failures instead of retrying forever", async () => {
-    // A warm process whose invocation-time OIDC token has expired can never
-    // mint again (background callbacks fall back to the stale env token and
-    // die down @vercel/oidc's local-dev refresh path), so an uncapped retry
-    // loop spins every 30s for the life of the process (HAR-39).
     vi.useFakeTimers();
     let mints = 0;
     const sandbox = { setNetworkPolicy: () => Promise.resolve() };
@@ -194,9 +189,7 @@ describe("keepTokenFresh", () => {
     };
     const good = { allow: { b: [] } } as SandboxNetworkPolicy;
     let call = 0;
-    // Fail almost to the cap, succeed once, then fail again: the chain must
-    // survive the second failure streak's start rather than carrying the old
-    // count over the success.
+
     const mintPolicy = () => {
       call++;
       return call === MAX_MINT_FAILURES
@@ -213,7 +206,6 @@ describe("keepTokenFresh", () => {
   });
 
   it("schedules unref'd timers so a pending tick never holds a serverless invocation open", () => {
-    // Real timers on purpose: hasRef() is the actual Node behavior under test.
     const timer = keepTokenFresh(
       { setNetworkPolicy: () => Promise.resolve() },
       () => Promise.resolve({ allow: {} } as SandboxNetworkPolicy),
@@ -227,9 +219,6 @@ describe("keepTokenFresh", () => {
 
 describe("mintFreshPolicy", () => {
   it("bypasses @vercel/connect's token cache with forceRefresh", async () => {
-    // Without forceRefresh the cache serves the same token until 30s before
-    // its ~1h expiry, turning the 45-minute refresh tick into a no-op
-    // re-install of a dying token (the >45-minute push outages).
     vi.mocked(getToken).mockClear();
     const policy = await mintFreshPolicy();
 
@@ -342,8 +331,8 @@ describe("resolveStartupNetworkPolicy", () => {
     };
 
     const pending = resolveStartupNetworkPolicy(mintPolicy, 1000, 2, 500);
-    await vi.advanceTimersByTimeAsync(1000); // first attempt fails
-    await vi.advanceTimersByTimeAsync(500); // retry gap elapses, second attempt fires
+    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(500);
     const res = await pending;
 
     expect(res).toEqual({ policy: good, authed: true });
@@ -360,11 +349,11 @@ describe("resolveStartupNetworkPolicy", () => {
     };
 
     const pending = resolveStartupNetworkPolicy(mintPolicy, 1000, 3, 500);
-    await vi.advanceTimersByTimeAsync(1000); // attempt 1 fails
-    await vi.advanceTimersByTimeAsync(500); // gap
-    await vi.advanceTimersByTimeAsync(1000); // attempt 2 fails
-    await vi.advanceTimersByTimeAsync(500); // gap
-    await vi.advanceTimersByTimeAsync(1000); // attempt 3 fails
+    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(500);
+    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(500);
+    await vi.advanceTimersByTimeAsync(1000);
     const res = await pending;
 
     expect(call).toBe(3);
@@ -385,8 +374,6 @@ describe("resolveBootstrapNetworkPolicy", () => {
   });
 
   it("throws loudly instead of cloning a private repo unauthenticated", async () => {
-    // The unauthenticated OPEN fallback would abort the clone mid-chain and
-    // leave an empty /workspace; bootstrap must fail with the real cause.
     await expect(
       resolveBootstrapNetworkPolicy(() =>
         Promise.resolve({ policy: { allow: { "*": [] } }, authed: false }),
@@ -398,8 +385,7 @@ describe("resolveBootstrapNetworkPolicy", () => {
 describe("dependencyRevalidationKey", () => {
   it("hashes the lockfile into a stable deps: key that snapshots reuse", () => {
     const key = dependencyRevalidationKey();
-    // Reused snapshot key: same lockfile -> same key, so commits that don't
-    // change deps hit the cached node_modules instead of a cold install.
+
     expect(key).toBe(dependencyRevalidationKey());
     expect(key).toMatch(/^deps:[0-9a-f]{64}$/);
   });
@@ -430,12 +416,6 @@ describe("buildBootstrapCommand", () => {
   });
 
   it("installs the gh CLI and seeds a placeholder auth config under /workspace (HAR-14, HAR-35)", () => {
-    // gh replaces curl + the GitHub REST API for PR operations, so it must
-    // be installed and willing to run without a real credential ever
-    // landing in the sandbox - the network-boundary broker (see
-    // githubNetworkPolicy) supplies the real one at the firewall. HAR-35
-    // relocated this config under /workspace (via GH_CONFIG_DIR) instead of
-    // $HOME, so gh's login state lives alongside the rest of the repo.
     const command = buildBootstrapCommand();
     expect(command).toContain(
       "apt-get install -y tmux ripgrep fd-find bat eza gh",
@@ -449,14 +429,10 @@ describe("buildBootstrapCommand", () => {
   });
 
   it("skips the shell-heredoc gh/git config seeding when seedGitHubConfig is false (HAR-36)", () => {
-    // The `agent/sandbox/sandbox.ts` folder layout mirrors
-    // `agent/sandbox/workspace/**` (real hosts.yml/.gitconfig files) into
-    // /workspace before this command runs, so the root passes
-    // seedGitHubConfig: false to avoid writing the same content twice.
     const command = buildBootstrapCommand({ seedGitHubConfig: false });
     expect(command).not.toContain("/workspace/.config/gh/hosts.yml");
     expect(command).not.toContain("safe.directory");
-    // Everything else in the command is unaffected.
+
     expect(command).toContain(
       "apt-get install -y tmux ripgrep fd-find bat eza gh",
     );
@@ -471,9 +447,6 @@ describe("buildBootstrapCommand", () => {
   });
 
   it("symlinks fd/bat onto PATH under their conventional names", () => {
-    // Debian/Ubuntu ship fd-find and bat as `fdfind`/`batcat` to avoid name
-    // clashes with pre-existing packages, so agents typing `fd`/`bat` would
-    // otherwise hit "command not found".
     const command = buildBootstrapCommand();
     expect(command).toContain("ln -sf /usr/bin/fdfind /usr/local/bin/fd");
     expect(command).toContain("ln -sf /usr/bin/batcat /usr/local/bin/bat");
@@ -487,19 +460,11 @@ describe("buildBootstrapCommand", () => {
   });
 
   it("never lets a failed screenshot-tooling install fail the whole bootstrap", () => {
-    // The chromium block is `(A && B && C) || fallback` - the closing paren
-    // right before `||` is what makes the whole group always exit 0, however
-    // A/B/C individually fare.
     const command = buildBootstrapCommand();
     expect(command).toMatch(/\)\s*\|\|\s*echo/);
   });
 
   it("is syntactically valid bash (parses with `bash -n`)", () => {
-    // The content assertions above only check that pieces are present, not that
-    // the assembled string parses. A subshell joined to a command with a bare
-    // space (`mkdir … (…)` instead of `mkdir … && (…)`) is a syntax error that
-    // slips past substring checks but fails every deploy at sandbox prewarm.
-    // `bash -n` parses without executing, so this catches that class of bug.
     expect(() =>
       execFileSync("bash", ["-n", "-c", buildBootstrapCommand()], {
         stdio: "pipe",
@@ -507,14 +472,11 @@ describe("buildBootstrapCommand", () => {
     ).not.toThrow();
   });
   it("uses in-place git init/remote/fetch/reset instead of git clone (HAR-34)", () => {
-    // HAR-34 replaced `git clone https://github.com/zico-io/ts-rogue.git .`
-    // (which required /workspace to be empty) with a four-step in-place
-    // checkout sequence that tolerates a pre-populated /workspace.
     const command = buildBootstrapCommand();
     expect(command).toContain("git init -q -b main .");
     expect(command).toContain("git remote add origin");
     expect(command).toContain("git reset --hard origin/main");
-    // The old clone command must NOT appear.
+
     expect(command).not.toContain(
       "git clone https://github.com/zico-io/ts-rogue.git .",
     );
@@ -523,8 +485,6 @@ describe("buildBootstrapCommand", () => {
 
 describe("WORKSPACE_GIT_CONFIG_ENV", () => {
   it("targets GH_CONFIG_DIR and GIT_CONFIG_GLOBAL under /workspace (HAR-35)", () => {
-    // Targeted env vars, not a blanket XDG_CONFIG_HOME=/workspace/.config -
-    // only gh and git's HOME-backed config relocate, not every tool's.
     expect(WORKSPACE_GIT_CONFIG_ENV).toEqual({
       GH_CONFIG_DIR: "/workspace/.config/gh",
       GIT_CONFIG_GLOBAL: "/workspace/.gitconfig",
@@ -532,9 +492,6 @@ describe("WORKSPACE_GIT_CONFIG_ENV", () => {
   });
 });
 
-// Exercises AUTO_RECOVER_PUSH_COMMAND against a real bare origin + working
-// clone (HAR-5's auto-recovery: flush commits stranded by a prior push
-// failure as soon as auth is confirmed, without the agent having to remember).
 describe("AUTO_RECOVER_PUSH_COMMAND", () => {
   let dir: string;
 
@@ -547,9 +504,7 @@ describe("AUTO_RECOVER_PUSH_COMMAND", () => {
     const origin = join(dir, "origin.git");
     const work = join(dir, "work");
     execFileSync("git", ["init", "-q", "-b", "main", origin]);
-    // `origin` is a plain (non-bare) repo so `git branch -a`/log inspection
-    // below is simple; that means pushing to its checked-out `main` needs
-    // this opt-in instead of the default refusal.
+
     git(origin, ["config", "receive.denyCurrentBranch", "ignore"]);
     execFileSync("git", ["clone", "-q", origin, work]);
     git(work, ["config", "user.email", "t@t.com"]);
@@ -569,9 +524,7 @@ describe("AUTO_RECOVER_PUSH_COMMAND", () => {
 
   it("pushes commits stranded on an already-tracked branch", () => {
     const { origin, work } = setUpRepo();
-    // Simulate a branch that was already pushed once (so it has a real
-    // origin/feature upstream, not just origin/main) and then picked up a
-    // commit that failed to push - the exact HAR-5 shape.
+
     git(work, ["checkout", "-q", "-b", "feature"]);
     git(work, ["push", "-q", "-u", "origin", "feature"]);
     execFileSync("sh", ["-c", "echo b > b.txt"], { cwd: work });

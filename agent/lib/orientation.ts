@@ -1,32 +1,16 @@
-// Pre-computes the repository state the orchestrator would otherwise rediscover
-// by running git ad hoc and reasoning about the output. Writing it once at
-// session start turns orientation from a multi-turn investigation into reading
-// one file of settled facts. Kept free of eve imports so the formatting and
-// parsing are plain, directly testable functions.
-
 export interface GitFacts {
   branch: string;
   headSha: string;
   clean: boolean;
   recentCommits: string[];
-  /** Upstream tracking ref (e.g. `origin/nico/rog-1-thing`), or null if the branch has never been pushed. */
+
   upstream: string | null;
-  /** Commits on HEAD not yet on `upstream`. Always 0 when `upstream` is null (there's no ahead/behind to compute). */
+
   unpushedCount: number;
-  /**
-   * Linked worktree paths left behind by a prior turn (the main checkout is
-   * excluded). Ralph mode's parallel workstreams live in `.worktrees/<id>`;
-   * their branches and any unpushed commits are invisible to the current-branch
-   * checks above, so leftovers must be surfaced explicitly.
-   */
+
   worktrees?: readonly string[];
 }
 
-// One command emits the raw state as delimited lines; onSession runs it in the
-// sandbox and hands the stdout to parseGitFacts. The upstream/ahead-count
-// section lets the orientation brief flag stranded local commits (see HAR-5:
-// a session whose push failed for an extended stretch needs this surfaced
-// automatically instead of discovered by hand).
 export const GIT_FACTS_COMMAND = [
   "git rev-parse --abbrev-ref HEAD",
   "git rev-parse --short HEAD",
@@ -58,8 +42,7 @@ export function parseGitFacts(stdout: string): GitFacts {
     upstreamValue === "" || upstreamValue === "NONE" ? null : upstreamValue;
   const unpushedCount =
     upstream === null ? 0 : Number.parseInt(aheadRaw.trim(), 10) || 0;
-  // `git worktree list --porcelain` lists the main checkout first; every
-  // later `worktree <path>` line is a linked worktree left behind.
+
   const worktrees = worktreesRaw
     .trim()
     .split("\n")
@@ -82,23 +65,14 @@ export function parseGitFacts(stdout: string): GitFacts {
   };
 }
 
-/**
- * Whether the sandbox's Playwright chromium (backing `scripts/play-web.mjs`'s
- * screenshots) is confirmed working. Written once at image bootstrap
- * (`sandbox.ts`'s `buildBootstrapCommand`) to `SCREENSHOT_STATUS_PATH` and
- * read back verbatim in `onSession` - screenshot tooling is a property of the
- * baked image, not of any one session, so there's nothing to re-derive here.
- */
 export interface ScreenshotToolingStatus {
   available: boolean;
-  /** Present when `available` is false: why, so a session can decide whether it's worth one retry. */
+
   reason?: string;
 }
 
-/** Absolute path (inside the sandbox) of the bootstrap-written screenshot-tooling status file. */
 export const SCREENSHOT_STATUS_PATH = "/workspace/.eve/screenshot-tooling.json";
 
-/** Best-effort parse of `SCREENSHOT_STATUS_PATH`'s contents; any malformed/missing content reads as unavailable with an explanatory reason, never throws. */
 export function parseScreenshotToolingStatus(
   stdout: string,
 ): ScreenshotToolingStatus {
@@ -119,9 +93,7 @@ export function parseScreenshotToolingStatus(
         reason: typeof reason === "string" ? reason : undefined,
       };
     }
-  } catch {
-    // fall through to the unknown default below
-  }
+  } catch {}
   return {
     available: false,
     reason:

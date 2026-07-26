@@ -1,18 +1,7 @@
-/**
- * Affix rolling (PROJECT_PLAN Phase 5, ROG-11). Pure, seeded helpers that turn
- * a rarity and an item level into rolled prefix/suffix affixes. All randomness
- * routes through the seeded `Rng` so a drop is reproducible from the seed plus
- * the event history. Caps are per rarity (common = none, magic = 1/1, rare and
- * unique = up to 3/3, per section 6). Signature affixes (id prefix `sig-`) are
- * never rolled from the pool - they attach explicitly as a monster-implicit
- * item's fixed implicit, so they are excluded from the eligible pool here.
- */
-
 import { AFFIXES, findAffix } from "../../data/affixes";
 import type { Rng } from "../rng/rng";
 import type { AffixDef, AffixKind, Rarity, RolledAffix } from "./types";
 
-/** Maximum prefix/suffix counts per rarity (section 6). */
 export const RARITY_AFFIX_CAPS: Record<
   Rarity,
   { prefix: number; suffix: number }
@@ -23,7 +12,6 @@ export const RARITY_AFFIX_CAPS: Record<
   unique: { prefix: 3, suffix: 3 },
 };
 
-/** Affixes eligible to roll onto an item of `ilvl` for the given kind. */
 export function eligibleAffixes(
   ilvl: number,
   kind: AffixKind,
@@ -68,11 +56,6 @@ function rollSlotAffixes(
   return out;
 }
 
-/**
- * Roll prefixes and suffixes for an item of `ilvl` and `rarity`. Consumes a
- * deterministic, seed-driven sequence of `Rng` rolls (one count roll per
- * non-empty slot, then one pick plus one value roll per affix). Pure.
- */
 export function rollAffixes(
   rng: Rng,
   ilvl: number,
@@ -85,7 +68,6 @@ export function rollAffixes(
   return { prefixes, suffixes };
 }
 
-/** Roll the value of a fixed signature implicit affix (always the given id). */
 export function rollImplicitAffix(rng: Rng, affixId: string): RolledAffix {
   const def = findAffix(affixId);
   if (!def) throw new Error(`unknown implicit affix "${affixId}"`);

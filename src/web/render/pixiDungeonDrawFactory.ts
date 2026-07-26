@@ -1,21 +1,3 @@
-/**
- * Real Pixi implementation of `dungeonView.ts`'s `DungeonDrawFactory`. Thin
- * adapter only, mirroring `pixiOverworldDrawFactory.ts`'s split - all layout,
- * keying, and raycast-to-draw-call logic lives in `DungeonSceneView`, which
- * never imports `pixi.js` so it stays unit-testable without a WebGL/canvas
- * context (see `dungeonView.test.ts`).
- *
- * The one Pixi-specific trick here: per-column wall texturing needs a
- * distinct 1-texel-wide horizontal slice of the `wall` atlas frame per
- * `TEXELS_PER_TILE` texel index, so a wall face reads as a real texture
- * instead of `TEXELS_PER_TILE` squished copies of the whole tile. Pixi's
- * `Texture` supports an arbitrary `frame` rectangle into a shared `source`,
- * so `buildWallTexelTextures` crops the wall frame into its
- * `TEXELS_PER_TILE` (native tile width) 1px-wide columns once at setup time -
- * never per frame - and `createWallColumn`'s `setTexel` just swaps between
- * those cached textures.
- */
-
 import {
   Graphics,
   Rectangle,
@@ -32,7 +14,6 @@ import type {
 } from "./dungeonView";
 import type { RectHandle, TextHandle } from "./sceneView";
 
-/** Crops the wall atlas frame into `TEXELS_PER_TILE` 1-texel-wide sub-textures, cached once. */
 function buildWallTexelTextures(sheet: Spritesheet): Texture[] {
   const wallTexture = sheet.textures.wall;
   const frame = wallTexture.frame;
@@ -48,15 +29,13 @@ function buildWallTexelTextures(sheet: Spritesheet): Texture[] {
         frame.height,
       ),
     });
-    // Each cropped `Texture` wraps the same shared atlas source `atlas.ts`'s
-    // `loadAtlas()` already sets to nearest-neighbor; defensive no-op here.
+
     texture.source.scaleMode = "nearest";
     textures.push(texture);
   }
   return textures;
 }
 
-/** Builds a `DungeonDrawFactory` whose sprites/rects/text are all children of `container`. */
 export function createPixiDungeonDrawFactory(
   container: { addChild(child: Sprite | Graphics | Text): void },
   sheet: Spritesheet,
@@ -112,7 +91,7 @@ export function createPixiDungeonDrawFactory(
         },
         setTexel(texel: number) {
           sprite.texture = wallTexelTextures[texel] ?? wallTexelTextures[0];
-          applySize(); // Pixi resets width/height when the texture changes.
+          applySize();
         },
         setTint(color: number) {
           sprite.tint = color;
@@ -137,8 +116,7 @@ export function createPixiDungeonDrawFactory(
           const texture = sheet.textures[name];
           if (texture && sprite.texture !== texture) {
             sprite.texture = texture;
-            // `atlas.ts`'s `loadAtlas()` already sets this on the shared
-            // texture source; defensive no-op here (ROG-63).
+
             sprite.texture.source.scaleMode = "nearest";
           }
         },

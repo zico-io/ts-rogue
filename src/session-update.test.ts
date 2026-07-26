@@ -1,11 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 
-// The session_update tool is role-guarded: the root posts any of the three
-// handoff statuses (blocked/review/completed); a delegated child may post
-// only blocked (issue-prefixed), and review/completed from a child return a
-// structured refusal without posting. This suite covers the refusal wiring
-// under `pnpm check` - the delegation eval exercises it end-to-end but only
-// runs under EVE_EVAL_MOCK_MODEL. Mock pattern of `src/handoff.test.ts`.
 const { createActivity } = vi.hoisted(() => ({ createActivity: vi.fn() }));
 
 vi.mock("@vercel/connect/eve", () => ({
@@ -17,9 +11,6 @@ vi.mock("eve/channels/linear", () => ({
 vi.mock("eve/tools", () => ({ defineTool: (def: unknown) => def }));
 vi.mock("../agent/hooks/relay", () => ({ relayIssueId: () => "ROG-7" }));
 
-// Reuse the tool's real status union (via the exported forSessionRole
-// signature) so a typo'd status in a test case fails to type-check instead
-// of silently widening to string.
 type SessionUpdateInput = Parameters<
   typeof import("../agent/tools/session_update")["forSessionRole"]
 >[0];

@@ -121,7 +121,7 @@ describe("GitHub agent events", () => {
     expect(
       linearRefFromPullRequest(pr({ head: { ref: "chore/cleanup" } })),
     ).toBeNull();
-    // Branch wins over body so the advance targets the issue the branch names.
+
     expect(
       linearRefFromPullRequest(
         pr({ head: { ref: "feat/ROG-3" }, body: "relates to ROG-99" }),
@@ -146,7 +146,7 @@ describe("GitHub agent events", () => {
     expect(linearRefFromPullRequest(pr({ body: "closes WEB-2" }))).toBe(
       "WEB-2",
     );
-    // Hyphenated-number tokens that are not team keys must not match.
+
     expect(
       linearRefFromPullRequest(
         pr({ body: "hashed with SHA-256, dates in ISO-8601" }),
@@ -162,7 +162,7 @@ describe("GitHub agent events", () => {
       isBotMentioned("hey @TS-ROGUE-EVE please look", "ts-rogue-eve"),
     ).toBe(true);
     expect(isBotMentioned("no mention here", "ts-rogue-eve")).toBe(false);
-    // A longer handle sharing the same prefix must not false-positive.
+
     expect(
       isBotMentioned("cc @ts-rogue-eve-2 for visibility", "ts-rogue-eve"),
     ).toBe(false);
@@ -351,9 +351,6 @@ describe("debt-review context (HAR-18)", () => {
 });
 
 describe("authorization events surface the OAuth challenge (HAR-33)", () => {
-  // Without these handlers a user-scoped connection challenge on a
-  // GitHub-dispatched turn parks the turn invisibly - the silent merge-wake
-  // stall. GitHub has no auth signal, so the challenge is a thread comment.
   const fakeChannel = () => {
     const posted: string[] = [];
     return {

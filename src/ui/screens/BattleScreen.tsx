@@ -32,21 +32,9 @@ export interface BattleScreenProps {
 
 const ENEMY_GAP = 4;
 const LAYOUT_GAP = 2;
-/** Max width of the right-hand battle log panel; shrinks on narrow panes. */
+
 const BATTLE_LOG_MAX_WIDTH = 36;
 
-/**
- * Battle scene (PROJECT_PLAN Phase 4, ROG-10). First-person framing: the
- * enemy ASCII art faces the viewer while the party is represented by the
- * hero's stats, Wizardry/Dragon Quest style. Everything is driven from
- * `state.battleState` plus `state.party`/`state.inventory`; key presses only
- * dispatch the pure battle events. A player command resolves a whole round in
- * the reducer, so after each dispatch the battle either continues (back to the
- * action menu) or the scene changes and this screen unmounts. The mode/cursor
- * state machine and its transitions live in the pure `reduceBattleUi`
- * (ROG-45); this component only normalizes Ink's input, resolves an intent,
- * applies the result, and dispatches whatever engine event the effect maps to.
- */
 export function BattleScreen({ state, dispatch }: BattleScreenProps) {
   const [battleUi, setBattleUi] = useState<BattleUiState>(
     INITIAL_BATTLE_UI_STATE,
@@ -172,7 +160,7 @@ function BattleBody({
 
   const logWidth = Math.min(BATTLE_LOG_MAX_WIDTH, Math.floor(width * 0.4));
   const viewportWidth = Math.max(1, width - logWidth - LAYOUT_GAP);
-  // The framed viewport sits above the hero stat and turn-order lines.
+
   const viewportHeight = Math.max(1, height - 2);
 
   const packed = packEnemyColumns(
@@ -188,8 +176,7 @@ function BattleBody({
 
   return (
     <Box flexDirection="row" gap={LAYOUT_GAP} height={height}>
-      {/* Left column: a framed battle viewport sized only from the pane; the
-          command menu floats over it, out of flow, so it never reflows. */}
+      {}
       <Box flexDirection="column" width={viewportWidth}>
         <Box
           height={viewportHeight}
@@ -202,8 +189,7 @@ function BattleBody({
             <EnemyField packed={packed} />
           </Box>
 
-          {/* Floating command window, anchored bottom-left over the viewport
-              and titled with the acting member: these actions are theirs. */}
+          {}
           <Box
             position="absolute"
             bottom={0}
@@ -238,7 +224,7 @@ function BattleBody({
         </Text>
       </Box>
 
-      {/* Battle log, pinned to the right of the combat layout. */}
+      {}
       <Box flexDirection="column" width={logWidth}>
         <Text color={theme.textMuted}>Battle Log</Text>
         <MessageLog
@@ -376,7 +362,6 @@ function ActionMenu({
   );
 }
 
-/** Map initiative combatant ids to display names for the turn-order line. */
 function initiativeNames(
   battle: BattleState,
   party: GameState["party"],

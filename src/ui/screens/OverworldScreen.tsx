@@ -28,19 +28,10 @@ export interface OverworldScreenProps {
 const HINT =
   "Arrow keys or h/j/k/l to move; walk onto H to return to the village or D to enter a dungeon; Esc returns to the village directly.";
 
-/** Minimap box chrome: 1 row label + 2 rows border + 2 cols padding + 2 cols border. */
 const MINIMAP_BOX_OVERHEAD_ROWS = 3;
 const MINIMAP_BOX_OVERHEAD_COLS = 4;
 const MINIMAP_GAP = 2;
 
-/**
- * Overworld traversal (PROJECT_PLAN Phase 2, ROG-8). The map is a pure
- * function of `state.seed` (see `engine/world/overworld.ts`), recomputed
- * here rather than stored on state. Arrow keys / hjkl move the player;
- * stepping onto the village or a dungeon entrance is handled entirely by
- * the reducer (`MoveOverworld`) and shows up as a scene change. The camera
- * viewport and minimap scale to the content region the frame provides.
- */
 export function OverworldScreen({ state, dispatch }: OverworldScreenProps) {
   const [overworldUi, setOverworldUi] = useState<OverworldUiState>({});
 
@@ -80,7 +71,6 @@ function OverworldBody({ state }: { state: GameState }) {
   const map = useMemo(() => generateOverworldMap(state.seed), [state.seed]);
   const player = state.worldState.player;
 
-  // Content stacks the map row above the danger line (with a gap row).
   const mainHeight = Math.min(Math.max(height - 2, 1), map.height);
 
   const minimapRows = buildMinimapRows(map, player, {

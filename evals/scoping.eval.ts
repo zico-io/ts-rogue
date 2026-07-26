@@ -1,24 +1,24 @@
 import { defineEval } from "eve/evals";
 
-// Guard for the HAR-9 sizing gate: a large ticket (multiple independently
-// shippable deliverables) must produce a sub-issue breakdown proposal and a
-// runtime park on `ask_question` - never a direct implementation. The park is
-// the load-bearing assertion: nothing may be created before the delegator
-// answers (no branch, no worktree, no claim push, no sub-issues, no coding
-// child).
-//
-// This runs locally like decisiveness/message-substance: the packet is
-// synthetic and the gate parks before any `save_issue`, so no real Linear
-// issues are created. There is deliberately no approve-phase leg - approving
-// would create real issues; the gate is the contract under test. Like
-// message-substance, it does not assert noFailedActions (session_update fires
-// against real Linear with a synthetic session id).
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 const isSessionUpdate = (toolName: string) =>
   toolName.endsWith("session_update");
 
-// A breakdown proposal is a review-status session_update whose message lists
-// at least two workstreams (bulleted or numbered lines).
+
+
 const listsWorkstreams = (message: string): boolean =>
   message
     .split("\n")
@@ -47,11 +47,11 @@ export default defineEval({
       ].join("\n"),
     );
 
-    // The runtime-enforced gate: the turn must park on unanswered HITL input
-    // (the ask_question approval), not complete an implementation.
+
+
     t.parked();
 
-    // No implementation child before approval.
+
     t.calledSubagent("agent", { count: 0 });
 
     t.eventsSatisfy(

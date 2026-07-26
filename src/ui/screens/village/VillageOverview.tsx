@@ -18,7 +18,6 @@ export interface VillageOverviewProps {
   onLeave: () => void;
 }
 
-/** Village hub landing view: party/gold summary plus a building/overworld picker. */
 export function VillageOverview({
   state,
   onEnter,

@@ -9,7 +9,6 @@ import {
   shoreSides,
 } from "./overworldVariants";
 
-/** Builds a minimal `OverworldMap` from a row-major grid of single-char tile codes. */
 function mapFrom(rows: string[]): OverworldMap {
   const codes: Record<string, Tile> = {
     g: "grass",
@@ -37,7 +36,7 @@ describe("sameNeighborCount", () => {
 
   it("does not count diagonal neighbors", () => {
     const map = mapFrom(["mgg", "gmg", "ggm"]);
-    // center mountain's diagonal-only mountain neighbors (corners) don't count
+
     expect(sameNeighborCount(map, 1, 1, "mountain")).toBe(0);
   });
 
@@ -67,7 +66,7 @@ describe("clusterScale", () => {
 describe("shoreSides", () => {
   it("flags land-adjacent sides of a water tile", () => {
     const map = mapFrom(["gww", "www", "www"]);
-    // (1,0) water's only land-adjacent orthogonal neighbor is (0,0), to its west.
+
     const sides = shoreSides(map, 1, 0);
     expect(sides).toEqual({
       north: false,

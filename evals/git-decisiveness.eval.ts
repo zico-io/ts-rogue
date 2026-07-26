@@ -1,12 +1,12 @@
 import { defineEval } from "eve/evals";
 
-// Concrete companion to decisiveness.eval.ts that reproduces the transcript's
-// actual failure shape: a git question that tempts history-spelunking. The
-// decisive path is to run two git commands against the repo the agent is
-// already in; the failure mode is theorizing about what the history "might" be
-// across many turns and either blowing the tool-call budget or never finishing.
-//
-// Thresholds are a decisive baseline; tune on the first authenticated run.
+
+
+
+
+
+
+
 export default defineEval({
   description:
     "answers a git-state question by running git, not by reasoning about history",

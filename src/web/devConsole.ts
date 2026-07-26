@@ -1,22 +1,3 @@
-/**
- * Browser dev console (ROG-48): open/input/output state plus the same
- * `runDevCommand` interpreter `DevConsole.tsx` uses, so every command
- * behaves identically under either renderer. `main.ts` owns the DOM (a
- * plain overlay div, `render/devConsoleOverlay.ts`) and calls into this
- * class for every keystroke while the console is open; kept free of the
- * DOM so its command handling stays unit-testable without jsdom (this repo
- * has none - see `boot.test.ts`'s doc comment).
- *
- * Mirrors `DevConsole.tsx`'s raw-input handling rather than the shared
- * `Keymap`/`resolveXIntent` screens use - the character space here is
- * unbounded free text, same as the TUI console's own `useInput` closure.
- * Issue/bug filing and the queued-issue flush are TUI-only (they use
- * `src/lib/linear.ts`'s Node `fs`/Vercel Connect I/O, which does not belong
- * in a browser bundle); this stashes them the same way `main.ts` and
- * `input/keyboard.ts` stash save/settings/quit until a browser-appropriate
- * implementation exists.
- */
-
 import type { GameStore } from "../engine/state/store";
 import { charFromKey } from "../ui/scene/input";
 import { runDevCommand } from "../ui/screens/devConsoleCommands";
@@ -26,7 +7,6 @@ import {
 } from "./input/normalizeBrowserKey";
 
 export interface BrowserDevConsoleHandlers {
-  /** Same `crash <message>` effect the TUI's console wires to `FailureBoundary.report`. */
   crash: (message: string) => void;
 }
 
@@ -56,7 +36,6 @@ export class BrowserDevConsole {
     return this.output;
   }
 
-  /** Routes one keydown while the console is open; `` ` `` closes it. */
   handleKeyDown(event: BrowserKeyEvent): void {
     const keyName = normalizeBrowserKey(event);
     if (!keyName) return;
@@ -76,7 +55,6 @@ export class BrowserDevConsole {
     if (char !== undefined) this.input += char;
   }
 
-  /** Runs the current input as a command, exactly like the TUI console's Enter handling. */
   private submit(): void {
     const command = this.input;
     const result = runDevCommand(

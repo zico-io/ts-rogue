@@ -153,7 +153,6 @@ function findObjective(layout: DungeonLayout): Point | undefined {
   return undefined;
 }
 
-/** BFS reachability over floor tiles, kept test-local (mirrors overworld.test). */
 function isReachable(layout: DungeonLayout, from: Point, to: Point): boolean {
   const visited = new Set<string>([`${from.x},${from.y}`]);
   const queue: Point[] = [from];

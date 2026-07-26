@@ -12,30 +12,26 @@ import {
 } from "./title/display";
 
 export type { MenuOption, TitleView };
-// Re-exported so existing importers (`SettingsScreen.tsx`,
-// `title/interaction.test.ts`) don't need to change paths; the canonical
-// home for this pure data is `./title/display` (see that file's doc
-// comment for why it's split out).
+
 export { LOGO, MAX_NAME_LENGTH, mainMenuOptions };
 
 export interface TitleScreenProps {
   titleView: Exclude<TitleView, "settings">;
   hasSave: boolean;
-  /** Selected main-menu index into `mainMenuOptions(hasSave)`. */
+
   menuCursor: number;
-  /** Selected class index into `CLASSES` during the class view. */
+
   classCursor: number;
-  /** Selected mode index during the mode view (0 = Normal, 1 = Permadeath). */
+
   modeCursor: number;
-  /** Current hero-name buffer during the name view. */
+
   nameInput: string;
 }
 
 function Logo() {
   return (
     <Box flexDirection="column" alignItems="center">
-      {/* The block-letter rows must share one left origin or the columns of the
-          art drift apart; center the whole block, never the rows individually. */}
+      {}
       <Box flexDirection="column">
         {LOGO.map((line, index) => (
           <Text bold color={theme.logoGradient[index]} key={line}>
@@ -56,12 +52,6 @@ function Cursor({ selected }: { selected: boolean }) {
   return <>{selected ? "> " : "  "}</>;
 }
 
-/**
- * Shown before a run starts. Landing view is a main menu (New Game / Continue /
- * Settings / Quit). New Game walks a class -> mode -> name flow before the run
- * begins. Input is handled by `app.tsx`; this is a pure display component
- * (Settings is a separate `SettingsScreen`).
- */
 export function TitleScreen({
   titleView,
   hasSave,
@@ -130,7 +120,6 @@ export function TitleScreen({
       </>
     );
   } else {
-    // name
     body = (
       <>
         <Text>Name your hero:</Text>

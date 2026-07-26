@@ -1,20 +1,11 @@
 import type { MockModelRequest, MockModelResponse } from "eve/evals";
 
-// Scripted model for the delegation-path eval
-// (evals/delegation/child-session-update.eval.ts). Installed on the agent only
-// when EVE_EVAL_MOCK_MODEL is set (see agent.ts): the harness, authored tools,
-// and hooks all run for real - only the language model is deterministic. The
-// child is a copy of the same agent, so it inherits this mock and takes the
-// child branch below.
-
 export const MOCK_AGENT_SESSION_ID = "mock-agent-session-0001";
 export const MOCK_ISSUE_ID = "ROG-999";
 export const DELEGATION_TRIGGER = "run the delegation fixture";
-/** Uncommon fixed port for the eval's mock Linear GraphQL server. */
+
 export const MOCK_LINEAR_PORT = 47831;
 
-// Matches relay hook's parseAgentSessionId/parseIssueId so the child hook
-// captures both facts from the packet text alone.
 const DELEGATION_PACKET = [
   `issue: ${MOCK_ISSUE_ID} - delegation fixture`,
   `agent_session_id: ${MOCK_AGENT_SESSION_ID}`,
@@ -44,8 +35,6 @@ export const delegationResponder = (
       message.includes(MOCK_AGENT_SESSION_ID),
     )
   ) {
-    // First attempt a session-owner status (must be refused in code without
-    // posting), then the allowed blocked update, then finish.
     const posted = toolResultCount(request, "session_update");
     if (posted >= 2) return { text: "Fixture child done." };
     return {

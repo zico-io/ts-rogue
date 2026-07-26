@@ -12,10 +12,9 @@ describe("buildChrome", () => {
       { width: 80, height: 24 },
       { title: "Village" },
     );
-    // width: 80 - 4 (border/padding overhead) = 76
+
     expect(content.width).toBe(76);
-    // height: 24 - 2 (panel overhead) - 2 (1 member + gold row) - logBox
-    // logLines = clamp(round(24*0.22), 3, 8) = clamp(5,3,8) = 5; logBox = 7
+
     expect(content.height).toBe(24 - 2 - 2 - 7);
   });
 
@@ -74,7 +73,7 @@ describe("buildChrome", () => {
     const footer = panel.children.find(
       (child) => child.key === "chrome-footer",
     ) as StackNode;
-    // 2 party rows + 1 gold line
+
     expect(footer.children).toHaveLength(3);
     expect(footer.children[0].key).toBe(
       `chrome-party-${withRecruit.party[0].id}`,
@@ -106,7 +105,7 @@ describe("buildChrome", () => {
     ) as MeterNode;
     expect(meter.value).toBe(1);
     expect(meter.max).toBe(10);
-    // critical (<=0.25) HP reads danger red
+
     expect(meter.color).toBe("#e74343");
   });
 
@@ -120,7 +119,7 @@ describe("buildChrome", () => {
     const tinyLog = tiny.panel.children.find((child) => child.kind === "log") as
       | LogNode
       | undefined;
-    expect(tinyLog?.maxLines).toBe(3); // clamp(round(10*0.22)=2, 3, 8) -> 3
+    expect(tinyLog?.maxLines).toBe(3);
 
     const huge = buildChrome(
       state,
@@ -130,7 +129,7 @@ describe("buildChrome", () => {
     const hugeLog = huge.panel.children.find((child) => child.kind === "log") as
       | LogNode
       | undefined;
-    expect(hugeLog?.maxLines).toBe(8); // clamp(round(100*0.22)=22, 3, 8) -> 8
+    expect(hugeLog?.maxLines).toBe(8);
   });
 
   it("reads the log node's messages from state.log", () => {

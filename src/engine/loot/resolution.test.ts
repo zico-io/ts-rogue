@@ -140,8 +140,7 @@ describe("rollImplicitPool", () => {
     expect(pool).toBeDefined();
     if (!pool) return;
     expect(pool.dropChance).toBeCloseTo(0.08);
-    // Roll against a single RNG stream (as gameplay does, mid-stream): the
-    // realized rate is ~8%, not the per-seed first-output rate.
+
     const rng = new Rng(42);
     let drops = 0;
     for (let i = 0; i < 1000; i++) {
@@ -151,7 +150,7 @@ describe("rollImplicitPool", () => {
         expect(result.items[0].implicit?.affixId).toBe("sig-ooze");
       }
     }
-    // ~80-90 expected; a generous band around the 8% rate.
+
     expect(drops).toBeGreaterThan(50);
     expect(drops).toBeLessThan(130);
   });
@@ -250,7 +249,7 @@ describe("loot bounds", () => {
           expect(def).toBeDefined();
           expect(affix.value).toBeGreaterThanOrEqual(def?.min ?? NaN);
           expect(affix.value).toBeLessThanOrEqual(def?.max ?? NaN);
-          // Rolled affixes are ilvl-gated; the signature implicit is attached explicitly.
+
           if (!affix.affixId.startsWith("sig-")) {
             expect(def?.ilvl).toBeLessThanOrEqual(item.ilvl);
           }

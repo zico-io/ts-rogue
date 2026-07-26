@@ -1,8 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// The hook fires inside the delegated child (a copy of the root agent). These
-// mocks stand in for the eve runtime scope so the handlers can be driven and
-// their Linear posts asserted without a live session.
 const { createActivity, stateBox } = vi.hoisted(() => ({
   // biome-ignore lint/suspicious/noExplicitAny: mock captures the Linear activity payload
   createActivity: vi.fn(async (_input: any) => ({})),
@@ -54,7 +51,6 @@ const freshState = (): RelayState => ({
   pendingActions: {},
 });
 
-// Shared-sandbox stand-in for the session-id handoff file.
 const makeSandbox = (fileContent = "") => ({
   run: vi.fn(async () => ({ exitCode: 0, stdout: fileContent, stderr: "" })),
   writeTextFile: vi.fn(async () => {}),
@@ -124,7 +120,7 @@ describe("relay hook", () => {
       toolCall("edit_file", { path: "a" }),
       makeRoot(sandbox),
     );
-    // A merge-woken GitHub session has no Linear continuation token.
+
     await events["actions.requested"](subagentCall(), makeRoot(sandbox, null));
     expect(sandbox.writeTextFile).not.toHaveBeenCalled();
   });
@@ -219,9 +215,6 @@ describe("relay hook", () => {
       child,
     );
 
-    // Action and reasoning chips are a live ticker: each ephemeral activity is
-    // replaced by the next one, so the session shows one "currently doing"
-    // slot. The child's completed message is the handoff record and stays.
     expect(createActivity.mock.calls[0]?.[0].activity.ephemeral).toBe(true);
     expect(createActivity.mock.calls[1]?.[0].activity.ephemeral).toBe(true);
     expect(
@@ -260,7 +253,7 @@ describe("relay hook", () => {
       child,
     );
     expect(stateBox.value.agentSessionId).toBe("sess-2");
-    expect(createActivity).not.toHaveBeenCalled(); // session_update posts its own activity
+    expect(createActivity).not.toHaveBeenCalled();
   });
 
   it("warns instead of failing the child's turn when a Linear post errors", async () => {
@@ -290,19 +283,18 @@ describe("relay hook", () => {
   it("promotes a completed tool-call ephemeral chip to a durable action result", async () => {
     stateBox.value = { ...freshState(), agentSessionId: "sess-8" };
     const child = makeChild();
-    // Fire actions.requested for a tool-call with callId "x"
+
     await events["actions.requested"](
       toolCall("bash", { command: "echo hi" }),
       child,
     );
-    // First post is the ephemeral action chip
+
     expect(createActivity.mock.calls[0]?.[0].activity.ephemeral).toBe(true);
     expect(contentOf(0)).toMatchObject({
       type: "action",
       action: "Bash",
     });
 
-    // Fire action.result for the same callId "x"
     await events["action.result"](
       {
         data: {
@@ -320,7 +312,7 @@ describe("relay hook", () => {
       },
       child,
     );
-    // Second post is the durable result chip
+
     expect(createActivity).toHaveBeenCalledTimes(2);
     expect(
       createActivity.mock.calls[1]?.[0].activity.ephemeral,
@@ -328,9 +320,7 @@ describe("relay hook", () => {
     expect(contentOf(1)).toEqual({
       type: "action",
       action: "Bash",
-      // Readable parameter (stashed at actions.requested) and result summary,
-      // not raw JSON blobs. No exitCode in this synthetic output, so it reads
-      // as "done" plus the stdout line count.
+
       parameter: "echo hi",
       result: "done · 2 lines",
     });
@@ -339,7 +329,7 @@ describe("relay hook", () => {
   it("posts nothing for an untracked callId on action.result", async () => {
     stateBox.value = { ...freshState(), agentSessionId: "sess-9" };
     const child = makeChild();
-    // No prior actions.requested for callId "unknown"
+
     await events["action.result"](
       {
         data: {

@@ -2,17 +2,6 @@ import { isPlainObject } from "./is-plain-object";
 import { toolOperation } from "./tool-label";
 import { MAX_ACTIVITY_TEXT_LENGTH, truncate } from "./truncate";
 
-// Shared formatter for the `parameter` and `result` fields of a Linear Agent
-// Activity `action` chip. Both emission points - the root channel
-// (`channels/linear.ts`) and the delegated-child relay (`hooks/relay.ts`) -
-// route through here so parent and child tool-call chips read identically.
-// Without it, chips render as `bash {"command":"..."}` (raw tool name + a
-// `JSON.stringify(input)` blob) with a raw `JSON.stringify(output)` result;
-// with it they read `Bash <command>` + `exit 0 · N lines`, which is what
-// Linear's native tool-call UI is built to show. (The chip's `action` label
-// comes from `toolLabel`; both call sites already correlate a call's input to
-// its result by callId in their own state, so this module is pure formatting.)
-
 const asString = (value: unknown): string | undefined =>
   typeof value === "string" && value.length > 0 ? value : undefined;
 
@@ -32,8 +21,6 @@ const compactJson = (value: unknown): string => {
     return "";
   }
 };
-
-// --- parameter: a readable summary of the tool INPUT ------------------------
 
 type ParamFormatter = (input: Record<string, unknown>) => string | undefined;
 
@@ -59,7 +46,7 @@ const PARAMETER_FORMATTERS: Record<string, ParamFormatter> = {
       ? asString(input.queries.filter((q) => typeof q === "string").join(", "))
       : undefined),
   load_skill: (input) => asString(input.skill),
-  // The list already mirrors to Linear's native Agent Plan; the chip is just a marker.
+
   todo: () => "Updated plan",
 };
 
@@ -69,12 +56,9 @@ export const toolActionParameter = (
 ): string => {
   const formatter = PARAMETER_FORMATTERS[toolOperation(toolName)];
   const formatted = formatter?.(isPlainObject(input) ? input : {});
-  // ponytail: unknown/MCP tools fall back to truncated JSON of the input;
-  // add a per-tool formatter above if one reads badly.
+
   return truncate(formatted ?? compactJson(input), MAX_ACTIVITY_TEXT_LENGTH);
 };
-
-// --- result: a readable summary of the tool OUTPUT --------------------------
 
 const RESULT_NOUNS: Record<string, [one: string, many: string]> = {
   grep: ["match", "matches"],
@@ -129,7 +113,7 @@ const rawResult = (toolName: string, output: unknown): string => {
       ? trimmed
       : plural(output.length, "char", "chars");
   }
-  // read_file may hand back `{ content }` rather than a bare string.
+
   if (op === "read_file" && isPlainObject(output)) {
     const content = asString(output.content);
     if (content !== undefined)
@@ -139,7 +123,6 @@ const rawResult = (toolName: string, output: unknown): string => {
   return json.length > 0 ? json : "done";
 };
 
-/** A readable summary of a tool's output, for the `result` field of a completed chip. */
 export const toolActionResult = (
   toolName: string,
   output: unknown,

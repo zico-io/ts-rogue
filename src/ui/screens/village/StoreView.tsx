@@ -28,11 +28,6 @@ export interface StoreViewProps {
 
 const STAT_KEYS = ["str", "agi", "vit", "int"] as const;
 
-/**
- * Compact signed stat delta line for a compare panel. Exported so the
- * Inventory screen (ENG-3, `screens/inventory/InventoryScreen.tsx`) reuses
- * this formatting for its own gear compare panel instead of duplicating it.
- */
 export function deltaLine(delta: {
   str: number;
   agi: number;
@@ -50,23 +45,6 @@ export function deltaLine(delta: {
   return parts.length === 0 ? "no stat change" : parts.join(" ");
 }
 
-/**
- * Store sub-view (PROJECT_PLAN Phase 5, ROG-11; multi-member switcher in
- * ROG-20). Two modes: `shop` browses the static catalog and buys/sells
- * stackable consumables one unit at a time; `pack` lists the selected party
- * member's equipment slots and backpack and sells backpack items for a
- * rarity/affix-scaled price. Tab switches modes; Left/Right cycles which
- * party member `pack` mode targets (only shown once the party has more than
- * one member); Esc returns to the village overview. The mode/cursor state
- * machine lives in the pure `reduceStoreUi` (ROG-45); this component only
- * normalizes Ink's input, resolves an intent, applies the result, and
- * dispatches the mapped event.
- *
- * ENG-3: `pack` mode used to also equip/unequip/compare gear; that moved to
- * the dedicated Inventory screen (`char:v`, `screens/inventory`), which is
- * now the canonical place to browse, inspect, and equip gear. This view's
- * `pack` mode is sell-only.
- */
 export function StoreView({ state, dispatch, onBack }: StoreViewProps) {
   const [storeUi, setStoreUi] = useState<StoreUiState>(INITIAL_STORE_UI_STATE);
 
@@ -179,11 +157,6 @@ interface BackpackPanelProps {
   cursor: number;
 }
 
-/**
- * Sell-only backpack listing (ENG-3): equipment slots are display-only rows
- * (no unequip affordance) and backpack items only offer `[s sell]` - equip,
- * unequip, and the compare panel moved to the Inventory screen.
- */
 function BackpackPanel({ entries, cursor }: BackpackPanelProps) {
   return (
     <Box flexDirection="column">

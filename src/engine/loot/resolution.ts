@@ -1,21 +1,3 @@
-/**
- * Loot resolution (PROJECT_PLAN Phase 5, ROG-11). The seeded drop pipeline from
- * section 6, pure and deterministic: every roll routes through the seeded `Rng`
- * so a kill or chest is reproducible from the seed plus the event history, and
- * the consumed state is persisted back onto `GameState.rngState` by the caller.
- *
- * Drop resolution order (per kill / per chest):
- *   1. Base tier roll - does anything drop? (`LootTable.dropChance`)
- *   2. Rarity roll - common / magic / rare / unique (weighted per table/pool).
- *   3. Source pool select - trash mobs roll their tier loot table; bosses and
- *      special enemy types ALSO roll their monster-implicit pool.
- *   4. Affix generation - prefix/suffix affixes appropriate to rarity and the
- *      item base's ilvl; signature items add a fixed implicit on top.
- *
- * Each roll returns the generated `ItemInstance`s plus the next instance id, so
- * the store can stamp unique ids from `GameState.nextItemId` deterministically.
- */
-
 import { findImplicitPool } from "../../data/implicitPools";
 import { findItemBase } from "../../data/itemBases";
 import { chestLootTableFor, findLootTable } from "../../data/lootTables";
@@ -32,7 +14,6 @@ import type {
   WeightedItemRef,
 } from "./types";
 
-/** Default rarity weights when a pool does not override them. */
 export const DEFAULT_RARITY_WEIGHTS: RarityWeights = {
   common: 60,
   magic: 30,
@@ -40,7 +21,6 @@ export const DEFAULT_RARITY_WEIGHTS: RarityWeights = {
   unique: 1,
 };
 
-/** A defeated enemy, as the loot pipeline needs it (a structural slice of `BattleEnemy`). */
 export interface LootEnemy {
   defId: string;
   hp: number;
@@ -60,7 +40,6 @@ function weightedPick<T extends { weight: number }>(
   return entries[entries.length - 1];
 }
 
-/** Roll a rarity from weighted tiers. Consumes one `Rng.next()` roll. */
 export function rollRarity(rng: Rng, weights: RarityWeights): Rarity {
   const entries: Array<{ key: Rarity; weight: number }> = [
     { key: "common", weight: weights.common },
@@ -95,7 +74,6 @@ function generateItem(
   };
 }
 
-/** Roll a single loot table: base-tier roll, then rarity, base, and affixes. */
 export function rollLootTable(
   rng: Rng,
   table: LootTable,
@@ -107,7 +85,6 @@ export function rollLootTable(
   return { items: [item], nextId: startId + 1 };
 }
 
-/** Roll a monster-implicit pool: dropChance, then a weighted signature item. */
 export function rollImplicitPool(
   rng: Rng,
   pool: MonsterImplicitPool,
@@ -120,11 +97,6 @@ export function rollImplicitPool(
   return { items: [item], nextId: startId + 1 };
 }
 
-/**
- * Roll all loot for one defeated enemy: its tier loot table, then (if it has an
- * implicit pool ref) its monster-implicit pool. Ids are stamped sequentially
- * from `startId`.
- */
 export function rollEnemyLoot(
   rng: Rng,
   defId: string,
@@ -151,11 +123,6 @@ export function rollEnemyLoot(
   return { items, nextId };
 }
 
-/**
- * Roll victory loot for a defeated enemy group. Only enemies with `hp <= 0`
- * drop. Used by the combat victory hook; `enemies` is a structural slice of
- * `BattleEnemy[]` so this module stays decoupled from combat types.
- */
 export function rollVictoryLoot(
   rng: Rng,
   enemies: readonly LootEnemy[],
@@ -172,7 +139,6 @@ export function rollVictoryLoot(
   return { items, nextId };
 }
 
-/** Roll a chest's generated-item drop for the given floor (chests always roll). */
 export function rollChestLoot(
   rng: Rng,
   floor: number,

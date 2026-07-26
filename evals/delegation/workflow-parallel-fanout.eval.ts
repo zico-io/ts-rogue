@@ -1,19 +1,19 @@
 import { defineEval } from "eve/evals";
 
-// Verifies the model can use the Workflow tool with Promise.all to dispatch
-// multiple independent subagent calls concurrently. This guards the
-// documentation added to agent/instructions.md's Delegation section (HAR-43):
-// the orchestrator should reach for Promise.all inside a Workflow program
-// when work items have no ordering dependency, such as reviewing several
-// open pull requests in parallel.
-//
-// Runs without a mock-model flag like message-substance.eval.ts and
-// scoping.eval.ts: the synthetic turn packet drives the real model, so this
-// eval checks model behavior against the documented policy. The Workflow
-// tool must be enabled (agent/tools/workflow.ts) and subagents declared.
-//
-// It does not assert noFailedActions (session_update may fire against real
-// Linear with a synthetic session id, matching scoping.eval.ts's precedent).
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 const isWorkflowTool = (toolName: string) => toolName === "Workflow";
 
@@ -39,11 +39,11 @@ export default defineEval({
 
     t.succeeded();
 
-    // The Workflow tool must have been called at least once.
+
     t.calledTool("Workflow", { count: 1 });
 
-    // The JS program inside the Workflow call must use Promise.all to
-    // dispatch both reviewer calls concurrently.
+
+
     t.eventsSatisfy(
       "the Workflow tool received a JS program using Promise.all for independent reviewer calls",
       (events) =>
@@ -65,9 +65,9 @@ export default defineEval({
         }),
     );
 
-    // Both reviewer subagent calls should have been dispatched (each gets a
-    // subagent.called event in the root session, bridged from the Workflow
-    // sandbox).
+
+
+
     t.calledSubagent("reviewer", { count: 2 });
   },
 });

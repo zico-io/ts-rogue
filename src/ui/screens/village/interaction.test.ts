@@ -42,10 +42,6 @@ function item(overrides: Partial<ItemInstance> = {}): ItemInstance {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Overview
-// ---------------------------------------------------------------------------
-
 describe("resolveOverviewIntent", () => {
   it("maps up/down/enter to menu/confirm intents", () => {
     expect(resolveOverviewIntent("up")).toEqual({ kind: "menuUp" });
@@ -109,10 +105,6 @@ describe("reduceOverviewUi", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Inn
-// ---------------------------------------------------------------------------
-
 describe("Inn interaction", () => {
   it("resolves enter/escape to confirm/cancel", () => {
     expect(resolveInnIntent("enter")).toEqual({ kind: "confirm" });
@@ -129,10 +121,6 @@ describe("Inn interaction", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Church
-// ---------------------------------------------------------------------------
-
 describe("Church interaction", () => {
   it("resolves enter/escape to confirm/cancel", () => {
     expect(resolveChurchIntent("enter")).toEqual({ kind: "confirm" });
@@ -144,10 +132,6 @@ describe("Church interaction", () => {
     expect(reduceChurchUi({ kind: "cancel" })).toEqual({ type: "back" });
   });
 });
-
-// ---------------------------------------------------------------------------
-// Store
-// ---------------------------------------------------------------------------
 
 describe("buildPackEntries", () => {
   it("lists the 4 equipment slots then the backpack items", () => {
@@ -229,7 +213,7 @@ describe("reduceStoreUi", () => {
       { kind: "menuRight" },
       storeCtx({ partyLength: 1 }),
     );
-    // With only one member, left/right fall through to shop cursor movement.
+
     expect(single.state.memberIndex).toBe(0);
 
     const multi = reduceStoreUi(
@@ -298,10 +282,6 @@ describe("reduceStoreUi", () => {
     expect(unequip.effect).toBeUndefined();
   });
 });
-
-// ---------------------------------------------------------------------------
-// Tavern
-// ---------------------------------------------------------------------------
 
 function tavernCtx(overrides: Partial<TavernUiContext> = {}): TavernUiContext {
   return {

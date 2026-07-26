@@ -37,7 +37,7 @@ describe("toolActionParameter", () => {
     );
     const long = { blob: "y".repeat(500) };
     const out = toolActionParameter("something_unknown", long);
-    expect(out.length).toBeLessThanOrEqual(301); // 300 + the ellipsis
+    expect(out.length).toBeLessThanOrEqual(301);
     expect(out.endsWith("…")).toBe(true);
   });
 

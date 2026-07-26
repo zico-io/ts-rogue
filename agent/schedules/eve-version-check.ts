@@ -1,9 +1,5 @@
 import { defineSchedule } from "eve/schedules";
 
-// Daily eve dependency check (task mode: fire-and-forget, no Linear Agent
-// Session, cannot park - see node_modules/eve/docs/schedules.mdx). The prompt
-// is the whole procedure; agent/README.md's "Workaround audit" table is the
-// evaluation checklist it cites. Vercel evaluates cron in UTC.
 export default defineSchedule({
   cron: "0 8 * * *",
   markdown: `Scheduled maintenance turn: keep this repo's eve dependency current.

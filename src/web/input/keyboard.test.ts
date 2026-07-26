@@ -23,7 +23,6 @@ function storeAt(
   return new GameStore({ ...base, scene, ...overrides });
 }
 
-/** A real store with an active dungeon (floor 1 of entrance 0), for evac tests. */
 function dungeonStore(): GameStore {
   const seed = 1;
   const map = generateOverworldMap(seed);
@@ -242,8 +241,7 @@ describe("BrowserKeyboardManager - battle", () => {
     expect(manager.getState().battle.mode).toBe("target");
 
     manager.handleKeyDown(key("Enter"));
-    // The round resolved: either the battle continues (back to action mode)
-    // or it ended and the scene changed away from battle.
+
     const state = store.getState();
     if (state.scene === "battle") {
       expect(manager.getState().battle.mode).toBe("action");
@@ -299,14 +297,13 @@ describe("BrowserKeyboardManager - village focus stack", () => {
     manager.handleKeyDown(key("Tab"));
     expect(manager.getState().village.store.mode).toBe("pack");
 
-    // "b" (buy) only means something in shop mode; in pack mode it's unbound.
     const before = store.getState();
     manager.handleKeyDown(key("b"));
     expect(store.getState()).toBe(before);
 
     manager.handleKeyDown(key("Escape"));
     expect(manager.getState().village.building).toBeNull();
-    // Leaving resets the store's local state for the next visit.
+
     expect(manager.getState().village.store.mode).toBe("shop");
   });
 
@@ -359,8 +356,7 @@ describe("BrowserKeyboardManager - village focus stack", () => {
     expect(manager.getState().village.building).toBe("church");
 
     manager.handleKeyDown(key("Enter"));
-    // The save write is async (IndexedDB); wait for it to settle before
-    // asserting on its side effects.
+
     await vi.waitFor(() => expect(saved).toBe(true));
     expect(store.getState().log.at(-1)?.text).toBe("Game saved");
   });

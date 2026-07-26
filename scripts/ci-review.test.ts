@@ -36,13 +36,7 @@ describe("parseDiffAddedLines", () => {
 
     const result = parseDiffAddedLines(diff);
     const lines = result.get("src/bar.ts") ?? new Set();
-    // Hunk starts at new-line 10.
-    //   line 10: " " (context) -> counter becomes 11
-    //   line 11: "-" (removed) -> counter stays 11
-    //   line 11: "+" (added) -> record 11, counter becomes 12
-    //   line 12: " " (context) -> counter becomes 13
-    //   line 13: "-" (removed) -> counter stays 13
-    //   line 13: "+" (added) -> record 13, counter becomes 14
+
     expect([...lines]).toEqual([11, 13]);
   });
 
@@ -62,8 +56,7 @@ describe("parseDiffAddedLines", () => {
 
     const result = parseDiffAddedLines(diff);
     const lines = result.get("src/multi.ts") ?? new Set();
-    // Hunk 1: new-line starts at 1 -> record 1, 2
-    // Hunk 2: new-line starts at 12 -> record 12, 13
+
     expect([...lines]).toEqual([1, 2, 12, 13]);
   });
 
@@ -92,7 +85,8 @@ describe("parseDiffAddedLines", () => {
 
 describe("extractReviewJson", () => {
   it("parses a plain JSON string", () => {
-    const input = '{"event":"COMMENT","body":"net: clean. Ship.","comments":[]}';
+    const input =
+      '{"event":"COMMENT","body":"net: clean. Ship.","comments":[]}';
     expect(extractReviewJson(input)).toEqual({
       event: "COMMENT",
       body: "net: clean. Ship.",
@@ -102,9 +96,9 @@ describe("extractReviewJson", () => {
 
   it("parses JSON wrapped in a ```json fence", () => {
     const input = [
-      '```json',
+      "```json",
       '{"event":"COMMENT","body":"net: clean. Ship.","comments":[]}',
-      '```',
+      "```",
     ].join("\n");
     expect(extractReviewJson(input)).toEqual({
       event: "COMMENT",
@@ -115,9 +109,9 @@ describe("extractReviewJson", () => {
 
   it("parses JSON wrapped in a bare ``` fence (no language tag)", () => {
     const input = [
-      '```',
+      "```",
       '{"event":"COMMENT","body":"net: clean. Ship.","comments":[]}',
-      '```',
+      "```",
     ].join("\n");
     expect(extractReviewJson(input)).toEqual({
       event: "COMMENT",

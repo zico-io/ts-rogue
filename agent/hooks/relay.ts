@@ -8,20 +8,10 @@ import { toolActionParameter, toolActionResult } from "../lib/tool-activity";
 import { toolLabel } from "../lib/tool-label";
 import { MAX_ACTIVITY_TEXT_LENGTH, truncate } from "../lib/truncate";
 
-// Runs in both root and child sessions.
-// Root: when a turn delegates, persists the Linear agent session id to a
-// shared-sandbox file so children can read it (written before any child event
-// fires, because hook handlers are awaited before children are dispatched).
-// Child: relays tool calls, reasoning, and the final message to the parent's
-// Linear Agent Session as ephemeral "working" chips.
-
 const credentials = connectLinearCredentials("linear/ts-rogue-eve");
 
-// linearContinuationToken() format; a token without it (e.g. a merge-woken
-// GitHub session) has no Linear agent session to post to.
 const LINEAR_CONTINUATION_PREFIX = "agent-session:";
 
-/** Shared-sandbox handoff file: root writes the Linear agent session id, children read it. */
 export const SESSION_ID_FILE = "/workspace/.eve/linear-agent-session";
 
 const relay = defineState<{
@@ -58,7 +48,6 @@ const capturePacketFacts = (text: string) => {
   }
 };
 
-/** The delegated issue this child is working, for other child-scoped surfaces (tools/session_update prefixes with it). */
 export const relayIssueId = (): string | null => relay.get().issueId;
 
 type ActivityContent = Parameters<
@@ -86,9 +75,6 @@ const persistSessionIdForChildren = async (
   }
 };
 
-// Checked once per child session; a missing file means no Linear session to
-// relay to (e.g. a non-Linear wake), and the one-time warning keeps a dark
-// relay diagnosable instead of silent.
 const ensureAgentSessionId = async (ctx: HookContext) => {
   const state = relay.get();
   if (state.agentSessionId || state.sandboxChecked) return;
@@ -133,13 +119,10 @@ const post = async (
       },
     });
   } catch (err) {
-    // Observe-only: a Linear hiccup must never fail the child's turn.
     console.warn("relay: posting a Linear activity failed:", errorMessage(err));
   }
 };
 
-// Prefix relayed content with the child's issue so parallel children posting
-// into the same session stay tellable apart.
 const withIssuePrefix = (
   content: ActivityContent,
   issueId: string | null,
@@ -170,12 +153,11 @@ export default defineHook({
       for (const action of event.data.actions) {
         if (action.kind !== "tool-call") continue;
         if (action.toolName.endsWith("session_update")) {
-          // The child echoes the id here even if the delegation text lacked it.
           const id = action.input.agentSessionId;
           if (typeof id === "string" && id && !relay.get().agentSessionId) {
             relay.update((s) => ({ ...s, agentSessionId: id }));
           }
-          continue; // session_update already posts its own activity
+          continue;
         }
         const label = toolLabel(action.toolName);
         const parameter = toolActionParameter(action.toolName, action.input);

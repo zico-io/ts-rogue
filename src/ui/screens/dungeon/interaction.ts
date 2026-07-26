@@ -1,16 +1,6 @@
-/**
- * Dungeon input handling (ROG-45; extracted from `DungeonScreen.tsx`'s
- * inline `useInput` closure). ENG-1 adds a confirm step to the evac (`<`)
- * key: pressing it does not exit immediately, it opens a confirm prompt
- * (`confirmingExit: true`) that only Enter/y or Escape/n resolve, so the
- * dungeon menu/hotkey + confirm flow the issue asks for lives entirely in
- * this pure reducer rather than the screen component.
- */
-
 import type { StepDirection, TurnDirection } from "../../../engine/state/types";
 import type { Intent, Keymap, KeyName } from "../../scene/input";
 
-/** `confirmingExit` is true while the evac confirm prompt is open. */
 export interface DungeonUiState {
   confirmingExit?: boolean;
 }
@@ -46,7 +36,6 @@ const dungeonKeymap: Keymap = {
   "char:<": { kind: "exitDungeon" },
 };
 
-/** Resolves against the confirm prompt's tiny keymap while it is open. */
 const confirmExitKeymap: Keymap = {
   enter: { kind: "confirm" },
   "char:y": { kind: "confirm" },
@@ -54,11 +43,6 @@ const confirmExitKeymap: Keymap = {
   "char:n": { kind: "cancel" },
 };
 
-/**
- * Resolves the `Intent` for a key press in the dungeon. While the evac
- * confirm prompt is open, only the confirm keymap applies (Enter/y to
- * confirm, Escape/n to cancel); otherwise the normal dungeon keymap applies.
- */
 export function resolveDungeonIntent(
   key: KeyName,
   confirmingExit: boolean,
@@ -66,7 +50,6 @@ export function resolveDungeonIntent(
   return confirmingExit ? confirmExitKeymap[key] : dungeonKeymap[key];
 }
 
-/** Pure transition function for the dungeon: it only ever emits effects. */
 export function reduceDungeonUi(
   state: DungeonUiState,
   intent: Intent,

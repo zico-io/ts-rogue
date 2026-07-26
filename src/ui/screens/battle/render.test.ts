@@ -90,7 +90,7 @@ describe("packEnemyColumns", () => {
     });
     expect(packed.rows).toHaveLength(1);
     expect(packed.rows[0]).toHaveLength(3);
-    // 3 * 9 + 2 * 4 = 35
+
     expect(packed.fieldWidth).toBe(35);
     expect(packed.fieldHeight).toBe(6);
   });
@@ -100,10 +100,10 @@ describe("packEnemyColumns", () => {
     const packed = packEnemyColumns(enemies, enemies, false, 0, {
       columns: 20,
     });
-    // Two goblins (9 + 4 + 9 = 22) do not fit in 20, so each gets its own row.
+
     expect(packed.rows).toHaveLength(3);
     for (const row of packed.rows) expect(row).toHaveLength(1);
-    // 3 rows of height 7 + 2 row gaps of 1 = 23
+
     expect(packed.fieldHeight).toBe(23);
     expect(packed.fieldWidth).toBe(9);
   });
@@ -116,7 +116,7 @@ describe("packEnemyColumns", () => {
     expect(packed.rows).toHaveLength(2);
     expect(packed.rows[0]).toHaveLength(2);
     expect(packed.rows[1]).toHaveLength(1);
-    // row heights 7 + 7 + 1 gap = 15; widest row 9 + 4 + 9 = 22
+
     expect(packed.fieldHeight).toBe(15);
     expect(packed.fieldWidth).toBe(22);
   });

@@ -39,7 +39,6 @@ function buildState(
   };
 }
 
-/** A no-op draw handle recording nothing but satisfying the interfaces; counts creations/destructions via the factory below. */
 function fakeRect(): RectHandle {
   return {
     setPosition() {},
@@ -164,8 +163,8 @@ describe("DungeonSceneView", () => {
     expect(afterFirst).toBeGreaterThan(0);
 
     view.render(ds, { width: 200, height: 150 });
-    expect(counts.columns).toBe(afterFirst); // no new column sprites created
-    expect(counts.columnDestroys).toBe(0); // and none destroyed - same viewport size
+    expect(counts.columns).toBe(afterFirst);
+    expect(counts.columnDestroys).toBe(0);
   });
 
   it("prunes stale wall-column handles when the viewport shrinks", () => {
@@ -177,7 +176,7 @@ describe("DungeonSceneView", () => {
     const wide = counts.columns;
     view.render(ds, { width: 40, height: 150 });
     expect(counts.columnDestroys).toBeGreaterThan(0);
-    expect(counts.columns).toBe(wide); // no new columns needed, only pruning
+    expect(counts.columns).toBe(wide);
   });
 
   it("draws a billboard for an in-view chest and prunes it once out of range", () => {
@@ -193,8 +192,6 @@ describe("DungeonSceneView", () => {
     view.render(facingChest, { width: 200, height: 150 });
     expect(counts.billboards).toBe(1);
 
-    // Facing away (south) puts the chest behind the camera - it should be
-    // culled and its handle pruned.
     const facingAway: DungeonState = { ...facingChest, facing: "south" };
     view.render(facingAway, { width: 200, height: 150 });
     expect(counts.billboardDestroys).toBe(1);

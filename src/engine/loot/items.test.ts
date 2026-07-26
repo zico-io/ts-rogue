@@ -12,7 +12,6 @@ import {
 } from "./items";
 import type { ItemInstance } from "./types";
 
-/** A unique Guardian's Bulwark with a rolled str prefix/suffix and the signature vit implicit. */
 const BULWARK: ItemInstance = {
   instanceId: "itm-1",
   baseId: "guardian-bulwark",
@@ -66,9 +65,8 @@ describe("itemAffixValueSum", () => {
 
 describe("itemSellPrice", () => {
   it("is base value times the rarity multiplier plus total affix value", () => {
-    // floor(30 * 5) + 23 = 173
     expect(itemSellPrice(BULWARK)).toBe(173);
-    // floor(5 * 1) + 0 = 5
+
     expect(itemSellPrice(RUSTY)).toBe(5);
   });
 });

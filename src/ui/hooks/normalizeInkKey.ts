@@ -1,13 +1,6 @@
 import type { Key } from "ink";
 import type { KeyName } from "../scene/input";
 
-/**
- * Normalizes Ink's `(input, key)` pair to the renderer-agnostic `KeyName`
- * alphabet every screen's `Keymap` is written against (extracted from
- * `app.tsx` in ROG-45 so every Ink screen can share it, not just the title
- * flow). Ctrl/meta-modified keys other than Ctrl-C are dropped (`undefined`)
- * so they can't be typed into a text buffer (e.g. the hero-name entry).
- */
 export function normalizeInkKey(input: string, key: Key): KeyName | undefined {
   if (key.ctrl && input === "c") return "ctrl+c";
   if (key.ctrl || key.meta) return undefined;

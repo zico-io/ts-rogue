@@ -1,23 +1,23 @@
 import { defineEval } from "eve/evals";
 
-// Regression guard for the "regurgitation" fix and the plan-first opening
-// (HAR-40): Eve's user-facing surfaces must describe the work, not recite the
-// contract's own mechanics. The original symptom was a `started`
-// session_update that read "Plan: check for sub-issues, read ORIENTATION.md,
-// ... delegate to one coding child". The opening mandate is now to seed the
-// session's Agent Plan (the `todo` tool, mirrored into Linear by
-// `syncAgentPlanFromTodoTool`), so this asserts the plan is seeded with
-// substantive, work-shaped steps - and that any session_update posted stays
-// recital-free. It scans raw stream events (via eventsSatisfy) so it is
-// robust to how the tools are namespaced.
 
-// The clearest procedure tells - none of these belong in a plan step or a
-// message about the actual change. Deliberately narrow to avoid false
-// positives on issues whose subject legitimately involves delegation or
-// batching. `sizing`/`scoping` guard the HAR-9 sizing-gate vocabulary; this
-// eval only drives a small ticket, where sizing must be silent (a large
-// ticket's breakdown proposal is a different, legitimate message and is not
-// exercised here).
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 const PROCESS_RECITAL =
   /orientation\.md|sub-issue|coding child|\bsizing\b|\bscoping\b/i;
 
