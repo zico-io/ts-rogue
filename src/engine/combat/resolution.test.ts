@@ -554,7 +554,10 @@ describe("multi-member party (ROG-20)", () => {
       expect(s.battleState?.activeMemberId).not.toBe(koMember.id);
     }
     // The KO'd member was never targeted, so their HP never moved off zero.
-    expect(s.party.find((m) => m.id === koMember.id)?.hp).toBe(0);
+    // If the battle ended (memberA died from poison ticks), revival set them to 1 HP.
+    if (s.battleState?.status === "ongoing") {
+      expect(s.party.find((m) => m.id === koMember.id)?.hp).toBe(0);
+    }
   });
 
   it("defeat only fires once the whole party is down; one survivor keeps the battle ongoing", () => {
@@ -651,7 +654,7 @@ describe("ENG-21 status effects and element on hit", () => {
     expect(effects.length).toBeGreaterThanOrEqual(1);
     const poison = effects.find((e) => e.effectId === "poison");
     expect(poison).toBeDefined();
-    expect(poison?.duration).toBe(3);
+    expect(poison?.duration).toBe(2);
     expect(poison?.potency).toBe(1);
   });
 
@@ -717,5 +720,307 @@ describe("ENG-21 status effects and element on hit", () => {
     });
     const fireInBasic = basicState.log.filter((l) => l.text.includes("(fire)"));
     expect(fireInBasic.length).toBe(0);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* ENG-22: Status effect ticking & battle-end clear                          */
+/* -------------------------------------------------------------------------- */
+
+describe("ENG-22 status effect ticking", () => {
+  it("poison ticks flat 3 damage per turn, decrements duration, and expires", () => {
+    // Manually attach a poison effect to the hero to control the test precisely.
+    const slime = makeEnemy(
+      "slime-1",
+      "slime",
+      "Slime",
+      999,
+      { str: 1, agi: 1, vit: 1, int: 1 },
+      5,
+      3,
+    );
+    const hero = { ...createStartingHero(), hp: 30, mp: 99 };
+    let state = stateInBattle(42, slime, hero);
+
+    // Attach poison with duration 3, initialDuration 3, potency 1.
+    state = {
+      ...state,
+      party: [
+        {
+          ...state.party[0],
+          effects: [
+            {
+              effectId: "poison" as const,
+              duration: 3,
+              potency: 1,
+              initialDuration: 3,
+            },
+          ],
+        },
+      ],
+    };
+
+    // Dispatch one defend per round. With initiative [hero, slime], each
+    // dispatch triggers the hero's defend (no RNG consumed), then advanceRound
+    // wraps around and ticks the hero's poison at the start of their next turn.
+
+    // Round 1 tick: damage 3 (flat), duration 3 -> 2
+    state = reduce(state, { type: "BattleDefend" });
+    const poison1 = state.party[0].effects?.find(
+      (e) => e.effectId === "poison",
+    );
+    expect(poison1).toBeDefined();
+    expect(poison1?.duration).toBe(2);
+    // Hero took at least 3 poison damage (plus potentially slime attack damage).
+    expect(state.party[0].hp).toBeLessThanOrEqual(27);
+    expect(
+      state.log.some((l) => l.text.includes("takes 3 Poison damage")),
+    ).toBe(true);
+
+    // Round 2 tick: damage 3, duration 2 -> 1
+    state = reduce(state, { type: "BattleDefend" });
+    const poison2 = state.party[0].effects?.find(
+      (e) => e.effectId === "poison",
+    );
+    expect(poison2).toBeDefined();
+    expect(poison2?.duration).toBe(1);
+
+    // Round 3 tick: damage 3, duration 1 -> 0 (expires)
+    state = reduce(state, { type: "BattleDefend" });
+    const poison3 = state.party[0].effects?.find(
+      (e) => e.effectId === "poison",
+    );
+    expect(poison3).toBeUndefined();
+    expect(
+      state.log.some((l) => l.text.includes("Poison wears off of Hero")),
+    ).toBe(true);
+  });
+
+  it("burn deals front-loaded decreasing damage each tick", () => {
+    // Attach a burn effect to the slime enemy. Use Defend so the hero deals
+    // no attack damage, isolating the burn tick damage on the slime.
+    const toughSlime = makeEnemy(
+      "slime-1",
+      "slime",
+      "Slime",
+      999,
+      { str: 1, agi: 1, vit: 1, int: 1 },
+      5,
+      3,
+    );
+    const hero = { ...createStartingHero(), mp: 99 };
+    let state = stateInBattle(99, toughSlime, hero);
+
+    // Attach burn with duration 3, initialDuration 3, potency 1 to the slime.
+    state = {
+      ...state,
+      battleState: {
+        ...state.battleState!,
+        enemies: [
+          {
+            ...state.battleState!.enemies[0],
+            effects: [
+              {
+                effectId: "burn" as const,
+                duration: 3,
+                potency: 1,
+                initialDuration: 3,
+              },
+            ],
+          },
+        ],
+      },
+    };
+
+    // Burn amount=5, frontLoaded: damage curve = round(5 * remaining/initial)
+    // Tick 1 (duration 3): round(5 * 3/3) = 5
+    // Tick 2 (duration 2): round(5 * 2/3) = 3
+    // Tick 3 (duration 1): round(5 * 1/3) = 2
+    const initialHp = 999;
+
+    // Round 1: hero defends (no RNG consumed), slime turn ticks burn (damage 5)
+    state = reduce(state, { type: "BattleDefend" });
+    const slimeAfter1 = state.battleState!.enemies[0];
+    const burn1 = slimeAfter1.effects?.find((e) => e.effectId === "burn");
+    expect(burn1).toBeDefined();
+    expect(burn1!.duration).toBe(2);
+    expect(initialHp - slimeAfter1.hp).toBe(5);
+
+    // Round 2: hero defends, slime turn ticks burn (damage 3)
+    state = reduce(state, { type: "BattleDefend" });
+    const slimeAfter2 = state.battleState!.enemies[0];
+    const burn2 = slimeAfter2.effects?.find((e) => e.effectId === "burn");
+    expect(burn2).toBeDefined();
+    expect(burn2!.duration).toBe(1);
+    const tick2Damage =
+      initialHp - slimeAfter2.hp - (initialHp - slimeAfter1.hp);
+    expect(tick2Damage).toBe(3);
+
+    // Round 3: hero defends, slime turn ticks burn (damage 2, expires)
+    state = reduce(state, { type: "BattleDefend" });
+    const slimeAfter3 = state.battleState!.enemies[0];
+    const burn3 = slimeAfter3.effects?.find((e) => e.effectId === "burn");
+    expect(burn3).toBeUndefined();
+    expect(initialHp - slimeAfter3.hp).toBe(10); // 5 + 3 + 2
+    expect(
+      state.log.some((l) => l.text.includes("Burn wears off of Slime")),
+    ).toBe(true);
+  });
+});
+
+describe("ENG-22 effects cleared on battle end", () => {
+  function poisonsState(seed: number): GameState {
+    // Set up a battle where the hero has poison and the slime has burn.
+    const slime = makeEnemy(
+      "slime-1",
+      "slime",
+      "Slime",
+      999,
+      { str: 1, agi: 1, vit: 1, int: 1 },
+      5,
+      3,
+    );
+    const hero = { ...createStartingHero(), hp: 99, mp: 99 };
+    const base = stateInBattle(seed, slime, hero);
+    return {
+      ...base,
+      party: [
+        {
+          ...base.party[0],
+          effects: [
+            {
+              effectId: "poison" as const,
+              duration: 3,
+              potency: 1,
+              initialDuration: 3,
+            },
+          ],
+        },
+      ],
+      battleState: {
+        ...base.battleState!,
+        enemies: [
+          {
+            ...base.battleState!.enemies[0],
+            effects: [
+              {
+                effectId: "burn" as const,
+                duration: 2,
+                potency: 1,
+                initialDuration: 2,
+              },
+            ],
+          },
+        ],
+      },
+    };
+  }
+
+  it("clears all effects on victory", () => {
+    // Use a wizard for high INT so flame can kill in one hit.
+    const wizard = createStartingHero("wizard", "hero-1", "Wizard");
+    const punySlime = makeEnemy(
+      "slime-1",
+      "slime",
+      "Slime",
+      12,
+      { str: 1, agi: 1, vit: 1, int: 1 },
+      5,
+      3,
+    );
+    let state = stateInBattle(1, punySlime, wizard);
+    // Attach effects.
+    state = {
+      ...state,
+      party: [
+        {
+          ...state.party[0],
+          mp: 99,
+          effects: [
+            {
+              effectId: "poison" as const,
+              duration: 3,
+              potency: 1,
+              initialDuration: 3,
+            },
+          ],
+        },
+      ],
+      battleState: {
+        ...state.battleState!,
+        enemies: [
+          {
+            ...state.battleState!.enemies[0],
+            effects: [
+              {
+                effectId: "burn" as const,
+                duration: 2,
+                potency: 1,
+                initialDuration: 2,
+              },
+            ],
+          },
+        ],
+      },
+    };
+    const after = reduce(state, {
+      type: "BattleSkill",
+      skillId: "flame",
+      targetId: "slime-1",
+    });
+    expect(after.battleState).toBeNull();
+    expect(after.party[0].effects).toBeUndefined();
+  });
+
+  it("clears all effects on defeat", () => {
+    // Hero with 1 HP so they die on the first enemy attack.
+    const weakHero = { ...createStartingHero(), hp: 1, mp: 99 };
+    const slime = makeEnemy(
+      "slime-1",
+      "slime",
+      "Slime",
+      999,
+      { str: 1, agi: 1, vit: 1, int: 1 },
+      5,
+      3,
+    );
+    let state = stateInBattle(1, slime, weakHero);
+    state = {
+      ...state,
+      party: [
+        {
+          ...state.party[0],
+          hp: 1,
+          effects: [
+            {
+              effectId: "poison" as const,
+              duration: 3,
+              potency: 1,
+              initialDuration: 3,
+            },
+          ],
+        },
+      ],
+    };
+    const after = reduce(state, { type: "BattleDefend" });
+    expect(after.battleState).toBeNull();
+    expect(after.party[0].effects).toBeUndefined();
+  });
+
+  it("clears all effects on flee", () => {
+    const state = poisonsState(42);
+    // Flee with an overwhelming speed advantage.
+    const fastState = {
+      ...state,
+      party: [
+        {
+          ...state.party[0],
+          stats: { str: 99, agi: 999, vit: 99, int: 99 },
+        },
+      ],
+    };
+    const after = reduce(fastState, { type: "BattleFlee" });
+    expect(after.battleState).toBeNull();
+    expect(after.party[0].effects).toBeUndefined();
   });
 });

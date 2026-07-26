@@ -108,6 +108,13 @@ export interface EffectInstance {
   effectId: StatusEffectId;
   duration: number;
   potency: number;
+  /**
+   * The original duration when the effect was first applied. Used for
+   * computing front-loaded damage curves (e.g. burn) where early ticks
+   * deal more damage than later ones. Optional for backward compat with
+   * older saves that serialised EffectInstance before this field existed.
+   */
+  initialDuration?: number;
 }
 
 /**
