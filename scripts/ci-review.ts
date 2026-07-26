@@ -60,7 +60,10 @@ export function extractReviewJson(modelOutput: string): unknown {
 const commentSchema = z.object({
   path: z.string(),
   line: z.number(),
-  side: z.unknown().optional().transform(() => "RIGHT" as const),
+  side: z
+    .enum(["RIGHT", "right"])
+    .optional()
+    .transform(() => "RIGHT" as const),
   body: z.string(),
 });
 

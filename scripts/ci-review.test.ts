@@ -132,4 +132,11 @@ describe("parseReview", () => {
 
     expect(parseReview(input).comments[0]?.side).toBe("RIGHT");
   });
+
+  it("rejects invalid comment sides", () => {
+    const input =
+      '{"event":"COMMENT","body":"review","comments":[{"path":"agent/agent.ts","line":1,"side":"LEFT","body":"shrink: test"}]}';
+
+    expect(() => parseReview(input)).toThrow();
+  });
 });
