@@ -58,7 +58,7 @@ import {
 } from "../world/overworld";
 import type { DungeonState, WorldState } from "../world/types";
 import { findSkill, type SkillDef } from "./skills";
-import type { EffectInstance } from "./statusEffects";
+import type { AppliedEffect, Element, StatusEffectId } from "./statusEffects";
 import type {
   BattleEnemy,
   BattleEvent,
@@ -452,12 +452,31 @@ interface MemberActionResult {
 /** Push an `EffectInstance` onto `target.effects`, lazy-initialising if needed. */
 function applyEffect(
   target: BattleEnemy | PartyMember,
-  effectId: string,
+  effectId: StatusEffectId,
   duration: number,
   potency: number,
 ): void {
   target.effects = target.effects ?? [];
-  target.effects.push({ effectId, duration, potency } as EffectInstance);
+  target.effects.push({ effectId, duration, potency });
+}
+
+/** Render a hit's element as a log suffix, or "" for a plain physical hit. */
+function formatElementTag(element: Element | undefined): string {
+  return element && element !== "physical" ? ` (${element})` : "";
+}
+
+/** Roll each `applies` entry against `rng` and attach any that succeed. */
+function rollAppliesEffects(
+  target: BattleEnemy | PartyMember,
+  applies: readonly AppliedEffect[] | undefined,
+  rng: Rng,
+): void {
+  if (!applies) return;
+  for (const app of applies) {
+    if (rng.next() < app.chance) {
+      applyEffect(target, app.effectId, app.duration, 1);
+    }
+  }
 }
 
 /**
@@ -529,11 +548,7 @@ function applyMemberCommand(
           );
           target.hp = Math.max(0, target.hp - damage);
 
-          // Build the log line with element tag if the skill carries one.
-          const elementTag =
-            skill.element && skill.element !== "physical"
-              ? ` (${skill.element})`
-              : "";
+          const elementTag = formatElementTag(skill.element);
           logs.push(
             entry(
               `${actor.name} casts ${skill.name} on ${target.name} for ${damage}${elementTag}!`,
@@ -543,14 +558,7 @@ function applyMemberCommand(
           if (target.hp === 0)
             logs.push(entry(`${target.name} is defeated!`, "damage"));
 
-          // Roll each applicable status effect on hit.
-          if (skill.applies) {
-            for (const app of skill.applies) {
-              if (rng.next() < app.chance) {
-                applyEffect(target, app.effectId, app.duration, 1);
-              }
-            }
-          }
+          rollAppliesEffects(target, skill.applies, rng);
         }
       } else {
         // Heal skills always target the caster (self). Ally targeting is
@@ -664,10 +672,7 @@ function advanceRound(
     } else {
       target.hp = Math.max(0, target.hp - attack.damage);
 
-      const elementTag =
-        attackElement && attackElement !== "physical"
-          ? ` (${attackElement})`
-          : "";
+      const elementTag = formatElementTag(attackElement);
       logs.push(
         entry(
           `${enemy.name} hits ${target.name} for ${attack.damage}${elementTag}${attack.crit ? " - crit!" : ""}`,
@@ -675,14 +680,7 @@ function advanceRound(
         ),
       );
 
-      // Roll each applicable status effect on hit.
-      if (attackApplies) {
-        for (const app of attackApplies) {
-          if (rng.next() < app.chance) {
-            applyEffect(target, app.effectId, app.duration, 1);
-          }
-        }
-      }
+      rollAppliesEffects(target, attackApplies, rng);
 
       if (party.every((m) => m.hp <= 0)) {
         return { status: "lost", nextActorId: null };
