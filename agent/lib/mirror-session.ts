@@ -37,18 +37,12 @@ export const EXTERNAL_LINKS_SELECTION = "externalLinks { label url }";
 
 /**
  * Detects a mirror session directly from the raw `created` webhook payload -
- * free when the payload carries the session's external links. Checks the read
- * key (`externalLinks`) and, defensively, the input key (`externalUrls`) since
- * the webhook's exact shape isn't guaranteed. Returns false when neither is
- * present, so callers fall back to a lookup.
+ * free when the payload carries the session's `externalLinks`. Returns false
+ * when it doesn't, so callers fall back to a GraphQL lookup.
  */
 export const isMirrorSessionFromRaw = (raw: unknown): boolean => {
   const session = isPlainObject(raw) ? raw.agentSession : undefined;
-  if (!isPlainObject(session)) return false;
-  return (
-    linksCarryMarker(session.externalLinks) ||
-    linksCarryMarker(session.externalUrls)
-  );
+  return isPlainObject(session) && linksCarryMarker(session.externalLinks);
 };
 
 /**

@@ -232,11 +232,11 @@ const ensureMirrorSessionId = async (
   const id = await creation;
   relay.update((s) => ({
     ...s,
-    mirrorSessionId: s.mirrorSessionId ?? id ?? null,
+    mirrorSessionId: s.mirrorSessionId ?? id,
     mirrorFailed: s.mirrorFailed || id === null,
   }));
   mirrorCreations.delete(ctx.session.id);
-  return relay.get().mirrorSessionId ?? null;
+  return relay.get().mirrorSessionId;
 };
 
 // Routes a child's routine activity to its own mirror card (no issue prefix -
