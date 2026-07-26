@@ -14,7 +14,11 @@ import { type EquipmentSlotName, equipTargetSlot } from "../loot/equipment";
 import { FIELD_BACKPACK_CAP, isFieldBackpackFull } from "../loot/inventory";
 import { describeItem, itemSellPrice } from "../loot/items";
 import { EMPTY_LOOT_FILTER, type LootFilterRules } from "../loot/lootFilter";
-import { applyLootPickup, queueLootTriage } from "../loot/pickup";
+import {
+  applyLootPickupWithFilter,
+  buildLootFilterContext,
+  queueLootTriage,
+} from "../loot/pickup";
 import { rollChestLoot } from "../loot/resolution";
 import { Rng } from "../rng/rng";
 import {
@@ -102,6 +106,7 @@ export function newGame(seed: number, options?: NewGameOptions): GameState {
     stash: [],
     pendingLootTriage: null,
     lootFilter: EMPTY_LOOT_FILTER,
+    lastLootOutcome: null,
   };
   // Populate the tavern immediately so a fresh run has recruits to hire.
   return rollRecruits(base);
@@ -397,6 +402,8 @@ function stepDungeon(state: GameState, direction: StepDirection): GameState {
  * `OpenChest` reducer (PROJECT_PLAN Phase 3). Opens the chest the party
  * stands on, grants its deterministic loot, and clears the chest feature so
  * it cannot be reopened. No-ops (with a log line) when there is no chest here.
+ * ENG-18: also runs the auto-dismantle filter on the chest's generated item,
+ * converting filtered-out items to gold immediately.
  */
 function openChest(state: GameState): GameState {
   const ds = state.dungeonState;
@@ -424,10 +431,16 @@ function openChest(state: GameState): GameState {
   // floor's chest loot table, routed through the seeded RNG so saves agree.
   const rng = new Rng(state.seed, state.rngState);
   const chest = rollChestLoot(rng, ds.floor, state.nextItemId);
-  // ENG-5: route the chest's generated item(s) through the cap-aware pickup
-  // pipeline rather than extending `items` unconditionally - a full field
-  // backpack queues the drop for triage instead of silently over-capping.
-  const pickup = applyLootPickup(state.items, chest.items, FIELD_BACKPACK_CAP);
+  // ENG-18: route the chest's generated item(s) through the auto-dismantle
+  // filter before the cap-aware pickup pipeline.
+  const filterContext = buildLootFilterContext(state.party, ds.floor);
+  const pickup = applyLootPickupWithFilter(
+    state.items,
+    chest.items,
+    FIELD_BACKPACK_CAP,
+    state.lootFilter,
+    filterContext,
+  );
   const pendingLootTriage = queueLootTriage(
     state.pendingLootTriage,
     pickup.queued,
@@ -448,12 +461,13 @@ function openChest(state: GameState): GameState {
   return {
     ...state,
     rngState: rng.getState(),
-    gold: state.gold + loot.gold,
+    gold: state.gold + loot.gold + pickup.outcome.goldGained,
     inventory,
     items: pickup.items,
     nextItemId: chest.nextId,
     dungeonState: { ...ds, layout },
     pendingLootTriage,
+    lastLootOutcome: pickup.outcome,
     log: logs,
   };
 }

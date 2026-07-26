@@ -93,9 +93,22 @@ export function lootTableForTier(tier: number): LootTable {
   return findLootTable("tier-3") as LootTable;
 }
 
+/**
+ * Map a dungeon floor number to its tier (1 = shallow, 3+ = deep/boss). The
+ * single source of truth for this cutoff - `chestLootTableFor` below and the
+ * loot filter's `LootFilterContext.dungeonTier` (`engine/loot/lootFilter.ts`)
+ * both derive from this so the two conventions can't drift apart.
+ */
+export function tierForFloor(floor: number): number {
+  if (floor <= 1) return 1;
+  if (floor === 2) return 2;
+  return 3;
+}
+
 /** Chest loot table for a dungeon floor (deeper floors roll better tables). */
 export function chestLootTableFor(floor: number): LootTable {
-  if (floor <= 1) return findLootTable("chest-1") as LootTable;
-  if (floor === 2) return findLootTable("chest-2") as LootTable;
+  const tier = tierForFloor(floor);
+  if (tier === 1) return findLootTable("chest-1") as LootTable;
+  if (tier === 2) return findLootTable("chest-2") as LootTable;
   return findLootTable("chest-3") as LootTable;
 }

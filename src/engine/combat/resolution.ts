@@ -42,7 +42,11 @@ import { consumeItem, healAmount, isHealItem } from "../loot/consumables";
 import { effectiveStats } from "../loot/equipment";
 import { FIELD_BACKPACK_CAP } from "../loot/inventory";
 import { describeItem } from "../loot/items";
-import { applyLootPickup, queueLootTriage } from "../loot/pickup";
+import {
+  applyLootPickupWithFilter,
+  buildLootFilterContext,
+  queueLootTriage,
+} from "../loot/pickup";
 import { rollVictoryLoot } from "../loot/resolution";
 import type { ItemInstance } from "../loot/types";
 import { Rng, type RngState } from "../rng/rng";
@@ -699,6 +703,8 @@ function advanceRound(
  * scene. A boss victory also marks the dungeon cleared (Phase 6, ROG-12) so
  * the player can leave knowing the dungeon is done. KO'd members are left
  * as-is (no XP split math; full award to all living members per ROG-20 scope).
+ * ENG-18: also runs the auto-dismantle filter on victory loot, converting
+ * filtered-out items to gold immediately.
  */
 function finalizeWon(
   state: GameState,
@@ -740,19 +746,26 @@ function finalizeWon(
       entry("The dungeon guardian falls. The dungeon is cleared!", "quest"),
     );
   }
-  const lootLogs = loot.map((item) =>
-    entry(`Looted ${describeItem(item)}!`, "loot"),
+  // ENG-18: route victory loot through the auto-dismantle filter before the
+  // cap-aware pickup pipeline.
+  const filterContext = buildLootFilterContext(
+    state.party,
+    state.dungeonState?.floor ?? null,
   );
-  const inventory = itemUsed
-    ? consumeItem(state.inventory, itemUsed)
-    : state.inventory;
-  // ENG-5: route victory loot through the same cap-aware pickup pipeline as
-  // `OpenChest` - a single battle can drop loot from several enemies at
-  // once, so more than one overflow item can queue for triage from one call.
-  const pickup = applyLootPickup(state.items, loot, FIELD_BACKPACK_CAP);
+  const pickup = applyLootPickupWithFilter(
+    state.items,
+    loot,
+    FIELD_BACKPACK_CAP,
+    state.lootFilter,
+    filterContext,
+  );
   const pendingLootTriage = queueLootTriage(
     state.pendingLootTriage,
     pickup.queued,
+  );
+  // Loot log lines: only kept items (dismantled items are already converted to gold).
+  const lootLogs = pickup.outcome.kept.map((item) =>
+    entry(`Looted ${describeItem(item)}!`, "loot"),
   );
   const triageLogs = pickup.queued.length
     ? [
@@ -762,6 +775,9 @@ function finalizeWon(
         ),
       ]
     : [];
+  const inventory = itemUsed
+    ? consumeItem(state.inventory, itemUsed)
+    : state.inventory;
   const clearedDungeon = clearEncounter(state.dungeonState);
   const dungeonState =
     clearedDungeon && wasBossVictory
@@ -772,10 +788,11 @@ function finalizeWon(
     rngState,
     scene: bs.returnScene,
     party: finalParty,
-    gold: state.gold + goldGain,
+    gold: state.gold + goldGain + pickup.outcome.goldGained,
     inventory,
     items: pickup.items,
     nextItemId,
+    lastLootOutcome: pickup.outcome,
     pendingLootTriage,
     dungeonState,
     battleState: null,
