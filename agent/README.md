@@ -37,6 +37,11 @@ verification adds value. The root can also drive the same play scripts directly.
 Automatic ponytail pull-request review runs in GitHub Actions through
 `scripts/ci-review.ts`.
 
+The `Workflow` tool (`tools/workflow.ts`) lets the root orchestrate several
+`agent` calls - fan-out, chained results, loop/conditional dispatch - from one
+model-authored JavaScript program run as a single durable step, instead of one
+model turn per batch of direct `agent` calls.
+
 Parent issues with independently shippable sub-issues use the `handoff` tool.
 Each ready sub-issue receives its own Linear Agent Session and predecessor
 context. Blocking relations in Linear determine readiness.
@@ -55,6 +60,7 @@ context. Blocking relations in Linear determine readiness.
 | `skills/` | Optional Eve, Linear project, and README-hygiene procedures |
 | `subagents/playtester/` | Independent terminal and web acceptance verification |
 | `tools/handoff.ts` | Starts an informed successor Agent Session |
+| `tools/workflow.ts` | Enables the `Workflow` tool to orchestrate `agent` calls as one durable step |
 | `tools/session_update.ts` | Posts blocked, review, and completion activities |
 | `schedules/eve-version-check.ts` | Checks for Eve upgrades and audits framework workarounds |
 
