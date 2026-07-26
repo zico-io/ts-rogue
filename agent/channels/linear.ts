@@ -33,6 +33,8 @@ import {
   updateLinearAgentSession,
 } from "eve/channels/linear";
 
+import { isPlainObject } from "../lib/is-plain-object";
+import { advanceIssueState } from "../lib/issue-state";
 import { listLiveAgentSessions } from "../lib/live-sessions";
 
 // Hand-rolled port of eve's built-in `linearChannel()` (see
@@ -52,16 +54,16 @@ import { listLiveAgentSessions } from "../lib/live-sessions";
 // only from genuinely public primitives (`signLinearWebhookBody`,
 // `node:crypto`, `createLinearAgentActivity`/`renderLinearInputRequests`,
 // and global `fetch`) - see `verifyInboundSignature`,
-// `createLinearDefaultEvents`, and `attachLinearInboundImages`. Three actual
+// `createLinearDefaultEvents`, and `attachLinearInboundImages`. Five actual
 // behavior changes from the built-in: the unconditional `cancel()` before
 // `send()` in `dispatchAgentSession`, the `authorization.*` handlers
 // the built-in defaults lack entirely - see the banner above
-// `connectionDisplayName` - and the duplicate-session guard in
-// `guardedOnAgentSession`. See `agent/README.md` for what this does and
+// `connectionDisplayName` - the duplicate-session guard in
+// `guardedOnAgentSession`, and the two harness-owned issue-lifecycle syncs
+// (`lib/issue-state.ts`): session created -> In Progress with parent cascade
+// in `dispatchAgentSession`, and session failed -> Blocked in
+// `createLinearDefaultEvents`. See `agent/README.md` for what this does and
 // does not cover.
-
-const isPlainObject = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
 
 const hasNonEmptyString = <K extends string>(
   value: Record<string, unknown>,
@@ -765,6 +767,18 @@ function createLinearDefaultEvents(options: {
         ].join("\n"),
         type: "error",
       });
+      // Intentional addition over the faithful port (harness-owned issue
+      // lifecycle): an unrecoverably failed session leaves its issue Blocked
+      // so it never sits falsely In Progress. `turn.failed` is deliberately
+      // untouched - a failed turn is recoverable. Skipped silently when the
+      // team has no state named like "Blocked".
+      if (channel.state.issueId != null) {
+        await advanceIssueState({
+          credentials: options.credentials,
+          issueRef: channel.state.issueId,
+          target: "blocked",
+        });
+      }
     },
     async "turn.failed"(data, channel) {
       const hint = errorHint(data);
@@ -824,8 +838,7 @@ function createLinearDefaultEvents(options: {
         );
         return;
       }
-      const outcome =
-        data.outcome === "timed-out" ? "timed out" : data.outcome;
+      const outcome = data.outcome === "timed-out" ? "timed out" : data.outcome;
       await postActivity(channel, options, {
         body: `Authorization for ${displayName} ${outcome}${data.reason ? `: ${data.reason}` : "."}`,
         type: "thought",
@@ -938,6 +951,24 @@ async function dispatchAgentSession(input: {
       state: stateFromAgentSession(event.agentSession),
     },
   );
+
+  // Intentional addition (harness-owned issue lifecycle): a freshly created
+  // session moves its issue - and an unstarted parent - to In Progress.
+  // After `send` so state sync never delays dispatch; awaited so the
+  // `waitUntil`-tracked promise keeps it alive. created-only: a `prompted`
+  // event always follows a created one that already synced, and the sync is
+  // forward-only and idempotent anyway. A guard-declined duplicate never
+  // reaches here (`onAgentSession` returned null above).
+  if (event.action === "created") {
+    const issueId = event.agentSession.issueId ?? event.agentSession.issue?.id;
+    if (issueId != null) {
+      await advanceIssueState({
+        credentials: config.credentials,
+        issueRef: issueId,
+        target: "inProgress",
+      });
+    }
+  }
 }
 
 function linearChannel(config: LinearChannelConfig = {}): LinearChannel {

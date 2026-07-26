@@ -1,4 +1,7 @@
-import { connectGitHubCredentials } from "@vercel/connect/eve";
+import {
+  connectGitHubCredentials,
+  connectLinearCredentials,
+} from "@vercel/connect/eve";
 import {
   defaultGitHubAuth,
   type GitHubChannelEvents,
@@ -9,6 +12,8 @@ import {
   githubChannel,
 } from "eve/channels/github";
 import type { SessionContext } from "eve/tools";
+
+import { advanceIssueState, type IssueStateTarget } from "../lib/issue-state";
 
 export const isMainMerge = (pullRequest: GitHubPullRequestEvent) => {
   const base = pullRequest.raw.base;
@@ -291,6 +296,47 @@ export const onAuthorizationCompleted: NonNullable<
   );
 };
 
+// Harness-owned issue lifecycle (see `lib/issue-state.ts`): which Linear
+// workflow-state transition this pull-request event implies, if any. Pure
+// decision, exported for tests; the async wrapper below performs it.
+// `synchronize` is excluded - state was set at open, and the sync is
+// forward-only so a repeat would be a no-op anyway.
+export const pullRequestStateSync = (
+  pullRequest: GitHubPullRequestEvent,
+): { issueRef: string; target: IssueStateTarget } | null => {
+  const ref = linearRefFromPullRequest(pullRequest);
+  if (ref === null) return null;
+  if (isMainMerge(pullRequest)) return { issueRef: ref, target: "done" };
+  if (
+    (pullRequest.action === "opened" ||
+      pullRequest.action === "ready_for_review") &&
+    (pullRequest.raw as { draft?: boolean }).draft !== true
+  ) {
+    return { issueRef: ref, target: "inReview" };
+  }
+  return null;
+};
+
+const linearCredentials = connectLinearCredentials("linear/ts-rogue-eve");
+
+// Registered in place of `onPullRequest` below (eve runs the hook under
+// `waitUntil` and accepts an async result, so awaiting here is durable and
+// never blocks the webhook response). The Done sync deliberately completes
+// before the main-merge dispatch decision returns, so the woken ralph-advance
+// turn already observes the merged sub-issue Done when it recomputes
+// readiness. `advanceIssueState` never throws, so a Linear outage can never
+// suppress the review dispatch or the ralph wake.
+const onPullRequestWithStateSync = async (
+  context: GitHubInboundContext,
+  pullRequest: GitHubPullRequestEvent,
+) => {
+  const sync = pullRequestStateSync(pullRequest);
+  if (sync !== null) {
+    await advanceIssueState({ credentials: linearCredentials, ...sync });
+  }
+  return onPullRequest(context, pullRequest);
+};
+
 export const onPullRequest = (
   context: GitHubInboundContext,
   pullRequest: GitHubPullRequestEvent,
@@ -359,5 +405,5 @@ export default githubChannel({
     "authorization.completed": onAuthorizationCompleted,
   },
   onComment,
-  onPullRequest,
+  onPullRequest: onPullRequestWithStateSync,
 });

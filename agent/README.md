@@ -24,7 +24,9 @@ pre-warmed Vercel Sandboxes.
 
 Linear owns issue status, priority, and progress. GitHub pull requests remain the
 review and merge boundary. GitHub credentials are injected through the sandbox
-network policy rather than exposed to the agent environment.
+network policy rather than exposed to the agent environment. Issue workflow
+state is reconciled deterministically by the harness, not by model judgment -
+see "Issue lifecycle owned by the harness" below.
 
 ### Vercel debugging connections (HAR-20)
 
@@ -254,6 +256,7 @@ against; each future audit updates the date and verdicts.
 | Sandbox lifetime/timeout re-assertion, token fallback chain | `sandbox.ts` | Create-time options don't apply to resumed sandboxes (ROG-65); connect token cache staleness | Unchanged. eve 0.27.5's `workspace/` seed files were evaluated and rejected: seed paths are workspace-relative only (the files this bootstrap writes live in `~/.config` and `/etc`), and seeding `/workspace` would break bootstrap's `git clone` into an empty directory |
 | Vercel introspection | `connections/vercel.ts` + `connections/vercel-api.ts` | Vercel MCP server lacks sandbox/trace/observability tools; no Vercel-API credential helper in `@vercel/connect/eve` | Retired the hand-rolled `tools/vercel_*.ts` + `lib/vercel-api.ts` layer in favor of an MCP + OpenAPI connection pair. `VERCEL_TOKEN` env still required for observability/traces (OIDC bearers 403 there; sandbox endpoints would accept them). `teamId`/`projectId` now derived from OIDC claims. Accepted loss: sandbox command logs (see "Vercel debugging connections") |
 | Agent Session posting in code | `tools/session_update.ts`, `tools/handoff.ts`, `hooks/child-relay.ts`, `channels/linear.ts` | `mcp.linear.app` exposes no Agent Session tools (`agentActivityCreate`, `agentSessionCreateOnComment`), and hooks/channel code cannot call connection tools at all | Not replaceable by the Linear MCP connection until Linear ships agent-session MCP tools |
+| Issue workflow-state sync | `lib/issue-state.ts`, `channels/linear.ts`, `channels/github.ts` | Linear Agent Sessions never move issue state; eve has no issue-state primitive, and workflow-state queries/`issueUpdate` are not in the public barrel | New at 0.27.6 - built on the public `callLinearGraphQL` transport |
 
 `ORIENTATION.md` also reports whether the sandbox's Playwright chromium
 (`scripts/play-web.mjs`'s screenshots) is confirmed working - `bootstrap`'s
@@ -564,6 +567,45 @@ and de-specializing the fixed comment header (the "why this session exists"
 framing now lives entirely in the model-authored `brief`, which differs by
 caller: a continuation packet for self-handoff, a predecessor's shipped
 context for a dependency unlock).
+
+### Issue lifecycle owned by the harness
+
+Linear issue workflow state used to drift because every transition depended on
+the model choosing to call `save_issue`. Four transitions are now reconciled
+in code, all through `lib/issue-state.ts` (`advanceIssueState`, hand-rolled
+over the public `callLinearGraphQL` transport like `lib/live-sessions.ts`):
+
+- **Session created → In Progress**, cascading to an unstarted parent so a
+  group's parent never sits in Todo while sub-issues are in flight. Runs in
+  `channels/linear.ts`'s `dispatchAgentSession` *after* `send()` (state sync
+  never delays dispatch; the `waitUntil`-tracked promise keeps it alive) and
+  only for `created` events - every `prompted` event follows a created one
+  that already synced. A guard-declined duplicate session never reaches it.
+- **PR opened / ready for review → In Review**, keyed off
+  `linearRefFromPullRequest` in `channels/github.ts`'s
+  `onPullRequestWithStateSync` wrapper (eve runs `onPullRequest` under
+  `waitUntil` and accepts an async result). Skipped silently when the team
+  has no started-type state named like "review". `synchronize` is excluded -
+  state was set at open.
+- **PR merged to main → Done**, same wrapper. The sync deliberately completes
+  before the dispatch decision returns, so the woken ralph-advance turn
+  already observes the merged sub-issue Done when it recomputes readiness.
+- **Session failed → Blocked** (`session.failed` only - `turn.failed` is
+  recoverable), so an unrecoverably dead session never leaves its issue
+  falsely In Progress. Skipped silently when the team has no state named
+  like "Blocked".
+
+Every transition is forward-only and idempotent: state types rank
+triage/backlog/unstarted < started < completed/canceled, and within
+started-type states board `position` decides (In Progress before In Review on
+Linear defaults - a team ordered otherwise just skips the transition, never
+downgrades). Done and Canceled are terminal; only Blocked may move an issue
+sideways, and never out of a terminal state. `advanceIssueState` never
+throws: a Linear outage degrades to a skipped transition, never a blocked
+dispatch, a suppressed review, or a lost ralph wake. The model keeps exactly one
+state-transition duty: moving a group parent to Done when all sub-issues are
+Done (`instructions.md`, Issue groups) - the harness cascades only In
+Progress to parents, never Done.
 
 ### One live session per issue (duplicate-delegation guard)
 
