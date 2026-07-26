@@ -21,6 +21,7 @@ import {
   mintFreshPolicyWithExpiry,
   nextRefreshDelayMs,
   resolveBootstrapNetworkPolicy,
+  resolveStartupAuth,
   resolveStartupNetworkPolicy,
   SANDBOX_TIMEOUT_MS,
   TOKEN_EXPIRY_BUFFER_MS,
@@ -45,6 +46,7 @@ export {
   mintFreshPolicyWithExpiry,
   nextRefreshDelayMs,
   resolveBootstrapNetworkPolicy,
+  resolveStartupAuth,
   resolveStartupNetworkPolicy,
   SANDBOX_TIMEOUT_MS,
   TOKEN_EXPIRY_BUFFER_MS,
@@ -77,7 +79,12 @@ export default defineSandbox({
       throw new Error(setup.stderr || "Sandbox pre-warming failed");
   },
   async onSession({ use }) {
-    const { policy, authed } = await resolveStartupNetworkPolicy();
+    // Use the expiry-aware mint here (not resolveStartupNetworkPolicy) so
+    // the token minted for *this* session's own network policy can also
+    // seed keepTokenFresh's first refresh off its real expiry, instead of
+    // that first refresh falling back to a blind TOKEN_REFRESH_MS guess
+    // (HAR-69/HAR-72).
+    const { policy, authed, expiresAtMs } = await resolveStartupAuth();
 
     const sandbox = await use({
       networkPolicy: policy,
@@ -108,7 +115,10 @@ export default defineSandbox({
     } catch {}
 
     keepTokenFresh(sandbox, mintFreshPolicyWithExpiry, {
-      initialMs: authed ? TOKEN_REFRESH_MS : TOKEN_RETRY_MS,
+      initialMs:
+        authed && expiresAtMs !== undefined
+          ? nextRefreshDelayMs(expiresAtMs, TOKEN_REFRESH_MS)
+          : TOKEN_RETRY_MS,
     });
   },
 });

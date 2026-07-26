@@ -106,12 +106,12 @@ export async function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
 export const STARTUP_MINT_ATTEMPTS = 4;
 export const STARTUP_MINT_RETRY_GAP_MS = 3 * 1000;
 
-async function mintWithRetries(
-  mintPolicy: () => Promise<SandboxNetworkPolicy>,
+async function mintWithRetries<T>(
+  mintPolicy: () => Promise<T>,
   attempts: number,
   perAttemptTimeoutMs: number,
   gapMs: number,
-): Promise<SandboxNetworkPolicy> {
+): Promise<T> {
   for (let attempt = 1; ; attempt++) {
     try {
       return await withTimeout(mintPolicy(), perAttemptTimeoutMs);
@@ -140,6 +140,45 @@ export async function resolveStartupNetworkPolicy(
   } catch (err) {
     console.warn(
       "resolveStartupNetworkPolicy: GitHub token mint failed after retries; coming up on the unauthenticated OPEN network policy (git push/gh will fail until auth heals):",
+      err instanceof Error ? err.message : err,
+    );
+    return { policy: OPEN_NETWORK_POLICY, authed: false };
+  }
+}
+
+export interface StartupAuthResult {
+  policy: SandboxNetworkPolicy;
+
+  authed: boolean;
+
+  /** The minted token's real expiry, in epoch ms. Unset when unauthed. */
+  expiresAtMs?: number;
+}
+
+/**
+ * Like `resolveStartupNetworkPolicy`, but also surfaces the minted token's
+ * real expiry so `onSession` can schedule `keepTokenFresh`'s very first
+ * refresh off actual token life instead of a blind constant (HAR-69/HAR-72).
+ *
+ * Without this, `onSession` had no way to pass the token it had just minted
+ * (and already knew the real `expiresAt` for) into `keepTokenFresh`'s
+ * `initialMs` - so the very first refresh of every session used the flat
+ * `TOKEN_REFRESH_MS` guess the HAR-69 fix was meant to retire, leaving the
+ * freshest, most session-critical token unguarded by expiry-aware
+ * scheduling for up to 45 minutes.
+ */
+export async function resolveStartupAuth(
+  mintPolicy: () => Promise<MintedGitHubPolicy> = mintGitHubTokenPolicy,
+  timeoutMs: number = TOKEN_MINT_TIMEOUT_MS,
+  attempts: number = STARTUP_MINT_ATTEMPTS,
+  gapMs: number = STARTUP_MINT_RETRY_GAP_MS,
+): Promise<StartupAuthResult> {
+  try {
+    const minted = await mintWithRetries(mintPolicy, attempts, timeoutMs, gapMs);
+    return { policy: minted.policy, authed: true, expiresAtMs: minted.expiresAtMs };
+  } catch (err) {
+    console.warn(
+      "resolveStartupAuth: GitHub token mint failed after retries; coming up on the unauthenticated OPEN network policy (git push/gh will fail until auth heals):",
       err instanceof Error ? err.message : err,
     );
     return { policy: OPEN_NETWORK_POLICY, authed: false };
@@ -363,6 +402,25 @@ export async function resolveSessionNetworkPolicy(
   return resolveStartupNetworkPolicy(mintPolicy, timeoutMs, attempts, gapMs);
 }
 
+/**
+ * Like `resolveSessionNetworkPolicy`, but also surfaces the minted token's
+ * real expiry (see `resolveStartupAuth`) so `onSession` can give
+ * `keepTokenFresh`'s first refresh the same expiry-aware scheduling every
+ * later refresh already gets (HAR-69/HAR-72).
+ */
+export async function resolveSessionAuth(
+  gitAuthLevel: GitAuthLevel,
+  mintPolicy: () => Promise<MintedGitHubPolicy> = mintGitHubTokenPolicy,
+  timeoutMs: number = TOKEN_MINT_TIMEOUT_MS,
+  attempts: number = STARTUP_MINT_ATTEMPTS,
+  gapMs: number = STARTUP_MINT_RETRY_GAP_MS,
+): Promise<StartupAuthResult> {
+  if (gitAuthLevel === "none") {
+    return { policy: OPEN_NETWORK_POLICY, authed: false };
+  }
+  return resolveStartupAuth(mintPolicy, timeoutMs, attempts, gapMs);
+}
+
 export function buildSandboxDefinition(
   options: SandboxRecipeOptions,
 ): SandboxDefinition<
@@ -387,7 +445,7 @@ export function buildSandboxDefinition(
         throw new Error(setup.stderr || "Sandbox pre-warming failed");
     },
     async onSession({ use }) {
-      const { policy, authed } = await resolveSessionNetworkPolicy(
+      const { policy, authed, expiresAtMs } = await resolveSessionAuth(
         options.gitAuthLevel,
       );
       const sandbox = await use({
@@ -401,7 +459,10 @@ export function buildSandboxDefinition(
       }
       if (options.gitAuthLevel !== "none") {
         keepTokenFresh(sandbox, mintFreshPolicyWithExpiry, {
-          initialMs: authed ? TOKEN_REFRESH_MS : TOKEN_RETRY_MS,
+          initialMs:
+            authed && expiresAtMs !== undefined
+              ? nextRefreshDelayMs(expiresAtMs, TOKEN_REFRESH_MS)
+              : TOKEN_RETRY_MS,
         });
       }
     },

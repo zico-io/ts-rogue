@@ -28,8 +28,10 @@ import {
   mintFreshPolicyWithExpiry,
   nextRefreshDelayMs,
   resolveBootstrapNetworkPolicy,
+  resolveStartupAuth,
   resolveStartupNetworkPolicy,
   TOKEN_EXPIRY_BUFFER_MS,
+  TOKEN_REFRESH_MS,
   WORKSPACE_GIT_CONFIG_ENV,
 } from "../agent/sandbox/sandbox";
 
@@ -401,6 +403,59 @@ describe("resolveStartupNetworkPolicy", () => {
     expect(res.authed).toBe(false);
     expect(res.policy).toEqual({ allow: { "*": [] } });
     vi.useRealTimers();
+  });
+});
+
+describe("resolveStartupAuth", () => {
+  it("surfaces the minted token's real expiry alongside the policy (HAR-69/HAR-72)", async () => {
+    const authedPolicy = { allow: { x: [] } } as SandboxNetworkPolicy;
+    const expiresAtMs = Date.now() + 40 * 60 * 1000;
+
+    const res = await resolveStartupAuth(
+      () => Promise.resolve(minted(authedPolicy, expiresAtMs)),
+      1000,
+    );
+
+    expect(res).toEqual({ policy: authedPolicy, authed: true, expiresAtMs });
+  });
+
+  it("falls back to the open policy with no expiry when every mint attempt fails", async () => {
+    const res = await resolveStartupAuth(
+      () => Promise.reject(new Error("token down")),
+      1000,
+      1,
+    );
+
+    expect(res).toEqual({ policy: { allow: { "*": [] } }, authed: false });
+  });
+
+  it("lets a real onSession compute a first refresh shorter than TOKEN_REFRESH_MS instead of the old blind guess (HAR-72)", async () => {
+    // A session-start mint whose real life is much shorter than the flat
+    // TOKEN_REFRESH_MS constant onSession used to hand keepTokenFresh as
+    // its first-ever delay. nextRefreshDelayMs must be the one deciding
+    // the first schedule, not TOKEN_REFRESH_MS, or this token goes
+    // unrefreshed well past its own expiry.
+    const now = Date.now();
+    const shortLivedExpiry = now + 25 * 60 * 1000;
+
+    const { authed, expiresAtMs } = await resolveStartupAuth(
+      () =>
+        Promise.resolve(
+          minted(
+            { allow: { x: [] } } as SandboxNetworkPolicy,
+            shortLivedExpiry,
+          ),
+        ),
+      1000,
+    );
+
+    const initialMs =
+      authed && expiresAtMs !== undefined
+        ? nextRefreshDelayMs(expiresAtMs, TOKEN_REFRESH_MS)
+        : TOKEN_REFRESH_MS;
+
+    expect(initialMs).toBeLessThan(TOKEN_REFRESH_MS);
+    expect(initialMs).toBe(5 * 60 * 1000);
   });
 });
 
