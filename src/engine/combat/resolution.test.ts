@@ -1210,32 +1210,44 @@ describe("ENG-25 status-effect clearing stays GameState-serializable", () => {
     };
   }
 
-  it("a battle won while an actor carries an effect raises no incident and drops the effects key entirely", () => {
-    const state = poisonedSoloState(1, 1);
+  // Drives `state` through `store.dispatch` via `drive`, then asserts the
+  // dispatch raised no serialization incident and the resulting party's
+  // effects key was actually removed (not merely falsy).
+  function expectEffectsDroppedAfter(
+    state: GameState,
+    drive: (store: GameStore) => GameState,
+  ): GameState {
     const store = new GameStore(state);
     const incidents: unknown[] = [];
     store.subscribeIncidents((incident) => incidents.push(incident));
 
-    const target = state.battleState?.enemies[0];
-    if (!target) throw new Error("expected a battle target");
-    const after = store.dispatch({ type: "BattleAttack", targetId: target.id });
+    const after = drive(store);
 
     expect(incidents).toEqual([]);
-    expect(after.battleState).toBeNull();
     expect("effects" in after.party[0]).toBe(false);
+    return after;
+  }
+
+  it("a battle won while an actor carries an effect raises no incident and drops the effects key entirely", () => {
+    const state = poisonedSoloState(1, 1);
+    const target = state.battleState?.enemies[0];
+    if (!target) throw new Error("expected a battle target");
+
+    const after = expectEffectsDroppedAfter(state, (store) =>
+      store.dispatch({ type: "BattleAttack", targetId: target.id }),
+    );
+
+    expect(after.battleState).toBeNull();
   });
 
   it("an effect ticking to expiry mid-battle raises no incident and drops the effects key entirely", () => {
     const state = poisonedSoloState(2, 999);
-    const store = new GameStore(state);
-    const incidents: unknown[] = [];
-    store.subscribeIncidents((incident) => incidents.push(incident));
 
-    const after = store.dispatch({ type: "BattleDefend" });
+    const after = expectEffectsDroppedAfter(state, (store) =>
+      store.dispatch({ type: "BattleDefend" }),
+    );
 
-    expect(incidents).toEqual([]);
     expect(after.battleState?.status).toBe("ongoing");
-    expect("effects" in after.party[0]).toBe(false);
     expect(
       after.log.some((l) => l.text.includes("Poison wears off of Hero")),
     ).toBe(true);
@@ -1252,22 +1264,20 @@ describe("ENG-25 status-effect clearing stays GameState-serializable", () => {
         },
       ],
     };
-    const store = new GameStore(state);
-    const incidents: unknown[] = [];
-    store.subscribeIncidents((incident) => incidents.push(incident));
 
-    let after = store.getState();
-    for (
-      let attempt = 0;
-      attempt < 10 && after.battleState !== null;
-      attempt++
-    ) {
-      after = store.dispatch({ type: "BattleFlee" });
-    }
+    const after = expectEffectsDroppedAfter(state, (store) => {
+      let result = store.getState();
+      for (
+        let attempt = 0;
+        attempt < 10 && result.battleState !== null;
+        attempt++
+      ) {
+        result = store.dispatch({ type: "BattleFlee" });
+      }
+      return result;
+    });
 
-    expect(incidents).toEqual([]);
     expect(after.battleState).toBeNull();
-    expect("effects" in after.party[0]).toBe(false);
   });
 
   it("losing a battle while an actor carries an effect raises no incident and drops the effects key entirely", () => {
@@ -1298,15 +1308,12 @@ describe("ENG-25 status-effect clearing stays GameState-serializable", () => {
         },
       ],
     };
-    const store = new GameStore(state);
-    const incidents: unknown[] = [];
-    store.subscribeIncidents((incident) => incidents.push(incident));
 
-    const after = store.dispatch({ type: "BattleDefend" });
+    const after = expectEffectsDroppedAfter(state, (store) =>
+      store.dispatch({ type: "BattleDefend" }),
+    );
 
-    expect(incidents).toEqual([]);
     expect(after.battleState).toBeNull();
-    expect("effects" in after.party[0]).toBe(false);
   });
 });
 

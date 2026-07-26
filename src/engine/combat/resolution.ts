@@ -857,9 +857,11 @@ function finalizeLost(
   itemUsed: string | null,
 ): GameState {
   const clearedParty = state.party.map((member) => {
-    // Omit the key entirely rather than spreading `effects: undefined`:
-    // GameState must stay strictly JSON-serializable.
-    const { effects: _effects, ...cleared } = member;
+    const cleared = { ...member };
+    // Delete rather than assign `undefined`: GameState must stay strictly
+    // JSON-serializable, and an explicit `undefined` property value fails
+    // that check even though the key would be dropped on stringify.
+    delete cleared.effects;
     return cleared;
   });
   const inventory = itemUsed
