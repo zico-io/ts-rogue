@@ -1,13 +1,8 @@
 import { connectLinearCredentials } from "@vercel/connect/eve";
-import {
-  callLinearGraphQL,
-  createLinearAgentActivity,
-  createLinearAgentSessionOnIssue,
-} from "eve/channels/linear";
+import { createLinearAgentActivity } from "eve/channels/linear";
 import { defineState } from "eve/context";
 import { defineHook, type HookContext } from "eve/hooks";
 
-import { MIRROR_MARKER } from "../lib/mirror-session";
 import type { PendingAction } from "../lib/pending-action";
 import { toolActionParameter, toolActionResult } from "../lib/tool-activity";
 import { toolLabel } from "../lib/tool-label";
@@ -17,10 +12,8 @@ import { MAX_ACTIVITY_TEXT_LENGTH, truncate } from "../lib/truncate";
 // Root: when a turn delegates, persists the Linear agent session id to a
 // shared-sandbox file so children can read it (written before any child event
 // fires, because hook handlers are awaited before children are dispatched).
-// Child: relays tool calls, reasoning, and the final message into a per-child
-// "mirror" Agent Session - its own top-level Linear card (see the mirror-session
-// section below) - falling back to the parent session if the mirror can't be
-// created.
+// Child: relays tool calls, reasoning, and the final message to the parent's
+// Linear Agent Session as ephemeral "working" chips.
 
 const credentials = connectLinearCredentials("linear/ts-rogue-eve");
 
@@ -33,16 +26,12 @@ export const SESSION_ID_FILE = "/workspace/.eve/linear-agent-session";
 
 const relay = defineState<{
   agentSessionId: string | null;
-  mirrorSessionId: string | null;
-  mirrorFailed: boolean;
   issueId: string | null;
   sandboxChecked: boolean;
   warnedDark: boolean;
   pendingActions: Record<string, PendingAction>;
 }>("ts-rogue.relay", () => ({
   agentSessionId: null,
-  mirrorSessionId: null,
-  mirrorFailed: false,
   issueId: null,
   sandboxChecked: false,
   warnedDark: false,
@@ -129,133 +118,24 @@ const ensureAgentSessionId = async (ctx: HookContext) => {
 };
 
 const post = async (
-  agentSessionId: string | null,
   content: ActivityContent,
-  options: { ephemeral?: boolean; prefix?: boolean } = {},
+  options: { ephemeral?: boolean } = {},
 ) => {
+  const { agentSessionId, issueId } = relay.get();
   if (!agentSessionId) return;
-  const body = options.prefix
-    ? withIssuePrefix(content, relay.get().issueId)
-    : content;
   try {
     await createLinearAgentActivity({
       credentials,
-      activity: { agentSessionId, content: body, ephemeral: options.ephemeral },
+      activity: {
+        agentSessionId,
+        content: withIssuePrefix(content, issueId),
+        ephemeral: options.ephemeral,
+      },
     });
   } catch (err) {
     // Observe-only: a Linear hiccup must never fail the child's turn.
     console.warn("relay: posting a Linear activity failed:", errorMessage(err));
   }
-};
-
-// --- Per-child mirror session ------------------------------------------------
-// Each delegated child gets its OWN top-level Linear card so its work reads as
-// a sibling "Working" block instead of nesting under the parent's turn (Linear
-// folds every `thought`/`action` under the receiving session's open block, so a
-// separate session is the only way to a separate top-level block). The mirror
-// is created lazily on the child's first relayed activity and closed by the
-// child's final narration. It carries `MIRROR_MARKER` so the channel declines
-// its dispatch and `lib/live-sessions.ts` never counts it against the
-// one-live-session-per-issue guard. See `agent/README.md`.
-
-// One creation in flight per child session id: concurrent handlers in the same
-// turn await the same promise instead of racing two AgentSessionCreate calls.
-const mirrorCreations = new Map<string, Promise<string | null>>();
-
-// The mirror is created on the issue (`createLinearAgentSessionOnIssue` needs
-// the issue UUID, not the identifier the relay parses for chip prefixes), read
-// off the parent session rather than the delegation text - which, like the
-// agent session id, may not carry it (see `ensureAgentSessionId`).
-const fetchIssueUuid = async (
-  parentAgentSessionId: string,
-): Promise<string | null> => {
-  const data = await callLinearGraphQL<{
-    agentSession?: { issue?: { id?: string } };
-  }>({
-    credentials,
-    query: `
-      query AgentSessionIssue($id: String!) {
-        agentSession(id: $id) { issue { id } }
-      }
-    `,
-    queryName: "AgentSessionIssue",
-    variables: { id: parentAgentSessionId },
-  });
-  const id = data.agentSession?.issue?.id;
-  return typeof id === "string" && id.length > 0 ? id : null;
-};
-
-const createMirrorSession = async (
-  parentAgentSessionId: string,
-): Promise<string | null> => {
-  try {
-    const issueId = await fetchIssueUuid(parentAgentSessionId);
-    if (!issueId) return null;
-    const session = await createLinearAgentSessionOnIssue({
-      credentials,
-      issueId,
-      externalUrls: [MIRROR_MARKER],
-    });
-    return typeof session.id === "string" && session.id.length > 0
-      ? session.id
-      : null;
-  } catch (err) {
-    console.warn(
-      "relay: creating the child's mirror Agent Session failed:",
-      errorMessage(err),
-    );
-    return null;
-  }
-};
-
-// Returns this child's mirror session id, creating it once, or null when it
-// can't be created yet (no known parent session) or at all (creation failed -
-// callers fall back to posting into the parent session).
-const ensureMirrorSessionId = async (
-  ctx: HookContext,
-): Promise<string | null> => {
-  const state = relay.get();
-  if (state.mirrorSessionId) return state.mirrorSessionId;
-  // Give up permanently for this child once creation fails, so a Linear outage
-  // becomes one fallback-to-parent, not a create attempt on every activity.
-  if (state.mirrorFailed) return null;
-  const parentId = state.agentSessionId;
-  if (!parentId) return null; // parent id may still arrive; not a failure
-  let creation = mirrorCreations.get(ctx.session.id);
-  if (!creation) {
-    creation = createMirrorSession(parentId);
-    mirrorCreations.set(ctx.session.id, creation);
-  }
-  // createMirrorSession never throws (it catches and returns null). Persist
-  // before clearing the memo so a late concurrent caller sees the resolved id
-  // instead of starting a second create.
-  const id = await creation;
-  relay.update((s) => ({
-    ...s,
-    mirrorSessionId: s.mirrorSessionId ?? id,
-    mirrorFailed: s.mirrorFailed || id === null,
-  }));
-  mirrorCreations.delete(ctx.session.id);
-  return relay.get().mirrorSessionId;
-};
-
-// Routes a child's routine activity to its own mirror card (no issue prefix -
-// the card is already per-child), falling back to the parent session (prefixed,
-// so parallel children stay attributable) when no mirror exists.
-const relayTo = async (
-  ctx: HookContext,
-  content: ActivityContent,
-  options: { ephemeral?: boolean } = {},
-) => {
-  const mirrorId = await ensureMirrorSessionId(ctx);
-  if (mirrorId) {
-    await post(mirrorId, content, { ephemeral: options.ephemeral });
-    return;
-  }
-  await post(relay.get().agentSessionId, content, {
-    ephemeral: options.ephemeral,
-    prefix: true,
-  });
 };
 
 // Prefix relayed content with the child's issue so parallel children posting
@@ -306,8 +186,7 @@ export default defineHook({
             [action.callId]: { action: label, parameter },
           },
         }));
-        await relayTo(
-          ctx,
+        await post(
           { type: "action", action: label, parameter },
           { ephemeral: true },
         );
@@ -317,45 +196,12 @@ export default defineHook({
       if (!ctx.session.parent) return;
       const reasoning = event.data.reasoning?.trim();
       if (reasoning)
-        await relayTo(
-          ctx,
-          { type: "thought", body: reasoning },
-          {
-            ephemeral: true,
-          },
-        );
+        await post({ type: "thought", body: reasoning }, { ephemeral: true });
     },
     async "message.completed"(event, ctx) {
       if (!ctx.session.parent) return;
       const text = event.data.message?.trim();
-      if (!text) return;
-      // Mid-batch narration (the model spoke before a tool call) is transient,
-      // shown live in the card; only the child's final message closes it.
-      if (event.data.finishReason === "tool-calls") {
-        await relayTo(
-          ctx,
-          { type: "thought", body: text },
-          { ephemeral: true },
-        );
-        return;
-      }
-      // The final narration concludes the mirror card. A `response` is the only
-      // activity type that ends a Linear session, so the card lands "complete"
-      // rather than a perpetual "Working". The parent fallback stays a durable
-      // `thought` - never a `response`, which would wrongly flip the parent
-      // session itself to finished (the HAR-38 failure mode).
-      const mirrorId = await ensureMirrorSessionId(ctx);
-      if (mirrorId) {
-        await post(mirrorId, { type: "response", body: text });
-        return;
-      }
-      await post(
-        relay.get().agentSessionId,
-        { type: "thought", body: text },
-        {
-          prefix: true,
-        },
-      );
+      if (text) await post({ type: "thought", body: text });
     },
     async "action.result"(event, ctx) {
       if (!ctx.session.parent) return;
@@ -373,12 +219,15 @@ export default defineHook({
             event.data.result.output,
             event.data.result.isError,
           );
-      await relayTo(ctx, {
-        type: "action",
-        action: pending.action,
-        parameter: pending.parameter,
-        result: truncate(rawResult, MAX_ACTIVITY_TEXT_LENGTH),
-      });
+      await post(
+        {
+          type: "action",
+          action: pending.action,
+          parameter: pending.parameter,
+          result: truncate(rawResult, MAX_ACTIVITY_TEXT_LENGTH),
+        },
+        {},
+      );
     },
   },
 });

@@ -91,34 +91,14 @@ handle. The kick must never be awaited in the hook: handlers run in the
 turn's emit path, so awaiting there would serialize the cold start in front
 of the model call instead of overlapping it.
 
-Each delegated child streams its work into its **own top-level Linear card** - a
-"mirror" Agent Session `hooks/relay.ts` creates on the issue - instead of folding
-the child's chips into the parent session's open "Working" block. Linear's
-activity feed is flat: a `thought` or `action` always nests under the receiving
-session's turn (verified against linear.app/developers/agent-interaction), so a
-separate session is the only way a subagent reads as a sibling block rather than
-a pile buried in the parent's. The mirror is created lazily on the child's first
-relayed activity (on the parent session's issue, fetched once from Linear since
-the delegation text may not carry the issue UUID), tagged with `MIRROR_MARKER`
-(`lib/mirror-session.ts`) as an `externalUrls` entry, and closed by the child's
-final narration - posted as a `response` so the card lands "complete" instead of
-a perpetual "Working". Within the card the child's action/reasoning chips stay
-`ephemeral: true` (a live "currently doing" slot, replaced by the next activity);
-the final narration persists. If the mirror can't be created (a Linear hiccup),
-the relay fails open to the prior behavior - posting the stream into the parent
-session, `[<issue>]`-prefixed so parallel children stay attributable - and gives
-up for that child so an outage is one fallback, not a create attempt per chip.
-
-Two invariants keep mirrors invisible to the rest of the harness, both keyed on
-the marker: `channels/linear.ts`'s created-webhook guard declines a mirror
-session (returning `null` from `onAgentSession`, which skips both dispatch and
-issue-state sync) so it never spins up its own turn, and `lib/live-sessions.ts`
-excludes mirrors so they never block a legitimate handoff or count against the
-one-live-session-per-issue guard. Only app-created sessions pay the marker check
-(a handoff successor vs. a mirror), free from the created webhook's `event.raw`
-when Linear emits `externalUrls`, else one GraphQL read. The channel adapter's
-event vocabulary still has no `subagent.called`, which is why the relay lives in
-a hook branching on `ctx.session.parent` rather than in the channel event model.
+Each delegated child streams its tool calls, reasoning, and final message into
+the **parent** Agent Session (the single top-level card for the issue),
+`[<issue>]`-prefixed so parallel children stay attributable. Linear's activity
+feed is flat - a `thought`/`action` nests under the receiving session's open
+turn - and the relay leans on eve's native inline subagent execution rather than
+fabricating a session per child, so there is one session per ticket. The relay
+lives in a hook branching on `ctx.session.parent` because the channel adapter's
+event vocabulary still has no `subagent.called`.
 
 Child `session_update`s are unchanged and still post to the **parent** session
 (the top-level handoff surface), role-guarded in code (`tools/session_update.ts`):
@@ -279,7 +259,6 @@ against; each future audit updates the date and verdicts.
 | GitHub @mention gate reimplementation | `channels/github.ts` | `extractGitHubCommentTrigger`/`shouldDispatchGitHubComment` not public; custom `onComment` replaces the built-in gate wholesale | Still not public; `pull_request_review` (top-level verdict) events still unparsed |
 | Session handoff instead of quota continuation | `tools/handoff.ts` | Token-quota HITL prompt not overridable; `commentCreate` unexported | Still no public hook (0.27.1 only changed decline behavior) |
 | File-based child session-id handoff | `hooks/relay.ts` | `subagent.called` declared in the hook vocabulary but never dispatched to authored hooks/channels | Still absent from `ChannelEvents` |
-| Per-child mirror Agent Sessions | `hooks/relay.ts`, `channels/linear.ts`, `lib/mirror-session.ts`, `lib/live-sessions.ts` | Linear's Agent Session feed is flat - no nested/child session or activity-parent, so a subagent's `thought`/`action` can only nest under the parent turn's block | New - a `MIRROR_MARKER`-tagged session per child gives each subagent its own top-level card; the marker exempts it from webhook dispatch (`guardedOnAgentSession`) and the live-session guard (`listLiveAgentSessions`) |
 | Eager sandbox prewarm + durable token re-mint | `hooks/prewarm-sandbox.ts` | Lazy sandbox creation; no session-end hook; in-process token timers don't survive harness recycling | Unchanged |
 | Sandbox lifetime/timeout re-assertion, token fallback chain | `sandbox.ts` | Create-time options don't apply to resumed sandboxes (ROG-65); connect token cache staleness | Unchanged. eve 0.27.5's `workspace/` seed files were evaluated and rejected: seed paths are workspace-relative only (the files this bootstrap writes live in `~/.config` and `/etc`), and seeding `/workspace` would have broken bootstrap's `git clone` into an empty directory - HAR-34 replaced the clone with an in-place `git init`/`git remote add`/`git fetch`/`git reset --hard` sequence, which no longer requires an empty `/workspace`, but eve's `workspace/**` seed-file layout itself is not yet adopted (separate follow-up HAR-36) |
 | Vercel introspection | `connections/vercel.ts` + `connections/vercel-api.ts` | Vercel MCP server lacks sandbox/trace/observability tools; no Vercel-API credential helper in `@vercel/connect/eve` | Retired the hand-rolled `tools/vercel_*.ts` + `lib/vercel-api.ts` layer in favor of an MCP + OpenAPI connection pair. `VERCEL_TOKEN` env still required for observability/traces (OIDC bearers 403 there; sandbox endpoints would accept them). `teamId`/`projectId` now derived from OIDC claims. Accepted loss: sandbox command logs (see "Vercel debugging connections") |
