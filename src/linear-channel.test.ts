@@ -630,15 +630,16 @@ describe("actions.requested ephemeral render", () => {
     });
   });
 
-  it("keeps rendering plain tool calls from their input", async () => {
+  it("renders a plain tool call as a humanized label and readable parameter, not a JSON blob", async () => {
     const activity = await postAction({
       kind: "tool-call",
+      callId: "c1",
       toolName: "bash",
       input: { command: "git status" },
     });
     expect(activity?.content).toEqual({
-      action: "bash",
-      parameter: '{"command":"git status"}',
+      action: "Bash",
+      parameter: "git status",
       type: "action",
     });
   });
@@ -1069,7 +1070,10 @@ describe("action.result durable chip promotion (HAR-45)", () => {
       type: "action",
       action: "bash",
       parameter: '{"command":"echo hello"}',
-      result: JSON.stringify({ stdout: "hello" }),
+      // The stashed action/parameter are reused verbatim; only the result is
+      // now a readable summary instead of raw JSON (bash output has no exitCode
+      // here, so it reads as "done" plus the stdout line count).
+      result: "done · 1 line",
     });
   });
 

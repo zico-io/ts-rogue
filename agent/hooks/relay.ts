@@ -4,6 +4,7 @@ import { defineState } from "eve/context";
 import { defineHook, type HookContext } from "eve/hooks";
 
 import type { PendingAction } from "../lib/pending-action";
+import { toolActionParameter, toolActionResult } from "../lib/tool-activity";
 import { toolLabel } from "../lib/tool-label";
 import { MAX_ACTIVITY_TEXT_LENGTH, truncate } from "../lib/truncate";
 
@@ -133,10 +134,7 @@ const post = async (
     });
   } catch (err) {
     // Observe-only: a Linear hiccup must never fail the child's turn.
-    console.warn(
-      "relay: posting a Linear activity failed:",
-      errorMessage(err),
-    );
+    console.warn("relay: posting a Linear activity failed:", errorMessage(err));
   }
 };
 
@@ -179,9 +177,8 @@ export default defineHook({
           }
           continue; // session_update already posts its own activity
         }
-        const raw = JSON.stringify(action.input);
         const label = toolLabel(action.toolName);
-        const parameter = truncate(raw, MAX_ACTIVITY_TEXT_LENGTH);
+        const parameter = toolActionParameter(action.toolName, action.input);
         relay.update((s) => ({
           ...s,
           pendingActions: {
@@ -215,16 +212,13 @@ export default defineHook({
         const { [event.data.result.callId]: _, ...rest } = s.pendingActions;
         return { ...s, pendingActions: rest };
       });
-      let rawResult: string;
-      if (event.data.error?.message) {
-        rawResult = event.data.error.message;
-      } else {
-        try {
-          rawResult = JSON.stringify(event.data.result.output);
-        } catch {
-          rawResult = "";
-        }
-      }
+      const rawResult = event.data.error?.message
+        ? event.data.error.message
+        : toolActionResult(
+            event.data.result.toolName,
+            event.data.result.output,
+            event.data.result.isError,
+          );
       await post(
         {
           type: "action",
