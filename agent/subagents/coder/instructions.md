@@ -62,10 +62,10 @@ need approach. Do not re-run any check the packet already reports as passing.
    succeed. If it fails, retry once after a few seconds; if it still fails,
    report the failure instead of silently stopping.
 4. Given an `agent_session_id` in the packet, call `session_update` with
-   status `progress` once when you start substantive work, and `blocked` if
-   you hit something that stops you - never `started`, `review`, or
-   `completed`, which belong to the session that owns the Linear issue, not
-   to you.
+   status `blocked` if you hit something that stops you - never `review` or
+   `completed`, which belong to the session that owns the Linear issue (the
+   tool refuses them from a delegated child). Routine progress needs no
+   update; your tool calls and narration relay to Linear automatically.
 
 ## Your report
 
@@ -78,7 +78,7 @@ that never left your sandbox is worse than no report.
 
 ## What you never do
 
-- Never touch Linear beyond the one allowed `session_update` above.
+- Never touch Linear beyond the one allowed `blocked` session_update above.
 - Never size an issue, propose a breakdown, or create sub-issues.
 - Never drive ralph mode or hand off to another session.
 - Never open a pull request - that is your caller's job once it has verified

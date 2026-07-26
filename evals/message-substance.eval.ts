@@ -1,36 +1,39 @@
 import { defineEval } from "eve/evals";
 
-// Regression guard for the "regurgitation" fix: Eve's user-facing messages must
-// describe the work and its status, not recite the contract's own mechanics.
-// The symptom was a `started` session_update that read "Plan: check for
-// sub-issues, read ORIENTATION.md, ... delegate to one coding child" - the
-// agent parroting its orientation/delegation procedure back at the reader
-// because the runtime prompt was dense with that meta-language. instructions.md
-// now keeps its message rules terse and holds the rationale in agent/README.md.
-//
-// This asserts the opening message is substantive: a `started` session_update
-// is posted, and no session_update recites the clearest procedure tells. It
-// scans raw stream events (via eventsSatisfy) so it is robust to how the
-// session_update tool is namespaced.
+// Regression guard for the "regurgitation" fix and the plan-first opening
+// (HAR-40): Eve's user-facing surfaces must describe the work, not recite the
+// contract's own mechanics. The original symptom was a `started`
+// session_update that read "Plan: check for sub-issues, read ORIENTATION.md,
+// ... delegate to one coding child". The opening mandate is now to seed the
+// session's Agent Plan (the `todo` tool, mirrored into Linear by
+// `syncAgentPlanFromTodoTool`), so this asserts the plan is seeded with
+// substantive, work-shaped steps - and that any session_update posted stays
+// recital-free. It scans raw stream events (via eventsSatisfy) so it is
+// robust to how the tools are namespaced.
 
-// The clearest procedure tells - none of these belong in a message about the
-// actual change. Deliberately narrow to avoid false positives on issues whose
-// subject legitimately involves delegation or batching. `sizing`/`scoping`
-// guard the HAR-9 sizing-gate vocabulary; this eval only drives a small
-// ticket, where sizing must be silent (a large ticket's breakdown proposal is
-// a different, legitimate message and is not exercised here).
-const PROCESS_RECITAL = /orientation\.md|sub-issue|coding child|\bsizing\b|\bscoping\b/i;
+// The clearest procedure tells - none of these belong in a plan step or a
+// message about the actual change. Deliberately narrow to avoid false
+// positives on issues whose subject legitimately involves delegation or
+// batching. `sizing`/`scoping` guard the HAR-9 sizing-gate vocabulary; this
+// eval only drives a small ticket, where sizing must be silent (a large
+// ticket's breakdown proposal is a different, legitimate message and is not
+// exercised here).
+const PROCESS_RECITAL =
+  /orientation\.md|sub-issue|coding child|\bsizing\b|\bscoping\b/i;
 
 const isSessionUpdate = (toolName: string) =>
   toolName.endsWith("session_update");
 
+const isTodoTool = (toolName: string) =>
+  toolName === "todo" || toolName.endsWith("todo");
+
 export default defineEval({
   description:
-    "the opening session_update describes the work, not the contract's own orientation/delegation procedure",
+    "the opening batch seeds a substantive Agent Plan and no message recites the contract's own procedure",
   async test(t) {
     await t.send(
       [
-        "You have been assigned this Linear issue. Post your opening session_update for it, then stop and wait for confirmation before doing anything else.",
+        "You have been assigned this Linear issue. Seed the session's plan for it, then stop and wait for confirmation before doing anything else.",
         "",
         "issue: ROG-99 - Show the player's gold in the HUD status bar",
         "description: The status bar renders HP but omits the player's gold. Add a gold readout beside HP so the player can see their balance at a glance.",
@@ -44,22 +47,40 @@ export default defineEval({
     );
 
     t.eventsSatisfy(
-      "opens with a started session_update that describes the work, not the procedure",
+      "seeds a substantive plan and recites no procedure",
       (events) => {
-        const updates = events.flatMap((event) =>
+        const calls = events.flatMap((event) =>
           event.type === "actions.requested"
-            ? event.data.actions.flatMap((action) =>
-                action.kind === "tool-call" && isSessionUpdate(action.toolName)
-                  ? [action.input as { status?: unknown; message?: unknown }]
-                  : [],
+            ? event.data.actions.filter(
+                (action) => action.kind === "tool-call",
               )
             : [],
         );
-        const opened = updates.some((input) => input.status === "started");
-        const clean = updates.every(
-          (input) => !PROCESS_RECITAL.test(String(input.message ?? "")),
-        );
-        return opened && clean;
+        const seeded = calls
+          .filter((action) => isTodoTool(action.toolName))
+          .map((action) => action.input as { todos?: unknown })
+          .some(
+            (input) =>
+              Array.isArray(input.todos) &&
+              input.todos.length >= 2 &&
+              input.todos.every((todo) => {
+                const content = (todo as { content?: unknown }).content;
+                return (
+                  typeof content === "string" &&
+                  content.trim().length > 0 &&
+                  !PROCESS_RECITAL.test(content)
+                );
+              }),
+          );
+        const clean = calls
+          .filter((action) => isSessionUpdate(action.toolName))
+          .every(
+            (action) =>
+              !PROCESS_RECITAL.test(
+                String((action.input as { message?: unknown }).message ?? ""),
+              ),
+          );
+        return seeded && clean;
       },
     );
   },

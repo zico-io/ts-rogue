@@ -13,7 +13,7 @@ pre-warmed Vercel Sandboxes.
 | [`connections/`](connections/) | Linear MCP connection (allow-listed), Vercel MCP connection (deployments/logs/errors/analytics), and Vercel REST OpenAPI connection (traces, observability queries, read-only sandbox introspection) |
 | [`hooks/`](hooks/) | Delegated-child activity relay (including the ephemeral working indicator) and turn-start sandbox prewarm |
 | [`schedules/`](schedules/) | Daily eve-version-check: bump, evaluate the changelog against the workaround audit, PR |
-| [`tools/`](tools/) | Native Linear Agent Session progress updates and proactive self-handoff to a fresh session |
+| [`tools/`](tools/) | Linear Agent Session handoff updates (blocked/review/completed) and proactive self-handoff to a fresh session |
 | [`sandbox.ts`](sandbox.ts) | Root's Vercel Sandbox: bootstrap, sync, `ORIENTATION.md` brief, network policy, and token refresh |
 | [`lib/orientation.ts`](lib/orientation.ts) | Builds the pre-computed orientation brief from git state and screenshot-tooling status |
 | [`lib/sandbox.ts`](lib/sandbox.ts) | Shared sandbox-provisioning recipe (repo checkout, toolchain, GitHub auth levels, screenshot toggle) composed by the root and future subagents |
@@ -98,44 +98,41 @@ adapter's event vocabulary has no `subagent.called`, so this lives in a hook),
 and relays the child's action/reasoning chips with `ephemeral: true` - Linear
 displays an ephemeral activity only until the next activity replaces it. What
 persists is deliberate: the child's final narration (the handoff record) and
-durable `session_update`s. Those child updates are also role-coerced in code
-(`tools/session_update.ts`): a child's `started`/`review`/`completed` becomes
-`progress` with a `[<issue>]` prefix, because ENG-2's thread showed a child
-"Completed" while nothing was pushed, then "Started" again - the session
-appeared to finish and restart. The delegation-path wiring is covered by
+durable `session_update`s. Those child updates are also role-guarded in code
+(`tools/session_update.ts`): only `blocked` passes from a child, prefixed
+`[<issue>]`; `review` and `completed` return a structured refusal without
+posting, because ENG-2's thread showed a child "Completed" while nothing was
+pushed, then "Started" again - the session appeared to finish and restart.
+The delegation-path wiring is covered by
 `evals/delegation/child-session-update.eval.ts`: eve's `mockModel` scripts
-the root to delegate and the child to post `session_update`, so a real child
-session runs the real hook and tool code and the eval reads the coerced
-`**Progress**` body off a local mock Linear server. It proves wiring, not
-model policy - a scripted root always delegates - so the coercion map's unit
-tests and the contract text still carry the policy half.
+the root to delegate and the child to attempt `completed` then `blocked`, so
+a real child session runs the real hook and tool code and the eval reads a
+single `**Blocked**` activity (and no `**Completed**`) off a local mock
+Linear server. It proves wiring, not model policy - a scripted root always
+delegates - so the guard's unit tests and the contract text still carry the
+policy half.
 
-`instructions.md` requires the root to send a `session_update` before its first
-other tool call and to batch independent read-only lookups (sub-issue checks,
-`ORIENTATION.md`, and similar) into a single turn. `session_update` is the only
-durable, top-level Linear activity - tool calls and reasoning relay as
-transient `action`/`thought` chips (see `tools/session_update.ts` and
-`hooks/child-relay.ts`) - so without an early message a long orientation or
-delegation shows only a wall of chips with nothing a human can react to. That
-early message and the one-sentence reply the root pairs with each tool batch are
-both surfaced to the reader: `channels/linear.ts`'s `message.completed` handler
-lifts the first line of a tool-batch turn straight into a Linear `thought`, and
-`session_update` posts as a durable `response`.
-
-The mid-session update triggers are mechanical rather than judgment-based
-("post when it stretches long" let the ROG-65 session run its coding child for
-minutes behind a lone `started` message): the batch that starts implementation
-must carry a `progress` update with the scoped cut, and three tool-call
-batches without a `session_update` force one in the next batch. No eval guards
-these triggers yet - the delegation eval's scripted model cannot exercise
-when a real model chooses to post, and the ralph e2e fixture deliberately
-runs with a blank `agent_session_id`, so it would take a live Linear session
-to observe.
+The session's progress surface is its Agent Plan (HAR-40): `instructions.md`
+requires the root's first batch to seed the durable `todo` list with the
+issue's outcome-oriented step list, and to flip steps
+`in_progress`/`completed` in the same batches that do the work.
+`syncAgentPlanFromTodoTool` (see "Agent Plan sync on Linear" below) mirrors
+every todo write into Linear's native Agent Plan, so the reader watches a
+live checklist instead of a feed of durable chat updates. `session_update`
+is reserved for the three human-handoff moments - `blocked`, `review`,
+`completed` - because it posts a durable `response`, and Linear derives
+session state from the last activity: a `response` means "work completed",
+which is exactly why the retired `started`/`progress` statuses kept flipping
+sessions to Finished while a delegated child was still running (HAR-38's
+ephemeral-chip workaround was superseded by removing the statuses
+themselves). The one-sentence reply the root pairs with each tool batch is
+still surfaced: `channels/linear.ts`'s `message.completed` handler lifts the
+first line of a tool-batch turn straight into a Linear `thought`.
 
 Because those sentences reach the reader verbatim, `instructions.md` keeps its
 message rules as terse imperatives and holds the design rationale (the
-durable-vs-transient mechanics above, the "an early message anchors the session"
-framing) here in the README rather than in the runtime prompt. A model told to
+durable-vs-transient mechanics above, the plan-as-anchor framing) here in the
+README rather than in the runtime prompt. A model told to
 write a sentence per batch will parrot whatever meta-language sits next to that
 rule; the concrete "reading `ORIENTATION.md`, checking for sub-issues, and
 grepping for a symbol are three independent lookups" example that once lived in
@@ -145,8 +142,9 @@ principle now in `instructions.md`'s Discipline section is that **Eve's messages
 describe the work and its status, never the contract's own mechanics** -
 orientation lookups, sub-issue checks, delegation, batching, and `pnpm check`
 are invisible plumbing, not message content. `evals/message-substance.eval.ts`
-is the regression guard: it asserts the `started` message carries substance and
-does not echo those process terms.
+is the regression guard: it asserts the opening batch seeds a substantive
+Agent Plan (steps about the work, not the procedure) and that any
+session_update posted does not echo those process terms.
 
 `onSession` can re-run mid-session (a new inbound Linear activity re-attaches
 the same sandbox); `SYNC_MAIN_COMMAND` only force-resyncs local `main` to
@@ -230,9 +228,11 @@ enabled by default) into Linear's Agent Plan preview
 completed, non-error `todo` tool call and pushes the current list into
 `AgentSession.plan` via `channel.linear.updateSession({ plan })`
 (`planFromTodoToolOutput` does the mapping - todo's `in_progress`/`cancelled`
-statuses become Linear's `inProgress`/`canceled`). This is additive: the
-existing `session_update` chat updates are unaffected, and Linear's own UI now
-also renders the live checklist alongside them. An empty todo list is left
+statuses become Linear's `inProgress`/`canceled`). Since HAR-40 this is the
+session's primary progress surface, not an additive extra: the contract
+mandates seeding the todo list in the first batch and moving it with the
+work, and `session_update` is reserved for the blocked/review/completed
+handoff moments beside it. An empty todo list is left
 alone rather than clearing an existing Linear plan, since the tool's own
 "omit `todos` to read" contract means an empty read should not blank out a
 plan the agent is still working from.
@@ -396,7 +396,10 @@ callers, climb the ponytail ladder, respect the architecture invariants, run
 ownership), and its `sandbox.ts` composes
 `buildSandboxDefinition({ gitAuthLevel: "push-capable" })` - the first
 subagent that needs full push access rather than read-only or no GitHub auth
-at all.
+at all. Its `tools/session_update.ts` re-exports the root's tool (declared
+subagents inherit no root tool slots), and the shared role guard makes
+`blocked` the only status coder can actually post - `review`/`completed`
+are refused in code.
 
 This inverts the old delegation model: a declared subagent's sandbox is not
 shared with the root, so `coder` cannot hand back local commits the way the

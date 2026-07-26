@@ -12,13 +12,14 @@ import {
 
 // Covers the delegation-path wiring no other eval reaches: a real child
 // session spawned by the built-in `agent` tool, the child-relay hook capturing
-// a non-blank agent_session_id from the packet, and session_update's
-// role coercion (`completed` -> `progress` with the `[<issue>]` prefix)
-// applied by the real execute with the real ctx.session.parent. The model is
-// eve's mockModel (scripted in agent/lib/mock-delegation.ts); everything else
-// - harness, tools, hooks, child session - runs for real. The coerced status
-// exists only inside the GraphQL body session_update posts, so the eval runs
-// a local mock Linear GraphQL server and reads what arrived.
+// a non-blank agent_session_id from the packet, and session_update's role
+// guard (HAR-40: a child's `completed` is refused in code without posting;
+// only `blocked` passes, with the `[<issue>]` prefix) applied by the real
+// execute with the real ctx.session.parent. The model is eve's mockModel
+// (scripted in agent/lib/mock-delegation.ts); everything else - harness,
+// tools, hooks, child session - runs for real. What actually posted exists
+// only inside the GraphQL bodies session_update sends, so the eval runs a
+// local mock Linear GraphQL server and reads what arrived.
 //
 // Scope, honestly: this proves runtime wiring, not model policy - a scripted
 // root always delegates. Run it with:
@@ -32,7 +33,7 @@ import {
 // handoff stays covered by src/child-relay.test.ts.
 export default defineEval({
   description:
-    "delegated child's session_update reaches Linear with its status coerced to progress and the issue prefix",
+    "delegated child's completed session_update is refused in code; only its blocked update reaches Linear, issue-prefixed",
   timeoutMs: 120_000,
   async test(t) {
     if (!process.env.EVE_EVAL_MOCK_MODEL) {
@@ -86,13 +87,15 @@ export default defineEval({
 
       const child = await t.target.attachSession(childSessionId as string);
       child.calledTool("session_update", {
-        count: 1,
+        count: 2,
         input: { agentSessionId: MOCK_AGENT_SESSION_ID },
       });
 
-      // The payoff: the activity that reached (mock) Linear carries the
-      // child-coerced body, end to end through the real hook state and the
-      // real execute.
+      // The payoff: the scripted child attempts `completed` first and only
+      // advances to `blocked` after receiving that tool result - so exactly
+      // one activity reaching (mock) Linear proves the completed attempt was
+      // refused without posting, end to end through the real hook state and
+      // the real execute.
       const activityBodies = bodies.filter((body) =>
         body.includes("agentActivityCreate"),
       );
@@ -101,10 +104,11 @@ export default defineEval({
         satisfies(
           (posted: string[]) =>
             posted.length === 1 &&
-            posted[0]!.includes(`**Progress**`) &&
+            posted[0]!.includes(`**Blocked**`) &&
             posted[0]!.includes(`[${MOCK_ISSUE_ID}]`) &&
-            !posted[0]!.includes(`**Completed**`),
-          "posted activity body was coerced to Progress with the issue prefix",
+            !posted[0]!.includes(`**Completed**`) &&
+            !posted[0]!.includes(`**Progress**`),
+          "only the blocked update reached Linear, issue-prefixed; the completed attempt was refused without posting",
         ),
       );
     } finally {

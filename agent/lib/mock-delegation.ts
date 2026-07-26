@@ -19,11 +19,14 @@ const DELEGATION_PACKET = [
   `issue: ${MOCK_ISSUE_ID} - delegation fixture`,
   `agent_session_id: ${MOCK_AGENT_SESSION_ID}`,
   "",
-  "You are the fixture child. Post exactly one session_update with status completed, then finish.",
+  "You are the fixture child. Post one session_update with status completed, then one with status blocked, then finish.",
 ].join("\n");
 
 const hasToolResult = (request: MockModelRequest, name: string): boolean =>
   request.toolResults.some((result) => result.name.endsWith(name));
+
+const toolResultCount = (request: MockModelRequest, name: string): number =>
+  request.toolResults.filter((result) => result.name.endsWith(name)).length;
 
 export const delegationResponder = (
   request: MockModelRequest,
@@ -44,18 +47,26 @@ export const delegationResponder = (
       message.includes(MOCK_AGENT_SESSION_ID),
     )
   ) {
-    if (hasToolResult(request, "session_update")) {
-      return { text: "Fixture child done." };
-    }
+    // First attempt a session-owner status (must be refused in code without
+    // posting), then the allowed blocked update, then finish.
+    const posted = toolResultCount(request, "session_update");
+    if (posted >= 2) return { text: "Fixture child done." };
     return {
       toolCalls: [
         {
           name: "session_update",
-          input: {
-            agentSessionId: MOCK_AGENT_SESSION_ID,
-            message: "Fixture child finished the delegated work.",
-            status: "completed",
-          },
+          input:
+            posted === 0
+              ? {
+                  agentSessionId: MOCK_AGENT_SESSION_ID,
+                  message: "Fixture child finished the delegated work.",
+                  status: "completed",
+                }
+              : {
+                  agentSessionId: MOCK_AGENT_SESSION_ID,
+                  message: "Fixture child hit a wall.",
+                  status: "blocked",
+                },
         },
       ],
     };
