@@ -891,10 +891,21 @@ function finalizeWon(
     state.pendingLootTriage,
     pickup.queued,
   );
-
+  // Loot log lines: kept items rendered with their rarity color (ENG-20).
   const lootLogs = pickup.outcome.kept.map((item) =>
-    entry(`Looted ${describeItem(item)}!`, "loot"),
+    entry(`Looted ${describeItem(item)}!`, "loot", undefined, item.rarity),
   );
+  // Dismantle summary line (ENG-20): one line listing count and total gold,
+  // using the gold-toned "loot" kind color (mixed rarities, no single rarity).
+  const dismantleLogs: LogEntry[] =
+    pickup.outcome.dismantled.length > 0
+      ? [
+          entry(
+            `Dismantled ${pickup.outcome.dismantled.length} item(s) -> ${pickup.outcome.goldGained}g`,
+            "loot",
+          ),
+        ]
+      : [];
   const triageLogs = pickup.queued.length
     ? [
         entry(
@@ -924,7 +935,13 @@ function finalizeWon(
     pendingLootTriage,
     dungeonState,
     battleState: null,
-    log: [...state.log, ...finalLogs, ...lootLogs, ...triageLogs],
+    log: [
+      ...state.log,
+      ...finalLogs,
+      ...lootLogs,
+      ...dismantleLogs,
+      ...triageLogs,
+    ],
   };
 }
 

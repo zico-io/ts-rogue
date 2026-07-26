@@ -397,19 +397,36 @@ function openChest(state: GameState): GameState {
     state.pendingLootTriage,
     pickup.queued,
   );
-  let message = chestLootMessage(loot);
-  if (chest.items.length > 0) {
-    message = `${message.replace(/!$/, "")}, plus ${describeItem(chest.items[0])}!`;
-  }
-  const logs = [...state.log, entry(message, "loot")];
-  if (pickup.queued.length > 0) {
-    logs.push(
-      entry(
-        `Your backpack is full - ${pickup.queued.length} item(s) await a swap-or-dismantle decision`,
-        "loot",
-      ),
-    );
-  }
+  // ENG-20: base chest loot line (fixed drops, no rarity); then one
+  // rarity-colored log line per kept generated item; then the dismantle
+  // summary; and finally the triage-full line if the backpack overflowed.
+  const baseLine = entry(chestLootMessage(loot), "loot");
+  const keptLines = pickup.outcome.kept.map((item) =>
+    entry(`Looted ${describeItem(item)}!`, "loot", undefined, item.rarity),
+  );
+  const dismantleLines = pickup.outcome.dismantled.length
+    ? [
+        entry(
+          `Dismantled ${pickup.outcome.dismantled.length} item(s) -> ${pickup.outcome.goldGained}g`,
+          "loot",
+        ),
+      ]
+    : [];
+  const triageLines = pickup.queued.length
+    ? [
+        entry(
+          `Your backpack is full - ${pickup.queued.length} item(s) await a swap-or-dismantle decision`,
+          "loot",
+        ),
+      ]
+    : [];
+  const logs = [
+    ...state.log,
+    baseLine,
+    ...keptLines,
+    ...dismantleLines,
+    ...triageLines,
+  ];
   return {
     ...state,
     rngState: rng.getState(),

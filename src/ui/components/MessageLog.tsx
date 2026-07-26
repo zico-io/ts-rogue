@@ -47,7 +47,9 @@ export function MessageLog({
             color={
               message.element
                 ? theme.element[message.element]
-                : theme.msg[message.kind]
+                : message.rarity
+                  ? theme.rarity[message.rarity]
+                  : theme.msg[message.kind]
             }
             // biome-ignore lint/suspicious/noArrayIndexKey: append-only tail, position is identity
             key={start + index}

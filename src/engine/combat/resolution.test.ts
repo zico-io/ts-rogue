@@ -1507,3 +1507,61 @@ describe("ENG-12 status cures", () => {
     ).toBe(true);
   });
 });
+
+describe("ENG-20 loot toast (finalizeWon)", () => {
+  // Dungeon Guardian has tier-3 loot table (dropChance=1), guaranteeing drops.
+  function bossEnemy(id = "guardian-1"): ReturnType<typeof makeEnemy> {
+    return makeEnemy(
+      id,
+      "dungeon-guardian",
+      "Guardian",
+      1,
+      SLIME_STATS,
+      80,
+      120,
+    );
+  }
+
+  it("kept item log entries carry the item rarity on victory (seed 1)", () => {
+    // Seed 1 yields 2 kept items (unique war-blade + unique guardian-greatsword).
+    const state = stateInBattle(1, bossEnemy());
+    const after = reduce(state, {
+      type: "BattleAttack",
+      targetId: "guardian-1",
+    });
+    const lootLines = after.log.filter((l) => l.text.startsWith("Looted "));
+    expect(lootLines.length).toBeGreaterThanOrEqual(1);
+    for (const line of lootLines) {
+      expect(line.kind).toBe("loot");
+      expect(line.rarity).toBeDefined();
+      expect(["common", "magic", "rare", "unique"]).toContain(line.rarity);
+    }
+  });
+
+  it("dismantle summary line appears with correct count and gold (seed 10)", () => {
+    // Seed 10 yields 1 common war-blade + 1 unique guardian-signet.
+    // Filter { 1: "magic" } dismantles the common war-blade.
+    const boss = bossEnemy();
+    let state = stateInBattle(10, boss);
+    state = reduce(state, {
+      type: "SetLootFilter",
+      rules: { minRarityByTier: { 1: "magic" }, keepAffixStats: [] },
+    });
+    const goldBefore = state.gold;
+    const after = reduce(state, {
+      type: "BattleAttack",
+      targetId: "guardian-1",
+    });
+    const dismantleLine = after.log.find((l) =>
+      l.text.startsWith("Dismantled "),
+    );
+    expect(dismantleLine).toBeDefined();
+    expect(dismantleLine?.text).toMatch(/^Dismantled \d+ item\(s\) -> \d+g$/);
+    expect(dismantleLine?.kind).toBe("loot");
+    expect(after.lastLootOutcome?.dismantled.length).toBeGreaterThan(0);
+    expect(dismantleLine?.text).toContain(
+      `${after.lastLootOutcome?.goldGained}g`,
+    );
+    expect(after.gold).toBeGreaterThan(goldBefore);
+  });
+});

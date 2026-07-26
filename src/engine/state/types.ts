@@ -3,7 +3,7 @@ import type { BattleEvent, BattleState } from "../combat/types";
 import type { InventoryItem, PartyMember } from "../entities/party";
 import type { LootFilterRules } from "../loot/lootFilter";
 import type { LootPickupOutcome, PendingLootTriage } from "../loot/pickup";
-import type { EquipmentSlotName, ItemInstance } from "../loot/types";
+import type { EquipmentSlotName, ItemInstance, Rarity } from "../loot/types";
 import type { RngState } from "../rng/rng";
 import type { DungeonState, WorldState } from "../world/types";
 
@@ -19,14 +19,22 @@ export interface LogEntry {
   // can color them distinctly. Omitted rather than set to `undefined` to
   // keep GameState strictly JSON-serializable.
   element?: Element;
+
+  /** Optional item rarity for loot lines (ENG-20 loot toast). */
+  rarity?: Rarity;
 }
 
+/** Build a log entry; `kind` defaults to the neutral system category. */
 export function entry(
   text: string,
   kind: LogKind = "system",
   element?: Element,
+  rarity?: Rarity,
 ): LogEntry {
-  return element ? { text, kind, element } : { text, kind };
+  const e: LogEntry = { text, kind };
+  if (element) e.element = element;
+  if (rarity) e.rarity = rarity;
+  return e;
 }
 
 export interface GameFlags {

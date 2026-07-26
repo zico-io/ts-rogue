@@ -258,7 +258,9 @@ export class SceneChromeView {
       const age = visible.length > 1 ? 1 - index / (visible.length - 1) : 0;
       handle.setColor(
         mixColor(
-          theme.msg[message.kind],
+          message.rarity
+            ? theme.rarity[message.rarity]
+            : theme.msg[message.kind],
           theme.window.fill,
           age * LOG_AGE_FADE_MAX,
         ),

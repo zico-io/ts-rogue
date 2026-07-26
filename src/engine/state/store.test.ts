@@ -531,7 +531,9 @@ describe("Dungeon", () => {
     state = reduce(state, { type: "OpenChest" });
     expect(state.gold).toBeGreaterThan(goldBefore);
     expect(state.inventory.length).toBeGreaterThan(inventoryBefore);
-    expect(state.log.at(-1)?.text).toMatch(/You open the chest and find/);
+    expect(
+      state.log.find((l) => /You open the chest and find/.test(l.text)),
+    ).toBeDefined();
 
     const stairs1 = findDungeonTile(state, "stairsDown");
     expect(stairs1).toBeDefined();
@@ -1022,7 +1024,9 @@ describe("Phase 5 loot, equip, and sell", () => {
       state = reduce(state, { type: "OpenChest" });
       expect(state.items.length).toBe(itemsBefore + 1);
       expect(state.nextItemId).toBe(nextBefore + 1);
-      expect(state.log.at(-1)?.text).toMatch(/You open the chest and find/);
+      expect(
+        state.log.find((l) => /You open the chest and find/.test(l.text)),
+      ).toBeDefined();
     });
   });
 
@@ -1242,6 +1246,53 @@ describe("Phase 5 loot, equip, and sell", () => {
       );
 
       expect(state.items.length).toBe(itemsBefore);
+    });
+  });
+
+  describe("OpenChest loot toast (ENG-20)", () => {
+    it("kept item log entry carries its rarity", () => {
+      let state = withToughHero(enterDungeon(1234));
+      const chest = findDungeonTile(state, "chest");
+      expect(chest).toBeDefined();
+      state = walkTo(state, chest ?? { x: 0, y: 0 });
+      state = reduce(state, { type: "OpenChest" });
+      // With seed 1234 floor 1 and empty loot filter, the chest's generated
+      // item should be kept and its log entry should carry a rarity.
+      const keptLines = state.log.filter((l) => l.text.startsWith("Looted "));
+      expect(keptLines.length).toBeGreaterThanOrEqual(1);
+      for (const line of keptLines) {
+        expect(line.kind).toBe("loot");
+        expect(line.rarity).toBeDefined();
+        expect(["common", "magic", "rare", "unique"]).toContain(line.rarity);
+      }
+    });
+
+    it("dismantle summary line appears with correct count and gold when filter discards items", () => {
+      let state = withToughHero(enterDungeon(1234));
+      const chest = findDungeonTile(state, "chest");
+      expect(chest).toBeDefined();
+      state = walkTo(state, chest ?? { x: 0, y: 0 });
+      /* Filter: dismantle anything below magic on tier 1. Seed 1234 floor 1 drops a common tunic. */
+      state = reduce(state, {
+        type: "SetLootFilter",
+        rules: { minRarityByTier: { 1: "magic" }, keepAffixStats: [] },
+      });
+      const goldBefore = state.gold;
+      state = reduce(state, { type: "OpenChest" });
+      /* Verify a dismantle summary line exists */
+      const dismantleLine = state.log.find((l) =>
+        l.text.startsWith("Dismantled "),
+      );
+      expect(dismantleLine).toBeDefined();
+      expect(dismantleLine?.text).toMatch(/^Dismantled \d+ item\(s\) -> \d+g$/);
+      expect(dismantleLine?.kind).toBe("loot");
+      /* The summary gold should match the actual gold gained from dismantle */
+      expect(state.lastLootOutcome?.dismantled.length).toBeGreaterThan(0);
+      expect(dismantleLine?.text).toContain(
+        `${state.lastLootOutcome?.goldGained}g`,
+      );
+      /* Total gold gained includes chest gold + dismantle proceeds */
+      expect(state.gold).toBeGreaterThan(goldBefore);
     });
   });
 
