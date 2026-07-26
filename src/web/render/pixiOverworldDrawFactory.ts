@@ -17,8 +17,8 @@ import {
 } from "pixi.js";
 import type { TileName } from "../../ui/tiles/sources";
 import type {
-  MultiCellRegion,
   BlobHandle,
+  MultiCellRegion,
   OverworldDrawFactory,
   SpriteHandle,
 } from "./overworldView";
