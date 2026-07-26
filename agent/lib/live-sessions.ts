@@ -1,10 +1,5 @@
-import { callLinearGraphQL } from "eve/channels/linear";
 import type { LinearChannelConfig } from "eve/channels/linear";
-
-import {
-  EXTERNAL_LINKS_SELECTION,
-  externalLinksAreMirror,
-} from "./mirror-session";
+import { callLinearGraphQL } from "eve/channels/linear";
 
 // Shared pre-check for the one-live-session-per-issue invariant (HAR-26
 // follow-up): both the `handoff` tool (before creating a session) and the
@@ -57,7 +52,6 @@ export const listLiveAgentSessions = async (input: {
           status?: string;
           createdAt?: string;
           url?: string | null;
-          externalLinks?: unknown;
           activities?: { nodes?: readonly { updatedAt?: string }[] };
         }[];
       };
@@ -70,7 +64,6 @@ export const listLiveAgentSessions = async (input: {
           agentSessions(first: 50) {
             nodes {
               id status createdAt url
-              ${EXTERNAL_LINKS_SELECTION}
               activities(last: 1) { nodes { updatedAt } }
             }
           }
@@ -88,12 +81,6 @@ export const listLiveAgentSessions = async (input: {
         typeof node.status !== "string" ||
         !LIVE_STATUSES.has(node.status)
       ) {
-        return [];
-      }
-      // Mirror sessions (per-child top-level cards, see `hooks/relay.ts`) are
-      // not real work and must never block a legitimate handoff/dispatch or be
-      // counted by the one-live-session-per-issue guard.
-      if (externalLinksAreMirror(node.externalLinks)) {
         return [];
       }
       // Most recent activity is the truest "last active" signal; fall back to
