@@ -13,7 +13,7 @@ export const DELEGATION_TRIGGER = "run the delegation fixture";
 /** Uncommon fixed port for the eval's mock Linear GraphQL server. */
 export const MOCK_LINEAR_PORT = 47831;
 
-// Matches child-relay's parseAgentSessionId/parseIssueId so the child hook
+// Matches relay hook's parseAgentSessionId/parseIssueId so the child hook
 // captures both facts from the packet text alone.
 const DELEGATION_PACKET = [
   `issue: ${MOCK_ISSUE_ID} - delegation fixture`,

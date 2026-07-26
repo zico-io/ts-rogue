@@ -92,7 +92,7 @@ turn's emit path, so awaiting there would serialize the cold start in front
 of the model call instead of overlapping it.
 
 While a delegated child works, the session shows a single live status slot
-rather than a growing wall of chips: `hooks/child-relay.ts` posts an
+rather than a growing wall of chips: `hooks/relay.ts` posts an
 ephemeral "working" thought the moment a child session starts (the channel
 adapter's event vocabulary has no `subagent.called`, so this lives in a hook),
 and relays the child's action/reasoning chips with `ephemeral: true` - Linear
@@ -103,7 +103,7 @@ durable `session_update`s. Those child updates are also role-guarded in code
 `[<issue>]`; `review` and `completed` return a structured refusal without
 posting, because ENG-2's thread showed a child "Completed" while nothing was
 pushed, then "Started" again - the session appeared to finish and restart.
-Eve's subagent isolation model (declared subagents inherit nothing from the root's authored slots) means the same relay must be reachable from each subagent's own `hooks/` slot. Each declared subagent (`coder`, `scout`, `reviewer`, `playtester`) re-exports the root's `hooks/child-relay.ts` verbatim under `agent/subagents/<id>/hooks/child-relay.ts` -- the shared hook already branches on `ctx.session.parent`, which is truthy inside any child session, declared or built-in-tool copy alike.
+Eve's subagent isolation model (declared subagents inherit nothing from the root's authored slots) means the same relay must be reachable from each subagent's own `hooks/` slot. Each declared subagent (`coder`, `scout`, `reviewer`, `playtester`) re-exports the root's `hooks/relay.ts` verbatim under `agent/subagents/<id>/hooks/relay.ts` -- the shared hook already branches on `ctx.session.parent`, which is truthy inside any child session, declared or built-in-tool copy alike.
 The delegation-path wiring is covered by
 `evals/delegation/child-session-update.eval.ts`: eve's `mockModel` scripts
 the root to delegate and the child to attempt `completed` then `blocked`, so
@@ -255,11 +255,11 @@ against; each future audit updates the date and verdicts.
 | Inbound image attachment | `channels/linear.ts` | `attachLinearInboundImages`/`resolveLinearAccessToken` unexported | Still unexported - ported here (built-in gained it in 0.27.3) |
 | GitHub @mention gate reimplementation | `channels/github.ts` | `extractGitHubCommentTrigger`/`shouldDispatchGitHubComment` not public; custom `onComment` replaces the built-in gate wholesale | Still not public; `pull_request_review` (top-level verdict) events still unparsed |
 | Session handoff instead of quota continuation | `tools/handoff.ts` | Token-quota HITL prompt not overridable; `commentCreate` unexported | Still no public hook (0.27.1 only changed decline behavior) |
-| File-based child session-id handoff | `hooks/child-relay.ts` | `subagent.called` declared in the hook vocabulary but never dispatched to authored hooks/channels | Still absent from `ChannelEvents` |
+| File-based child session-id handoff | `hooks/relay.ts` | `subagent.called` declared in the hook vocabulary but never dispatched to authored hooks/channels | Still absent from `ChannelEvents` |
 | Eager sandbox prewarm + durable token re-mint | `hooks/prewarm-sandbox.ts` | Lazy sandbox creation; no session-end hook; in-process token timers don't survive harness recycling | Unchanged |
 | Sandbox lifetime/timeout re-assertion, token fallback chain | `sandbox.ts` | Create-time options don't apply to resumed sandboxes (ROG-65); connect token cache staleness | Unchanged. eve 0.27.5's `workspace/` seed files were evaluated and rejected: seed paths are workspace-relative only (the files this bootstrap writes live in `~/.config` and `/etc`), and seeding `/workspace` would have broken bootstrap's `git clone` into an empty directory - HAR-34 replaced the clone with an in-place `git init`/`git remote add`/`git fetch`/`git reset --hard` sequence, which no longer requires an empty `/workspace`, but eve's `workspace/**` seed-file layout itself is not yet adopted (separate follow-up HAR-36) |
 | Vercel introspection | `connections/vercel.ts` + `connections/vercel-api.ts` | Vercel MCP server lacks sandbox/trace/observability tools; no Vercel-API credential helper in `@vercel/connect/eve` | Retired the hand-rolled `tools/vercel_*.ts` + `lib/vercel-api.ts` layer in favor of an MCP + OpenAPI connection pair. `VERCEL_TOKEN` env still required for observability/traces (OIDC bearers 403 there; sandbox endpoints would accept them). `teamId`/`projectId` now derived from OIDC claims. Accepted loss: sandbox command logs (see "Vercel debugging connections") |
-| Agent Session posting in code | `tools/session_update.ts`, `tools/handoff.ts`, `hooks/child-relay.ts`, `channels/linear.ts` | `mcp.linear.app` exposes no Agent Session tools (`agentActivityCreate`, `agentSessionCreateOnComment`), and hooks/channel code cannot call connection tools at all | Not replaceable by the Linear MCP connection until Linear ships agent-session MCP tools |
+| Agent Session posting in code | `tools/session_update.ts`, `tools/handoff.ts`, `hooks/relay.ts`, `channels/linear.ts` | `mcp.linear.app` exposes no Agent Session tools (`agentActivityCreate`, `agentSessionCreateOnComment`), and hooks/channel code cannot call connection tools at all | Not replaceable by the Linear MCP connection until Linear ships agent-session MCP tools |
 | Issue workflow-state sync | `lib/issue-state.ts`, `channels/linear.ts`, `channels/github.ts` | Linear Agent Sessions never move issue state; eve has no issue-state primitive, and workflow-state queries/`issueUpdate` are not in the public barrel | New at 0.27.6 - built on the public `callLinearGraphQL` transport |
 | Human-to-agent `stop` signal | `channels/linear.ts` | eve parses `agentActivity.signal` off the wire but never inspects Linear's `stop` human-to-agent signal; a stop request reaches the model as ordinary prompt text with no guaranteed halt | New - hand-rolled: cancels the turn and confirms via a response activity without ever dispatching a new turn to the model |
 

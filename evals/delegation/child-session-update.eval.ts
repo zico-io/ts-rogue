@@ -11,7 +11,7 @@ import {
 } from "../../agent/lib/mock-delegation";
 
 // Covers the delegation-path wiring no other eval reaches: a real child
-// session spawned by the built-in `agent` tool, the child-relay hook capturing
+// session spawned by the built-in `agent` tool, the relay hook capturing
 // a non-blank agent_session_id from the packet, and session_update's role
 // guard (HAR-40: a child's `completed` is refused in code without posting;
 // only `blocked` passes, with the `[<issue>]` prefix) applied by the real
@@ -27,10 +27,10 @@ import {
 //     pnpm exec eve eval delegation
 // It needs no model-provider or Linear credentials. Without the env flag it
 // skips, keeping plain `eve eval` and the remote ralph CI run green. Run it
-// without Vercel sandbox credentials: child-relay's root half awaits
+// without Vercel sandbox credentials: the relay hook's root half awaits
 // getSandbox() in the emit path, which fails fast (warn-only) locally but
 // would await a cold sandbox bootstrap with credentials present. That file
-// handoff stays covered by src/child-relay.test.ts.
+// handoff stays covered by src/relay.test.ts.
 export default defineEval({
   description:
     "delegated child's completed session_update is refused in code; only its blocked update reaches Linear, issue-prefixed",

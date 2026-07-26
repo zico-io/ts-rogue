@@ -37,10 +37,10 @@ vi.mock("eve/context", () => ({
   },
 }));
 
-const { SESSION_ID_FILE } = await import("../agent/hooks/child-relay");
+const { SESSION_ID_FILE } = await import("../agent/hooks/relay");
 const events =
   // biome-ignore lint/suspicious/noExplicitAny: driving mocked hook handlers in a test
-  (await import("../agent/hooks/child-relay")).default.events as any;
+  (await import("../agent/hooks/relay")).default.events as any;
 
 const freshState = (): RelayState => ({
   agentSessionId: null,
@@ -82,7 +82,7 @@ const subagentCall = () => ({
 const contentOf = (call: number) =>
   createActivity.mock.calls[call]?.[0].activity.content;
 
-describe("child-relay hook", () => {
+describe("relay hook", () => {
   beforeEach(() => {
     createActivity.mockClear();
     stateBox.value = freshState();
