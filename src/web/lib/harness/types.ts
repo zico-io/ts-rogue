@@ -75,7 +75,3 @@ export interface HarnessRunNode {
 export type HarnessUnavailableReason =
   | "observability_plus_required"
   | "upstream_error";
-
-export type HarnessResult<T> =
-  | { ok: true; data: T }
-  | { ok: false; reason: HarnessUnavailableReason };

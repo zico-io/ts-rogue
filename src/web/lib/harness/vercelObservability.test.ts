@@ -132,36 +132,30 @@ describe("queryObservability", () => {
 });
 
 describe("normalizeObservabilityRows", () => {
-  it("reads a top-level array response", () => {
-    const rows = normalizeObservabilityRows([
-      { tags: { "$eve.root": "sess-1" }, value: 3 },
-    ]);
+  it("reads a data array of tags/value rows", () => {
+    const rows = normalizeObservabilityRows({
+      data: [{ tags: { "$eve.root": "sess-1" }, value: 3 }],
+    });
     expect(rows).toEqual([{ tags: { "$eve.root": "sess-1" }, value: 3 }]);
   });
 
-  it("reads data/rows/results wrapper shapes", () => {
-    expect(
-      normalizeObservabilityRows({ data: [{ tags: { a: "1" }, value: 1 }] }),
-    ).toHaveLength(1);
-    expect(
-      normalizeObservabilityRows({ rows: [{ tags: { a: "1" }, value: 1 }] }),
-    ).toHaveLength(1);
-    expect(
-      normalizeObservabilityRows({ results: [{ tags: { a: "1" }, value: 1 }] }),
-    ).toHaveLength(1);
-  });
-
-  it("falls back to dimensions when tags is absent", () => {
+  it("skips rows without a tags object", () => {
     const rows = normalizeObservabilityRows({
       data: [{ dimensions: { "$eve.root": "sess-2" }, count: 5 }],
     });
-    expect(rows).toEqual([{ tags: { "$eve.root": "sess-2" }, value: 5 }]);
+    expect(rows).toEqual([]);
   });
 
   it("returns an empty array for unrecognized shapes", () => {
     expect(normalizeObservabilityRows(null)).toEqual([]);
     expect(normalizeObservabilityRows({})).toEqual([]);
     expect(normalizeObservabilityRows({ unexpected: true })).toEqual([]);
+    expect(
+      normalizeObservabilityRows([{ tags: { a: "1" }, value: 1 }]),
+    ).toEqual([]);
+    expect(
+      normalizeObservabilityRows({ rows: [{ tags: { a: "1" }, value: 1 }] }),
+    ).toEqual([]);
   });
 
   it("drops non-string tag values and defaults a missing value to 0", () => {

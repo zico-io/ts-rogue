@@ -77,37 +77,35 @@ export interface ObservabilityRow {
 
 /**
  * The documented response schema for this endpoint is an opaque `object`
- * (verified against the live OpenAPI spec: no fields are specified). This
- * tolerates the couple of shapes a tabular query engine plausibly returns
- * (`data`/`rows`/`results` array of `{ tags | dimensions, value | count }`)
- * instead of assuming one exact shape.
+ * (verified against the live OpenAPI spec: no fields are specified), and
+ * this workspace's Vercel team lacks Observability Plus so no real response
+ * has been inspected yet (see `eveTags.ts`). This assumes the single most
+ * likely shape - a top-level `data` array of `{ tags, value }` rows - rather
+ * than guessing at every wrapper/field-name variant a query engine might
+ * plausibly use. Re-verify against a live response once Observability Plus
+ * is enabled, and adjust this function (not its callers) if the real shape
+ * differs.
  */
 export function normalizeObservabilityRows(raw: unknown): ObservabilityRow[] {
   if (!raw || typeof raw !== "object") return [];
-  const obj = raw as Record<string, unknown>;
-  const list = Array.isArray(raw) ? raw : (obj.data ?? obj.rows ?? obj.results);
+  const list = (raw as Record<string, unknown>).data;
   if (!Array.isArray(list)) return [];
 
   const rows: ObservabilityRow[] = [];
   for (const entry of list) {
     if (!entry || typeof entry !== "object") continue;
     const record = entry as Record<string, unknown>;
-    const tagsSource =
-      (record.tags as Record<string, unknown> | undefined) ??
-      (record.dimensions as Record<string, unknown> | undefined) ??
-      record;
+    const tagsSource = record.tags;
+    if (!tagsSource || typeof tagsSource !== "object") continue;
 
     const tags: Record<string, string> = {};
-    for (const [key, value] of Object.entries(tagsSource)) {
+    for (const [key, value] of Object.entries(
+      tagsSource as Record<string, unknown>,
+    )) {
       if (typeof value === "string") tags[key] = value;
     }
 
-    const rawValue = record.value ?? record.count ?? record.rollup;
-    const value =
-      typeof rawValue === "number"
-        ? rawValue
-        : Number.parseFloat(String(rawValue ?? "0")) || 0;
-
+    const value = typeof record.value === "number" ? record.value : 0;
     rows.push({ tags, value });
   }
   return rows;
