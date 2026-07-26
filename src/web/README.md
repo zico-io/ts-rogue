@@ -575,3 +575,35 @@ preview is installed under its own name, `@typescript/native-preview` (the
 checker of record, and the whole app - chrome included - is normal `.tsx`.
 `next.config.mjs` is plain JS only so Next never has to transpile a `.ts` config
 with whichever compiler is active.
+
+## Harness data-access routes (HAR-50)
+
+`app/api/harness/sessions/route.ts` and `app/api/harness/sessions/[id]/route.ts`
+are plain Next.js route handlers - server-only, sharing this app's single
+Vercel deployment (not part of the `/eve/v1/*` agent surface). They read the
+Vercel Workflow run tags eve writes on every session/turn/subagent run
+(`$eve.root`, `$eve.parent`, `$eve.type`, ...; see
+`node_modules/eve/docs/guides/instrumentation.md#workflow-run-tags`) through
+`POST /v2/observability/query`, the same Vercel operation
+`agent/connections/vercel-api.ts` allows - reimplemented as a direct
+server-side `fetch` (`lib/harness/vercelObservability.ts`) rather than
+imported, since that connection compiles into the agent's tool-calling
+surface, not into this Next app.
+
+Both routes deny every caller with a 401 (`lib/harness/authz.ts`) until HAR-54
+lands a real superadmin check derived from Auth.js sessions - `VERCEL_TOKEN`
+never reaches an unauthorized caller because the gate runs before any Vercel
+call. Behind the gate, `lib/harness/sessions.ts` queries recent runs, maps
+rows to `HarnessRunRecord`s (`lib/harness/runRecords.ts`), and groups them
+into a session list or one session's subagent tree
+(`lib/harness/grouping.ts`). A query failure - including a `402` when the
+team lacks Observability Plus, which is the current state for this project's
+Vercel team - degrades to `{ unavailable: true, reason }` instead of a 500.
+
+`$eve.*` names a run's parent and root but never its own id, and grouped
+queries collapse rows sharing every grouped dimension, so the subagent tree
+is two levels (the root session's own turns, aggregated, plus one node per
+distinct subagent role) rather than an arbitrary-depth run graph. The exact
+`groupBy`/response shape is unverified against live tagged data pending
+Observability Plus; see the code comments in `lib/harness/eveTags.ts` and
+`lib/harness/vercelObservability.ts` before changing them.
