@@ -70,20 +70,16 @@ import {
   type TurnDirection,
 } from "./types";
 
-/** Gold cost per party member to fully heal at the inn. */
 export const INN_COST_PER_MEMBER = 10;
 
-/** Options for starting a new run (Phase 6, ROG-12; ROG-17 class choice). */
 export interface NewGameOptions {
-  /** When true, a defeat ends the run instead of reviving at the village. */
   permadeath?: boolean;
-  /** Character class id for the starting hero; defaults to warrior when omitted. */
+
   classId?: string;
-  /** Player-chosen name for the starting hero; defaults to "Hero" when omitted. */
+
   name?: string;
 }
 
-/** Build a fresh state tree for a new run from a seed, logging the seed. */
 export function newGame(seed: number, options?: NewGameOptions): GameState {
   const rng = new Rng(seed);
   const map = generateOverworldMap(seed);
@@ -108,22 +104,16 @@ export function newGame(seed: number, options?: NewGameOptions): GameState {
     lootFilter: EMPTY_LOOT_FILTER,
     lastLootOutcome: null,
   };
-  // Populate the tavern immediately so a fresh run has recruits to hire.
+
   return rollRecruits(base);
 }
 
-/**
- * Reroll the tavern recruit pool from the current RNG stream (ROG-21). Called
- * on new game and on inn rest (the chosen rotation cadence). Consumes RNG, so
- * the advanced `rngState` is persisted for deterministic replays/saves.
- */
 function rollRecruits(state: GameState): GameState {
   const rng = new Rng(state.seed, state.rngState);
   const recruits = generateRecruits(rng, state.party[0]?.level ?? 1);
   return { ...state, recruits, rngState: rng.getState() };
 }
 
-/** Stack `quantity` of `itemId` onto `inventory`, merging existing stacks. */
 function addItem(
   inventory: readonly InventoryItem[],
   itemId: string,
@@ -157,7 +147,7 @@ function innHeal(state: GameState): GameState {
     })),
     log: [...state.log, entry(`Healed the party for ${cost} gold`)],
   };
-  // Resting is the tavern rotation cadence (ROG-21): fresh faces after each rest.
+
   return rollRecruits(healed);
 }
 
@@ -229,17 +219,6 @@ function storeSell(
   };
 }
 
-/**
- * `MoveOverworld` reducer (PROJECT_PLAN Phase 2, §4.3). The map is
- * regenerated from `state.seed` (a pure function, see `world/overworld.ts`)
- * rather than stored on state. Movement onto an impassable tile or off the
- * map edge is a no-op. Movement onto the village or a dungeon entrance
- * changes scene directly; movement onto any other passable tile accumulates
- * encounter danger (with RNG jitter) and starts a real battle at the
- * threshold. Only successful moves consume RNG, keeping blocked moves fully
- * side-effect-free. Stepping onto a dungeon entrance (PROJECT_PLAN Phase 3)
- * also seeds `dungeonState` for floor 1 of that entrance's dungeon.
- */
 function moveOverworld(
   state: GameState,
   dx: MoveDelta,
@@ -289,7 +268,6 @@ function moveOverworld(
   const meter = state.worldState.encounterMeter + biomeDanger(tile) * jitter;
 
   if (meter >= ENCOUNTER_THRESHOLD) {
-    // Overworld battles use the floor-1 (weak) monster pool and return here.
     const battle = startBattle(rng, state.party, "wandering", 1, "overworld");
     return {
       ...state,
@@ -308,11 +286,6 @@ function moveOverworld(
   };
 }
 
-/**
- * `TurnDungeon` reducer (PROJECT_PLAN Phase 3). Rotates the party 90 degrees
- * in place. Pure and side-effect-free: no RNG consumed, no log appended, no
- * exploration change.
- */
 function turnDungeon(state: GameState, direction: TurnDirection): GameState {
   const ds = state.dungeonState;
   if (!ds) return state;
@@ -322,17 +295,6 @@ function turnDungeon(state: GameState, direction: TurnDirection): GameState {
   };
 }
 
-/**
- * `StepDungeon` reducer (PROJECT_PLAN Phase 3). Steps one tile forward or
- * backward along the party's facing. Walls (and out-of-bounds) block the
- * step without consuming RNG. A successful step reveals the area around the
- * new tile. Stepping onto the boss marker starts a fixed boss battle and
- * marks the boss room reached; stepping onto plain floor rolls a wandering
- * encounter against the seeded RNG and starts a real battle; chest/stairs
- * tiles are entered but not auto-interacted with. Both encounter kinds call
- * `startBattle`, which consumes RNG to pick enemies and roll initiative and
- * sets `scene` to `battle` with a fresh `battleState`.
- */
 function stepDungeon(state: GameState, direction: StepDirection): GameState {
   const ds = state.dungeonState;
   if (!ds) return state;
@@ -394,17 +356,9 @@ function stepDungeon(state: GameState, direction: StepDirection): GameState {
     return { ...state, rngState: rng.getState(), dungeonState: moved };
   }
 
-  // Chest / stairs tiles: enter them, but open / descend are explicit events.
   return { ...state, dungeonState: moved };
 }
 
-/**
- * `OpenChest` reducer (PROJECT_PLAN Phase 3). Opens the chest the party
- * stands on, grants its deterministic loot, and clears the chest feature so
- * it cannot be reopened. No-ops (with a log line) when there is no chest here.
- * ENG-18: also runs the auto-dismantle filter on the chest's generated item,
- * converting filtered-out items to gold immediately.
- */
 function openChest(state: GameState): GameState {
   const ds = state.dungeonState;
   if (!ds) return state;
@@ -427,12 +381,10 @@ function openChest(state: GameState): GameState {
   const inventory = loot.itemId
     ? addItem(state.inventory, loot.itemId, loot.quantity)
     : state.inventory;
-  // Phase 5 (ROG-11): chests also roll a generated, affix-bearing item from the
-  // floor's chest loot table, routed through the seeded RNG so saves agree.
+
   const rng = new Rng(state.seed, state.rngState);
   const chest = rollChestLoot(rng, ds.floor, state.nextItemId);
-  // ENG-18: route the chest's generated item(s) through the auto-dismantle
-  // filter before the cap-aware pickup pipeline.
+
   const filterContext = buildLootFilterContext(state.party, ds.floor);
   const pickup = applyLootPickupWithFilter(
     state.items,
@@ -472,13 +424,6 @@ function openChest(state: GameState): GameState {
   };
 }
 
-/**
- * `DescendStairs` reducer (PROJECT_PLAN Phase 3). Descends from the stairs
- * tile the party stands on to the next floor, regenerating it deterministically
- * from `seed + dungeonId + (floor + 1)` and starting the party on the new
- * entrance. No-ops (with a log line) when not on stairs or already on the
- * lowest floor.
- */
 function descendStairs(state: GameState): GameState {
   const ds = state.dungeonState;
   if (!ds) return state;
@@ -501,18 +446,6 @@ function descendStairs(state: GameState): GameState {
   };
 }
 
-/**
- * `ExitDungeon` reducer (Phase 6, ROG-12; ENG-1 "evac"). Leaves the active
- * dungeon and returns the party to the overworld at the dungeon entrance
- * tile (which is where `worldState.player` was left when the party
- * entered). Clears `dungeonState` and any lingering `battleState`. This used
- * to also reset the overworld encounter meter as a "welcome back" grace;
- * ENG-1 deliberately removes that reset so evac (and `Zoom`, which reuses
- * the same no-encounter-reset contract) never grants a free danger-
- * accumulator reset - the meter carries over unchanged. This is the
- * dedicated exit path that prevents the dungeon from being a dead-end after
- * clearing a floor or defeating the boss.
- */
 function exitDungeon(state: GameState): GameState {
   const ds = state.dungeonState;
   if (!ds) return state;
@@ -526,14 +459,6 @@ function exitDungeon(state: GameState): GameState {
   };
 }
 
-/**
- * `Zoom` reducer (ENG-1 "fast travel"). Teleports the party to a landmark it
- * has already activated this run, from the overworld or village only -
- * inside a dungeon or battle the player must evac first. Deterministic: it
- * never touches `rngState`, `encounterMeter`, `dungeonState`, or
- * `battleState`, so it cannot itself trigger an encounter or grant a free
- * danger-accumulator reset.
- */
 function zoom(state: GameState, waypointId: string): GameState {
   if (state.scene === "dungeon" || state.scene === "battle") {
     return {
@@ -569,17 +494,6 @@ function zoom(state: GameState, waypointId: string): GameState {
   };
 }
 
-/* -------------------------------------------------------------------------- */
-/* ENG-4: field consumable use                                                */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Consume a heal item on a chosen party member outside battle (the
- * inventory screen's consumables section). Shares `HEAL_ITEMS`/`consumeItem`
- * with battle's own item command (`combat/resolution.ts`), so the amount
- * restored is identical in and out of battle; battle's item flow is
- * otherwise untouched. Every rejection path is side-effect-free.
- */
 function applyFieldItemUse(
   state: GameState,
   itemId: string,
@@ -637,10 +551,6 @@ function applyFieldItemUse(
     ],
   };
 }
-
-/* -------------------------------------------------------------------------- */
-/* Phase 5 (ROG-11): equip / unequip / sell generated loot                    */
-/* -------------------------------------------------------------------------- */
 
 function equipItem(
   state: GameState,
@@ -721,11 +631,6 @@ function unequipItem(
   };
 }
 
-/**
- * `RecruitMember` reducer (ROG-20 dev/manual testing helper; ROG-21 will add
- * a tavern recruiting UI on top of this). Appends a fresh member built from
- * `createStartingHero`, capped at 4 party members.
- */
 function recruitMember(state: GameState, classId: string): GameState {
   if (state.party.length >= MAX_PARTY) {
     return {
@@ -744,7 +649,6 @@ function recruitMember(state: GameState, classId: string): GameState {
   };
 }
 
-/** Next party-unique member id (`member-<n>`), avoiding collisions after dismiss/rehire. */
 function nextMemberId(party: readonly PartyMember[]): string {
   const maxSuffix = party.reduce((max, member) => {
     const n = Number.parseInt(member.id.replace(/^\D+/, ""), 10);
@@ -753,12 +657,6 @@ function nextMemberId(party: readonly PartyMember[]): string {
   return `member-${maxSuffix + 1}`;
 }
 
-/**
- * `HireRecruit` reducer (ROG-21). Moves the pool recruit at `index` into the
- * party for a level-scaled gold fee: blocked when the party is full or gold is
- * short (logs and no-ops, mirroring `storeBuy`). The recruit gets a fresh
- * party-unique id and is removed from the pool so it can't be hired twice.
- */
 function hireRecruit(state: GameState, index: number): GameState {
   const recruit = state.recruits[index];
   if (!recruit) {
@@ -793,10 +691,6 @@ function hireRecruit(state: GameState, index: number): GameState {
   };
 }
 
-/**
- * `DismissMember` reducer (ROG-21). Removes a recruited member from the party.
- * The hero (the first member) is protected and can never be dismissed.
- */
 function dismissMember(state: GameState, memberId: string): GameState {
   if (state.party[0]?.id === memberId) {
     return {
@@ -833,15 +727,6 @@ function sellItem(state: GameState, instanceId: string): GameState {
   };
 }
 
-/* -------------------------------------------------------------------------- */
-/* ENG-5: village stash and full-backpack triage                              */
-/* -------------------------------------------------------------------------- */
-
-/**
- * `DepositItem` reducer (ENG-5). Moves one generated item from the field
- * backpack into the unlimited village stash. Depositing always succeeds
- * (the stash has no cap) and never touches gold - it's a pure relocation.
- */
 function depositItem(state: GameState, instanceId: string): GameState {
   const item = state.items.find((entry) => entry.instanceId === instanceId);
   if (!item) {
@@ -858,12 +743,6 @@ function depositItem(state: GameState, instanceId: string): GameState {
   };
 }
 
-/**
- * `WithdrawItem` reducer (ENG-5). Moves one item from the stash back into
- * the field backpack; refused (log line, no state change) once the field
- * backpack is already at `FIELD_BACKPACK_CAP` so withdrawing can never
- * itself push `items` past the cap.
- */
 function withdrawItem(state: GameState, instanceId: string): GameState {
   const item = state.stash.find((entry) => entry.instanceId === instanceId);
   if (!item) {
@@ -891,16 +770,6 @@ function withdrawItem(state: GameState, instanceId: string): GameState {
   };
 }
 
-/**
- * `ResolveLootTriage` reducer (ENG-5). Resolves the oldest queued drop in
- * `state.pendingLootTriage.drops`: `dismantleDrop` sells the drop itself for
- * gold and discards it, leaving `items` untouched; `dismantleCarried` sells
- * the named carried item instead, removes it from `items`, and moves the
- * drop into the freed slot. Either way the queue advances by one, and
- * `pendingLootTriage` resets to `null` once it empties. No-ops (with a log
- * line) when nothing is pending, or when `dismantleCarried` names an
- * instance that isn't actually carried.
- */
 function resolveLootTriage(
   state: GameState,
   event: Extract<GameEvent, { type: "ResolveLootTriage" }>,
@@ -928,7 +797,6 @@ function resolveLootTriage(
     };
   }
 
-  // action === "dismantleCarried"
   const carried = state.items.find(
     (entry) => entry.instanceId === event.instanceId,
   );
@@ -958,20 +826,11 @@ function resolveLootTriage(
   };
 }
 
-/* -------------------------------------------------------------------------- */
-/* ENG-17: loot filter settings                                               */
-/* -------------------------------------------------------------------------- */
-
-/**
- * `SetLootFilter` reducer (ENG-17). Whole-object replace for the loot filter
- * rules on `GameState.lootFilter`. No log entry since there is no UI yet
- * (the settings pane is ENG-19) and the replacement is a silent config update.
- */
 function setLootFilter(state: GameState, rules: LootFilterRules): GameState {
   return { ...state, lootFilter: rules };
 }
 
-/** Pure reducer: never mutates `state`. All state transitions route through here. */
+/** Pure state transition. Rejected events return the original state unchanged. */
 export function reduce(state: GameState, event: GameEvent): GameState {
   switch (event.type) {
     case "NewGame":
@@ -1043,7 +902,7 @@ export function reduce(state: GameState, event: GameEvent): GameState {
 export type Listener = (state: GameState) => void;
 export type IncidentListener = (incident: GameIncident) => void;
 
-/** Thin UI-facing holder around {@link reduce}. No Ink/React dependency. */
+/** Validates transitions and preserves the prior state when a reducer fails. */
 export class GameStore {
   private state: GameState;
   private readonly listeners = new Set<Listener>();

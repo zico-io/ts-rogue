@@ -61,7 +61,6 @@ describe("biomeDanger", () => {
   });
 });
 
-/** BFS reachability helper, kept test-local so it doesn't leak into the engine API. */
 function isReachable(
   map: ReturnType<typeof generateOverworldMap>,
   from: { x: number; y: number },

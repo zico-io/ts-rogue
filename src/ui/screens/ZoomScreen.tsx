@@ -18,13 +18,6 @@ export interface ZoomScreenProps {
   onClose: () => void;
 }
 
-/**
- * Fast-travel picker (ENG-1), the "house menu" pattern applied to the
- * waypoint registry: lists every landmark the party has activated this run
- * (`world/waypoints.ts`'s `activatedWaypointList`) and dispatches `Zoom` to
- * the one the cursor confirms on. Opened from the overworld/village only
- * (see `app.tsx`'s `openZoom` handling); dungeon/battle require evac first.
- */
 export function ZoomScreen({ state, dispatch, onClose }: ZoomScreenProps) {
   const map = generateOverworldMap(state.seed);
   const waypoints = activatedWaypointList(map, state.activatedWaypoints);

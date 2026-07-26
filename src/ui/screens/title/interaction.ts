@@ -1,22 +1,3 @@
-/**
- * Title-flow input handling (ROG-55 RFC, ROG-56 core; extracted from
- * `app.tsx`'s title `useInput` closure).
- *
- * The title screen walks a small state machine: main menu -> (New Game)
- * class -> mode -> name, then a run starts. `reduceTitleUi` is the pure
- * transition function for that machine; `app.tsx` owns the single
- * `TitleUiState` and calls it once per resolved `Intent`. Settings is a
- * separate view with its own input handling (`SettingsScreen`); this module
- * only decides transitions between the four flow views (menu/class/mode/
- * name), even though `TitleUiState.view` can also hold `"settings"` so
- * `app.tsx` can store it in the same slot.
- *
- * `resolveTitleIntent` maps a normalized `KeyName` to an `Intent` for the
- * current view. Name entry accepts printable chars, so bare `q` must type
- * there instead of quitting - only Ctrl-C quits in the name view; Esc backs
- * out to mode selection.
- */
-
 import { CLASSES } from "../../../data/classes";
 import {
   charFromKey,
@@ -26,27 +7,24 @@ import {
 } from "../../scene/input";
 import { MAX_NAME_LENGTH, mainMenuOptions, type TitleView } from "./display";
 
-/** The title flow's full input state; `app.tsx` holds exactly one of these. */
 export interface TitleUiState {
   view: TitleView;
-  /** Selected main-menu index into `mainMenuOptions(hasSave)`. */
+
   menuCursor: number;
-  /** Selected class index into `CLASSES`. */
+
   classCursor: number;
-  /** Selected mode index (0 = Normal, 1 = Permadeath). */
+
   modeCursor: number;
-  /** Hero-name buffer during the name view. */
+
   nameInput: string;
 }
 
-/** Data `reduceTitleUi` needs but doesn't own, sourced from settings/save state. */
 export interface TitleUiContext {
   hasSave: boolean;
   defaultPermadeath: boolean;
   defaultHeroName: string;
 }
 
-/** Non-state-update side effects the title flow can request. */
 export type TitleUiEffect =
   | { type: "startNewGame"; classId: string; permadeath: boolean; name: string }
   | { type: "continueGame" }
@@ -71,8 +49,6 @@ const classKeymap: Keymap = {
   escape: { kind: "cancel" },
 };
 
-// Mode view toggles a binary choice; either arrow flips it, so both bind to
-// the same intent kind and the reducer treats menuUp/menuDown identically.
 const modeKeymap: Keymap = classKeymap;
 
 const nameKeymap: Keymap = {
@@ -82,12 +58,6 @@ const nameKeymap: Keymap = {
   "ctrl+c": { kind: "quit" },
 };
 
-/**
- * Resolves the `Intent` for a key press given the current view. Name entry
- * has no static keymap for printable characters - the char space is
- * unbounded - so any key not bound in `nameKeymap` becomes a `type` intent
- * (or is ignored if it isn't a representable character, e.g. arrow keys).
- */
 export function resolveTitleIntent(
   view: TitleView,
   key: KeyName,
@@ -104,7 +74,6 @@ export function resolveTitleIntent(
   return undefined;
 }
 
-/** Pure transition function for the title flow's menu/class/mode/name views. */
 export function reduceTitleUi(
   state: TitleUiState,
   intent: Intent,

@@ -3,16 +3,6 @@ import { callLinearGraphQL } from "eve/channels/linear";
 
 import { isPlainObject } from "./is-plain-object";
 
-// Harness-owned Linear issue lifecycle: the model no longer decides workflow
-// state, the harness reconciles it deterministically on lifecycle events
-// (session created -> In Progress with parent cascade, PR opened -> In
-// Review, merged to main -> Done, unrecoverable session failure -> Blocked).
-// eve exposes no issue-state primitive - like `lib/live-sessions.ts` and the
-// `commentCreate` mutation in `tools/handoff.ts`, this is hand-rolled over
-// the public `callLinearGraphQL` transport. Every transition is forward-only
-// and idempotent, and `advanceIssueState` never throws: a state-sync failure
-// must never block or delay dispatch.
-
 export type IssueStateTarget = "inProgress" | "inReview" | "done" | "blocked";
 
 export interface WorkflowState {
@@ -22,9 +12,6 @@ export interface WorkflowState {
   readonly position: number;
 }
 
-// Linear workflow-state types, ordered by lifecycle progression. Unknown
-// types (a future Linear addition) rank 0 so a transition toward them can
-// only ever be skipped, never downgrade an issue.
 const STATE_TYPE_RANK: Record<string, number> = {
   backlog: 0,
   canceled: 2,
@@ -36,7 +23,6 @@ const STATE_TYPE_RANK: Record<string, number> = {
 
 const rank = (state: WorkflowState): number => STATE_TYPE_RANK[state.type] ?? 0;
 
-/** Resolves a team's concrete state for a lifecycle target; null means the team has no such state and the transition is skipped. */
 export const pickTargetState = (
   states: readonly WorkflowState[],
   target: IssueStateTarget,
@@ -58,7 +44,7 @@ export const pickTargetState = (
   }
 };
 
-/** Forward-only: a transition never downgrades an issue and never resurrects a completed/canceled one. */
+/** Allows only forward workflow transitions and never resurrects terminal issues. */
 export const shouldMove = (
   current: WorkflowState,
   target: WorkflowState,
@@ -67,11 +53,7 @@ export const shouldMove = (
   if (current.id === target.id) return false;
   if (kind === "blocked") return rank(current) < 2;
   if (rank(target) > rank(current)) return true;
-  // ponytail: within started-type states, board position is taken as the
-  // progression order (In Progress before In Review, Linear's default).
-  // Ceiling: a team whose board orders review ahead of progress skips the
-  // In Review transition - benign, never a downgrade. Upgrade path:
-  // name-aware ordering if a real team ever hits it.
+
   return (
     rank(target) === rank(current) &&
     current.type === "started" &&
@@ -115,8 +97,6 @@ interface IssueStateSyncData {
   };
 }
 
-// Independently fail-open per mutation: the parent cascade still runs when
-// the issue's own update fails, and vice versa.
 const updateIssueState = async (
   credentials: LinearChannelConfig["credentials"],
   id: string,
@@ -139,10 +119,8 @@ const updateIssueState = async (
 };
 
 /**
- * Moves an issue (by UUID or identifier like "HAR-32") to the lifecycle
- * target's state, forward-only, cascading In Progress to an unstarted
- * parent. Never throws - fail-open is this module's contract, not the
- * caller's job.
+ * Advances an issue without downgrading it and starts an unstarted parent when
+ * the child enters progress. Linear failures are reported but never thrown.
  */
 export const advanceIssueState = async (input: {
   readonly credentials: LinearChannelConfig["credentials"];

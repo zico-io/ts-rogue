@@ -2,15 +2,7 @@ import { execFileSync } from "node:child_process";
 import { gateway, generateText } from "ai";
 import { z } from "zod";
 
-// ---------------------------------------------------------------
-// Pure helpers (exported for testing)
-// ---------------------------------------------------------------
-
-/**
- * Walk a unified diff and return, per file, the set of new-file line numbers
- * that are added or changed (lines prefixed with `+`). These are the only valid
- * anchor points for a GitHub PR review comment.
- */
+/** Maps each changed file to the new-side line numbers valid for review comments. */
 export function parseDiffAddedLines(diff: string): Map<string, Set<number>> {
   const result = new Map<string, Set<number>>();
   let currentLines: Set<number> | null = null;
@@ -18,14 +10,12 @@ export function parseDiffAddedLines(diff: string): Map<string, Set<number>> {
 
   const lines = diff.split("\n");
   for (const line of lines) {
-    // Hunk header: @@ -a,b +c,d @@
     const hunkMatch = line.match(/^@@\s+-(\d+),\d+\s+\+(\d+),\d+\s+@@/);
     if (hunkMatch) {
       newLineCounter = Number.parseInt(hunkMatch[2], 10);
       continue;
     }
 
-    // File header for the new-file side
     const fileMatch = line.match(/^\+\+\+\s+b\/(.+)$/);
     if (fileMatch) {
       const path = fileMatch[1];
@@ -34,7 +24,6 @@ export function parseDiffAddedLines(diff: string): Map<string, Set<number>> {
       continue;
     }
 
-    // Index / diff --git / --- lines - skip
     if (
       line.startsWith("--- ") ||
       line.startsWith("diff --git ") ||
@@ -43,31 +32,23 @@ export function parseDiffAddedLines(diff: string): Map<string, Set<number>> {
       continue;
     }
 
-    // Hunk body processing
     if (currentLines) {
       if (line.startsWith("+") && !line.startsWith("+++")) {
-        // Added line
         currentLines.add(newLineCounter);
         newLineCounter++;
       } else if (line.startsWith(" ")) {
-        // Context line - advances the counter
         newLineCounter++;
       }
-      // Lines starting with `-` do not advance the counter
     }
   }
 
   return result;
 }
 
-/**
- * Extract JSON from model output, stripping a single markdown code fence
- * (```json or bare ```) if present.
- */
+/** Parses JSON with or without one surrounding Markdown code fence. */
 export function extractReviewJson(modelOutput: string): unknown {
   const trimmed = modelOutput.trim();
 
-  // Try to strip a leading/trailing markdown code fence
   const fenceMatch = trimmed.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/);
   if (fenceMatch) {
     return JSON.parse(fenceMatch[1].trim());
@@ -76,14 +57,13 @@ export function extractReviewJson(modelOutput: string): unknown {
   return JSON.parse(trimmed);
 }
 
-// ---------------------------------------------------------------
-// Review schema (zod)
-// ---------------------------------------------------------------
-
 const commentSchema = z.object({
   path: z.string(),
   line: z.number(),
-  side: z.literal("RIGHT"),
+  side: z
+    .enum(["RIGHT", "right"])
+    .optional()
+    .transform(() => "RIGHT" as const),
   body: z.string(),
 });
 
@@ -93,17 +73,10 @@ const reviewSchema = z.object({
   comments: z.array(commentSchema),
 });
 
+export function parseReview(modelOutput: string) {
+  return reviewSchema.parse(extractReviewJson(modelOutput));
+}
 
-// ---------------------------------------------------------------
-// Prompt construction
-// ---------------------------------------------------------------
-
-/**
- * Build the review prompt from the diff and the two-lens instructions.
- *
- * Hand-synced with `agent/subagents/reviewer/instructions.md`'s lenses - see
- * agent/README.md's "Review triggering moved to CI (HAR-63)" section for why.
- */
 function buildPrompt(diff: string): string {
   return `You ponytail-review exactly one pull request per invocation for ts-rogue, a TypeScript terminal dungeon crawler.
 
@@ -119,9 +92,9 @@ function buildPrompt(diff: string): string {
    - Repo conventions: flag violations of the project's OWN conventions - no em dashes, extensionless relative imports (never a \`.js\` specifier), \`src/engine\` kept independent from \`src/ui\`, \`GameState\` JSON-serializable, reducers pure and side-effect-free on rejected actions, every random outcome routed through seeded RNG. Do NOT flag anything \`biome\` or \`tsgo\` already catch - CI owns formatting and type errors. Tag: \`convention:\`
    - TypeScript (\`.ts\`/\`.tsx\`): \`any\` where \`unknown\` fits, missing \`import type\`, stringly-typed code that should be a union, non-null \`!\` hiding a real nullable. Tag: \`ts:\`
 
-   LENS 3 - Agent Interaction Guidelines (only when the diff touches \`agent/\`, this repo's own eve harness): a change here shapes how this agent behaves in front of a human, so flag anything that would erode one of Linear's six AIG principles (https://linear.app/developers/aig) - failing to disclose it's an agent, bypassing a standard platform action for a bespoke workaround, dropping instant feedback on invocation, losing transparency about internal state (thinking/waiting/executing/finished), ignoring or delaying a disengage request, or letting the agent hold accountability that belongs to a human. Tag: \`aig:\`
+   LENS 3 - Agent Interaction Guidelines (only when the diff touches \`agent/\`, this repo's own eve harness): flag changes that erode Linear's six AIG principles (https://linear.app/developers/aig) - agent disclosure, native platform actions, immediate feedback, transparent state, immediate disengagement, or human accountability. Tag: \`aig:\`
 
-   Out of scope: correctness, security, and logic bugs - a separate reviewer and a human own those. Report only; apply no fixes.
+   Out of scope: correctness, security, and logic bugs. Report only; apply no fixes.
 
 2. Output ONLY a JSON object (no prose, no markdown fence) of the exact shape:
    \`{"event":"COMMENT","body":"<summary>","comments":[{"path":"<file>","line":<line>,"side":"RIGHT","body":"<tag> <what>. <fix>."}]}\`
@@ -137,10 +110,6 @@ ${diff}
 \`\`\``;
 }
 
-// ---------------------------------------------------------------
-// Main execution
-// ---------------------------------------------------------------
-
 async function main() {
   const {
     GITHUB_TOKEN,
@@ -152,7 +121,6 @@ async function main() {
     GITHUB_REPOSITORY,
   } = process.env;
 
-  // Soft-skip when the gateway key is not configured
   if (!AI_GATEWAY_API_KEY) {
     console.log(
       "AI_GATEWAY_API_KEY not set - configure the repo secret to enable automated review. Skipping.",
@@ -160,26 +128,18 @@ async function main() {
     process.exit(0);
   }
 
-  // Hard-fail on missing required env vars (these should always be present
-  // when running inside the Actions workflow).
   if (!GITHUB_TOKEN) throw new Error("GITHUB_TOKEN is required");
   if (!PR_NUMBER) throw new Error("PR_NUMBER is required");
   if (!BASE_REF) throw new Error("BASE_REF is required");
   if (!HEAD_SHA) throw new Error("HEAD_SHA is required");
   if (!GITHUB_REPOSITORY) throw new Error("GITHUB_REPOSITORY is required");
 
-  // Fetch the base branch so we can diff against it
   execFileSync("git", ["fetch", "origin", BASE_REF], { stdio: "pipe" });
 
-  // Compute the diff
   let diff: string;
-  const fullDiffArgs = [
-    "diff",
-    `origin/${BASE_REF}...${HEAD_SHA}`,
-  ];
+  const fullDiffArgs = ["diff", `origin/${BASE_REF}...${HEAD_SHA}`];
 
   if (BEFORE_SHA) {
-    // Re-review - scope to only what changed since the last push
     const scopedArgs = ["diff", `${BEFORE_SHA}...${HEAD_SHA}`];
     try {
       diff = execFileSync("git", scopedArgs, {
@@ -187,7 +147,6 @@ async function main() {
         stdio: "pipe",
       });
     } catch {
-      // Force-push or rebase made BEFORE_SHA unreachable - fall back to full diff
       diff = execFileSync("git", fullDiffArgs, {
         encoding: "utf-8",
         stdio: "pipe",
@@ -205,18 +164,14 @@ async function main() {
     process.exit(0);
   }
 
-  // Build the prompt and call the model
   const prompt = buildPrompt(diff);
   const { text: modelOutput } = await generateText({
     model: gateway("anthropic/claude-sonnet-5"),
     prompt,
   });
 
-  // Parse & validate the model output
-  const raw = extractReviewJson(modelOutput);
-  const parsed = reviewSchema.parse(raw);
+  const parsed = parseReview(modelOutput);
 
-  // Filter comments to only valid lines from the diff
   const validLines = parseDiffAddedLines(diff);
   const filteredComments = parsed.comments.filter((c) => {
     const fileLines = validLines.get(c.path);
@@ -229,7 +184,6 @@ async function main() {
     return true;
   });
 
-  // POST the review to the GitHub API
   const url = `https://api.github.com/repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/reviews`;
   const response = await fetch(url, {
     method: "POST",
@@ -247,13 +201,10 @@ async function main() {
 
   if (!response.ok) {
     const body = await response.text();
-    throw new Error(
-      `GitHub API error (${response.status}): ${body}`,
-    );
+    throw new Error(`GitHub API error (${response.status}): ${body}`);
   }
 }
 
-// Guard: only run when this module is executed directly, not when imported
 if (import.meta.url === `file://${process.argv[1]}`) {
   main().catch((err) => {
     console.error(err);

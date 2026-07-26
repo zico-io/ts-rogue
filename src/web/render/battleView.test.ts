@@ -43,7 +43,6 @@ interface FakeFactory extends BattleDrawFactory {
   textureNames: Set<string>;
 }
 
-/** Minimal fake `BattleDrawFactory`, mirroring `overworldView.test.ts`'s `fakeFactory()`. */
 function fakeFactory(textureNames: readonly string[] = []): FakeFactory {
   const sprites: FakeSprite[] = [];
   const rects: FakeRect[] = [];
@@ -109,7 +108,6 @@ function makeEnemy(overrides: Partial<BattleEnemy> = {}): BattleEnemy {
   };
 }
 
-/** Builds a fresh `GameState` in an active battle against `enemies`, hand-assembling `battleState` like `render.test.ts`/`interaction.test.ts` do. */
 function stateInBattle(enemies: BattleEnemy[]): GameState {
   const base = newGame(1);
   const actor = base.party[0];
@@ -126,7 +124,7 @@ function stateInBattle(enemies: BattleEnemy[]): GameState {
 }
 
 const SIZE = { width: 500, height: 400 };
-/** Enemy art scales with `SIZE` (ROG-66); compute the expected box size from the same formula the view uses instead of a hardcoded magic number. */
+
 const EXPECTED_ART_PX = artPxFor(SIZE);
 
 describe("BattleSceneView", () => {
@@ -150,8 +148,7 @@ describe("BattleSceneView", () => {
     expect(slimeSprite).toBeDefined();
     expect(goblinSprite).toBeDefined();
     expect(factory.rects.length).toBeGreaterThanOrEqual(0);
-    // Every sprite gets sized into the art box scaled off SIZE (ROG-63,
-    // ROG-66); the real Pixi adapter fits/centers the native texture inside it.
+
     expect(slimeSprite?.setSize).toHaveBeenCalledWith(
       EXPECTED_ART_PX,
       EXPECTED_ART_PX,
@@ -186,7 +183,7 @@ describe("BattleSceneView", () => {
   });
 
   it("falls back to a tinted rect for an enemy whose sprite id isn't in the atlas", () => {
-    const factory = fakeFactory([]); // no textures loaded at all
+    const factory = fakeFactory([]);
     const view = new BattleSceneView(factory);
     const enemy = makeEnemy({
       id: "unknown-1",
@@ -226,9 +223,6 @@ describe("BattleSceneView", () => {
     const goblinPos = goblinSprite?.setPosition.mock.calls.at(-1);
     expect(goblinPos).toBeDefined();
 
-    // The highlight rect is the last rect the view created/positioned; it
-    // should land near the selected enemy's art position, not parked
-    // off-canvas.
     const highlight = factory.rects.at(-1);
     const highlightPos = highlight?.setPosition.mock.calls.at(-1);
     expect(highlightPos?.[1]).toBeGreaterThan(-1000);
@@ -269,9 +263,7 @@ describe("BattleSceneView", () => {
     const factory = fakeFactory(["slime"]);
     const view = new BattleSceneView(factory);
     const state = stateInBattle([makeEnemy()]);
-    // The default warrior party member's skills are cleave/second-wind
-    // (skillCursor 0), so cursor 1 (Second Wind) is unselected and, with no
-    // MP, unaffordable.
+
     state.party[0].mp = 0;
 
     view.render(state, SIZE, {
@@ -364,9 +356,7 @@ describe("BattleSceneView", () => {
 
     view.render(state, SIZE, INITIAL_BATTLE_UI_STATE);
     expect(factory.sprites.length).toBe(spriteCountAfterFirst);
-    // Menu text is destroyed/recreated every render (matching main.ts's
-    // existing precedent for small menus), so allow growth there, but no
-    // *new* nameplate/HP text handles should appear for the same enemy.
+
     expect(factory.texts.length).toBeGreaterThanOrEqual(textCountAfterFirst);
   });
 });

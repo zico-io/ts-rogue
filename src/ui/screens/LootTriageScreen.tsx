@@ -21,16 +21,6 @@ export interface LootTriageScreenProps {
   dispatch: (event: GameEvent) => void;
 }
 
-/**
- * Mandatory full-backpack triage overlay (ENG-5): renders whenever
- * `state.pendingLootTriage` holds a queued overflow drop (see `app.tsx`'s
- * `content` selection, ahead of every normal scene so the decision can't be
- * skipped - mirrors `ZoomScreen`'s overlay pattern, but driven directly by
- * state instead of a local open/close toggle). Offers swap (dismantle a
- * carried item, then the drop fills the freed slot) or dismantle the drop
- * itself - no silent loss either way. Resolves one queued drop per
- * decision; the overlay stays up until the queue empties.
- */
 export function LootTriageScreen({ state, dispatch }: LootTriageScreenProps) {
   const [ui, setUi] = useState<LootTriageUiState>(INITIAL_LOOT_TRIAGE_UI_STATE);
   const drop = state.pendingLootTriage?.drops[0];

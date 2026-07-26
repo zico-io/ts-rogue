@@ -147,7 +147,7 @@ describe("applyLootPickupWithFilter", () => {
       emptyFilter,
       emptyContext,
     );
-    // Same result as plain applyLootPickup
+
     const plain = applyLootPickup(items, drops, 5);
     expect(result.items.map((i) => i.instanceId)).toEqual(
       plain.items.map((i) => i.instanceId),
@@ -155,7 +155,7 @@ describe("applyLootPickupWithFilter", () => {
     expect(result.queued.map((i) => i.instanceId)).toEqual(
       plain.queued.map((i) => i.instanceId),
     );
-    // Nothing dismantled
+
     expect(result.outcome.dismantled).toEqual([]);
     expect(result.outcome.goldGained).toBe(0);
     expect(result.outcome.kept.map((i) => i.instanceId)).toEqual(["b", "c"]);
@@ -183,18 +183,17 @@ describe("applyLootPickupWithFilter", () => {
         context,
       );
 
-      // Common should be dismantled (fails rarity floor)
       expect(result.outcome.dismantled.map((i) => i.instanceId)).toEqual([
         "common-sword",
       ]);
-      // Magic and rare kept
+
       expect(result.outcome.kept.map((i) => i.instanceId)).toEqual([
         "magic-sword",
         "rare-sword",
       ]);
-      // Gold from the dismantled common war-blade (baseValue=25 * common=1 = 25)
+
       expect(result.outcome.goldGained).toBe(25);
-      // Items reflect only kept drops
+
       expect(result.items.map((i) => i.instanceId)).toEqual([
         "magic-sword",
         "rare-sword",
@@ -214,13 +213,12 @@ describe("applyLootPickupWithFilter", () => {
         "b",
       ]);
       expect(result.outcome.kept).toEqual([]);
-      expect(result.outcome.goldGained).toBe(50); // 25 + 25
+      expect(result.outcome.goldGained).toBe(50);
       expect(result.items).toEqual([]);
       expect(result.queued).toEqual([]);
     });
 
     it("combines filtering with cap overflow: dismantled items go to gold, kept items still respect the cap", () => {
-      // Start with 1 item, cap of 3, drops: 1 common (dismantled) + 3 magic (kept)
       const filler = makeItem({ instanceId: "filler" });
       const drops = [
         makeItem({ instanceId: "dismantled-1", rarity: "common" }),
@@ -236,21 +234,19 @@ describe("applyLootPickupWithFilter", () => {
         context,
       );
 
-      // One dismantled
       expect(result.outcome.dismantled.map((i) => i.instanceId)).toEqual([
         "dismantled-1",
       ]);
       expect(result.outcome.goldGained).toBe(25);
       expect(result.outcome.kept).toHaveLength(3);
 
-      // Cap of 3, filler takes 1 slot, so only 2 kept drops fit
       expect(result.items).toHaveLength(3);
       expect(result.items.map((i) => i.instanceId)).toEqual([
         "filler",
         "kept-1",
         "kept-2",
       ]);
-      // 1 kept drop overflows to queued
+
       expect(result.queued.map((i) => i.instanceId)).toEqual(["kept-3"]);
     });
   });

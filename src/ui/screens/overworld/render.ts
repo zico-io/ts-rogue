@@ -1,15 +1,3 @@
-/**
- * Pure rendering helpers for the overworld screen: tile glyphs, the
- * camera-follow viewport, and the downsampled minimap. No Ink/React import
- * here so this stays trivially unit-testable; `OverworldScreen.tsx` is the
- * thin Ink wrapper around it.
- *
- * The viewport and minimap both scale to the terminal size the screen passes
- * in: the viewport window grows or shrinks (clamped to the map), and the
- * minimap downsamples more (a larger scale) when its pane is narrow so it
- * always fits without clipping.
- */
-
 import {
   MINIMAP_SCALE,
   VIEWPORT_HEIGHT,
@@ -26,26 +14,23 @@ export interface TileGlyph {
 
 export interface Cell extends TileGlyph {
   key: string;
-  /** World tile coordinate (viewport) or downsampled block coordinate (minimap). */
+
   x: number;
   y: number;
-  /** Tile-sheet frame name for the browser (Pixi) renderer; the terminal ignores it. */
+
   tile?: TileName;
 }
 
-/** Integer viewport dimensions in tiles. */
 export interface Viewport {
   width: number;
   height: number;
 }
 
-/** Options for sizing the minimap. */
 export interface MinimapOptions {
-  /** Fixed downsample scale (tiles per minimap cell); overrides the bounds. */
   scale?: number;
-  /** Max minimap width in cells; the scale grows to fit within this. */
+
   maxWidth?: number;
-  /** Max minimap height in cells; the scale grows to fit within this. */
+
   maxHeight?: number;
 }
 
@@ -64,7 +49,6 @@ export function glyphFor(tile: Tile): TileGlyph {
   return TILE_GLYPHS[tile];
 }
 
-/** Clamp a viewport dimension to `[1, mapSize]`, defaulting to `fallback`. */
 function resolveDim(
   value: number | undefined,
   mapSize: number,
@@ -74,7 +58,6 @@ function resolveDim(
   return Math.max(1, Math.min(Math.floor(value), mapSize));
 }
 
-/** Clamp a viewport origin so `[origin, origin + size)` stays inside `[0, mapSize)`, centered on `focus`. */
 export function cameraOrigin(
   focus: number,
   viewportSize: number,
@@ -84,7 +67,6 @@ export function cameraOrigin(
   return Math.max(0, Math.min(centered, Math.max(0, mapSize - viewportSize)));
 }
 
-/** Camera-follow viewport around the player, as rows of renderable cells. */
 export function buildViewportRows(
   map: OverworldMap,
   player: Point,
@@ -108,7 +90,6 @@ export function buildViewportRows(
   return rows;
 }
 
-/** Village/dungeon entrance tiles win over plain terrain within a downsampled block. */
 function sampleBlock(
   map: OverworldMap,
   blockX: number,
@@ -130,11 +111,6 @@ function sampleBlock(
   return waypoint ?? terrain;
 }
 
-/**
- * Pick the smallest downsample scale (largest minimap) that fits the bounds,
- * starting from {@link MINIMAP_SCALE} and growing only when the default would
- * not fit. An explicit `scale` wins; with no bounds the default scale is used.
- */
 function resolveMinimapScale(
   map: OverworldMap,
   options?: MinimapOptions,
@@ -156,7 +132,6 @@ function resolveMinimapScale(
   return maxScale;
 }
 
-/** Whole-map overview downsampled by the resolved scale, with the player marked. */
 export function buildMinimapRows(
   map: OverworldMap,
   player: Point,
@@ -184,7 +159,6 @@ export function buildMinimapRows(
   return rows;
 }
 
-/** Renders the encounter meter as a fixed-width text bar, e.g. `[####......] 42%`. */
 export function formatEncounterMeter(
   meter: number,
   threshold: number,

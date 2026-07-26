@@ -1,9 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// Harness-owned issue lifecycle: `advanceIssueState` reads the issue (state,
-// team states, parent) in one IssueStateSync query, then issues forward-only
-// IssueStateUpdate mutations. The mock stands in for the Linear GraphQL
-// transport so every transition path is driven without a live workspace.
 const { callGraphQL } = vi.hoisted(() => ({ callGraphQL: vi.fn() }));
 
 vi.mock("eve/channels/linear", () => ({
@@ -23,7 +19,6 @@ const state = (
   position: number,
 ): WorkflowState => ({ id, name, position, type });
 
-// A default Linear team board, positions in display order.
 const backlog = state("s-backlog", "Backlog", "backlog", 0);
 const todo = state("s-todo", "Todo", "unstarted", 1);
 const inProgress = state("s-progress", "In Progress", "started", 2);

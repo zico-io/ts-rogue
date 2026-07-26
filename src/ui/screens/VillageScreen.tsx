@@ -15,12 +15,6 @@ export interface VillageScreenProps {
   failures: FailureBoundary;
 }
 
-/**
- * Village hub (PROJECT_PLAN Phase 1, ROG-7). Shows the party/gold overview
- * and routes into an Inn/Church/Store sub-view; Esc from a sub-view returns
- * to the overview. From the overview, leaving town dispatches a scene
- * change to the overworld (PROJECT_PLAN Phase 2, ROG-8).
- */
 export function VillageScreen({
   state,
   dispatch,

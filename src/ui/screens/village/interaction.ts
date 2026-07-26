@@ -1,30 +1,12 @@
-/**
- * Village input handling (ROG-45; extracted from `VillageOverview.tsx`,
- * `InnView.tsx`, `ChurchView.tsx`, `StoreView.tsx`, and `TavernView.tsx`'s
- * inline `useInput` closures). Each sub-view keeps owning its own local UI
- * state via `useState` in its component; this module supplies the
- * `Keymap`/`resolveXIntent`/`reduceXUi` pair for each of them, mirroring
- * `title/interaction.ts`'s shape one sub-view at a time rather than as a
- * single mega state machine, since the five sub-views' states don't
- * otherwise interact.
- */
-
 import { SHOP_ITEMS } from "../../../data/shops";
 import type { EquipmentSlotName } from "../../../engine/loot/equipment";
 import type { ItemInstance } from "../../../engine/loot/types";
 import type { GameState } from "../../../engine/state/types";
 import type { Intent, Keymap, KeyName } from "../../scene/input";
-// Type-only: `SortKey` is erased at compile time, so this doesn't create a
-// runtime import cycle even though `inventory/interaction.ts` imports
-// `PackEntry` (also type-only) from this module.
+
 import type { SortKey } from "../inventory/interaction";
 import type { VillageBuilding } from "./types";
 
-// ---------------------------------------------------------------------------
-// Overview
-// ---------------------------------------------------------------------------
-
-/** A selectable row on the overview: a building sub-view, or leaving to the overworld. */
 export interface MenuOption {
   key: VillageBuilding | "overworld";
   label: string;
@@ -69,7 +51,6 @@ const overviewKeymap: Keymap = {
   "char:o": { kind: "shortcut", char: "o" },
 };
 
-/** Resolves the `Intent` for a key press on the village overview. */
 export function resolveOverviewIntent(key: KeyName): Intent | undefined {
   return overviewKeymap[key];
 }
@@ -80,7 +61,6 @@ function overviewEffectFor(option: MenuOption): OverviewUiEffect {
     : { type: "enter", building: option.key };
 }
 
-/** Pure transition function for the village overview's option cursor. */
 export function reduceOverviewUi(
   state: OverviewUiState,
   intent: Intent,
@@ -103,10 +83,6 @@ export function reduceOverviewUi(
   return { state };
 }
 
-// ---------------------------------------------------------------------------
-// Inn
-// ---------------------------------------------------------------------------
-
 export type InnUiEffect = { type: "rest" } | { type: "back" };
 
 const innKeymap: Keymap = {
@@ -114,21 +90,15 @@ const innKeymap: Keymap = {
   escape: { kind: "cancel" },
 };
 
-/** Resolves the `Intent` for a key press in the Inn. */
 export function resolveInnIntent(key: KeyName): Intent | undefined {
   return innKeymap[key];
 }
 
-/** The Inn has no local UI state; this maps its two intents straight to effects. */
 export function reduceInnUi(intent: Intent): InnUiEffect | undefined {
   if (intent.kind === "confirm") return { type: "rest" };
   if (intent.kind === "cancel") return { type: "back" };
   return undefined;
 }
-
-// ---------------------------------------------------------------------------
-// Church
-// ---------------------------------------------------------------------------
 
 export type ChurchUiEffect = { type: "save" } | { type: "back" };
 
@@ -137,25 +107,15 @@ const churchKeymap: Keymap = {
   escape: { kind: "cancel" },
 };
 
-/** Resolves the `Intent` for a key press in the Church. */
 export function resolveChurchIntent(key: KeyName): Intent | undefined {
   return churchKeymap[key];
 }
 
-/**
- * The Church has no local UI state; this maps its two intents straight to
- * effects. The save call itself is real I/O and stays in `ChurchView`'s
- * effect handling (like `startNewGame` does in `app.tsx`), not here.
- */
 export function reduceChurchUi(intent: Intent): ChurchUiEffect | undefined {
   if (intent.kind === "confirm") return { type: "save" };
   if (intent.kind === "cancel") return { type: "back" };
   return undefined;
 }
-
-// ---------------------------------------------------------------------------
-// Store
-// ---------------------------------------------------------------------------
 
 export type StoreMode = "shop" | "pack";
 
@@ -192,7 +152,6 @@ export type PackEntry =
     }
   | { kind: "backpack"; item: ItemInstance };
 
-/** Builds the pack panel's rows: the member's four equipment slots, then their backpack. */
 export function buildPackEntries(
   member: GameState["party"][number],
   items: readonly ItemInstance[],
@@ -214,10 +173,6 @@ export interface StoreUiContext {
   packEntries: readonly PackEntry[];
 }
 
-// ENG-3: the Store's own keymap no longer emits `equip`/`unequip` - gear
-// management moved to the dedicated Inventory screen (`screens/inventory`),
-// which imports the shared `buildPackEntries`/`EQUIP_SLOTS`/`PackEntry`
-// below directly rather than through this effect union.
 export type StoreUiEffect =
   | { type: "storeBuy"; itemId: string }
   | { type: "storeSell"; itemId: string }
@@ -244,14 +199,11 @@ const storeShopKeymap: Keymap = {
   "char:s": { kind: "sell" },
 };
 
-// ENG-3: equip/unequip moved to the dedicated Inventory screen; the
-// Store's backpack mode is sell-only now that gear management lives there.
 const storePackKeymap: Keymap = {
   ...storeCommonKeymap,
   "char:s": { kind: "sell" },
 };
 
-/** Resolves the `Intent` for a key press in the Store, given its current mode. */
 export function resolveStoreIntent(
   mode: StoreMode,
   key: KeyName,
@@ -259,7 +211,6 @@ export function resolveStoreIntent(
   return mode === "shop" ? storeShopKeymap[key] : storePackKeymap[key];
 }
 
-/** Pure transition function for the Store's shop/pack modes. */
 export function reduceStoreUi(
   state: StoreUiState,
   intent: Intent,
@@ -315,7 +266,6 @@ export function reduceStoreUi(
     return { state };
   }
 
-  // mode === "pack"
   if (intent.kind === "menuUp") {
     return {
       state: {
@@ -345,10 +295,6 @@ export function reduceStoreUi(
   }
   return { state };
 }
-
-// ---------------------------------------------------------------------------
-// Tavern
-// ---------------------------------------------------------------------------
 
 export type TavernMode = "recruit" | "party";
 
@@ -391,9 +337,7 @@ const tavernCommonKeymap: Keymap = {
 
 const tavernRecruitKeymap: Keymap = {
   ...tavernCommonKeymap,
-  // "h" is a literal KeyName (shared with the hjkl movement keys), not
-  // "char:h" - normalizeInkKey/normalizeBrowserKey special-case h/j/k/l
-  // before falling through to the char: bucket.
+
   h: { kind: "hire" },
 };
 
@@ -409,7 +353,6 @@ const tavernConfirmKeymap: Keymap = {
   "char:n": { kind: "confirmNo" },
 };
 
-/** Resolves the `Intent` for a key press in the Tavern, given its mode and confirm dialog. */
 export function resolveTavernIntent(
   mode: TavernMode,
   confirming: boolean,
@@ -419,7 +362,6 @@ export function resolveTavernIntent(
   return mode === "recruit" ? tavernRecruitKeymap[key] : tavernPartyKeymap[key];
 }
 
-/** Pure transition function for the Tavern's recruit/party modes and dismiss confirmation. */
 export function reduceTavernUi(
   state: TavernUiState,
   intent: Intent,
@@ -466,7 +408,6 @@ export function reduceTavernUi(
     return { state };
   }
 
-  // mode === "party"
   if (state.confirmId) {
     if (intent.kind === "confirmYes") {
       return {
@@ -504,7 +445,7 @@ export function reduceTavernUi(
       ctx.partyMemberIds.length - 1,
     );
     const memberId = ctx.partyMemberIds[partyIndex];
-    // Index 0 is the hero and can never be dismissed.
+
     if (memberId && partyIndex !== 0) {
       return { state: { ...state, confirmId: memberId } };
     }
@@ -512,21 +453,8 @@ export function reduceTavernUi(
   return { state };
 }
 
-// ---------------------------------------------------------------------------
-// Stash
-// ---------------------------------------------------------------------------
-
-/** Extracts the always-populated `backpack`-kind rows (no equipped slots here). */
 export type BackpackEntry = Extract<PackEntry, { kind: "backpack" }>;
 
-/**
- * Builds the Stash view's pane rows from a flat gear array (ENG-5). Unlike
- * `buildPackEntries`, there are no equipment slots to show here - `items`
- * and `stash` are party-shared (`GameState.items`/`GameState.stash`), not
- * per-member - so every row is the `backpack` `PackEntry` variant. Reusing
- * that shape lets both panes flow straight through the Inventory screen's
- * `sortPackEntries` without a separate sort implementation.
- */
 export function buildStashEntries(
   items: readonly ItemInstance[],
 ): BackpackEntry[] {
@@ -552,10 +480,7 @@ export const INITIAL_STASH_UI_STATE: StashUiState = {
 export interface StashUiContext {
   backpackEntries: readonly BackpackEntry[];
   stashEntries: readonly BackpackEntry[];
-  /** The Inventory screen's `SORT_KEYS` cycle, passed in by the caller rather
-   * than imported here to avoid a runtime import cycle with
-   * `screens/inventory/interaction.ts` (which imports `PackEntry` from this
-   * module). */
+
   sortKeys: readonly SortKey[];
 }
 
@@ -587,7 +512,6 @@ const stashStashKeymap: Keymap = {
   "char:w": { kind: "withdraw" },
 };
 
-/** Resolves the `Intent` for a key press in the Stash, given its current mode. */
 export function resolveStashIntent(
   mode: StashMode,
   key: KeyName,
@@ -595,12 +519,6 @@ export function resolveStashIntent(
   return mode === "backpack" ? stashBackpackKeymap[key] : stashStashKeymap[key];
 }
 
-/**
- * Pure transition function for the Stash's backpack/stash panes (ENG-5),
- * modeled on `reduceStoreUi`: Tab switches which pane the cursor and
- * deposit/withdraw target. Unlike the Store, `items`/`stash` are
- * party-shared rather than per-member, so there is no member switcher here.
- */
 export function reduceStashUi(
   state: StashUiState,
   intent: Intent,
@@ -653,7 +571,6 @@ export function reduceStashUi(
     return { state };
   }
 
-  // mode === "stash"
   const length = ctx.stashEntries.length;
   if (length === 0) return { state };
   if (intent.kind === "menuUp") {

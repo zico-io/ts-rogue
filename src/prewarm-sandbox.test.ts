@@ -14,9 +14,6 @@ const events =
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
-// The root's interactive session carries no `parent`; a declared subagent
-// (coder/reviewer/playtester) does. The hook re-mints fire-and-forget for the
-// root and awaits it in-band for a subagent (task-mode durable step).
 const rootCtx = (getSandbox: unknown) => ({
   getSandbox,
   session: { parent: undefined },
@@ -40,14 +37,11 @@ describe("prewarm-sandbox hook", () => {
     );
     events["turn.started"]({}, rootCtx(getSandbox));
     expect(getSandbox).toHaveBeenCalledTimes(1);
-    // Fire-and-forget: the handler returned while creation was still running.
+
     expect(settled).toBe(false);
   });
 
   it("re-mints and re-installs the auth header once the sandbox resolves", async () => {
-    // The durable half of token refresh: every turn re-installs a fresh
-    // GitHub header, so push auth recovers even when keepTokenFresh's timer
-    // chain died with a recycled process or an expired OIDC token.
     const setNetworkPolicy = vi.fn(() => Promise.resolve());
     events["turn.started"](
       {},
@@ -59,9 +53,6 @@ describe("prewarm-sandbox hook", () => {
   });
 
   it("awaits the re-mint in-band for a subagent so it lands before the step checkpoints", async () => {
-    // A task-mode subagent's turn.started fires once and its background refresh
-    // timer never ticks, so a detached re-mint could be frozen before it lands.
-    // The handler must not resolve until the re-mint has been installed.
     let installed = false;
     const setNetworkPolicy = vi.fn(
       () =>
@@ -85,7 +76,7 @@ describe("prewarm-sandbox hook", () => {
       {},
       rootCtx(() => Promise.reject(new Error("backend down"))),
     );
-    // Flush microtasks; an unhandled rejection here would fail the test run.
+
     await flush();
   });
 
@@ -108,7 +99,7 @@ describe("prewarm-sandbox hook", () => {
         setNetworkPolicy: () => Promise.reject(new Error("torn down")),
       });
     events["turn.started"]({}, rootCtx(failing));
-    // The awaited subagent path must also swallow, not reject the handler.
+
     await expect(
       events["turn.started"]({}, subagentCtx(failing)),
     ).resolves.toBeUndefined();

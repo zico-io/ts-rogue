@@ -1,12 +1,3 @@
-/**
- * Copies the vendored Aekashics battler source art (`assets/aekashics/`) into
- * `src/web/public/battlers/`, the served dir `src/web/battlers.ts` loads from
- * (ROG-68). No resize/recolor here - these are already final-size, complete
- * sprites; the mandatory palette-lock grade (`src/web/ART_DIRECTION.md` §2.4)
- * is a follow-up (ROG-70) that hooks in at this generation step.
- *
- * Run after adding/changing a vendored battler: pnpm tsx scripts/build-battlers.ts
- */
 import { copyFileSync, mkdirSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 

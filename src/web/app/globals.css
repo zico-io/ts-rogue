@@ -1,14 +1,4 @@
-/*
- * Chrome for the ts-rogue web game (ROG-54) - concept "The Portal": a dark
- * scrying chamber that frames the PixiJS canvas as a luminous window into the
- * dungeon. Every colour is lifted straight from the game's own identity tokens
- * in `src/ui/theme.ts` so the frame reads as the same artifact as the game, not
- * a generic page wrapped around a canvas. Deliberately dark-only: a dungeon
- * crawler has no light mode.
- */
-
 :root {
-  /* Palette mirrored from src/ui/theme.ts (ROG-31). */
   --parchment: #f2f2da;
   --muted: #a59b9d;
   --faint: #706a80;
@@ -16,13 +6,13 @@
   --amber: #e3aa3e;
   --gold: #fbc254;
   --danger: #e74343;
-  /* Title-screen logo gradient (pink -> purple). */
+
   --logo-1: #ee99bf;
   --logo-2: #cd67a8;
   --logo-3: #ab4bab;
   --logo-4: #8648b5;
   --logo-5: #70388c;
-  /* Chamber field: near-black with a faint indigo cast. */
+
   --chamber: #07070d;
 
   --mono:
@@ -47,8 +37,7 @@ body {
 body {
   min-height: 100dvh;
   background-color: var(--chamber);
-  /* Scrying-chamber vignette: a soft indigo pool of light behind the portal,
-     falling off to black at the edges. */
+
   background-image:
     radial-gradient(
       ellipse 120% 90% at 50% 42%,
@@ -71,8 +60,6 @@ body {
   padding: clamp(16px, 3.2vh, 40px) clamp(16px, 4vw, 56px);
 }
 
-/* ---- Masthead ------------------------------------------------------------ */
-
 .masthead {
   flex: 0 0 auto;
   text-align: center;
@@ -88,7 +75,7 @@ body {
   font-weight: 700;
   letter-spacing: 0.14em;
   line-height: 1;
-  /* Echo the in-game title logo's pink -> purple gradient. */
+
   background: linear-gradient(
     100deg,
     var(--logo-1),
@@ -100,7 +87,7 @@ body {
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  /* Faint glow so the wordmark sits in the same luminous field as the portal. */
+
   filter: drop-shadow(0 0 18px rgba(171, 75, 171, 0.35));
 }
 
@@ -111,8 +98,6 @@ body {
   text-transform: uppercase;
   color: var(--muted);
 }
-
-/* ---- Stage + portal frame ------------------------------------------------ */
 
 .stage {
   flex: 1 1 auto;
@@ -125,15 +110,12 @@ body {
 .portalFrame {
   position: relative;
   aspect-ratio: 3 / 2;
-  /* Fit a 3:2 window into whatever the chamber leaves us: prefer filling the
-     width, but never let the derived height exceed the space the masthead and
-     legend leave behind (~ their combined height plus the chamber padding). */
+
   width: min(92vw, calc((100dvh - 260px) * 3 / 2));
   max-width: 1240px;
   border: 1px solid var(--indigo);
   background: #000;
-  /* Amber inner hairline + layered outer glow = an intentional bezel, not an
-     empty letterbox margin. */
+
   box-shadow:
     inset 0 0 0 1px rgba(227, 170, 62, 0.22),
     0 0 0 1px rgba(0, 0, 0, 0.6),
@@ -143,8 +125,7 @@ body {
 
 .portal {
   position: absolute;
-  /* Explicit sizing, not `inset: 0`: Chromium won't treat .portalFrame's
-     aspect-ratio height as definite, so `inset` collapsed .portal to 800x600. */
+
   top: 0;
   left: 0;
   width: 100%;
@@ -157,7 +138,6 @@ body {
   display: block;
 }
 
-/* Arcane viewfinder corner brackets, sitting on the frame's border. */
 .corner {
   position: absolute;
   z-index: 2;
@@ -194,8 +174,6 @@ body {
   border-bottom-width: 2px;
   border-right-width: 2px;
 }
-
-/* ---- Controls legend ----------------------------------------------------- */
 
 .legend {
   flex: 0 0 auto;
@@ -237,7 +215,6 @@ body {
   }
 }
 
-/* Content is fully visible without motion; this only breathes the glow. */
 @keyframes portal-glow {
   0%,
   100% {

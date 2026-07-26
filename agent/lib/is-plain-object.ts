@@ -1,4 +1,4 @@
-/** Narrows to a plain object (not null, not an array) for defensive reads of untyped webhook and GraphQL payloads. */
+/** Narrows untyped input to a non-null, non-array object. */
 export const isPlainObject = (
   value: unknown,
 ): value is Record<string, unknown> =>

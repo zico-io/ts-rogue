@@ -1,28 +1,12 @@
-/**
- * Minimal Braille dot canvas for smooth sub-cell line drawing in the terminal.
- *
- * Each character cell (U+2800–U+28FF) is a 2x4 dot matrix, so drawing onto a
- * `dotW x dotH` boolean buffer and packing 2x4 blocks into Braille chars yields
- * 8x the resolution of a plain character grid - enough for smooth diagonal
- * wireframe rails. See `render.ts` for the dungeon usage.
- */
-
-/** Bit value for a dot at cell-local `(col in {0,1}, row in {0,1,2,3})`. */
 const DOT_BIT: readonly number[][] = [
-  [0x01, 0x02, 0x04, 0x40], // left column, top->bottom
-  [0x08, 0x10, 0x20, 0x80], // right column, top->bottom
+  [0x01, 0x02, 0x04, 0x40],
+  [0x08, 0x10, 0x20, 0x80],
 ];
 
-/** `dotW * dotH` flat dot buffer, all off. `dotW`/`dotH` must be > 0. */
 export function createDotCanvas(dotW: number, dotH: number): Uint8Array {
   return new Uint8Array(dotW * dotH);
 }
 
-/**
- * Bresenham line between two dot coordinates; endpoints outside are clipped.
- * `value` is the byte written for each lit dot (default 1); the dungeon
- * renderer stores its depth band here so `packBrailleRuns` can color by depth.
- */
 export function plotLine(
   buf: Uint8Array,
   dotW: number,
@@ -58,11 +42,6 @@ export function plotLine(
   }
 }
 
-/**
- * Pack the dot buffer into `dotH/4` rows of `dotW/2` Braille chars. Empty cells
- * become a regular space (not blank-braille U+2800) so downstream space-based
- * centering keeps working. `dotW`/`dotH` should be multiples of 2/4.
- */
 export function packBraille(
   buf: Uint8Array,
   dotW: number,
@@ -87,19 +66,12 @@ export function packBraille(
   return out;
 }
 
-/** A horizontal run of same-band characters within one packed row. */
 export interface BrailleRun {
   text: string;
-  /** Max dot value across the run's cells; 0 for an all-space run. */
+
   band: number;
 }
 
-/**
- * Like {@link packBraille}, but returns each row as runs of consecutive cells
- * sharing a band (the max dot value in the cell - nearest geometry wins), so
- * the screen can color by depth without one `<Text>` per character. Space
- * cells carry no color and merge into whichever run they touch.
- */
 export function packBrailleRuns(
   buf: Uint8Array,
   dotW: number,

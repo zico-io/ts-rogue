@@ -1,22 +1,23 @@
 # Eve agent instructions
 
-- Keep runtime behavior aligned with `instructions.md`.
-- Treat Linear as the source of truth and GitHub pull requests as the merge boundary.
-- Keep credentials in Vercel Connect and sandbox network policies, never prompts, logs, or files.
-- Keep orientation pre-computed: `instructions.md` carries the standing rules, and `onSession` writes the `ORIENTATION.md` brief so the root reads settled state instead of rediscovering it. Do not reintroduce runtime "read AGENTS.md / memory / PROJECT_PLAN" orientation directives.
-- Preserve single-child delegation for ordinary work; never spawn parallel children in one session. An issue group's ready sub-issues (created from a human-approved breakdown or pre-existing sub-issues) are handed off through Linear instead (HAR-15): the `handoff` tool posts a comment carrying the predecessor's context and anchors a fresh, independent Agent Session to it (not a bare `delegate` assignment, which carries no context) - the group's own session runs no children for its sub-issues, and never hands off a sub-issue whose `blocked by` relations are not all Done.
-- Keep the sizing gate a judgment over the issue packet, never a new orientation read, and keep the approval pause on the runtime's `ask_question` park rather than prompt-enforced stopping.
-- Preserve the plan-first opening and tool-call-batching rules: the root seeds the durable `todo` plan in its first batch (mirrored into Linear's Agent Plan by `syncAgentPlanFromTodoTool`) and batches independent read-only lookups into one turn, so orientation is never silent noise in Linear.
-- Keep the plan the progress surface: steps flip `in_progress`/`completed` in the same batches that do the work, and `session_update` stays reserved for the human-handoff moments (blocked/review/completed). Never reintroduce a prompt-mandated update cadence (opening `started` posts, mechanical progress triggers) - those durable mid-work `response` activities are what flipped sessions to Finished while a child was still running.
-- Eve's messages describe the work and its status, never the contract's own mechanics (orientation lookups, sub-issue checks, delegation, batching, `pnpm check`). Those sentences surface to the reader verbatim, so keep the message rules as terse imperatives and hold design rationale in `README.md`, not the runtime prompt - reintroducing parrotable meta-language next to a message rule is how process text leaks into user-facing updates. Guarded by `evals/message-substance.eval.ts`.
-- Treat `.botfile/memory/domain/product.md` as the golden product SSOT: upsert it in the same PR when shipped behavior changes, and keep it clean under `pnpm docs:lint`.
-- Report progress through native Agent Session activities, not issue comments. A UI-visual PR's final `review`/`completed` update embeds the screenshot evidence through Linear's upload flow - raw GitHub links do not render for this private repository.
-- Git-first grounding: every resumed turn and every child-return check trusts branch state over conversational claims (a child's commits are local until the root pushes). The exact commands live in `instructions.md`; keep them there - the ENG-2 trip-over came from a report being "verified" without git.
-- Child `session_update`s may only carry `blocked` (issue-prefixed): `tools/session_update.ts` refuses `review`/`completed` from a child in code, not just prompt - those statuses belong to the session owner.
-- Issue workflow-state transitions are harness-owned in code (`lib/issue-state.ts`): In Progress on session created with an unstarted-parent cascade, In Review on PR open, Done on merge to main, Blocked on unrecoverable session failure. Forward-only (never downgrade; within started-type states, board position decides) and fail-open - a state-sync failure must never block or delay dispatch. Keep prompt rules from duplicating these transitions; the model owns only the group parent's Done.
-- Child activity chips and the delegation indicator are ephemeral by design (a live "currently doing" slot, not a log); only the child's final narration and durable `session_update`s persist. Do not "fix" the disappearing chips back into permanent ones.
-- Keep startup useful when GitHub token minting fails and retry refreshes without blocking sessions.
-- Keep the `turn.started` sandbox prewarm fire-and-forget for the root's interactive turn: awaiting `getSandbox()` in a hook serializes the cold start in front of the model call instead of overlapping it. A declared subagent is the exception - it runs as a task-mode durable step whose background refresh timer never ticks and whose `turn.started` fires at most once, so a detached re-mint can be frozen at a step checkpoint before it lands; there the prewarm hook awaits the re-mint in-band (gated on `ctx.session.parent`). Root: detached. Subagent: awaited.
-- Test channel transforms, hooks, tools, model routing, and sandbox lifecycle changes.
-- Update `README.md` when the agent architecture or development workflow changes.
-- Harness changes (anything under `agent/` or `agent/subagents/`) carry Linear's Agent Interaction Guidelines (https://linear.app/developers/aig) as first-class acceptance criteria, not just this repo's own product rules (HAR-39): `instructions.md`'s Standing rules, `subagents/coder/instructions.md`, `subagents/scout/instructions.md`, and `subagents/reviewer/instructions.md`'s LENS 3 (mirrored in `scripts/ci-review.ts`'s `buildPrompt`) all carry this. Keep them in sync if this bar changes.
+- Keep standing behavior short in `instructions.md`; put optional procedures in
+  skills and enforce security or lifecycle invariants in code.
+- Preserve Linear steering, session lifecycle, issue-group handoff, Git recovery,
+  credential brokering, pull-request review, and end-to-end evidence.
+- Prefer root-first delivery. Add a subagent only for a distinct role, narrower
+  capability surface, or useful isolation.
+- Keep Linear as the issue source of truth and GitHub pull requests as the merge
+  boundary.
+- Keep human-facing prose concise and headerless. Linear and GitHub metadata
+  already provide titles, identities, and state.
+- Keep credentials in Vercel Connect and sandbox network policies.
+- Treat Linear's Agent Interaction Guidelines as acceptance criteria for
+  harness changes: disclose the agent, use native platform actions, respond
+  promptly, expose meaningful state, honor disengagement, and keep a human
+  accountable.
+- Keep issue workflow transitions forward-only and fail-open in
+  `lib/issue-state.ts`.
+- Keep sandbox prewarm and token refresh failures from blocking useful startup.
+- Test channel transforms, hooks, tools, lifecycle changes, and sandbox behavior.
+- Keep `README.md` evergreen and update it when the architecture or workflow
+  changes.

@@ -256,7 +256,7 @@ describe("reduceBattleUi - target mode", () => {
       ctx({ aliveEnemyIds: [] }),
     );
     expect(result.state.mode).toBe("action");
-    // Only mode changes; cursors are left as-is, matching the original closure.
+
     expect(result.state.targetCursor).toBe(1);
   });
 

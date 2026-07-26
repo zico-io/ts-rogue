@@ -1,12 +1,3 @@
-/**
- * Plain-DOM dev console overlay (ROG-48): the browser counterpart to the
- * terminal's `DevConsole.tsx`. Framework-free DOM glue, not unit-tested for
- * the same reason `crashOverlay.ts` isn't (no jsdom in this repo) - the
- * actual command handling lives in `../devConsole.ts`'s `BrowserDevConsole`
- * (unit-tested) via the shared `runDevCommand` interpreter; this only
- * renders whatever state that class reports.
- */
-
 import type { GameState } from "../../engine/state/types";
 import { theme } from "../../ui/theme";
 
@@ -18,8 +9,6 @@ export class DevConsoleOverlayView {
   constructor(mount: HTMLElement) {
     this.root = document.createElement("div");
     Object.assign(this.root.style, {
-      // `absolute` (not `fixed`) so the console fills the portal mount it is
-      // appended to, not the whole viewport (ROG-54).
       position: "absolute",
       inset: "0",
       display: "none",

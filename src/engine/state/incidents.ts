@@ -13,9 +13,6 @@ export type IncidentCategory =
   | "unhandled-rejection"
   | "uncaught-exception"
   | "manual"
-  // Browser-renderer boot phases (ROG-48): the atlas smoke test and the
-  // overworld/battle Pixi view setup, each wrapped in its own try/catch in
-  // `src/web/main.ts` so one scene's setup failure doesn't block the others.
   | "atlas"
   | "overworld-view"
   | "battle-view"
@@ -105,7 +102,6 @@ function itemIds(state: GameState): string[] {
   return ids;
 }
 
-/** Validate the serializable state boundary before it becomes live state. */
 export function validateGameState(value: unknown): asserts value is GameState {
   requireObject(value, "GameState");
   const state = value as Partial<GameState>;
@@ -243,7 +239,6 @@ function topStackFrame(stack?: string): string {
   );
 }
 
-/** Stable FNV-1a fingerprint over category, normalized message, and top frame. */
 export function incidentFingerprint(
   category: IncidentCategory,
   error: unknown,

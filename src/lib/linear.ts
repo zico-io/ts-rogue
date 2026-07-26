@@ -1,45 +1,27 @@
-/**
- * Minimal Linear issue creation for the dev console's `issue`/`bug` command.
- * Kept out of the engine (this is UI-triggered I/O, like the church save) and
- * split into pure builders (`buildIssueBody`, `issueCreateVariables`) plus one
- * thin async `createLinearIssue`, so the interesting parts are unit-testable
- * without a network.
- *
- * Credentials are brokered by Vercel Connect - the same connector and app token
- * the Eve agent uses (`connectLinearCredentials("linear/ts-rogue-eve")`) - so
- * the console never holds a raw Linear key; the token is minted on demand from
- * the process's Vercel identity (`VERCEL_OIDC_TOKEN`). When that identity is
- * missing or the API call fails, the issue (with its full metadata body) is
- * appended to a local outbox and re-sent on the next successful file/flush, so
- * a report is never lost to a transient credential gap.
- */
-
 import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import { getToken } from "@vercel/connect";
 
 const LINEAR_API = "https://api.linear.app/graphql";
 
-/** Vercel Connect connector storing the Linear app token (matches the Eve agent). */
 const LINEAR_CONNECTOR = "linear/ts-rogue-eve";
 
 const TEAM_QUERY = `query($key:String!){teams(filter:{key:{eq:$key}}){nodes{id labels{nodes{id name}}}}}`;
 const ISSUE_MUTATION = `mutation($input:IssueCreateInput!){issueCreate(input:$input){success issue{identifier url}}}`;
 
-/** Everything the issue body embeds so a reader can reproduce what was seen. */
 export interface IssueContext {
   seed: number;
   scene: string;
-  /** Full serializable GameState, dumped in a collapsed block. */
+
   state: unknown;
-  /** Tail of `state.log`. */
+
   logTail: readonly string[];
-  /** Contents of `.play-keys.log` when driven by the tmux play harness. */
+
   keySequence?: string;
-  /** Captured screen (tmux capture-pane -p) when harness-driven. */
+
   frame?: string;
   commit?: string;
   node?: string;
-  /** Terminal size, e.g. "120x40". */
+
   terminal?: string;
   debugJournal?: readonly unknown[];
   incident?: {
@@ -60,7 +42,6 @@ function details(summary: string, body: string): string {
   return `<details>\n<summary>${summary}</summary>\n\n${body}\n\n</details>`;
 }
 
-/** Assemble a reproducible Markdown issue body from live play-session context. */
 export function buildIssueBody(ctx: IssueContext): string {
   const repro = ctx.keySequence?.trim()
     ? `Reproduce: \`pnpm game:dev --seed=${ctx.seed} --fresh\`, then the key sequence below.`
@@ -143,22 +124,15 @@ export function buildIssueBody(ctx: IssueContext): string {
 export interface CreateIssueInput {
   title: string;
   body: string;
-  /** Label name to attach if it exists on the team (e.g. "bug", "feature"). */
+
   label?: string;
 }
 
 export interface LinearConfig {
-  /** Linear app access token (Vercel Connect mints it; sent as a Bearer). */
   accessToken: string;
   teamKey: string;
 }
 
-/**
- * Mint a Linear app token via Vercel Connect - the same broker and connector
- * the Eve agent uses - so no raw key lives in the game process. Returns null
- * when Connect can't issue one (e.g. no `VERCEL_OIDC_TOKEN`), which the console
- * surfaces as a friendly "credentials unavailable" message.
- */
 export async function resolveLinearConfig(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<LinearConfig | null> {
@@ -172,7 +146,6 @@ export async function resolveLinearConfig(
   }
 }
 
-/** Pure builder for the issueCreate mutation variables. */
 export function issueCreateVariables(
   teamId: string,
   input: CreateIssueInput,
@@ -214,7 +187,6 @@ async function graphql<T>(
   return json.data;
 }
 
-/** Create a Linear issue live. Returns the new issue's identifier and URL. */
 export async function createLinearIssue(
   input: CreateIssueInput,
   config: LinearConfig,
@@ -250,14 +222,12 @@ export async function createLinearIssue(
   return result.issueCreate.issue;
 }
 
-/** Local outbox: issues that couldn't be filed yet (JSONL, one per line). */
 export const ISSUE_OUTBOX = "dev-issues.jsonl";
 export const INCIDENT_LOG = "game-incidents.jsonl";
 
 export interface QueuedIssue extends CreateIssueInput {
-  /** Why it was queued: a missing identity or the API error text. */
   reason: string;
-  /** ISO timestamp, passed in so this stays free of ambient clock reads. */
+
   queuedAt: string;
 }
 
@@ -273,14 +243,11 @@ export function readQueuedIssues(path = ISSUE_OUTBOX): QueuedIssue[] {
     if (!line.trim()) continue;
     try {
       out.push(JSON.parse(line) as QueuedIssue);
-    } catch {
-      // Skip a malformed line rather than dropping the whole queue.
-    }
+    } catch {}
   }
   return out;
 }
 
-/** Append an unsent issue (with its full metadata body) to the outbox. */
 export function queueIssue(
   input: CreateIssueInput,
   reason: string,
@@ -292,10 +259,6 @@ export function queueIssue(
   return readQueuedIssues(path).length;
 }
 
-/**
- * Try to file every queued issue; the ones that still fail stay in the outbox.
- * Returns the filed identifiers and how many remain.
- */
 export async function flushQueuedIssues(
   config: LinearConfig,
   path = ISSUE_OUTBOX,
@@ -356,7 +319,6 @@ export interface ReportDependencies {
 
 const processRepeats = new Map<string, number>();
 
-/** Shared manual/automatic submission path with per-process incident dedupe. */
 export async function submitReport(
   request: ReportRequest,
   dependencies: ReportDependencies = {},
@@ -421,9 +383,7 @@ export async function submitReport(
         (dependencies.createIssue ? undefined : flushQueuedIssues);
       try {
         await flush?.(config, outboxPath);
-      } catch {
-        // The new report is already filed; a stuck outbox can wait for `flush`.
-      }
+      } catch {}
       return { status: "created", ...issue };
     } catch (error) {
       queue(request.input, (error as Error).message, recordedAt, outboxPath);

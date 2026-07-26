@@ -7,26 +7,19 @@ import { MAX_NAME_LENGTH } from "./TitleScreen";
 export interface SettingsScreenProps {
   settings: GameSettings;
   hasSave: boolean;
-  /** Persist a settings change (I/O lives in `app.tsx`). */
+
   onUpdate: (next: GameSettings) => void;
-  /** Delete the saved game (I/O lives in `app.tsx`). */
+
   onDeleteSave: () => void;
-  /** Return to the main menu. */
+
   onClose: () => void;
 }
 
 type Row = "permadeath" | "name" | "seed" | "delete" | "back";
 const ROWS: readonly Row[] = ["permadeath", "name", "seed", "delete", "back"];
 
-/** Inline edit sub-mode; "none" is the normal navigable list. */
 type Editing = "none" | "name" | "seed" | "confirmDelete";
 
-/**
- * Title-screen Settings menu (ROG title overhaul). Self-contained: owns its own
- * `useInput` because the name/seed rows enter inline text-edit sub-modes, like
- * the village sub-views own their input. Persistence is done by the parent via
- * `onUpdate`/`onDeleteSave` so this stays I/O-free.
- */
 export function SettingsScreen({
   settings,
   hasSave,
@@ -83,7 +76,6 @@ export function SettingsScreen({
       return;
     }
 
-    // Normal list navigation.
     if (key.escape) {
       onClose();
       return;

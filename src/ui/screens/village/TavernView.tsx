@@ -22,22 +22,11 @@ export interface TavernViewProps {
   onBack: () => void;
 }
 
-/**
- * Tavern sub-view (ROG-21). Two modes: `recruit` browses the rotating pool of
- * generated recruits (name, class, level, stats, price) and hires one for gold;
- * `party` lists the current party and dismisses a member (with a confirm; the
- * hero is protected). Tab switches modes; Esc returns to the village overview.
- * The pool rerolls on inn rest; if a save predates the pool it is empty, so the
- * view rolls one on mount. The mode/cursor/confirm state machine lives in the
- * pure `reduceTavernUi` (ROG-45); this component only normalizes Ink's input,
- * resolves an intent, applies the result, and dispatches the mapped event.
- */
 export function TavernView({ state, dispatch, onBack }: TavernViewProps) {
   const [tavernUi, setTavernUi] = useState<TavernUiState>(
     INITIAL_TAVERN_UI_STATE,
   );
 
-  // Old saves (and any empty pool) get a fresh roll so the tavern is never bare.
   useEffect(() => {
     if (state.recruits.length === 0) dispatch({ type: "RefreshRecruits" });
   }, [state.recruits.length, dispatch]);
