@@ -31,48 +31,33 @@ describe("toolActionParameter", () => {
     );
   });
 
-  it("formats subagent parameters with name and first line of message", () => {
-    // Coder
-    expect(
-      toolActionParameter("coder", {
-        message: "Implement the gold display in the status bar",
-      }),
-    ).toBe("Coder - Implement the gold display in the status bar");
+  it.each([
+    ["coder", "Coder", "Implement the gold display in the status bar"],
+    ["scout", "Scout", "Find where the player sprite is rendered."],
+    ["playtester", "Playtester", "Test the new combat system"],
+    ["reviewer", "Reviewer", "Review the PR for security issues"],
+    ["agent", "Agent", "Update the config file"],
+  ])(
+    "formats a %s subagent parameter as '<name> - <first line of message>'",
+    (toolName, label, message) => {
+      expect(toolActionParameter(toolName, { message })).toBe(
+        `${label} - ${message}`,
+      );
+    },
+  );
 
-    // Scout
+  it("takes only the first line of a multi-line subagent message", () => {
     expect(
       toolActionParameter("scout", {
         message: "Find where the player sprite is rendered.\nOther details...",
       }),
     ).toBe("Scout - Find where the player sprite is rendered.");
+  });
 
-    // Playtester
+  it("formats Workflow's parameter from its js input, not a message field", () => {
     expect(
-      toolActionParameter("playtester", {
-        message: "Test the new combat system",
-      }),
-    ).toBe("Playtester - Test the new combat system");
-
-    // Reviewer
-    expect(
-      toolActionParameter("reviewer", {
-        message: "Review the PR for security issues",
-      }),
-    ).toBe("Reviewer - Review the PR for security issues");
-
-    // Agent
-    expect(
-      toolActionParameter("agent", {
-        message: "Update the config file",
-      }),
-    ).toBe("Agent - Update the config file");
-
-    // Workflow
-    expect(
-      toolActionParameter("Workflow", {
-        message: "Execute the build pipeline",
-      }),
-    ).toBe("Workflow - Execute the build pipeline");
+      toolActionParameter("Workflow", { js: "await tools.coder({...})" }),
+    ).toBe("Workflow - await tools.coder({...})");
   });
 
   it("truncates long subagent messages", () => {
@@ -179,14 +164,12 @@ describe("toolActionResult", () => {
     expect(toolActionResult("read_file", undefined, true)).toBe("✗ error");
   });
 
-  it("preserves trailing URLs in single-line results", () => {
-    // For single-line output with URL, the URL should be preserved
-    // We can't really test this well with bash since it summarizes
-    // but we can verify the truncation logic works
-    const shortOutput = "response https://example.com/path";
-    const result = toolActionResult("bash", { stdout: shortOutput });
-    // Bash summarizes to line count, so won't preserve URL directly
-    expect(result).toBe("✓ done · 1 line");
+  it("preserves a trailing URL when a long error result gets truncated", () => {
+    const url = "https://github.com/example/repo/pull/1234";
+    const message = `${"context ".repeat(50)}${url}`;
+    const result = toolActionResult("bash", { message }, true);
+    expect(result.endsWith(url)).toBe(true);
+    expect(result.length).toBeLessThanOrEqual(301);
   });
 
   it("never throws on malformed output", () => {

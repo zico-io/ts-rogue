@@ -56,6 +56,24 @@ const closeDanglingFence = (text: string): string => {
 
 type ParamFormatter = (input: Record<string, unknown>) => string | undefined;
 
+// Subagent tool calls (coder/scout/playtester/reviewer/agent) all take a
+// single `input.message` task description; render each as
+// `<Subagent name> - <first line of the task>` rather than a raw JSON blob.
+const subagentFormatter =
+  (label: string): ParamFormatter =>
+  (input) => {
+    const message = asString(input.message);
+    return message === undefined ? undefined : `${label} - ${firstLine(message)}`;
+  };
+
+const SUBAGENT_LABELS: Record<string, string> = {
+  coder: "Coder",
+  scout: "Scout",
+  playtester: "Playtester",
+  reviewer: "Reviewer",
+  agent: "Agent",
+};
+
 const PARAMETER_FORMATTERS: Record<string, ParamFormatter> = {
   bash: (input) => asString(input.command),
   read_file: (input) => {
@@ -80,36 +98,17 @@ const PARAMETER_FORMATTERS: Record<string, ParamFormatter> = {
   load_skill: (input) => asString(input.skill),
   // The list already mirrors to Linear's native Agent Plan; the chip is just a marker.
   todo: () => "Updated plan",
-  // Subagent parameter formatters: show subagent name + first line/sentence of task
-  coder: (input) =>
-    asString(input.message)
-      ? `Coder - ${firstLine(asString(input.message) ?? "")}`
-      : undefined,
-  scout: (input) =>
-    asString(input.message)
-      ? `Scout - ${firstLine(asString(input.message) ?? "")}`
-      : undefined,
-  playtester: (input) =>
-    asString(input.message)
-      ? `Playtester - ${firstLine(asString(input.message) ?? "")}`
-      : undefined,
-  reviewer: (input) =>
-    asString(input.message)
-      ? `Reviewer - ${firstLine(asString(input.message) ?? "")}`
-      : undefined,
-  agent: (input) =>
-    asString(input.message)
-      ? `Agent - ${firstLine(asString(input.message) ?? "")}`
-      : undefined,
+  // Workflow's only input is a JS orchestration program, not a task message.
   Workflow: (input) => {
-    // Workflow takes input.js, but try to find a descriptive field
-    const message = asString(input.message);
-    const description = asString(input.description);
-    const brief = asString(input.brief);
-    const summary =
-      message ?? description ?? brief ?? asString(input.js);
-    return summary ? `Workflow - ${firstLine(summary)}` : undefined;
+    const js = asString(input.js);
+    return js === undefined ? undefined : `Workflow - ${firstLine(js)}`;
   },
+  ...Object.fromEntries(
+    Object.entries(SUBAGENT_LABELS).map(([operation, label]) => [
+      operation,
+      subagentFormatter(label),
+    ]),
+  ),
 };
 
 export const toolActionParameter = (
