@@ -7,26 +7,12 @@ import type { PendingAction } from "../lib/pending-action";
 import { toolLabel } from "../lib/tool-label";
 import { MAX_ACTIVITY_TEXT_LENGTH, truncate } from "../lib/truncate";
 
-// The built-in `agent` child runs in its own session and stream, so its work
-// never reaches the Linear channel. This hook is a copy of the root's hooks
-// running inside the child, so it sees the child's own events and relays them to
-// the same Linear Agent Session as they happen.
-//
-// The same hook also runs in the ROOT session, where it has one job: the
-// moment a turn requests a `subagent-call`, persist the Linear agent session
-// id to a file in the shared sandbox (children share the root's sandbox).
-// That makes the child's session-id handoff deterministic instead of relying
-// on the model to copy `agent_session_id` into the delegation prose - the
-// failure mode that left ENG-2's ephemeral chip frozen for a whole child run.
-// Hook handlers are awaited before the runtime dispatches the children, so
-// the file exists before any child event fires.
-//
-// (A `subagent.called` hook would be the natural trigger, but eve never
-// dispatches that event to authored hooks or channel adapters despite
-// declaring it in the hook vocabulary - verified against eve's dist:
-// dispatch-runtime-actions-step writes it to the stream and calls only the
-// framework channel adapter, and defineChannel filters authored event maps
-// through an allowlist without it. Hence the actions.requested trigger.)
+// Runs in both root and child sessions.
+// Root: when a turn delegates, persists the Linear agent session id to a
+// shared-sandbox file so children can read it (written before any child event
+// fires, because hook handlers are awaited before children are dispatched).
+// Child: relays tool calls, reasoning, and the final message to the parent's
+// Linear Agent Session as ephemeral "working" chips.
 
 const credentials = connectLinearCredentials("linear/ts-rogue-eve");
 
@@ -37,19 +23,13 @@ const LINEAR_CONTINUATION_PREFIX = "agent-session:";
 /** Shared-sandbox handoff file: root writes the Linear agent session id, children read it. */
 export const SESSION_ID_FILE = "/workspace/.eve/linear-agent-session";
 
-// Fresh per child session; captures the Linear agent session id and the
-// delegated issue identifier from the text the parent hands the child (ctx
-// exposes no Linear id of its own). `sandboxChecked`/`warnedDark` latch the
-// one-time handoff-file fallback and its diagnostic warning.
-// `pendingActions` records tool-call metadata so a completed action.result
-// can promote the ephemeral chip to a durable activity.
 const relay = defineState<{
   agentSessionId: string | null;
   issueId: string | null;
   sandboxChecked: boolean;
   warnedDark: boolean;
   pendingActions: Record<string, PendingAction>;
-}>("ts-rogue.child-relay", () => ({
+}>("ts-rogue.relay", () => ({
   agentSessionId: null,
   issueId: null,
   sandboxChecked: false,
@@ -60,14 +40,9 @@ const relay = defineState<{
 const errorMessage = (err: unknown): string =>
   err instanceof Error ? err.message : String(err);
 
-// The parent's delegation text carries the Linear session id in the framework
-// context block (`agent_session_id: <id>`) or however the parent phrases it.
 export const parseAgentSessionId = (text: string): string | null =>
   text.match(/agent_session_id["`\s:=]+([\w-]+)/)?.[1] ?? null;
 
-// The delegation packet leads with `issue: <identifier> - <title>`. Ralph mode
-// runs several children against one Linear session at once, so each relayed
-// activity is prefixed with its issue to stay attributable.
 export const parseIssueId = (text: string): string | null =>
   text
     .match(/\bissue["`\s:=]+([A-Za-z][A-Za-z0-9]*-\d+)\b/)?.[1]
@@ -89,10 +64,6 @@ type ActivityContent = Parameters<
   typeof createLinearAgentActivity
 >[0]["activity"]["content"];
 
-// Root side of the handoff: persist the Linear agent session id where the
-// children this batch is about to spawn can read it. Idempotent and cheap
-// (one small file write per delegation batch); observe-only, so failures
-// warn instead of failing the turn.
 const persistSessionIdForChildren = async (
   actions: readonly { kind: string }[],
   ctx: HookContext,
@@ -108,18 +79,15 @@ const persistSessionIdForChildren = async (
     });
   } catch (err) {
     console.warn(
-      "child-relay: persisting the Linear session id for children failed:",
+      "relay: persisting the Linear session id for children failed:",
       errorMessage(err),
     );
   }
 };
 
-// Child side of the handoff: when the delegation prose carried no
-// `agent_session_id`, fall back to the file the root wrote. Checked once -
-// the root's write completes before any child event fires, so a missing file
-// means this child has no Linear session to relay to (e.g. a non-Linear
-// wake), and the one-time warning makes a dark relay diagnosable instead of
-// silent.
+// Checked once per child session; a missing file means no Linear session to
+// relay to (e.g. a non-Linear wake), and the one-time warning keeps a dark
+// relay diagnosable instead of silent.
 const ensureAgentSessionId = async (ctx: HookContext) => {
   const state = relay.get();
   if (state.agentSessionId || state.sandboxChecked) return;
@@ -136,23 +104,18 @@ const ensureAgentSessionId = async (ctx: HookContext) => {
     }
   } catch (err) {
     console.warn(
-      "child-relay: reading the Linear session id handoff file failed:",
+      "relay: reading the Linear session id handoff file failed:",
       errorMessage(err),
     );
   }
   if (!relay.get().agentSessionId && !relay.get().warnedDark) {
     relay.update((s) => ({ ...s, warnedDark: true }));
     console.warn(
-      "child-relay: no Linear agent session id (delegation text lacked agent_session_id and no handoff file) - this child's activity will not stream to Linear",
+      "relay: no Linear agent session id (delegation text lacked agent_session_id and no handoff file) - this child's activity will not stream to Linear",
     );
   }
 };
 
-// Working chips post as ephemeral: Linear shows an ephemeral activity only
-// until the next activity arrives, so the session carries a single live
-// "what the child is doing right now" slot instead of a growing wall of
-// chips. The child's final report (message.completed) stays non-ephemeral so
-// the handoff summary survives in the thread.
 const post = async (
   content: ActivityContent,
   options: { ephemeral?: boolean } = {},
@@ -169,11 +132,9 @@ const post = async (
       },
     });
   } catch (err) {
-    // Observe-only: a Linear hiccup must never fail the child's turn - but
-    // say so, or a relay that never posts is indistinguishable from one that
-    // was never wired (HAR-11's first production outing was exactly that).
+    // Observe-only: a Linear hiccup must never fail the child's turn.
     console.warn(
-      "child-relay: posting a Linear activity failed:",
+      "relay: posting a Linear activity failed:",
       errorMessage(err),
     );
   }

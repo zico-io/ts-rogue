@@ -15,7 +15,7 @@ vi.mock("eve/channels/linear", () => ({
   createLinearAgentActivity: (input: unknown) => createActivity(input),
 }));
 vi.mock("eve/tools", () => ({ defineTool: (def: unknown) => def }));
-vi.mock("../agent/hooks/child-relay", () => ({ relayIssueId: () => "ROG-7" }));
+vi.mock("../agent/hooks/relay", () => ({ relayIssueId: () => "ROG-7" }));
 
 // Reuse the tool's real status union (via the exported forSessionRole
 // signature) so a typo'd status in a test case fails to type-check instead

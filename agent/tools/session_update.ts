@@ -3,7 +3,7 @@ import { createLinearAgentActivity } from "eve/channels/linear";
 import { defineTool } from "eve/tools";
 import { z } from "zod";
 
-import { relayIssueId } from "../hooks/child-relay";
+import { relayIssueId } from "../hooks/relay";
 
 // Under EVE_EVAL_MOCK_MODEL the delegation eval swaps in a fake bearer and
 // points `api.apiBaseUrl` at its local mock GraphQL server (`LinearApiOptions`
@@ -43,7 +43,7 @@ export const sessionUpdateActivity = ({
 
 /**
  * Root updates pass through untouched. A child may post only `blocked`,
- * prefixed with its delegated issue (mirroring the child-relay chip prefix)
+ * prefixed with its delegated issue (mirroring the relay hook chip prefix)
  * so parallel children stay attributable; `review` and `completed` from a
  * child are refused in code - they read as the whole session finishing
  * (ENG-2, HAR-11) - so no prompt drift can reintroduce them. The refusal is

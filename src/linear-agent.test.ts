@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { codingWorkerModel } from "../agent/agent";
 import linearConnection from "../agent/connections/linear";
-import { parseAgentSessionId } from "../agent/hooks/child-relay";
+import { parseAgentSessionId } from "../agent/hooks/relay";
 import {
   forSessionRole,
   sessionUpdateActivity,
