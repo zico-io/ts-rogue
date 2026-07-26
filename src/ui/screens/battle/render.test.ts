@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { BattleEnemy } from "../../../engine/combat/types";
 import {
+  effectBadges,
   enemyColumnHeight,
   enemyColumnWidth,
   enemyHpLine,
@@ -160,5 +161,46 @@ describe("packEnemyColumns", () => {
     expect(packed.rows).toHaveLength(1);
     expect(packed.rows[0]).toHaveLength(1);
     expect(packed.fieldHeight).toBe(6 + 2);
+  });
+});
+
+describe("effectBadges / afflicted enemy layout", () => {
+  it("turns effect instances into labeled badges with turns remaining", () => {
+    const badges = effectBadges([
+      { effectId: "poison", duration: 2, potency: 1 },
+      { effectId: "stun", duration: 1, potency: 1 },
+    ]);
+    expect(badges).toEqual([
+      { id: "poison", label: "Poison x2" },
+      { id: "stun", label: "Stun x1" },
+    ]);
+  });
+
+  it("is empty for an unafflicted actor", () => {
+    expect(effectBadges(undefined)).toEqual([]);
+    expect(effectBadges([])).toEqual([]);
+  });
+
+  it("grows an afflicted enemy's column by one line for the badge row", () => {
+    const slime = makeEnemy("slime-1", "Slime", SLIME_ASCII);
+    const afflicted: BattleEnemy = {
+      ...slime,
+      effects: [{ effectId: "burn", duration: 2, potency: 1 }],
+    };
+    expect(enemyColumnHeight(slime)).toBe(4 + 2);
+    expect(enemyColumnHeight(afflicted)).toBe(4 + 2 + 1);
+  });
+
+  it("widens an afflicted enemy's column when the badge line is the longest", () => {
+    const slime = makeEnemy("slime-1", "Slime", SLIME_ASCII);
+    const afflicted: BattleEnemy = {
+      ...slime,
+      effects: [
+        { effectId: "poison", duration: 2, potency: 1 },
+        { effectId: "shocked", duration: 1, potency: 1 },
+      ],
+    };
+    expect(enemyColumnWidth(slime, false, false)).toBe(9);
+    expect(enemyColumnWidth(afflicted, false, false)).toBeGreaterThan(9);
   });
 });

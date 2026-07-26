@@ -692,6 +692,7 @@ describe("ENG-21 status effects and element on hit", () => {
     const fireHits = flameState.log.filter((l) => l.text.includes("(fire)"));
     expect(fireHits.length).toBeGreaterThanOrEqual(1);
     expect(fireHits[0].kind).toBe("damage");
+    expect(fireHits[0].element).toBe("fire");
 
     const basicState = reduce(stateInBattle(1, slime), {
       type: "BattleAttack",
@@ -699,6 +700,9 @@ describe("ENG-21 status effects and element on hit", () => {
     });
     const fireInBasic = basicState.log.filter((l) => l.text.includes("(fire)"));
     expect(fireInBasic.length).toBe(0);
+
+    const basicHit = basicState.log.find((l) => l.text.includes("hits"));
+    expect(basicHit?.element).toBe("physical");
   });
 });
 
@@ -744,6 +748,10 @@ describe("ENG-22 status effect ticking", () => {
     expect(
       state.log.some((l) => l.text.includes("takes 3 Poison damage")),
     ).toBe(true);
+    const poisonTick = state.log.find((l) =>
+      l.text.includes("takes 3 Poison damage"),
+    );
+    expect(poisonTick?.element).toBe("poison");
 
     state = reduce(state, { type: "BattleDefend" });
     const poison2 = state.party[0].effects?.find(

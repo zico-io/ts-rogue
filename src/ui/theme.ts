@@ -1,3 +1,4 @@
+import type { Element, StatusEffectId } from "../engine/combat/statusEffects";
 import type { LogKind } from "../engine/state/types";
 
 export const theme = {
@@ -29,6 +30,30 @@ export const theme = {
     quest: "#ca7ef2",
     system: "#837d83",
   } satisfies Record<LogKind, string>,
+
+  // Colors an incoming hit's damage line by its element so fire, ice,
+  // lightning, and poison damage each read distinctly in the battle log.
+  // Physical keeps the plain damage color as the neutral baseline.
+  element: {
+    physical: "#fa7d66",
+    fire: "#f6642c",
+    ice: "#8fe3ff",
+    lightning: "#f5e042",
+    poison: "#8fd13f",
+  } satisfies Record<Element, string>,
+
+  // Colors for afflicted-actor status badges in BattleScreen.
+  statusEffect: {
+    poison: "#8fd13f",
+    burn: "#f6642c",
+    stun: "#f8a64c",
+    slow: "#6f8fa8",
+    wet: "#3dc8f5",
+    oiled: "#c98a3f",
+    chilled: "#8fe3ff",
+    frozen: "#bfe9ff",
+    shocked: "#f5e042",
+  } satisfies Record<StatusEffectId, string>,
 
   rarity: {
     common: "#c6b4b1",

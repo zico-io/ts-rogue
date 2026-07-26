@@ -1,3 +1,5 @@
+import type { EffectInstance } from "../../../engine/combat/statusEffects";
+import { findStatusEffect } from "../../../engine/combat/statusEffects";
 import type { BattleEnemy } from "../../../engine/combat/types";
 
 export interface EnemyColumn {
@@ -6,6 +8,7 @@ export interface EnemyColumn {
   dead: boolean;
   nameLine: string;
   hpLine: string;
+  badges: EffectBadge[];
   width: number;
   height: number;
 }
@@ -40,6 +43,31 @@ export function enemyHpLine(enemy: BattleEnemy): string {
   return `HP ${enemy.hp}/${enemy.maxHp}`;
 }
 
+export interface EffectBadge {
+  id: EffectInstance["effectId"];
+  label: string;
+}
+
+// Turns an actor's active status effects into badge labels with turns
+// remaining (e.g. "Poison x2"), for BattleScreen to render next to the
+// afflicted party member or enemy.
+export function effectBadges(
+  effects: readonly EffectInstance[] | undefined,
+): EffectBadge[] {
+  if (!effects || effects.length === 0) return [];
+  return effects.map((effect) => {
+    const def = findStatusEffect(effect.effectId);
+    return {
+      id: effect.effectId,
+      label: `${def?.name ?? effect.effectId} x${effect.duration}`,
+    };
+  });
+}
+
+export function effectBadgeLine(badges: readonly EffectBadge[]): string {
+  return badges.map((badge) => badge.label).join("  ");
+}
+
 export function enemyColumnWidth(
   enemy: BattleEnemy,
   selected: boolean,
@@ -49,10 +77,12 @@ export function enemyColumnWidth(
   const asciiWidth =
     artWidth ??
     enemy.ascii.reduce((max, line) => Math.max(max, line.length), 0);
+  const badgeWidth = effectBadgeLine(effectBadges(enemy.effects)).length;
   return Math.max(
     asciiWidth,
     enemyNameLine(enemy, selected, dead).length,
     enemyHpLine(enemy).length,
+    badgeWidth,
   );
 }
 
@@ -60,7 +90,8 @@ export function enemyColumnHeight(
   enemy: BattleEnemy,
   artHeight?: number,
 ): number {
-  return (artHeight ?? enemy.ascii.length) + 2;
+  const badgeLines = effectBadges(enemy.effects).length > 0 ? 1 : 0;
+  return (artHeight ?? enemy.ascii.length) + 2 + badgeLines;
 }
 
 function rowWidth(row: EnemyColumn[], gap: number): number {
@@ -90,6 +121,7 @@ export function packEnemyColumns(
       dead,
       nameLine: enemyNameLine(enemy, selected, dead),
       hpLine: enemyHpLine(enemy),
+      badges: effectBadges(enemy.effects),
       width: enemyColumnWidth(enemy, selected, dead, artSize?.width),
       height: enemyColumnHeight(enemy, artSize?.height),
     };

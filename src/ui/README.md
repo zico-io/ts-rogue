@@ -30,6 +30,8 @@ terminals; there is no capability-detection code.
 | `danger` / `warn` / `heal` | `#e74343` / `#f8a64c` / `#5fae3b` | HP states (≤25% / ≤50% / healthy), errors |
 | `mp` / `gold` | `#23b4e9` / `#fbc254` | MP meter, currency |
 | `msg.*` | damage `#fa7d66`, loot `#fbc254`, quest `#ca7ef2`, system `#837d83` | Log line color by `LogEntry.kind`; the newest damage line renders bold |
+| `element.*` | physical `#fa7d66`, fire `#f6642c`, ice `#8fe3ff`, lightning `#f5e042`, poison `#8fd13f` | Overrides a damage log line's color by `LogEntry.element` so an elemental hit reads distinctly from a plain physical one |
+| `statusEffect.*` | one color per `StatusEffectId` (poison, burn, stun, slow, wet, oiled, chilled, frozen, shocked) | `BattleScreen` status badges (name + turns remaining) on the acting party member and enemies |
 | `rarity.*` | common `#c6b4b1`, magic `#1793e6`, rare `#fee284`, unique `#ca7ef2` | Item rarity everywhere items appear |
 | `biome.*` | grass `#5fae3b`, forest `#21804c`, mountain `#837d83`, water `#23b4e9`, village `#fbc254`, entrance `#ca7ef2` | Overworld tiles |
 | `DUNGEON_RAMPS` | teal / indigo / ember, 4 steps each | First-person depth bands per dungeon, far-dim to near-bright |
