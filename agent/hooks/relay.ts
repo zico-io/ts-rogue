@@ -3,7 +3,9 @@ import { createLinearAgentActivity } from "eve/channels/linear";
 import { defineState } from "eve/context";
 import { defineHook, type HookContext } from "eve/hooks";
 
+import type { PendingAction } from "../lib/pending-action";
 import { toolLabel } from "../lib/tool-label";
+import { MAX_ACTIVITY_TEXT_LENGTH, truncate } from "../lib/truncate";
 
 // Runs in both root and child sessions.
 // Root: when a turn delegates, persists the Linear agent session id to a
@@ -26,11 +28,13 @@ const relay = defineState<{
   issueId: string | null;
   sandboxChecked: boolean;
   warnedDark: boolean;
+  pendingActions: Record<string, PendingAction>;
 }>("ts-rogue.relay", () => ({
   agentSessionId: null,
   issueId: null,
   sandboxChecked: false,
   warnedDark: false,
+  pendingActions: {},
 }));
 
 const errorMessage = (err: unknown): string =>
@@ -152,8 +156,6 @@ const withIssuePrefix = (
   return content;
 };
 
-const MAX_PARAMETER = 300;
-
 export default defineHook({
   events: {
     async "message.received"(event, ctx) {
@@ -177,16 +179,18 @@ export default defineHook({
           }
           continue; // session_update already posts its own activity
         }
-        const parameter = JSON.stringify(action.input);
-        await post(
-          {
-            type: "action",
-            action: toolLabel(action.toolName),
-            parameter:
-              parameter.length > MAX_PARAMETER
-                ? `${parameter.slice(0, MAX_PARAMETER)}…`
-                : parameter,
+        const raw = JSON.stringify(action.input);
+        const label = toolLabel(action.toolName);
+        const parameter = truncate(raw, MAX_ACTIVITY_TEXT_LENGTH);
+        relay.update((s) => ({
+          ...s,
+          pendingActions: {
+            ...s.pendingActions,
+            [action.callId]: { action: label, parameter },
           },
+        }));
+        await post(
+          { type: "action", action: label, parameter },
           { ephemeral: true },
         );
       }
@@ -201,6 +205,35 @@ export default defineHook({
       if (!ctx.session.parent) return;
       const text = event.data.message?.trim();
       if (text) await post({ type: "thought", body: text });
+    },
+    async "action.result"(event, ctx) {
+      if (!ctx.session.parent) return;
+      if (event.data.result.kind !== "tool-result") return;
+      const pending = relay.get().pendingActions[event.data.result.callId];
+      if (!pending) return;
+      relay.update((s) => {
+        const { [event.data.result.callId]: _, ...rest } = s.pendingActions;
+        return { ...s, pendingActions: rest };
+      });
+      let rawResult: string;
+      if (event.data.error?.message) {
+        rawResult = event.data.error.message;
+      } else {
+        try {
+          rawResult = JSON.stringify(event.data.result.output);
+        } catch {
+          rawResult = "";
+        }
+      }
+      await post(
+        {
+          type: "action",
+          action: pending.action,
+          parameter: pending.parameter,
+          result: truncate(rawResult, MAX_ACTIVITY_TEXT_LENGTH),
+        },
+        {},
+      );
     },
   },
 });

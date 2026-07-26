@@ -12,6 +12,10 @@ const { createActivity, stateBox } = vi.hoisted(() => ({
       issueId: null as string | null,
       sandboxChecked: false,
       warnedDark: false,
+      pendingActions: {} as Record<
+        string,
+        { action: string; parameter: string }
+      >,
     },
   },
 }));
@@ -47,6 +51,7 @@ const freshState = (): RelayState => ({
   issueId: null,
   sandboxChecked: false,
   warnedDark: false,
+  pendingActions: {},
 });
 
 // Shared-sandbox stand-in for the session-id handoff file.
@@ -280,5 +285,131 @@ describe("relay hook", () => {
     const { parameter } = contentOf(0);
     expect(parameter.length).toBeLessThanOrEqual(301);
     expect(parameter.endsWith("…")).toBe(true);
+  });
+
+  it("promotes a completed tool-call ephemeral chip to a durable action result", async () => {
+    stateBox.value = { ...freshState(), agentSessionId: "sess-8" };
+    const child = makeChild();
+    // Fire actions.requested for a tool-call with callId "x"
+    await events["actions.requested"](
+      toolCall("bash", { command: "echo hi" }),
+      child,
+    );
+    // First post is the ephemeral action chip
+    expect(createActivity.mock.calls[0]?.[0].activity.ephemeral).toBe(true);
+    expect(contentOf(0)).toMatchObject({
+      type: "action",
+      action: "Bash",
+    });
+
+    // Fire action.result for the same callId "x"
+    await events["action.result"](
+      {
+        data: {
+          result: {
+            kind: "tool-result",
+            callId: "x",
+            toolName: "bash",
+            output: { stdout: "hi\n" },
+          },
+          status: "completed",
+          sequence: 0,
+          stepIndex: 0,
+          turnId: "turn-1",
+        },
+      },
+      child,
+    );
+    // Second post is the durable result chip
+    expect(createActivity).toHaveBeenCalledTimes(2);
+    expect(
+      createActivity.mock.calls[1]?.[0].activity.ephemeral,
+    ).toBeUndefined();
+    expect(contentOf(1)).toEqual({
+      type: "action",
+      action: "Bash",
+      parameter: JSON.stringify({ command: "echo hi" }),
+      result: JSON.stringify({ stdout: "hi\n" }),
+    });
+  });
+
+  it("posts nothing for an untracked callId on action.result", async () => {
+    stateBox.value = { ...freshState(), agentSessionId: "sess-9" };
+    const child = makeChild();
+    // No prior actions.requested for callId "unknown"
+    await events["action.result"](
+      {
+        data: {
+          result: {
+            kind: "tool-result",
+            callId: "unknown",
+            toolName: "bash",
+            output: { stdout: "ok" },
+          },
+          status: "completed",
+          sequence: 0,
+          stepIndex: 0,
+          turnId: "turn-2",
+        },
+      },
+      child,
+    );
+    expect(createActivity).not.toHaveBeenCalled();
+  });
+
+  it("posts nothing for a non-tool-result action.result kind", async () => {
+    stateBox.value = { ...freshState(), agentSessionId: "sess-10" };
+    const child = makeChild();
+    await events["action.result"](
+      {
+        data: {
+          result: {
+            kind: "subagent-result",
+            callId: "sub-1",
+            output: { summary: "done" },
+          },
+          status: "completed",
+          sequence: 0,
+          stepIndex: 0,
+          turnId: "turn-3",
+        },
+      },
+      child,
+    );
+    expect(createActivity).not.toHaveBeenCalled();
+  });
+
+  it("uses error.message as the result field when a tool call fails", async () => {
+    stateBox.value = { ...freshState(), agentSessionId: "sess-11" };
+    const child = makeChild();
+    await events["actions.requested"](
+      toolCall("bash", { command: "invalid" }),
+      child,
+    );
+
+    await events["action.result"](
+      {
+        data: {
+          result: {
+            kind: "tool-result",
+            callId: "x",
+            toolName: "bash",
+            isError: true,
+            output: {},
+          },
+          status: "failed",
+          error: { code: "TOOL_ERROR", message: "Command not found" },
+          sequence: 0,
+          stepIndex: 0,
+          turnId: "turn-4",
+        },
+      },
+      child,
+    );
+    expect(createActivity).toHaveBeenCalledTimes(2);
+    expect(contentOf(1)).toMatchObject({
+      type: "action",
+      result: "Command not found",
+    });
   });
 });

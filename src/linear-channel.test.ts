@@ -894,6 +894,7 @@ describe("stateFromAgentSession", () => {
       issueTitle: "t",
       issueUrl: "u",
       organizationId: "org-1",
+      pendingActionsByCallId: {},
       pendingToolCallMessage: null,
       sourceCommentId: null,
     });
@@ -1026,6 +1027,142 @@ describe("action.result plan sync", () => {
       },
     });
     expect(updateLinearAgentSession).not.toHaveBeenCalled();
+  });
+});
+
+describe("action.result durable chip promotion (HAR-45)", () => {
+  const fireActionResult = async (
+    data: unknown,
+    pendingActionsByCallId: Record<string, unknown> = {},
+  ) => {
+    vi.mocked(createLinearAgentActivity).mockClear();
+    // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handler directly
+    await (channel as any).events["action.result"](data, {
+      linear: {
+        updateSession: vi.fn(),
+      },
+      state: {
+        agentSessionId: "sess-1",
+        pendingActionsByCallId,
+      },
+    });
+  };
+
+  it("posts a durable action with the stashed action, parameter, and result when a tracked tool-call completes", async () => {
+    await fireActionResult(
+      {
+        status: "completed",
+        result: {
+          kind: "tool-result",
+          callId: "c1",
+          toolName: "bash",
+          output: { stdout: "hello" },
+        },
+      },
+      { c1: { action: "bash", parameter: '{"command":"echo hello"}' } },
+    );
+
+    expect(createLinearAgentActivity).toHaveBeenCalledTimes(1);
+    const call = vi.mocked(createLinearAgentActivity).mock.calls[0]?.[0];
+    expect(call.activity.ephemeral).toBeUndefined();
+    expect(call.activity.content).toEqual({
+      type: "action",
+      action: "bash",
+      parameter: '{"command":"echo hello"}',
+      result: JSON.stringify({ stdout: "hello" }),
+    });
+  });
+
+  it("posts nothing for an untracked callId (no prior actions.requested stash)", async () => {
+    await fireActionResult(
+      {
+        status: "completed",
+        result: {
+          kind: "tool-result",
+          callId: "unknown",
+          toolName: "bash",
+          output: { stdout: "ok" },
+        },
+      },
+      { c1: { action: "other", parameter: "x" } },
+    );
+
+    expect(createLinearAgentActivity).not.toHaveBeenCalled();
+  });
+
+  it("uses error.message as the result when the tool call failed", async () => {
+    await fireActionResult(
+      {
+        status: "failed",
+        result: {
+          kind: "tool-result",
+          callId: "c2",
+          toolName: "bash",
+          isError: true,
+          output: {},
+        },
+        error: { code: "TOOL_ERROR", message: "Command not found" },
+      },
+      { c2: { action: "bash", parameter: '{"command":"invalid"}' } },
+    );
+
+    expect(createLinearAgentActivity).toHaveBeenCalledTimes(1);
+    const content = vi.mocked(createLinearAgentActivity).mock.calls[0]?.[0]
+      .activity.content as Record<string, unknown>;
+    expect(content.result).toBe("Command not found");
+  });
+
+  it("consumes the pending entry so a second action.result for the same callId posts nothing", async () => {
+    vi.mocked(createLinearAgentActivity).mockClear();
+    // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handler directly
+    await (channel as any).events["action.result"](
+      {
+        status: "completed",
+        result: {
+          kind: "tool-result",
+          callId: "c3",
+          toolName: "bash",
+          output: { stdout: "done" },
+        },
+      },
+      {
+        linear: { updateSession: vi.fn() },
+        state: {
+          agentSessionId: "sess-1",
+          pendingActionsByCallId: {
+            c3: { action: "bash", parameter: '{"cmd":"test"}' },
+          },
+        },
+      },
+    );
+
+    // First call should post the durable activity
+    expect(createLinearAgentActivity).toHaveBeenCalledTimes(1);
+
+    // Fire again with the same (now-consumed) callId
+    // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handler directly
+    await (channel as any).events["action.result"](
+      {
+        status: "completed",
+        result: {
+          kind: "tool-result",
+          callId: "c3",
+          toolName: "bash",
+          output: { stdout: "done" },
+        },
+      },
+      {
+        linear: { updateSession: vi.fn() },
+        state: {
+          agentSessionId: "sess-1",
+          // The entry was consumed after the first call, so this is empty now
+          pendingActionsByCallId: {},
+        },
+      },
+    );
+
+    // Only one activity posted total (entry was consumed after first)
+    expect(createLinearAgentActivity).toHaveBeenCalledTimes(1);
   });
 });
 
