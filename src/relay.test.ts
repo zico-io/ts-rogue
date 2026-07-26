@@ -332,7 +332,7 @@ describe("relay hook", () => {
       // not raw JSON blobs. No exitCode in this synthetic output, so it reads
       // as "done" plus the stdout line count.
       parameter: "echo hi",
-      result: "done · 2 lines",
+      result: "✓ done · 2 lines",
     });
   });
 

@@ -1,12 +1,12 @@
 import { isPlainObject } from "./is-plain-object";
 import { toolOperation } from "./tool-label";
-import { MAX_ACTIVITY_TEXT_LENGTH, truncate } from "./truncate";
+import { MAX_ACTIVITY_TEXT_LENGTH, truncatePreservingTrailingUrl } from "./truncate";
 
 // Shared formatter for the `parameter` and `result` fields of a Linear Agent
 // Activity `action` chip. Both emission points - the root channel
 // (`channels/linear.ts`) and the delegated-child relay (`hooks/relay.ts`) -
 // route through here so parent and child tool-call chips read identically.
-// Without it, chips render as `bash {"command":"..."}` (raw tool name + a
+// Without it, chips render as `bash {\"command\":\"...\"}` (raw tool name + a
 // `JSON.stringify(input)` blob) with a raw `JSON.stringify(output)` result;
 // with it they read `Bash <command>` + `exit 0 · N lines`, which is what
 // Linear's native tool-call UI is built to show. (The chip's `action` label
@@ -31,6 +31,15 @@ const compactJson = (value: unknown): string => {
   } catch {
     return "";
   }
+};
+
+/**
+ * Wrap multi-line text in a Markdown fenced code block.
+ * Only fences if the text actually contains newlines.
+ */
+const fenceIfMultiline = (text: string): string => {
+  if (!text.includes("\n")) return text;
+  return `\`\`\`\n${text}\n\`\`\``;
 };
 
 // --- parameter: a readable summary of the tool INPUT ------------------------
@@ -61,6 +70,36 @@ const PARAMETER_FORMATTERS: Record<string, ParamFormatter> = {
   load_skill: (input) => asString(input.skill),
   // The list already mirrors to Linear's native Agent Plan; the chip is just a marker.
   todo: () => "Updated plan",
+  // Subagent parameter formatters: show subagent name + first line/sentence of task
+  coder: (input) =>
+    asString(input.message)
+      ? `Coder - ${firstLine(asString(input.message) ?? "")}`
+      : undefined,
+  scout: (input) =>
+    asString(input.message)
+      ? `Scout - ${firstLine(asString(input.message) ?? "")}`
+      : undefined,
+  playtester: (input) =>
+    asString(input.message)
+      ? `Playtester - ${firstLine(asString(input.message) ?? "")}`
+      : undefined,
+  reviewer: (input) =>
+    asString(input.message)
+      ? `Reviewer - ${firstLine(asString(input.message) ?? "")}`
+      : undefined,
+  agent: (input) =>
+    asString(input.message)
+      ? `Agent - ${firstLine(asString(input.message) ?? "")}`
+      : undefined,
+  Workflow: (input) => {
+    // Workflow takes input.js, but try to find a descriptive field
+    const message = asString(input.message);
+    const description = asString(input.description);
+    const brief = asString(input.brief);
+    const summary =
+      message ?? description ?? brief ?? asString(input.js);
+    return summary ? `Workflow - ${firstLine(summary)}` : undefined;
+  },
 };
 
 export const toolActionParameter = (
@@ -71,7 +110,10 @@ export const toolActionParameter = (
   const formatted = formatter?.(isPlainObject(input) ? input : {});
   // ponytail: unknown/MCP tools fall back to truncated JSON of the input;
   // add a per-tool formatter above if one reads badly.
-  return truncate(formatted ?? compactJson(input), MAX_ACTIVITY_TEXT_LENGTH);
+  return truncatePreservingTrailingUrl(
+    formatted ?? compactJson(input),
+    MAX_ACTIVITY_TEXT_LENGTH,
+  );
 };
 
 // --- result: a readable summary of the tool OUTPUT --------------------------
@@ -96,19 +138,36 @@ const errorText = (output: unknown): string | undefined => {
 
 const bashResult = (output: unknown): string => {
   if (!isPlainObject(output)) return "done";
-  const parts: string[] = [];
+
   const code =
     typeof output.exitCode === "number" ? output.exitCode : undefined;
-  parts.push(code === undefined ? "done" : `exit ${code}`);
+
+  // Lead with glyph: ✓ for success, ✗ for failure
+  const glyph = code === undefined || code === 0 ? "✓" : "✗";
+
+  // Build the summary parts (without glyph)
+  const parts: string[] = [];
+
+  // Only include exit code for non-success cases, otherwise just generic "done"
+  if (code === undefined || code === 0) {
+    parts.push("done");
+  } else {
+    parts.push(`exit ${code}`);
+  }
+
   const lines = lineCount(asString(output.stdout) ?? "");
   if (lines > 0) parts.push(plural(lines, "line", "lines"));
   if (output.truncated === true) parts.push("truncated");
   const summary = parts.join(" · ");
+
   if (code !== undefined && code !== 0) {
-    const err = asString(firstLine((asString(output.stderr) ?? "").trim()));
-    if (err !== undefined) return `${summary} - ${err}`;
+    const stderr = asString((asString(output.stderr) ?? "").trim());
+    if (stderr !== undefined) {
+      // Return the glyph, summary, and the (possibly fenced) stderr text
+      return `${glyph} ${summary}\n${fenceIfMultiline(stderr)}`;
+    }
   }
-  return summary;
+  return `${glyph} ${summary}`;
 };
 
 const rawResult = (toolName: string, output: unknown): string => {
@@ -125,6 +184,13 @@ const rawResult = (toolName: string, output: unknown): string => {
     if (op === "web_fetch") return plural(output.length, "char", "chars");
     const trimmed = output.trim();
     if (trimmed.length === 0) return "done";
+
+    // Multi-line text gets fenced; short summaries don't
+    if (trimmed.includes("\n")) {
+      return fenceIfMultiline(trimmed);
+    }
+
+    // Single-line text: show it if short, otherwise summary
     return trimmed.length <= MAX_ACTIVITY_TEXT_LENGTH
       ? trimmed
       : plural(output.length, "char", "chars");
@@ -147,10 +213,13 @@ export const toolActionResult = (
 ): string => {
   if (isError === true) {
     const message = errorText(output);
-    return truncate(
-      message === undefined ? "error" : `error - ${message}`,
+    const errorMessage =
+      message === undefined ? "✗ error" : `✗ ${message}`;
+    return truncatePreservingTrailingUrl(
+      errorMessage,
       MAX_ACTIVITY_TEXT_LENGTH,
     );
   }
-  return truncate(rawResult(toolName, output), MAX_ACTIVITY_TEXT_LENGTH);
+  const result = rawResult(toolName, output);
+  return truncatePreservingTrailingUrl(result, MAX_ACTIVITY_TEXT_LENGTH);
 };
