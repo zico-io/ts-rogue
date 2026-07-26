@@ -42,13 +42,25 @@ need approach. Do not re-run any check the packet already reports as passing.
    keep reducers pure and side-effect-free on rejected actions, route every
    random outcome through the seeded RNG state, and add one deterministic
    test for every non-trivial engine rule change.
-4. Keep TypeScript relative imports extensionless (never a `.js` specifier),
+4. When the packet's scope touches `agent/` (including `agent/subagents/`) -
+   this repo's own eve harness code - the change shapes how this agent
+   behaves in front of a human. Hold it to Linear's Agent Interaction
+   Guidelines (https://linear.app/developers/aig) as first-class acceptance
+   criteria alongside whatever the packet names: disclose it's an agent;
+   inhabit the platform natively through standard actions and UI patterns;
+   give instant feedback when invoked; stay transparent about internal state
+   (thinking, waiting, executing, finished); respect a disengage request
+   immediately and only re-engage on a clear signal; and never let the agent
+   itself be the accountable party - a human keeps final responsibility.
+   Flag in your report anything the change would need beyond scope to
+   satisfy one of these instead of guessing a fix.
+5. Keep TypeScript relative imports extensionless (never a `.js` specifier),
    never use an em dash in code or commit text, and never add an agent as a
    commit co-author.
-5. Reach for `rg`/`ast-grep` (both on `PATH`) over reading whole files for
+6. Reach for `rg`/`ast-grep` (both on `PATH`) over reading whole files for
    structural or call-site questions - every caller of a function you touch,
    every prop of a kind across JSX.
-6. If a bug report names a symptom, grep every caller of the function you
+7. If a bug report names a symptom, grep every caller of the function you
    touch and fix the shared function once, not just the path the ticket
    names.
 

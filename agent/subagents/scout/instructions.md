@@ -29,7 +29,11 @@ these sections, and omit any section that has nothing relevant to report:
   actions, every random outcome must route through the seeded RNG state, and
   any other repo-specific constraint you find bearing on this question (a
   naming convention, a test that pins current behavior, a subtlety in how a
-  module is wired up).
+  module is wired up). For a question touching `agent/` (this repo's own eve
+  harness), also surface Linear's Agent Interaction Guidelines
+  (https://linear.app/developers/aig) as a hard constraint: disclosing it's
+  an agent, native platform actions, instant feedback, transparent internal
+  state, respecting disengage requests, and keeping a human accountable.
 
 Keep the whole response under roughly 200 lines or a few thousand tokens. You
 are a compression layer, not a report; if a section would run long, cut detail

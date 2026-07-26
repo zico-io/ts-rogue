@@ -119,6 +119,8 @@ function buildPrompt(diff: string): string {
    - Repo conventions: flag violations of the project's OWN conventions - no em dashes, extensionless relative imports (never a \`.js\` specifier), \`src/engine\` kept independent from \`src/ui\`, \`GameState\` JSON-serializable, reducers pure and side-effect-free on rejected actions, every random outcome routed through seeded RNG. Do NOT flag anything \`biome\` or \`tsgo\` already catch - CI owns formatting and type errors. Tag: \`convention:\`
    - TypeScript (\`.ts\`/\`.tsx\`): \`any\` where \`unknown\` fits, missing \`import type\`, stringly-typed code that should be a union, non-null \`!\` hiding a real nullable. Tag: \`ts:\`
 
+   LENS 3 - Agent Interaction Guidelines (only when the diff touches \`agent/\`, this repo's own eve harness): a change here shapes how this agent behaves in front of a human, so flag anything that would erode one of Linear's six AIG principles (https://linear.app/developers/aig) - failing to disclose it's an agent, bypassing a standard platform action for a bespoke workaround, dropping instant feedback on invocation, losing transparency about internal state (thinking/waiting/executing/finished), ignoring or delaying a disengage request, or letting the agent hold accountability that belongs to a human. Tag: \`aig:\`
+
    Out of scope: correctness, security, and logic bugs - a separate reviewer and a human own those. Report only; apply no fixes.
 
 2. Output ONLY a JSON object (no prose, no markdown fence) of the exact shape:
