@@ -238,6 +238,57 @@ describe("agent/channels/linear (cancel-before-send)", () => {
   });
 });
 
+const stoppedEvent = {
+  ...promptedEvent,
+  agentActivity: {
+    ...promptedEvent.agentActivity,
+    signal: "stop",
+  },
+};
+
+describe("human-to-agent stop signal (HAR-39)", () => {
+  const reset = () => {
+    order.length = 0;
+    cancelMock.mockClear();
+    sendMock.mockClear();
+    waitUntilTasks.length = 0;
+    vi.mocked(createLinearAgentActivity).mockClear();
+  };
+
+  it("cancels the turn and posts a response activity without dispatching on stop signal", async () => {
+    reset();
+
+    await invoke(stoppedEvent);
+
+    expect(cancelMock).toHaveBeenCalledTimes(1);
+    expect(cancelMock).toHaveBeenCalledWith({
+      continuationToken: "linear:sess-1",
+    });
+    expect(sendMock).not.toHaveBeenCalled();
+    const activity = vi
+      .mocked(createLinearAgentActivity)
+      .mock.calls.at(-1)?.[0].activity;
+    expect(activity).toMatchObject({
+      agentSessionId: "sess-1",
+      content: { type: "response" },
+    });
+    expect(activity?.ephemeral).not.toBe(true);
+    expect((activity?.content as { body?: string })?.body).toContain(
+      "Stopped. This session will not take further action",
+    );
+  });
+
+  it("does not affect a normal prompted event (no signal, or non-stop signal)", async () => {
+    reset();
+
+    await invoke(promptedEvent);
+
+    expect(cancelMock).toHaveBeenCalledTimes(1);
+    expect(sendMock).toHaveBeenCalledTimes(1);
+    expect(order).toEqual(["cancel", "send"]);
+  });
+});
+
 describe("duplicate created-session guard", () => {
   const reset = () => {
     order.length = 0;

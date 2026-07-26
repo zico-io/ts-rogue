@@ -54,12 +54,12 @@ import { listLiveAgentSessions } from "../lib/live-sessions";
 // only from genuinely public primitives (`signLinearWebhookBody`,
 // `node:crypto`, `createLinearAgentActivity`/`renderLinearInputRequests`,
 // and global `fetch`) - see `verifyInboundSignature`,
-// `createLinearDefaultEvents`, and `attachLinearInboundImages`. Five actual
+// `createLinearDefaultEvents`, and `attachLinearInboundImages`. Six actual
 // behavior changes from the built-in: the unconditional `cancel()` before
 // `send()` in `dispatchAgentSession`, the `authorization.*` handlers
 // the built-in defaults lack entirely - see the banner above
 // `connectionDisplayName` - the duplicate-session guard in
-// `guardedOnAgentSession`, and the two harness-owned issue-lifecycle syncs
+// `guardedOnAgentSession`, and the `stop` signal handler in `dispatchAgentSession`, and the two harness-owned issue-lifecycle syncs
 // (`lib/issue-state.ts`): session created -> In Progress with parent cascade
 // in `dispatchAgentSession`, and session failed -> Blocked in
 // `createLinearDefaultEvents`. See `agent/README.md` for what this does and
@@ -922,6 +922,22 @@ async function dispatchAgentSession(input: {
     }),
     session: event.agentSession,
   };
+
+  // Hand-rolled addition (HAR-39): eve parses `agentActivity.signal` off the
+  // wire but implements no automatic handling of Linear's `stop` human-to-agent
+  // signal (https://linear.app/developers/agent-signals#stop). When the signal
+  // is present, cancel the in-flight turn and post a durable response activity
+  // confirming disengagement without ever dispatching a new turn to the model
+  // or running the issue-lifecycle sync.
+  if (event.action === "prompted" && event.agentActivity?.signal === "stop") {
+    const continuationToken = linearContinuationToken(event.agentSession.id);
+    await cancel({ continuationToken });
+    await ctx.linear.createActivity({
+      body: "Stopped. This session will not take further action until you send a new message.",
+      type: "response",
+    });
+    return;
+  }
   const result = await onAgentSession(ctx, event);
   if (result === null) return;
 
