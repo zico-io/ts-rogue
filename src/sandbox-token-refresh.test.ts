@@ -21,6 +21,7 @@ import {
   mintFreshPolicy,
   resolveStartupNetworkPolicy,
   SYNC_MAIN_COMMAND,
+  WORKSPACE_GIT_CONFIG_ENV,
 } from "../agent/sandbox";
 
 // Runs a git command in `cwd`, returning trimmed stdout; throws on failure.
@@ -407,20 +408,23 @@ describe("buildBootstrapCommand", () => {
     expect(command).toContain("npm install -g @ast-grep/cli");
   });
 
-  it("installs the gh CLI and seeds a placeholder auth config (HAR-14)", () => {
+  it("installs the gh CLI and seeds a placeholder auth config under /workspace (HAR-14, HAR-35)", () => {
     // gh replaces curl + the GitHub REST API for PR operations, so it must
     // be installed and willing to run without a real credential ever
     // landing in the sandbox - the network-boundary broker (see
-    // githubNetworkPolicy) supplies the real one at the firewall.
+    // githubNetworkPolicy) supplies the real one at the firewall. HAR-35
+    // relocated this config under /workspace (via GH_CONFIG_DIR) instead of
+    // $HOME, so gh's login state lives alongside the rest of the repo.
     const command = buildBootstrapCommand();
     expect(command).toContain(
       "apt-get install -y tmux ripgrep fd-find bat eza gh",
     );
-    expect(command).toContain('mkdir -p "$HOME/.config/gh"');
-    expect(command).toContain("$HOME/.config/gh/hosts.yml");
+    expect(command).toContain('mkdir -p "/workspace/.config/gh"');
+    expect(command).toContain("/workspace/.config/gh/hosts.yml");
     expect(command).toContain(
       "oauth_token: placeholder-overwritten-by-network-broker",
     );
+    expect(command).not.toContain("$HOME/.config/gh");
   });
 
   it("installs the ponytail ruleset into pi (HAR-3)", () => {
@@ -478,6 +482,17 @@ describe("buildBootstrapCommand", () => {
     expect(command).not.toContain(
       "git clone https://github.com/zico-io/ts-rogue.git .",
     );
+  });
+});
+
+describe("WORKSPACE_GIT_CONFIG_ENV", () => {
+  it("targets GH_CONFIG_DIR and GIT_CONFIG_GLOBAL under /workspace (HAR-35)", () => {
+    // Targeted env vars, not a blanket XDG_CONFIG_HOME=/workspace/.config -
+    // only gh and git's HOME-backed config relocate, not every tool's.
+    expect(WORKSPACE_GIT_CONFIG_ENV).toEqual({
+      GH_CONFIG_DIR: "/workspace/.config/gh",
+      GIT_CONFIG_GLOBAL: "/workspace/.gitconfig",
+    });
   });
 });
 
