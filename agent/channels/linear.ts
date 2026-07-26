@@ -36,6 +36,8 @@ import {
 import { isPlainObject } from "../lib/is-plain-object";
 import { advanceIssueState } from "../lib/issue-state";
 import { listLiveAgentSessions } from "../lib/live-sessions";
+import type { PendingAction } from "../lib/pending-action";
+import { truncate } from "../lib/truncate";
 
 // Hand-rolled port of eve's built-in `linearChannel()` (see
 // `node_modules/eve/dist/src/public/channels/linear/linearChannel.js`),
@@ -232,7 +234,7 @@ interface LinearImageFilePart {
 }
 
 const MARKDOWN_IMAGE_PATTERN =
-  /!\[([^\]\r\n]*)\]\(\s*(?:<([^>\r\n]+)>|([^\s)\r\n]+))(?:\s+(?:"[^"\r\n]*"|'[^'\r\n]*'|\([^)\r\n]*\)))?\s*\)/gu;
+  /!\[([^\]\r\n]*)\]\(\s*(?:<([^>\r\n]+)>|([^\s)\r\n]+))(?:\\s+(?:"[^"\r\n]*"|'[^'\r\n]*'|\([^)\r\n]*\)))?\s*\)/gu;
 
 export function extractLinearUploadImageReferences(
   text: string,
@@ -387,8 +389,12 @@ function buildLinearHandle(input: {
   };
 }
 
+type LinearStateWithPending = LinearChannelState & {
+  pendingActionsByCallId: Record<string, PendingAction>;
+};
+
 function initialLinearState(): LinearChannelState {
-  return {
+  const state: LinearStateWithPending = {
     agentSessionId: null,
     agentSessionUrl: null,
     commentId: null,
@@ -399,13 +405,15 @@ function initialLinearState(): LinearChannelState {
     organizationId: null,
     pendingToolCallMessage: null,
     sourceCommentId: null,
+    pendingActionsByCallId: {},
   };
+  return state;
 }
 
 export function stateFromAgentSession(
   agentSession: LinearAgentSessionRef,
 ): LinearChannelState {
-  return {
+  const state: LinearStateWithPending = {
     agentSessionId: agentSession.id,
     agentSessionUrl: agentSession.url ?? null,
     commentId: agentSession.commentId ?? null,
@@ -416,7 +424,9 @@ export function stateFromAgentSession(
     organizationId: agentSession.organizationId ?? null,
     pendingToolCallMessage: null,
     sourceCommentId: agentSession.sourceCommentId ?? null,
+    pendingActionsByCallId: {},
   };
+  return state;
 }
 
 export async function resolveReceiveSession(
@@ -502,7 +512,7 @@ const actionLabel = (action: any): string =>
 // biome-ignore lint/suspicious/noExplicitAny: see actionLabel
 const actionParameter = (action: any): string => {
   // A subagent-call's `description` is the built-in `agent` tool's static
-  // description ("Delegate a focused subtask to a fresh copy of yourself…"),
+  // description ("Delegate a focused subtask to a fresh copy of yourself..."),
   // and the chip posted here stays frozen while the parent turn is parked on
   // the child - so prefer the delegation packet's first line, which leads
   // with `issue: <identifier> - <title>` (see instructions.md) and actually
@@ -691,8 +701,9 @@ function createLinearDefaultEvents(options: {
       );
     },
     async "actions.requested"(data, channel) {
-      const pending = channel.state.pendingToolCallMessage;
-      channel.state.pendingToolCallMessage = null;
+      const state = channel.state as LinearStateWithPending;
+      const pending = state.pendingToolCallMessage;
+      state.pendingToolCallMessage = null;
       if (pending) {
         await postActivity(
           channel,
@@ -717,14 +728,18 @@ function createLinearDefaultEvents(options: {
         return;
       }
       for (const action of data.actions) {
+        const label = actionLabel(action);
+        const parameter = actionParameter(action);
+        if (action.kind === "tool-call" && state.pendingActionsByCallId) {
+          state.pendingActionsByCallId[action.callId] = {
+            action: label,
+            parameter,
+          };
+        }
         await postActivity(
           channel,
           options,
-          {
-            action: actionLabel(action),
-            parameter: actionParameter(action),
-            type: "action",
-          },
+          { action: label, parameter, type: "action" },
           { ephemeral: true },
         );
       }
@@ -843,6 +858,42 @@ function createLinearDefaultEvents(options: {
         body: `Authorization for ${displayName} ${outcome}${data.reason ? `: ${data.reason}` : "."}`,
         type: "thought",
       });
+    },
+    async "action.result"(data, channel, ctx) {
+      // Existing behavior: sync agent plan from todo tool.
+      await syncAgentPlanFromTodoTool(data, channel, ctx);
+
+      // New behavior: promote completed tool-call ephemeral chips to durable.
+      if (data.result.kind !== "tool-result") return;
+      const state = channel.state as LinearStateWithPending;
+      const pending = state.pendingActionsByCallId?.[data.result.callId];
+      if (!pending) return;
+      // Consume the entry (immutable delete). The `pending` check above
+      // guarantees `pendingActionsByCallId` is defined.
+      const { [data.result.callId]: _, ...rest } =
+        state.pendingActionsByCallId;
+      state.pendingActionsByCallId = rest;
+      let rawResult: string;
+      if (data.error?.message) {
+        rawResult = data.error.message;
+      } else {
+        try {
+          rawResult = JSON.stringify(data.result.output);
+        } catch {
+          rawResult = "";
+        }
+      }
+      await postActivity(
+        channel,
+        options,
+        {
+          type: "action",
+          action: pending.action,
+          parameter: pending.parameter,
+          result: truncate(rawResult, 300),
+        },
+        {}, // No ephemeral -> durable
+      );
     },
   };
 }
@@ -1092,8 +1143,5 @@ function linearChannel(config: LinearChannelConfig = {}): LinearChannel {
 
 export default linearChannel({
   credentials: agentCredentials,
-  events: {
-    "action.result": syncAgentPlanFromTodoTool,
-  },
   onAgentSession: guardedOnAgentSession,
 });

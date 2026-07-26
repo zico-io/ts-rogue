@@ -3,7 +3,9 @@ import { createLinearAgentActivity } from "eve/channels/linear";
 import { defineState } from "eve/context";
 import { defineHook, type HookContext } from "eve/hooks";
 
+import type { PendingAction } from "../lib/pending-action";
 import { toolLabel } from "../lib/tool-label";
+import { truncate } from "../lib/truncate";
 
 // The built-in `agent` child runs in its own session and stream, so its work
 // never reaches the Linear channel. This hook is a copy of the root's hooks
@@ -39,16 +41,20 @@ export const SESSION_ID_FILE = "/workspace/.eve/linear-agent-session";
 // delegated issue identifier from the text the parent hands the child (ctx
 // exposes no Linear id of its own). `sandboxChecked`/`warnedDark` latch the
 // one-time handoff-file fallback and its diagnostic warning.
+// `pendingActions` records tool-call metadata so a completed action.result
+// can promote the ephemeral chip to a durable activity.
 const relay = defineState<{
   agentSessionId: string | null;
   issueId: string | null;
   sandboxChecked: boolean;
   warnedDark: boolean;
+  pendingActions: Record<string, PendingAction>;
 }>("ts-rogue.child-relay", () => ({
   agentSessionId: null,
   issueId: null,
   sandboxChecked: false,
   warnedDark: false,
+  pendingActions: {},
 }));
 
 const errorMessage = (err: unknown): string =>
@@ -214,16 +220,18 @@ export default defineHook({
           }
           continue; // session_update already posts its own activity
         }
-        const parameter = JSON.stringify(action.input);
-        await post(
-          {
-            type: "action",
-            action: toolLabel(action.toolName),
-            parameter:
-              parameter.length > MAX_PARAMETER
-                ? `${parameter.slice(0, MAX_PARAMETER)}…`
-                : parameter,
+        const raw = JSON.stringify(action.input);
+        const label = toolLabel(action.toolName);
+        const parameter = truncate(raw, MAX_PARAMETER);
+        relay.update((s) => ({
+          ...s,
+          pendingActions: {
+            ...s.pendingActions,
+            [action.callId]: { action: label, parameter },
           },
+        }));
+        await post(
+          { type: "action", action: label, parameter },
           { ephemeral: true },
         );
       }
@@ -238,6 +246,35 @@ export default defineHook({
       if (!ctx.session.parent) return;
       const text = event.data.message?.trim();
       if (text) await post({ type: "thought", body: text });
+    },
+    async "action.result"(event, ctx) {
+      if (!ctx.session.parent) return;
+      if (event.data.result.kind !== "tool-result") return;
+      const pending = relay.get().pendingActions[event.data.result.callId];
+      if (!pending) return;
+      relay.update((s) => {
+        const { [event.data.result.callId]: _, ...rest } = s.pendingActions;
+        return { ...s, pendingActions: rest };
+      });
+      let rawResult: string;
+      if (event.data.error?.message) {
+        rawResult = event.data.error.message;
+      } else {
+        try {
+          rawResult = JSON.stringify(event.data.result.output);
+        } catch {
+          rawResult = "";
+        }
+      }
+      await post(
+        {
+          type: "action",
+          action: pending.action,
+          parameter: pending.parameter,
+          result: truncate(rawResult, MAX_PARAMETER),
+        },
+        {},
+      );
     },
   },
 });
