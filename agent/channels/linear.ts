@@ -604,13 +604,16 @@ function createLinearDefaultEvents(options: {
       const pending = state.pendingToolCallMessage;
       state.pendingToolCallMessage = null;
       if (pending) {
+        // Prose the model wrote before reaching for a tool is the durable
+        // narrative of the session; post it non-ephemeral so it survives
+        // the ephemeral action chips that follow (see the "tool actions"
+        // branch below), rather than being replaced by them.
         await postActivity(
           channel,
           options,
           { body: pending, type: "thought" },
-          { ephemeral: true },
+          {},
         );
-        return;
       }
       if (data.actions.length === 0) return;
       if (data.actions.length > 1) {
@@ -788,6 +791,10 @@ function createLinearDefaultEvents(options: {
           rawResult = "";
         }
       }
+      // Completed tool/subagent chips are the mechanical trail of a turn,
+      // not its narrative; keep them on the rolling ephemeral status slot so
+      // they summarize "what just ran" without permanently displacing the
+      // durable thought/response prose that tells the actual story.
       await postActivity(
         channel,
         options,
@@ -797,7 +804,7 @@ function createLinearDefaultEvents(options: {
           parameter: pending.parameter,
           result: truncate(rawResult, MAX_ACTIVITY_TEXT_LENGTH),
         },
-        {},
+        { ephemeral: true },
       );
     },
   };
