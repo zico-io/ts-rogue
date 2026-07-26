@@ -13,6 +13,8 @@ import { consumeItem, healAmount, isHealItem } from "../loot/consumables";
 import { type EquipmentSlotName, equipTargetSlot } from "../loot/equipment";
 import { FIELD_BACKPACK_CAP, isFieldBackpackFull } from "../loot/inventory";
 import { describeItem, itemSellPrice } from "../loot/items";
+import type { LootFilterRules } from "../loot/lootFilter";
+import { EMPTY_LOOT_FILTER } from "../loot/lootFilter";
 import { applyLootPickup, queueLootTriage } from "../loot/pickup";
 import { rollChestLoot } from "../loot/resolution";
 import { Rng } from "../rng/rng";
@@ -100,6 +102,7 @@ export function newGame(seed: number, options?: NewGameOptions): GameState {
     flags: { permadeath: options?.permadeath ?? false, gameOver: false },
     stash: [],
     pendingLootTriage: null,
+    lootFilter: EMPTY_LOOT_FILTER,
   };
   // Populate the tavern immediately so a fresh run has recruits to hire.
   return rollRecruits(base);
@@ -731,7 +734,7 @@ function recruitMember(state: GameState, classId: string): GameState {
 /** Next party-unique member id (`member-<n>`), avoiding collisions after dismiss/rehire. */
 function nextMemberId(party: readonly PartyMember[]): string {
   const maxSuffix = party.reduce((max, member) => {
-    const n = Number.parseInt(member.id.replace(/^\D+/, ""), 10);
+    const n = Number.parseInt(member.id.replace(/^\\D+/, ""), 10);
     return Number.isFinite(n) && n > max ? n : max;
   }, 0);
   return `member-${maxSuffix + 1}`;
@@ -942,6 +945,19 @@ function resolveLootTriage(
   };
 }
 
+/* -------------------------------------------------------------------------- */
+/* ENG-17: loot filter settings                                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * `SetLootFilter` reducer (ENG-17). Whole-object replace for the loot filter
+ * rules on `GameState.lootFilter`. No log entry since there is no UI yet
+ * (the settings pane is ENG-19) and the replacement is a silent config update.
+ */
+function setLootFilter(state: GameState, rules: LootFilterRules): GameState {
+  return { ...state, lootFilter: rules };
+}
+
 /** Pure reducer: never mutates `state`. All state transitions route through here. */
 export function reduce(state: GameState, event: GameEvent): GameState {
   switch (event.type) {
@@ -1000,6 +1016,8 @@ export function reduce(state: GameState, event: GameEvent): GameState {
       return withdrawItem(state, event.instanceId);
     case "ResolveLootTriage":
       return resolveLootTriage(state, event);
+    case "SetLootFilter":
+      return setLootFilter(state, event.rules);
     case "BattleAttack":
     case "BattleSkill":
     case "BattleItem":

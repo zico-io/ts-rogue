@@ -4,6 +4,8 @@ import { atkFrom, startBattle } from "../combat/resolution";
 import type { PartyMember } from "../entities/party";
 import { FIELD_BACKPACK_CAP } from "../loot/inventory";
 import { describeItem, itemSellPrice } from "../loot/items";
+import type { LootFilterRules } from "../loot/lootFilter";
+import { EMPTY_LOOT_FILTER } from "../loot/lootFilter";
 import type { ItemInstance } from "../loot/types";
 import { Rng } from "../rng/rng";
 import { isDungeonWall } from "../world/dungeon";
@@ -1830,5 +1832,38 @@ describe("Phase 6: save/restore integrity", () => {
     testState = reduce(testState, { type: "ExitDungeon" });
 
     expect(testState).toEqual(control);
+  });
+
+  describe("SetLootFilter (ENG-17 loot filter)", () => {
+    it("updates GameState.lootFilter to the given rules", () => {
+      const state = newGame(1);
+      const rules: LootFilterRules = {
+        minRarityByTier: { 1: "magic", 2: "rare" },
+        minIlvlOffset: 0,
+        keepAffixStats: ["str", "agi"],
+      };
+      const after = reduce(state, { type: "SetLootFilter", rules });
+      expect(after.lootFilter).toEqual(rules);
+      expect(after.lootFilter).not.toBe(state.lootFilter);
+    });
+
+    it("save/load round-trip preserves non-default lootFilter", () => {
+      const rules: LootFilterRules = {
+        minRarityByTier: { 1: "magic", 2: "rare" },
+        minIlvlOffset: 0,
+        keepAffixStats: ["str", "agi"],
+      };
+      const state = reduce(newGame(1), { type: "SetLootFilter", rules });
+      const restored = deserialize(serialize(state));
+      expect(restored.lootFilter).toEqual(rules);
+    });
+
+    it("old-save back-fill provides EMPTY_LOOT_FILTER when lootFilter is absent", () => {
+      const before = newGame(1);
+      const legacy = JSON.parse(serialize(before));
+      delete legacy.lootFilter;
+      const restored = deserialize(JSON.stringify(legacy));
+      expect(restored.lootFilter).toEqual(EMPTY_LOOT_FILTER);
+    });
   });
 });
