@@ -3,11 +3,11 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("eve/hooks", () => ({ defineHook: (def: unknown) => def }));
 
 const FRESH_POLICY = { allow: { "github.com": [] } };
-vi.mock("../agent/sandbox", () => ({
+vi.mock("../agent/sandbox/sandbox", () => ({
   mintFreshPolicy: vi.fn(() => Promise.resolve(FRESH_POLICY)),
 }));
 
-const { mintFreshPolicy } = await import("../agent/sandbox");
+const { mintFreshPolicy } = await import("../agent/sandbox/sandbox");
 const events =
   // biome-ignore lint/suspicious/noExplicitAny: driving mocked hook handlers in a test
   (await import("../agent/hooks/prewarm-sandbox")).default.events as any;

@@ -1,6 +1,6 @@
 import { defineHook } from "eve/hooks";
 
-import { mintFreshPolicy } from "../sandbox";
+import { mintFreshPolicy } from "../sandbox/sandbox";
 
 // eve creates the session sandbox lazily, on the first sandbox-touching tool
 // call - which lands mid-orientation, so the model sits through the full cold
