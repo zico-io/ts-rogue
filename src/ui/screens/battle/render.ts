@@ -64,10 +64,6 @@ export function effectBadges(
   });
 }
 
-export function effectBadgeLine(badges: readonly EffectBadge[]): string {
-  return badges.map((badge) => badge.label).join("  ");
-}
-
 export function enemyColumnWidth(
   enemy: BattleEnemy,
   selected: boolean,
@@ -77,7 +73,9 @@ export function enemyColumnWidth(
   const asciiWidth =
     artWidth ??
     enemy.ascii.reduce((max, line) => Math.max(max, line.length), 0);
-  const badgeWidth = effectBadgeLine(effectBadges(enemy.effects)).length;
+  const badgeWidth = effectBadges(enemy.effects)
+    .map((badge) => badge.label)
+    .join("  ").length;
   return Math.max(
     asciiWidth,
     enemyNameLine(enemy, selected, dead).length,
