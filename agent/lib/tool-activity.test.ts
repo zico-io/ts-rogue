@@ -116,7 +116,7 @@ describe("toolActionResult", () => {
         stdout: "a\nb\nc",
         truncated: false,
       }),
-    ).toBe("✓ done · 3 lines");
+    ).toBe("✓ exit 0 · 3 lines");
   });
 
   it("surfaces stderr on a nonzero bash exit with failure glyph, fenced if multiline", () => {
@@ -141,29 +141,35 @@ describe("toolActionResult", () => {
     expect(toolActionResult("read_file", "l1\nl2\nl3\nl4")).toBe("4 lines");
   });
 
-  it("fences multi-line raw text in markdown code blocks for non-bash tools", () => {
-    // A tool that returns raw multi-line string gets fenced
+  it("bash success summarizes stdout as a line count rather than fencing it", () => {
     const result = toolActionResult("bash", {
       exitCode: 0,
       stdout: "line 1\nline 2\nline 3",
       stderr: "",
       truncated: false,
     });
-    // Bash success returns summary, not fenced raw text
-    expect(result).toBe("✓ done · 3 lines");
+    expect(result).toBe("✓ exit 0 · 3 lines");
   });
 
-  it("fences raw multi-line string output", () => {
-    // When output is a string with newlines (not bash), it gets fenced
-    // We can test this with a hypothetical tool that returns raw output
-    // For now, test that the fencing logic works for error stderr
+  it("fences a raw multi-line string result for a non-bash tool", () => {
+    // Falls through rawResult's generic string branch, which fences
+    // multi-line text rather than echoing it as a flat run-on string.
+    const result = toolActionResult("something_unknown", "line1\nline2\nline3");
+    expect(result).toBe("```\nline1\nline2\nline3\n```");
+  });
+
+  it("re-closes a code fence that truncation would otherwise leave open", () => {
+    const longStderr = Array.from({ length: 40 }, (_, i) => `stderr line ${i}`).join(
+      "\n",
+    );
     const result = toolActionResult("bash", {
       exitCode: 1,
-      stderr: "line1\nline2\nline3",
+      stderr: longStderr,
       stdout: "",
       truncated: false,
     });
-    expect(result).toContain("```\nline1\nline2\nline3\n```");
+    const fenceCount = (result.match(/```/g) ?? []).length;
+    expect(fenceCount % 2).toBe(0);
   });
 
   it("renders an error summary with failure glyph when the tool failed", () => {

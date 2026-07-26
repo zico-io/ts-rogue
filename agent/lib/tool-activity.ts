@@ -42,6 +42,16 @@ const fenceIfMultiline = (text: string): string => {
   return `\`\`\`\n${text}\n\`\`\``;
 };
 
+/**
+ * Truncation can cut a fenced code block in half, leaving an open ``` with
+ * no matching close - Linear would then render the rest of the chip as code.
+ * Re-close an odd (unclosed) fence count after truncation.
+ */
+const closeDanglingFence = (text: string): string => {
+  const fenceCount = (text.match(/```/g) ?? []).length;
+  return fenceCount % 2 === 1 ? `${text}\n\`\`\`` : text;
+};
+
 // --- parameter: a readable summary of the tool INPUT ------------------------
 
 type ParamFormatter = (input: Record<string, unknown>) => string | undefined;
@@ -145,15 +155,9 @@ const bashResult = (output: unknown): string => {
   // Lead with glyph: ✓ for success, ✗ for failure
   const glyph = code === undefined || code === 0 ? "✓" : "✗";
 
-  // Build the summary parts (without glyph)
-  const parts: string[] = [];
-
-  // Only include exit code for non-success cases, otherwise just generic "done"
-  if (code === undefined || code === 0) {
-    parts.push("done");
-  } else {
-    parts.push(`exit ${code}`);
-  }
+  // Build the summary parts (without glyph) - keep the exit code detail for
+  // both success and failure; "done" is only for a code-less output.
+  const parts: string[] = [code === undefined ? "done" : `exit ${code}`];
 
   const lines = lineCount(asString(output.stdout) ?? "");
   if (lines > 0) parts.push(plural(lines, "line", "lines"));
@@ -221,5 +225,7 @@ export const toolActionResult = (
     );
   }
   const result = rawResult(toolName, output);
-  return truncatePreservingTrailingUrl(result, MAX_ACTIVITY_TEXT_LENGTH);
+  return closeDanglingFence(
+    truncatePreservingTrailingUrl(result, MAX_ACTIVITY_TEXT_LENGTH),
+  );
 };
