@@ -62,7 +62,8 @@ context. Blocking relations in Linear determine readiness.
 | `hooks/workflow-progress.ts` | Streams per-call `Workflow` progress to the Linear Agent Session |
 | `sandbox/` and `lib/sandbox.ts` | Vercel Sandbox bootstrap, network policy, token refresh, and recovery |
 | `lib/orientation.ts` | Builds the session's concise `ORIENTATION.md` brief |
-| `lib/memory.ts` | Mints the Vercel Connect credential for Eve's runtime memory store (HAR-73) |
+| `lib/memory.ts` | Mints the Vercel Connect credential for Eve's runtime memory store |
+| `lib/memory-store.ts` | libSQL-backed adapter and schema for Eve's runtime memory store (HAR-74 adds its tools) |
 | `skills/` | Optional Eve, Linear project, and README-hygiene procedures |
 | `subagents/playtester/` | Independent terminal and web acceptance verification |
 | `tools/handoff.ts` | Starts an informed successor Agent Session |
@@ -120,19 +121,20 @@ under its own directory.
 | Linear MCP | Issues, projects, milestones, documents, and status updates | Vercel Connect app principal |
 | Vercel MCP | Deployments, logs, errors, and analytics | Vercel Connect |
 | Vercel OpenAPI | Traces, observability queries, and read-only sandbox inspection | `VERCEL_TOKEN` |
-| Turso (libSQL) | Hosted database backing Eve's runtime memory store (HAR-73) | Vercel Connect app principal (`turso/ts-rogue-eve-memory`) |
+| Turso (libSQL) | Hosted database backing Eve's runtime memory store | Vercel Connect app principal (`turso/ts-rogue-eve-memory`) |
 
 The OpenAPI connection derives default team and project identifiers from
 `VERCEL_OIDC_TOKEN`; `VERCEL_TEAM_ID` and `VERCEL_PROJECT_ID` may override
 them. Resuming a named sandbox is denied because it mutates external state.
 
-Turso is not an MCP or OpenAPI surface, so it has no file under `connections/`
-and no model-facing tools of its own yet; `lib/memory.ts` mints its Connect
-credential for the memory store adapter (HAR-73) to use directly from the
-trusted app runtime, the same way `VERCEL_TOKEN` is read for the OpenAPI
-connection above. It never reaches the sandbox, unlike GitHub's credential,
-because the memory store runs as ordinary application code rather than shell
-commands the agent runs inside its own sandbox.
+Turso is not an MCP or OpenAPI surface, so it has no file under `connections/`.
+`lib/memory.ts` mints its Connect credential the same way `VERCEL_TOKEN` is
+read for the OpenAPI connection above, and `lib/memory-store.ts` uses it to
+run the `memories` table's schema migration and CRUD through `@libsql/client`.
+The credential never reaches the sandbox, unlike GitHub's, because the memory
+store runs as ordinary application code rather than shell commands the agent
+runs inside its own sandbox. It still has no model-facing tools or dynamic
+instructions of its own (HAR-74).
 
 See [WORKAROUNDS.md](WORKAROUNDS.md) for framework gaps that must be checked
 when Eve changes.
