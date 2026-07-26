@@ -23,6 +23,7 @@ import {
   TOKEN_RETRY_MS,
   type TokenRefreshTiming,
   withTimeout,
+  WORKSPACE_GIT_CONFIG_ENV,
 } from "./lib/sandbox";
 
 // Re-exported so downstream imports (src/sandbox-token-refresh.test.ts,
@@ -45,13 +46,14 @@ export {
   TOKEN_RETRY_MS,
   type TokenRefreshTiming,
   withTimeout,
+  WORKSPACE_GIT_CONFIG_ENV,
 };
 
 /** Reads back the bootstrap-written screenshot-tooling status; always exits 0 (missing file reads as unavailable via `parseScreenshotToolingStatus`). */
 const READ_SCREENSHOT_STATUS_COMMAND = `cat ${SCREENSHOT_STATUS_PATH} 2>/dev/null || true`;
 
 export default defineSandbox({
-  backend: vercel({ timeout: SANDBOX_TIMEOUT_MS }),
+  backend: vercel({ timeout: SANDBOX_TIMEOUT_MS, env: WORKSPACE_GIT_CONFIG_ENV }),
   revalidationKey: dependencyRevalidationKey,
   async bootstrap({ use }) {
     const { policy } = await resolveStartupNetworkPolicy();

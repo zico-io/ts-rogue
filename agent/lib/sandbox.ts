@@ -237,7 +237,33 @@ export function dependencyRevalidationKey(): string {
 const USE_HTTPS_APT_MIRRORS_COMMAND =
   "sudo sed -i 's#http://archive.ubuntu.com#https://archive.ubuntu.com#; s#http://security.ubuntu.com#https://security.ubuntu.com#' /etc/apt/sources.list.d/ubuntu.sources 2>/dev/null || true";
 
+/** Path `gh` reads its login config from once `GH_CONFIG_DIR` (below) is set, relocating it under `/workspace` instead of `$HOME/.config/gh` (HAR-35). */
+export const WORKSPACE_GH_CONFIG_DIR_PATH = "/workspace/.config/gh";
+
+/** Path `git config --global` reads/writes once `GIT_CONFIG_GLOBAL` (below) is set, relocating it under `/workspace` instead of `$HOME/.gitconfig` (HAR-35). */
+export const WORKSPACE_GIT_CONFIG_GLOBAL_PATH = "/workspace/.gitconfig";
+
 /**
+ * Targeted env vars (not a blanket `XDG_CONFIG_HOME=/workspace/.config`,
+ * which would also redirect other HOME-backed tools' config with no such
+ * need) that relocate gh/git's config into `/workspace` (HAR-35, part 2 of
+ * HAR-21). Passed as the Vercel Sandbox backend's `env` option (see
+ * `vercel(opts)` in `agent/sandbox.ts` and `buildSandboxDefinition` below),
+ * which becomes this sandbox's default environment for every command run
+ * against it - both `buildBootstrapCommand`'s own shell steps below and
+ * every later ad hoc `gh`/`git` invocation the agent or a subagent's shell
+ * runs.
+ */
+export const WORKSPACE_GIT_CONFIG_ENV: Record<string, string> = {
+  GH_CONFIG_DIR: WORKSPACE_GH_CONFIG_DIR_PATH,
+  GIT_CONFIG_GLOBAL: WORKSPACE_GIT_CONFIG_GLOBAL_PATH,
+};
+
+/**
+ * `GH_CONFIG_DIR`/`GIT_CONFIG_GLOBAL` (see {@link WORKSPACE_GIT_CONFIG_ENV})
+ * relocate gh/git's HOME-backed config into `/workspace` (HAR-35), so the
+ * paths below target `/workspace/.config/gh` instead of `$HOME/.config/gh`.
+ *
  * `gh` refuses to run most commands (`gh pr create`, `gh api`, ...) unless it
  * thinks it's logged in, but the real GitHub credential must never enter the
  * sandbox process (see `githubNetworkPolicy` above - that's the whole point
@@ -252,8 +278,8 @@ const USE_HTTPS_APT_MIRRORS_COMMAND =
  * it.
  */
 const SEED_GH_CLI_AUTH_COMMAND = [
-  'mkdir -p "$HOME/.config/gh"',
-  `printf 'github.com:\\n    oauth_token: placeholder-overwritten-by-network-broker\\n    git_protocol: https\\n' > "$HOME/.config/gh/hosts.yml"`,
+  `mkdir -p "${WORKSPACE_GH_CONFIG_DIR_PATH}"`,
+  `printf 'github.com:\\n    oauth_token: placeholder-overwritten-by-network-broker\\n    git_protocol: https\\n' > "${WORKSPACE_GH_CONFIG_DIR_PATH}/hosts.yml"`,
 ].join(" && ");
 
 /**
@@ -324,7 +350,11 @@ export function buildBootstrapCommand(options?: {
     // '*' rather than /workspace: ralph mode adds worktrees under
     // /workspace/.worktrees/<issue-id>, and safe.directory entries are
     // exact-path, so the single /workspace entry would leave every worktree
-    // raising "dubious ownership".
+    // raising "dubious ownership". `git config --global` already honors
+    // GIT_CONFIG_GLOBAL (set on the sandbox via WORKSPACE_GIT_CONFIG_ENV,
+    // HAR-35) when present, so this now lands in
+    // WORKSPACE_GIT_CONFIG_GLOBAL_PATH under /workspace instead of
+    // $HOME/.gitconfig.
     "git config --global --add safe.directory '*'",
     // HAR-34: replaced `git clone https://github.com/zico-io/ts-rogue.git .`
     // (which required /workspace to be empty) with an in-place checkout that
@@ -458,7 +488,7 @@ export function buildSandboxDefinition(
   VercelSandboxSessionUseOptions
 > {
   return {
-    backend: vercel({ timeout: SANDBOX_TIMEOUT_MS }),
+    backend: vercel({ timeout: SANDBOX_TIMEOUT_MS, env: WORKSPACE_GIT_CONFIG_ENV }),
     revalidationKey: dependencyRevalidationKey,
     async bootstrap({ use }) {
       // Bootstrap always needs an authed clone regardless of the subagent's
