@@ -625,6 +625,68 @@ describe("actions.requested ephemeral render", () => {
   });
 });
 
+describe("actions.requested prose durability (HAR-68)", () => {
+  const fireActionsRequested = async (
+    actions: unknown[],
+    pendingToolCallMessage: string | null,
+  ) => {
+    vi.mocked(createLinearAgentActivity).mockClear();
+    const state: Record<string, unknown> = {
+      agentSessionId: "sess-1",
+      pendingToolCallMessage,
+    };
+    // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handler directly
+    await (channel as any).events["actions.requested"]({ actions }, { state });
+    return {
+      calls: vi
+        .mocked(createLinearAgentActivity)
+        .mock.calls.map((call) => call[0].activity),
+      state,
+    };
+  };
+  const bashAction = {
+    kind: "tool-call",
+    callId: "c1",
+    toolName: "bash",
+    input: { command: "git status" },
+  };
+
+  it("posts prose buffered ahead of a tool call as a durable thought, not an ephemeral one", async () => {
+    const { calls } = await fireActionsRequested(
+      [bashAction],
+      "Let me check the current git status.",
+    );
+    expect(calls[0]).toMatchObject({
+      content: {
+        body: "Let me check the current git status.",
+        type: "thought",
+      },
+    });
+    expect(calls[0]?.ephemeral).not.toBe(true);
+  });
+
+  it("still posts the ephemeral action chip for the tool call that followed the prose", async () => {
+    const { calls, state } = await fireActionsRequested(
+      [bashAction],
+      "Let me check the current git status.",
+    );
+    expect(calls).toHaveLength(2);
+    expect(calls[1]).toMatchObject({
+      content: { action: "Bash", parameter: "git status", type: "action" },
+      ephemeral: true,
+    });
+    expect(state.pendingActionsByCallId).toMatchObject({
+      c1: { action: "Bash", parameter: "git status" },
+    });
+  });
+
+  it("posts only the ephemeral action chip when there is no buffered prose", async () => {
+    const { calls } = await fireActionsRequested([bashAction], null);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.content).toMatchObject({ type: "action" });
+  });
+});
+
 describe("input.requested elicitation (HAR-17)", () => {
   it("posts a clean elicitation body with Linear's native select signal, not a hidden tracking marker", async () => {
     vi.mocked(createLinearAgentActivity).mockClear();
@@ -1004,7 +1066,7 @@ describe("action.result plan sync", () => {
   });
 });
 
-describe("action.result durable chip promotion (HAR-45)", () => {
+describe("action.result durable chip promotion (HAR-45, preserved through HAR-68)", () => {
   const fireActionResult = async (
     data: unknown,
     pendingActionsByCallId: Record<string, unknown> = {},

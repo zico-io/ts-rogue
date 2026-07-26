@@ -604,13 +604,13 @@ function createLinearDefaultEvents(options: {
       const pending = state.pendingToolCallMessage;
       state.pendingToolCallMessage = null;
       if (pending) {
+        // Durable, not ephemeral - see HAR-68.
         await postActivity(
           channel,
           options,
           { body: pending, type: "thought" },
-          { ephemeral: true },
+          {},
         );
-        return;
       }
       if (data.actions.length === 0) return;
       if (data.actions.length > 1) {
@@ -788,6 +788,9 @@ function createLinearDefaultEvents(options: {
           rawResult = "";
         }
       }
+      // Durable (HAR-45's audit record): Linear replaces an ephemeral
+      // activity with whatever posts next, ephemeral or not, so the durable
+      // thought above already stops it from being clobbered (HAR-68).
       await postActivity(
         channel,
         options,
