@@ -34,6 +34,16 @@ export const TOKEN_MINT_TIMEOUT_MS = 10 * 1000;
 // so recovery from a transient blip is faster without giving up on a longer
 // outage any sooner.
 export const MAX_SET_POLICY_FAILURES = 20;
+// Consecutive mint failures tolerated before the refresh chain gives up (same
+// ~10-minute endurance as MAX_SET_POLICY_FAILURES). Mint failures used to
+// retry forever, which on a warm process whose invocation-time Vercel OIDC
+// token had expired meant an unbounded 30s spam loop: background timer
+// callbacks run outside any live request, so @vercel/oidc falls back to the
+// stale process.env token and then fails permanently down its local-dev
+// (`vc link`) refresh path. The durable recovery is the turn-start re-mint in
+// hooks/prewarm-sandbox.ts (fresh invocation = fresh OIDC), so once this cap
+// is hit the chain stops and defers to that.
+export const MAX_MINT_FAILURES = 20;
 // Sandbox max lifetime, passed at create AND re-asserted on every session
 // attach (create options don't apply to resumed sandboxes). Without this,
 // eve's Vercel backend defaults Sandbox.create to a 30-minute timeout; when it
@@ -166,22 +176,34 @@ export function keepTokenFresh(
     typeof timing === "number" ? timing : (timing.initialMs ?? refreshMs);
 
   let setPolicyFailures = 0;
-  const schedule = (delayMs: number): ReturnType<typeof setTimeout> =>
-    setTimeout(async () => {
+  let mintFailures = 0;
+  const schedule = (delayMs: number): ReturnType<typeof setTimeout> => {
+    const timer = setTimeout(async () => {
       let policy: SandboxNetworkPolicy;
       try {
         policy = await mintPolicy();
       } catch (err) {
         // Token service down/slow: keep the current policy, retry soon. Warn
         // rather than stay silent - an incident where pushes died for an hour
-        // was undiagnosable because every failure here was swallowed.
+        // was undiagnosable because every failure here was swallowed. Bounded:
+        // on a process whose OIDC token has expired, mints fail permanently
+        // (see MAX_MINT_FAILURES above), so retrying past the cap is pure spam.
+        const message = err instanceof Error ? err.message : err;
+        if (++mintFailures >= MAX_MINT_FAILURES) {
+          console.warn(
+            `keepTokenFresh: token mint failed ${mintFailures} times in a row, giving up until the next turn-start re-mint:`,
+            message,
+          );
+          return;
+        }
         console.warn(
-          `keepTokenFresh: token mint failed, retrying in ${retryMs}ms:`,
-          err instanceof Error ? err.message : err,
+          `keepTokenFresh: token mint failed (${mintFailures}/${MAX_MINT_FAILURES}), retrying in ${retryMs}ms:`,
+          message,
         );
         schedule(retryMs);
         return;
       }
+      mintFailures = 0;
       try {
         await sandbox.setNetworkPolicy(policy);
       } catch (err) {
@@ -197,6 +219,14 @@ export function keepTokenFresh(
       setPolicyFailures = 0;
       schedule(refreshMs);
     }, delayMs);
+    // Never let a pending refresh tick be the thing keeping the event loop
+    // alive: a serverless invocation that waits for the loop to drain would
+    // otherwise be held open by this chain for its whole retry endurance
+    // (~10 minutes of stalled turn per HAR-39). Unref'd timers still fire
+    // while the process is doing real work, so long turns keep refreshing.
+    timer.unref?.();
+    return timer;
+  };
 
   return schedule(initialMs);
 }

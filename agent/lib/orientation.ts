@@ -175,7 +175,7 @@ export function buildOrientationBrief(
     lines.push(
       githubAuthed
         ? "- GitHub auth: confirmed at session start - `git push` and GitHub API calls should work normally."
-        : "- GitHub auth: not confirmed at session start (the token service was slow or unavailable) - it keeps retrying automatically in the background and typically recovers within a minute. If a `git push` or GitHub API call fails early in the session, wait about a minute and retry once or twice before reporting a blocker; only escalate if it is still failing after those retries.",
+        : "- GitHub auth: not confirmed at session start (the token service was slow or unavailable). Background retry is bounded and recovery in this turn is not guaranteed. If a `git push` or GitHub API call fails, retry at most twice, about 60 seconds apart, then back your work up and report a blocker per `instructions.md` - do not keep sleeping and retrying beyond that.",
     );
   }
   lines.push(

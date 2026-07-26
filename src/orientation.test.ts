@@ -245,7 +245,11 @@ describe("buildOrientationBrief", () => {
       false,
     );
     expect(brief).toContain("GitHub auth: not confirmed");
-    expect(brief).toContain("retry once or twice before reporting a blocker");
+    // Bounded retry protocol: the brief must cap the wait budget instead of
+    // promising background recovery that a stale-OIDC process can never
+    // deliver (HAR-39's 15 minutes of 401 retries).
+    expect(brief).toContain("retry at most twice");
+    expect(brief).toContain("do not keep sleeping and retrying");
   });
 
   it("omits the GitHub auth line entirely when no status was supplied", () => {
