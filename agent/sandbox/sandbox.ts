@@ -12,6 +12,7 @@ import {
   AUTO_RECOVER_PUSH_COMMAND,
   buildBootstrapCommand,
   dependencyRevalidationKey,
+  initialTokenRefreshDelayMs,
   keepTokenFresh,
   MAX_MINT_FAILURES,
   MAX_SET_POLICY_FAILURES,
@@ -21,6 +22,7 @@ import {
   mintFreshPolicyWithExpiry,
   nextRefreshDelayMs,
   resolveBootstrapNetworkPolicy,
+  resolveStartupAuth,
   resolveStartupNetworkPolicy,
   SANDBOX_TIMEOUT_MS,
   TOKEN_EXPIRY_BUFFER_MS,
@@ -36,6 +38,7 @@ export {
   AUTO_RECOVER_PUSH_COMMAND,
   buildBootstrapCommand,
   dependencyRevalidationKey,
+  initialTokenRefreshDelayMs,
   keepTokenFresh,
   MAX_MINT_FAILURES,
   MAX_SET_POLICY_FAILURES,
@@ -45,6 +48,7 @@ export {
   mintFreshPolicyWithExpiry,
   nextRefreshDelayMs,
   resolveBootstrapNetworkPolicy,
+  resolveStartupAuth,
   resolveStartupNetworkPolicy,
   SANDBOX_TIMEOUT_MS,
   TOKEN_EXPIRY_BUFFER_MS,
@@ -77,14 +81,16 @@ export default defineSandbox({
       throw new Error(setup.stderr || "Sandbox pre-warming failed");
   },
   async onSession({ use }) {
-    const { policy, authed } = await resolveStartupNetworkPolicy();
+    // resolveStartupAuth (not resolveStartupNetworkPolicy) so keepTokenFresh
+    // gets this session's real token expiry - see StartupAuthResult.
+    const auth = await resolveStartupAuth();
 
     const sandbox = await use({
-      networkPolicy: policy,
+      networkPolicy: auth.policy,
       timeout: SANDBOX_TIMEOUT_MS,
     });
 
-    if (authed) {
+    if (auth.authed) {
       try {
         await sandbox.run({ command: AUTO_RECOVER_PUSH_COMMAND });
       } catch {}
@@ -102,13 +108,13 @@ export default defineSandbox({
           content: buildOrientationBrief(
             parseGitFacts(facts.stdout),
             parseScreenshotToolingStatus(screenshotStatus.stdout),
-            authed,
+            auth.authed,
           ),
         });
     } catch {}
 
     keepTokenFresh(sandbox, mintFreshPolicyWithExpiry, {
-      initialMs: authed ? TOKEN_REFRESH_MS : TOKEN_RETRY_MS,
+      initialMs: initialTokenRefreshDelayMs(auth),
     });
   },
 });

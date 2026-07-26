@@ -19,6 +19,7 @@ import {
   AUTO_RECOVER_PUSH_COMMAND,
   buildBootstrapCommand,
   dependencyRevalidationKey,
+  initialTokenRefreshDelayMs,
   keepTokenFresh,
   MAX_MINT_FAILURES,
   MAX_SET_POLICY_FAILURES,
@@ -28,8 +29,10 @@ import {
   mintFreshPolicyWithExpiry,
   nextRefreshDelayMs,
   resolveBootstrapNetworkPolicy,
+  resolveStartupAuth,
   resolveStartupNetworkPolicy,
   TOKEN_EXPIRY_BUFFER_MS,
+  TOKEN_REFRESH_MS,
   WORKSPACE_GIT_CONFIG_ENV,
 } from "../agent/sandbox/sandbox";
 
@@ -401,6 +404,86 @@ describe("resolveStartupNetworkPolicy", () => {
     expect(res.authed).toBe(false);
     expect(res.policy).toEqual({ allow: { "*": [] } });
     vi.useRealTimers();
+  });
+});
+
+describe("resolveStartupAuth", () => {
+  it("surfaces the minted token's real expiry alongside the policy (HAR-69/HAR-72)", async () => {
+    const authedPolicy = { allow: { x: [] } } as SandboxNetworkPolicy;
+    const expiresAtMs = Date.now() + 40 * 60 * 1000;
+
+    const res = await resolveStartupAuth(
+      () => Promise.resolve(minted(authedPolicy, expiresAtMs)),
+      1000,
+    );
+
+    expect(res).toEqual({ policy: authedPolicy, authed: true, expiresAtMs });
+  });
+
+  it("falls back to the open policy with no expiry when every mint attempt fails", async () => {
+    const res = await resolveStartupAuth(
+      () => Promise.reject(new Error("token down")),
+      1000,
+      1,
+    );
+
+    expect(res).toEqual({ policy: { allow: { "*": [] } }, authed: false });
+  });
+
+  it("feeds a real mint's short-lived expiry into onSession's actual scheduling function (HAR-72)", async () => {
+    // Drives resolveStartupAuth's real output into initialTokenRefreshDelayMs
+    // (see StartupAuthResult) instead of re-deriving the schedule inline.
+    const now = Date.now();
+    const shortLivedExpiry = now + 25 * 60 * 1000;
+
+    const auth = await resolveStartupAuth(
+      () =>
+        Promise.resolve(
+          minted(
+            { allow: { x: [] } } as SandboxNetworkPolicy,
+            shortLivedExpiry,
+          ),
+        ),
+      1000,
+    );
+
+    const initialMs = initialTokenRefreshDelayMs(auth);
+
+    expect(initialMs).toBeLessThan(TOKEN_REFRESH_MS);
+    expect(initialMs).toBe(5 * 60 * 1000);
+  });
+});
+
+describe("initialTokenRefreshDelayMs", () => {
+  it("schedules off the real expiry when the session came up authed (HAR-69/HAR-72)", () => {
+    const now = Date.now();
+    const delay = initialTokenRefreshDelayMs(
+      { authed: true, expiresAtMs: now + 25 * 60 * 1000 },
+      45 * 60 * 1000,
+      1000,
+    );
+
+    expect(delay).toBe(5 * 60 * 1000);
+  });
+
+  it("falls back to retryMs when the session came up unauthed", () => {
+    const delay = initialTokenRefreshDelayMs(
+      { authed: false, expiresAtMs: undefined },
+      45 * 60 * 1000,
+      1000,
+    );
+
+    expect(delay).toBe(1000);
+  });
+
+  it("falls back to retryMs when authed is true but no expiry was captured", () => {
+    const delay = initialTokenRefreshDelayMs(
+      { authed: true, expiresAtMs: undefined },
+      45 * 60 * 1000,
+      1000,
+    );
+
+    expect(delay).toBe(1000);
   });
 });
 
