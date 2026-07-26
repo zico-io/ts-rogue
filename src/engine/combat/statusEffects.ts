@@ -41,6 +41,12 @@ export interface StatusEffectDef {
   shatterVulnerable?: boolean;
   /** Extra damage taken from any source while shocked. */
   damageVulnerable?: boolean;
+  /**
+   * Probability in [0, 1] that the afflicted actor's turn is randomly
+   * skipped this turn (a "stun-lite" partial skip, e.g. shocked).
+   * Independent of `skipsTurn`, which is an unconditional skip.
+   */
+  skipChance?: number;
 }
 
 export const STATUS_EFFECTS: readonly StatusEffectDef[] = [
@@ -87,9 +93,10 @@ export const STATUS_EFFECTS: readonly StatusEffectDef[] = [
   {
     id: "shocked",
     name: "Shocked",
-    // Stun-lite: not a full skipped turn, just a damage vulnerability window;
-    // the exact behavior is decided by the resolution wiring in ENG-11+.
+    // Stun-lite: a 50% chance to skip the turn each time it comes up, plus
+    // a damage vulnerability window for the whole duration (ENG-23).
     damageVulnerable: true,
+    skipChance: 0.5,
   },
 ];
 

@@ -119,10 +119,18 @@ export const FLEE_MAX = 0.9;
 export const XP_BASE = 10;
 export const XP_GROWTH = 1.5;
 
-/** Chance a shocked actor seizes up and skips their turn (ENG-23). */
-export const SHOCKED_SKIP_CHANCE = 0.5;
 /** Damage multiplier when the target has a `damageVulnerable` effect (ENG-23). */
 export const SHOCKED_VULNERABLE_MULTIPLIER = 1.5;
+
+/**
+ * A pending initiative-order reorder triggered by an effect with
+ * `initiativePenalty` (slow, chilled) landing on `id`. Collected during a
+ * dispatch and folded onto the stored initiative order at the end (ENG-23).
+ */
+export interface PendingReorder {
+  id: string;
+  penalty: number;
+}
 
 /* -------------------------------------------------------------------------- */
 /* Derived stats                                                              */
@@ -502,7 +510,7 @@ function rollAppliesEffects(
   applies: readonly AppliedEffect[] | undefined,
   rng: Rng,
   logs: LogEntry[],
-  pendingReorders: Array<{ id: string; penalty: number }>,
+  pendingReorders: PendingReorder[],
 ): void {
   if (!applies) return;
   for (const app of applies) {
@@ -591,7 +599,7 @@ function tickEffects(actor: BattleEnemy | PartyMember, logs: LogEntry[]): void {
       if (nextDuration <= 0) {
         const name = def?.name ?? effect.effectId;
         logs.push(entry(`${name} wears off of ${actor.name}.`, "system"));
-        // Don't push — effect expired.
+        // Don't push - effect expired.
       } else {
         remaining.push({ ...effect, duration: nextDuration });
       }
@@ -605,8 +613,10 @@ function tickEffects(actor: BattleEnemy | PartyMember, logs: LogEntry[]): void {
  * acting this turn. Returns true if the turn should be skipped.
  *
  * Two kinds of skip:
- * 1. skipsTurn (stun, frozen) — unconditional skip, logs the effect name.
- * 2. shocked — stun-lite: roll SHOCKED_SKIP_CHANCE; on success, skip and log.
+ * 1. skipsTurn (stun, frozen) - unconditional skip, logs the effect name.
+ * 2. skipChance (shocked) - stun-lite: roll the effect's skipChance; on
+ *    success, skip and log. Data-driven via StatusEffectDef.skipChance so a
+ *    future effect can declare the same partial-skip behavior.
  */
 function shouldSkipTurn(
   actor: BattleEnemy | PartyMember,
@@ -625,16 +635,14 @@ function shouldSkipTurn(
       );
       return true;
     }
-    if (effect.effectId === "shocked") {
-      if (rng.next() < SHOCKED_SKIP_CHANCE) {
-        logs.push(
-          entry(
-            `${actor.name} seizes up from the shock and can't act!`,
-            "system",
-          ),
-        );
-        return true;
-      }
+    if (def?.skipChance && rng.next() < def.skipChance) {
+      logs.push(
+        entry(
+          `${actor.name} seizes up from the shock and can't act!`,
+          "system",
+        ),
+      );
+      return true;
     }
   }
   return false;
@@ -663,7 +671,7 @@ function applyVulnerability(
  * Positional-shift proxy for a full initiative re-roll (ENG-23). Moves the
  * combatant identified by `id` `penalty` positions later in the order,
  * clamping to the end of the array. This is NOT a physically-accurate SPD
- * recompute — it is a simpler ceiling that is sufficient for slow/chilled.
+ * recompute - it is a simpler ceiling that is sufficient for slow/chilled.
  */
 export function applyInitiativePenalty(
   order: readonly string[],
@@ -695,7 +703,7 @@ function applyMemberCommand(
   enemies: BattleEnemy[],
   rng: Rng,
   logs: LogEntry[],
-  pendingReorders: Array<{ id: string; penalty: number }>,
+  pendingReorders: PendingReorder[],
 ): MemberActionResult {
   let defending = false;
   let itemUsed: string | null = null;
@@ -849,7 +857,7 @@ function advanceRound(
   defendingIds: Set<string>,
   rng: Rng,
   logs: LogEntry[],
-  pendingReorders: Array<{ id: string; penalty: number }>,
+  pendingReorders: PendingReorder[],
 ): AdvanceResult {
   for (let step = 0; step < initiative.length; step++) {
     const index = (fromIndex + 1 + step) % initiative.length;
@@ -1201,7 +1209,7 @@ export function resolveBattleEvent(
   const enemies = bs.enemies.map((enemy) => ({ ...enemy }));
   const defendingIds = new Set(bs.defendingIds);
   const logs: LogEntry[] = [];
-  const pendingReorders: Array<{ id: string; penalty: number }> = [];
+  const pendingReorders: PendingReorder[] = [];
 
   // party is a positional clone of state.party; index to actor's clone.
   const actorCopy = party[state.party.indexOf(actor)];

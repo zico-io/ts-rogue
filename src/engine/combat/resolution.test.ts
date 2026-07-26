@@ -1207,7 +1207,7 @@ describe("ENG-23 shocked stun-lite and damage vulnerability", () => {
   });
   it("a shocked actor's stun-lite check can skip their turn", () => {
     // Seed 1 with a fixed loop of defends deterministically triggers the
-    // shocked skip roll (SHOCKED_SKIP_CHANCE = 0.5) at least once.
+    // shocked skip roll (shocked's skipChance = 0.5) at least once.
     const slime = makeEnemy(
       "slime-1",
       "slime",
