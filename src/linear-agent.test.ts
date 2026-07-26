@@ -54,18 +54,21 @@ describe("Linear agent interaction", () => {
   });
 
   it("keeps session-level statuses for the session owner only", () => {
-    // A child's "completed"/"started" read as the whole session finishing or
-    // restarting (ENG-2, HAR-11), so child updates are downgraded to progress
-    // and prefixed with their delegated issue; blocked keeps its urgency.
-    expect(
-      forSessionRole({ message: "done", status: "completed" }, true, "ENG-2"),
-    ).toEqual({ message: "[ENG-2] done", status: "progress" });
-    expect(
-      forSessionRole({ message: "kickoff", status: "started" }, true, null),
-    ).toEqual({ message: "kickoff", status: "progress" });
+    // A child's "completed"/"review" read as the whole session finishing
+    // (ENG-2, HAR-11), so they are refused in code; blocked is the only
+    // status a child may post, prefixed with its delegated issue.
     expect(
       forSessionRole({ message: "stuck", status: "blocked" }, true, "ENG-2"),
     ).toEqual({ message: "[ENG-2] stuck", status: "blocked" });
+    expect(
+      forSessionRole({ message: "stuck", status: "blocked" }, true, null),
+    ).toEqual({ message: "stuck", status: "blocked" });
+    expect(
+      forSessionRole({ message: "done", status: "completed" }, true, "ENG-2"),
+    ).toHaveProperty("refused");
+    expect(
+      forSessionRole({ message: "PR up", status: "review" }, true, "ENG-2"),
+    ).toHaveProperty("refused");
     // The root passes through untouched.
     expect(
       forSessionRole({ message: "m", status: "completed" }, false, "ENG-2"),
@@ -77,10 +80,10 @@ describe("Linear agent interaction", () => {
       sessionUpdateActivity({
         message:
           "## Changes\n\n- Added village state\n\n## Evidence\n\n`pnpm check` passes.",
-        status: "progress",
+        status: "review",
       }),
     ).toEqual({
-      body: "**Progress**\n\n## Changes\n\n- Added village state\n\n## Evidence\n\n`pnpm check` passes.",
+      body: "**Review**\n\n## Changes\n\n- Added village state\n\n## Evidence\n\n`pnpm check` passes.",
       type: "response",
     });
   });
