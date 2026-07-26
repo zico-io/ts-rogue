@@ -16,6 +16,7 @@ import {
   buildBootstrapCommand,
   dependencyRevalidationKey,
   keepTokenFresh,
+  MAX_MINT_FAILURES,
   MAX_SET_POLICY_FAILURES,
   mintFreshPolicy,
   resolveStartupNetworkPolicy,
@@ -156,6 +157,70 @@ describe("keepTokenFresh", () => {
 
     expect(calls).toBe(MAX_SET_POLICY_FAILURES);
     vi.useRealTimers();
+  });
+
+  it("gives up after MAX_MINT_FAILURES consecutive mint failures instead of retrying forever", async () => {
+    // A warm process whose invocation-time OIDC token has expired can never
+    // mint again (background callbacks fall back to the stale env token and
+    // die down @vercel/oidc's local-dev refresh path), so an uncapped retry
+    // loop spins every 30s for the life of the process (HAR-39).
+    vi.useFakeTimers();
+    let mints = 0;
+    const sandbox = { setNetworkPolicy: () => Promise.resolve() };
+
+    keepTokenFresh(
+      sandbox,
+      () => {
+        mints++;
+        return Promise.reject(new Error("vc link refresh path"));
+      },
+      1000,
+    );
+    await vi.advanceTimersByTimeAsync(1000 * (MAX_MINT_FAILURES + 5));
+
+    expect(mints).toBe(MAX_MINT_FAILURES);
+    vi.useRealTimers();
+  });
+
+  it("resets the mint-failure count on a successful mint", async () => {
+    vi.useFakeTimers();
+    const applied: SandboxNetworkPolicy[] = [];
+    const sandbox = {
+      setNetworkPolicy: (policy: SandboxNetworkPolicy) => {
+        applied.push(policy);
+        return Promise.resolve();
+      },
+    };
+    const good = { allow: { b: [] } } as SandboxNetworkPolicy;
+    let call = 0;
+    // Fail almost to the cap, succeed once, then fail again: the chain must
+    // survive the second failure streak's start rather than carrying the old
+    // count over the success.
+    const mintPolicy = () => {
+      call++;
+      return call === MAX_MINT_FAILURES
+        ? Promise.resolve(good)
+        : Promise.reject(new Error("still down"));
+    };
+
+    keepTokenFresh(sandbox, mintPolicy, 1000);
+    await vi.advanceTimersByTimeAsync(1000 * (MAX_MINT_FAILURES + 2));
+
+    expect(applied).toEqual([good]);
+    expect(call).toBeGreaterThan(MAX_MINT_FAILURES);
+    vi.useRealTimers();
+  });
+
+  it("schedules unref'd timers so a pending tick never holds a serverless invocation open", () => {
+    // Real timers on purpose: hasRef() is the actual Node behavior under test.
+    const timer = keepTokenFresh(
+      { setNetworkPolicy: () => Promise.resolve() },
+      () => Promise.resolve({ allow: {} } as SandboxNetworkPolicy),
+      60_000,
+    );
+
+    expect(timer.hasRef()).toBe(false);
+    clearTimeout(timer);
   });
 });
 
