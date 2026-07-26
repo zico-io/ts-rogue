@@ -431,12 +431,8 @@ describe("resolveStartupAuth", () => {
   });
 
   it("feeds a real mint's short-lived expiry into onSession's actual scheduling function (HAR-72)", async () => {
-    // A session-start mint whose real life is much shorter than the flat
-    // TOKEN_REFRESH_MS constant onSession used to hand keepTokenFresh as
-    // its first-ever delay. This drives resolveStartupAuth's real output
-    // straight into initialTokenRefreshDelayMs - the exact function both
-    // onSession implementations call - rather than re-deriving the
-    // schedule inline, so it exercises the actual HAR-72 fix.
+    // Drives resolveStartupAuth's real output into initialTokenRefreshDelayMs
+    // (see StartupAuthResult) instead of re-deriving the schedule inline.
     const now = Date.now();
     const shortLivedExpiry = now + 25 * 60 * 1000;
 

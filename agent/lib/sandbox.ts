@@ -122,47 +122,33 @@ async function mintWithRetries<T>(
   }
 }
 
+/**
+ * `onSession`'s session-start auth outcome. `expiresAtMs` is the load-bearing
+ * addition over the older `{ policy, authed }` shape: see its own doc for
+ * why (HAR-69/HAR-72). Everywhere else in this file just points back here.
+ */
 export interface StartupAuthResult {
   policy: SandboxNetworkPolicy;
 
   authed: boolean;
 
-  /** The minted token's real expiry, in epoch ms. Unset when unauthed. */
+  /**
+   * The minted token's real expiry, in epoch ms; unset when unauthed.
+   *
+   * `onSession` needs this to schedule `keepTokenFresh`'s very first
+   * refresh off the token's actual remaining life instead of a blind
+   * `TOKEN_REFRESH_MS` guess - the gap that let a short-lived session-start
+   * token go unrefreshed past its own expiry (HAR-69/HAR-72). See
+   * `initialTokenRefreshDelayMs`, which every `onSession` calls with this
+   * field.
+   */
   expiresAtMs?: number;
-}
-
-/**
- * Shared mint-with-retries core for `resolveStartupAuth` and
- * `resolveStartupNetworkPolicy`. Rethrows on exhausted retries; each public
- * wrapper owns its own fallback and warning so the log stays attributable
- * to whichever entry point the caller actually used.
- */
-async function resolveAuth(
-  mintPolicy: () => Promise<MintedGitHubPolicy>,
-  timeoutMs: number,
-  attempts: number,
-  gapMs: number,
-): Promise<StartupAuthResult> {
-  const minted = await mintWithRetries(mintPolicy, attempts, timeoutMs, gapMs);
-  return {
-    policy: minted.policy,
-    authed: true,
-    expiresAtMs: minted.expiresAtMs,
-  };
 }
 
 /**
  * Resolves authenticated GitHub access, falling back to an open policy so an
  * existing workspace can still start. Also surfaces the minted token's real
- * expiry so `onSession` can schedule `keepTokenFresh`'s very first refresh
- * off actual token life instead of a blind constant (HAR-69/HAR-72).
- *
- * Without this, `onSession` had no way to pass the token it had just minted
- * (and already knew the real `expiresAt` for) into `keepTokenFresh`'s
- * `initialMs` - so the very first refresh of every session used the flat
- * `TOKEN_REFRESH_MS` guess the HAR-69 fix was meant to retire, leaving the
- * freshest, most session-critical token unguarded by expiry-aware
- * scheduling for up to 45 minutes.
+ * expiry (see `StartupAuthResult`).
  */
 export async function resolveStartupAuth(
   mintPolicy: () => Promise<MintedGitHubPolicy> = mintGitHubTokenPolicy,
@@ -171,7 +157,17 @@ export async function resolveStartupAuth(
   gapMs: number = STARTUP_MINT_RETRY_GAP_MS,
 ): Promise<StartupAuthResult> {
   try {
-    return await resolveAuth(mintPolicy, timeoutMs, attempts, gapMs);
+    const minted = await mintWithRetries(
+      mintPolicy,
+      attempts,
+      timeoutMs,
+      gapMs,
+    );
+    return {
+      policy: minted.policy,
+      authed: true,
+      expiresAtMs: minted.expiresAtMs,
+    };
   } catch (err) {
     console.warn(
       "resolveStartupAuth: GitHub token mint failed after retries; coming up on the unauthenticated OPEN network policy (git push/gh will fail until auth heals):",
@@ -183,9 +179,10 @@ export async function resolveStartupAuth(
 
 /**
  * Resolves authenticated GitHub access, falling back to an open policy so an
- * existing workspace can still start. A thin adapter over `resolveAuth` for
- * callers (bootstrap) that only need the policy, not the token's real
- * expiry.
+ * existing workspace can still start. Used by bootstrap, which only needs
+ * the policy and never tracks expiry, so this mints the plain policy
+ * directly rather than going through `resolveStartupAuth`'s
+ * `MintedGitHubPolicy` shape.
  */
 export async function resolveStartupNetworkPolicy(
   mintPolicy: () => Promise<SandboxNetworkPolicy> = githubNetworkPolicy,
@@ -194,13 +191,10 @@ export async function resolveStartupNetworkPolicy(
   gapMs: number = STARTUP_MINT_RETRY_GAP_MS,
 ): Promise<{ policy: SandboxNetworkPolicy; authed: boolean }> {
   try {
-    const { policy, authed } = await resolveAuth(
-      async () => ({ policy: await mintPolicy(), expiresAtMs: 0 }),
-      timeoutMs,
-      attempts,
-      gapMs,
-    );
-    return { policy, authed };
+    return {
+      policy: await mintWithRetries(mintPolicy, attempts, timeoutMs, gapMs),
+      authed: true,
+    };
   } catch (err) {
     console.warn(
       "resolveStartupNetworkPolicy: GitHub token mint failed after retries; coming up on the unauthenticated OPEN network policy (git push/gh will fail until auth heals):",
@@ -250,14 +244,10 @@ export function nextRefreshDelayMs(
 }
 
 /**
- * Computes `keepTokenFresh`'s initial delay from a session-start auth
- * result: the real-expiry-aware delay when a token was actually minted, or
- * `retryMs` to check back soon when the session came up unauthed.
- *
- * Both `onSession` implementations (root agent and playtester subagent)
- * call this instead of inlining the ternary, so the exact scheduling
- * decision they make is one shared, directly-testable function rather than
- * duplicated logic (HAR-69/HAR-72).
+ * Computes `keepTokenFresh`'s first delay from a session-start
+ * `StartupAuthResult` (see its doc for why this matters). Both `onSession`
+ * implementations call this shared, directly-testable function instead of
+ * inlining the ternary.
  */
 export function initialTokenRefreshDelayMs(
   auth: Pick<StartupAuthResult, "authed" | "expiresAtMs">,

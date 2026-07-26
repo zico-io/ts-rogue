@@ -81,11 +81,8 @@ export default defineSandbox({
       throw new Error(setup.stderr || "Sandbox pre-warming failed");
   },
   async onSession({ use }) {
-    // Use the expiry-aware mint here (not resolveStartupNetworkPolicy) so
-    // the token minted for *this* session's own network policy can also
-    // seed keepTokenFresh's first refresh off its real expiry, instead of
-    // that first refresh falling back to a blind TOKEN_REFRESH_MS guess
-    // (HAR-69/HAR-72).
+    // resolveStartupAuth (not resolveStartupNetworkPolicy) so keepTokenFresh
+    // gets this session's real token expiry - see StartupAuthResult.
     const auth = await resolveStartupAuth();
 
     const sandbox = await use({
