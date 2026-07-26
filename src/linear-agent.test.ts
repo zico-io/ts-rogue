@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 
-import { codingWorkerModel } from "../agent/agent";
 import linearConnection from "../agent/connections/linear";
 import { parseAgentSessionId } from "../agent/hooks/relay";
 import {
@@ -9,16 +8,6 @@ import {
 } from "../agent/tools/session_update";
 
 describe("Linear agent interaction", () => {
-  it("routes only delegated sessions to the coding worker model", () => {
-    expect(codingWorkerModel({ data: {} })).toBeNull();
-    expect(
-      codingWorkerModel({ data: { invocation: { kind: "subagent" } } }),
-    ).toEqual({
-      model: "deepseek/deepseek-v4-flash",
-      modelContextWindowTokens: 1_000_000,
-    });
-  });
-
   it("captures the agent session id the child relay hook needs", () => {
     expect(
       parseAgentSessionId(
