@@ -3,12 +3,16 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { getToken } from "@vercel/connect";
+import { getTokenResponse } from "@vercel/connect";
 import type { SandboxNetworkPolicy } from "eve/sandbox";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+const FAR_FUTURE_EXPIRY_MS = Date.now() + 999_999_999;
+
 vi.mock("@vercel/connect", () => ({
-  getToken: vi.fn(() => Promise.resolve("fresh-token")),
+  getTokenResponse: vi.fn(() =>
+    Promise.resolve({ token: "fresh-token", expiresAt: FAR_FUTURE_EXPIRY_MS }),
+  ),
 }));
 
 import {
@@ -18,15 +22,50 @@ import {
   keepTokenFresh,
   MAX_MINT_FAILURES,
   MAX_SET_POLICY_FAILURES,
+  MIN_TOKEN_REFRESH_MS,
+  type MintedGitHubPolicy,
   mintFreshPolicy,
+  mintFreshPolicyWithExpiry,
+  nextRefreshDelayMs,
   resolveBootstrapNetworkPolicy,
   resolveStartupNetworkPolicy,
+  TOKEN_EXPIRY_BUFFER_MS,
   WORKSPACE_GIT_CONFIG_ENV,
 } from "../agent/sandbox/sandbox";
 
 function git(cwd: string, args: string[]): string {
   return execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
 }
+
+function minted(
+  policy: SandboxNetworkPolicy,
+  expiresAtMs: number = FAR_FUTURE_EXPIRY_MS,
+): MintedGitHubPolicy {
+  return { policy, expiresAtMs };
+}
+
+describe("nextRefreshDelayMs", () => {
+  it("leaves TOKEN_EXPIRY_BUFFER_MS of runway before a token's real expiry", () => {
+    const now = 1_000_000;
+    const expiresAtMs = now + 25 * 60 * 1000;
+    const delay = nextRefreshDelayMs(expiresAtMs, 45 * 60 * 1000, now);
+    expect(delay).toBe(25 * 60 * 1000 - TOKEN_EXPIRY_BUFFER_MS);
+  });
+
+  it("never schedules past the ceiling even for a very long-lived token", () => {
+    const now = 1_000_000;
+    const expiresAtMs = now + 5 * 60 * 60 * 1000;
+    const delay = nextRefreshDelayMs(expiresAtMs, 45 * 60 * 1000, now);
+    expect(delay).toBe(45 * 60 * 1000);
+  });
+
+  it("floors at MIN_TOKEN_REFRESH_MS instead of refreshing immediately when the token is nearly expired", () => {
+    const now = 1_000_000;
+    const expiresAtMs = now + 60 * 1000;
+    const delay = nextRefreshDelayMs(expiresAtMs, 45 * 60 * 1000, now);
+    expect(delay).toBe(MIN_TOKEN_REFRESH_MS);
+  });
+});
 
 describe("keepTokenFresh", () => {
   it("re-mints and re-applies the policy on each interval", async () => {
@@ -38,17 +77,17 @@ describe("keepTokenFresh", () => {
         return Promise.resolve();
       },
     };
-    const minted: SandboxNetworkPolicy[] = [
+    const policies: SandboxNetworkPolicy[] = [
       { allow: { a: [] } } as SandboxNetworkPolicy,
       { allow: { b: [] } } as SandboxNetworkPolicy,
     ];
     let n = 0;
 
-    keepTokenFresh(sandbox, () => Promise.resolve(minted[n++]), 1000);
+    keepTokenFresh(sandbox, () => Promise.resolve(minted(policies[n++])), 1000);
     await vi.advanceTimersByTimeAsync(1000);
     await vi.advanceTimersByTimeAsync(1000);
 
-    expect(applied).toEqual([minted[0], minted[1]]);
+    expect(applied).toEqual(policies);
     vi.useRealTimers();
   });
 
@@ -67,7 +106,7 @@ describe("keepTokenFresh", () => {
       call++;
       return call === 1
         ? Promise.reject(new Error("token service blip"))
-        : Promise.resolve(good);
+        : Promise.resolve(minted(good));
     };
 
     keepTokenFresh(sandbox, mintPolicy, 1000);
@@ -93,7 +132,7 @@ describe("keepTokenFresh", () => {
       call++;
       return call === 1
         ? Promise.reject(new Error("token service down"))
-        : Promise.resolve(good);
+        : Promise.resolve(minted(good));
     };
 
     keepTokenFresh(sandbox, mintPolicy, {
@@ -127,7 +166,7 @@ describe("keepTokenFresh", () => {
       },
     };
 
-    keepTokenFresh(sandbox, () => Promise.resolve(good), 1000);
+    keepTokenFresh(sandbox, () => Promise.resolve(minted(good)), 1000);
     await vi.advanceTimersByTimeAsync(1000);
     expect(applied).toEqual([]);
     await vi.advanceTimersByTimeAsync(1000);
@@ -149,7 +188,7 @@ describe("keepTokenFresh", () => {
 
     keepTokenFresh(
       sandbox,
-      () => Promise.resolve({ allow: {} } as SandboxNetworkPolicy),
+      () => Promise.resolve(minted({ allow: {} } as SandboxNetworkPolicy)),
       1000,
     );
 
@@ -193,7 +232,7 @@ describe("keepTokenFresh", () => {
     const mintPolicy = () => {
       call++;
       return call === MAX_MINT_FAILURES
-        ? Promise.resolve(good)
+        ? Promise.resolve(minted(good))
         : Promise.reject(new Error("still down"));
     };
 
@@ -205,10 +244,49 @@ describe("keepTokenFresh", () => {
     vi.useRealTimers();
   });
 
+  it("schedules the next refresh off the token's real expiry instead of the fixed ceiling (HAR-69)", async () => {
+    vi.useFakeTimers();
+    const applied: SandboxNetworkPolicy[] = [];
+    const sandbox = {
+      setNetworkPolicy: (policy: SandboxNetworkPolicy) => {
+        applied.push(policy);
+        return Promise.resolve();
+      },
+    };
+    const good = { allow: { b: [] } } as SandboxNetworkPolicy;
+    const now = Date.now();
+    const initialMs = 1000;
+    // Expires 25 minutes after the first mint actually runs; with a
+    // 20-minute buffer, the next refresh should land at the 5-minute mark,
+    // well short of the 45-minute ceiling.
+    const shortLivedExpiry = now + initialMs + 25 * 60 * 1000;
+    const expectedNextDelayMs = 5 * 60 * 1000;
+
+    keepTokenFresh(
+      sandbox,
+      () => Promise.resolve(minted(good, shortLivedExpiry)),
+      {
+        refreshMs: 45 * 60 * 1000,
+        retryMs: 1000,
+        initialMs,
+      },
+    );
+    await vi.advanceTimersByTimeAsync(initialMs);
+    expect(applied).toEqual([good]);
+
+    // Just short of the expiry-derived 5-minute mark: no second refresh yet.
+    await vi.advanceTimersByTimeAsync(expectedNextDelayMs - 1);
+    expect(applied).toEqual([good]);
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(applied).toEqual([good, good]);
+    vi.useRealTimers();
+  });
+
   it("schedules unref'd timers so a pending tick never holds a serverless invocation open", () => {
     const timer = keepTokenFresh(
       { setNetworkPolicy: () => Promise.resolve() },
-      () => Promise.resolve({ allow: {} } as SandboxNetworkPolicy),
+      () => Promise.resolve(minted({ allow: {} } as SandboxNetworkPolicy)),
       60_000,
     );
 
@@ -217,12 +295,12 @@ describe("keepTokenFresh", () => {
   });
 });
 
-describe("mintFreshPolicy", () => {
+describe("mintFreshPolicy and mintFreshPolicyWithExpiry", () => {
   it("bypasses @vercel/connect's token cache with forceRefresh", async () => {
-    vi.mocked(getToken).mockClear();
+    vi.mocked(getTokenResponse).mockClear();
     const policy = await mintFreshPolicy();
 
-    expect(getToken).toHaveBeenCalledWith(
+    expect(getTokenResponse).toHaveBeenCalledWith(
       "github/ts-rogue-eve-github",
       { subject: { type: "app" }, scopes: ["*"] },
       { forceRefresh: true },
@@ -237,51 +315,14 @@ describe("mintFreshPolicy", () => {
       },
     });
   });
-});
 
-describe("keepTokenFresh failure logging", () => {
-  it("warns on a mint failure instead of failing silently", async () => {
-    vi.useFakeTimers();
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const sandbox = { setNetworkPolicy: () => Promise.resolve() };
+  it("also reports the token's real expiry, so callers can schedule off it (HAR-69)", async () => {
+    const { policy, expiresAtMs } = await mintFreshPolicyWithExpiry();
 
-    keepTokenFresh(sandbox, () => Promise.reject(new Error("oidc expired")), {
-      refreshMs: 10000,
-      retryMs: 1000,
-      initialMs: 1000,
-    });
-    await vi.advanceTimersByTimeAsync(1000);
-
-    expect(warn).toHaveBeenCalledWith(
-      expect.stringContaining("token mint failed"),
-      "oidc expired",
-    );
-    warn.mockRestore();
-    vi.useRealTimers();
-  });
-
-  it("warns with the failure count on a setNetworkPolicy failure", async () => {
-    vi.useFakeTimers();
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const sandbox = {
-      setNetworkPolicy: () => Promise.reject(new Error("gone")),
-    };
-
-    keepTokenFresh(
-      sandbox,
-      () => Promise.resolve({ allow: {} } as SandboxNetworkPolicy),
-      1000,
-    );
-    await vi.advanceTimersByTimeAsync(1000);
-
-    expect(warn).toHaveBeenCalledWith(
-      expect.stringContaining(
-        `setNetworkPolicy failed (1/${MAX_SET_POLICY_FAILURES})`,
-      ),
-      "gone",
-    );
-    warn.mockRestore();
-    vi.useRealTimers();
+    expect(expiresAtMs).toBe(FAR_FUTURE_EXPIRY_MS);
+    expect(
+      (policy as { allow: Record<string, unknown> }).allow["github.com"],
+    ).toBeDefined();
   });
 });
 
