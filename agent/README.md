@@ -461,12 +461,16 @@ thread-resolution access - neither available to a bare CI script. Only the
 plain "open or push -> lens review -> post" pipeline moved to CI; the
 merge-triggered debt audit and ralph-advance remain in the Eve channel.
 
-`scripts/ci-review.ts`'s prompt duplicates the same two-lens text as
+`scripts/ci-review.ts`'s prompt duplicates the same lens text as
 `agent/subagents/reviewer/instructions.md` by hand - one is a TypeScript
 template literal, the other a static markdown prompt eve loads for the
 `reviewer` subagent, so neither can import or reference the other at
 runtime. Both files carry a comment pointing at the other's location; keep
-them in sync by hand when either lens changes.
+them in sync by hand when either lens changes. HAR-39 added a third lens,
+scoped to diffs touching `agent/` (this repo's own eve harness), that checks
+the change against Linear's Agent Interaction Guidelines
+(https://linear.app/developers/aig) instead of code style - see
+"Agent Interaction Guidelines baked into harness work (HAR-39)" below.
 
 ### Coder subagent (HAR-30)
 
@@ -874,6 +878,37 @@ open debt issue to fix, rather than adding a new dispatch path.  The
 `ponytailReviewContext` (now removed per HAR-63) and `REVIEW_FEEDBACK_CONTEXT`:
 it embeds the threshold constants and a reference to the "PR merge debt-review
 turns" section in `instructions.md` instead of repeating the procedure inline.
+
+### Agent Interaction Guidelines baked into harness work (HAR-39)
+
+An audit against Linear's Agent Interaction Guidelines
+(https://linear.app/developers/aig) found the harness itself already meeting
+five of the six principles at the platform/code level (agent disclosure is
+Linear's own UI, native Agent Session activities and issue-state transitions,
+the `turn.started` instant-feedback thought, distinct activity types per
+internal state, and `Issue.delegate` vs `Issue.assignee` keeping a human
+accountable); the sixth - honoring the `stop` disengage signal in code rather
+than leaving it to model judgment - was fixed separately in `channels/linear.ts`
+(see the `stop` signal handling referenced from HAR-15/HAR-16 context above).
+
+This follow-up bakes the six principles into the *context* every eve
+agent/subagent gets whenever the work itself touches `agent/` or
+`agent/subagents/` (this repo's own harness code, as opposed to the game in
+`src/`) - because a harness change directly reshapes how this agent behaves
+in front of a human, so AIG compliance belongs alongside the issue's own
+acceptance criteria, not as a separate one-off audit:
+
+- `instructions.md`'s Standing rules carries the six principles and instructs
+  the root to fold them into the delegation packet's scope whenever scope
+  touches `agent/`.
+- `subagents/coder/instructions.md` repeats them as a step in "Doing the
+  work", so the implementer holds harness changes to the same bar even when
+  the root's packet under-specifies it.
+- `subagents/scout/instructions.md` lists them under "Invariants and
+  gotchas" for harness-recon questions.
+- `subagents/reviewer/instructions.md` adds a third lens, `aig:`, scoped to
+  diffs touching `agent/`; mirrored by hand in `scripts/ci-review.ts`'s
+  `buildPrompt` per the existing lens-sync convention documented above.
 
 ## Development
 
