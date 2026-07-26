@@ -253,7 +253,7 @@ const USE_HTTPS_APT_MIRRORS_COMMAND =
  */
 const SEED_GH_CLI_AUTH_COMMAND = [
   'mkdir -p "$HOME/.config/gh"',
-  `printf 'github.com:\n    oauth_token: placeholder-overwritten-by-network-broker\n    git_protocol: https\n' > "$HOME/.config/gh/hosts.yml"`,
+  `printf 'github.com:\\n    oauth_token: placeholder-overwritten-by-network-broker\\n    git_protocol: https\\n' > "$HOME/.config/gh/hosts.yml"`,
 ].join(" && ");
 
 /**
@@ -326,7 +326,21 @@ export function buildBootstrapCommand(options?: {
     // exact-path, so the single /workspace entry would leave every worktree
     // raising "dubious ownership".
     "git config --global --add safe.directory '*'",
-    "git clone https://github.com/zico-io/ts-rogue.git .",
+    // HAR-34: replaced `git clone https://github.com/zico-io/ts-rogue.git .`
+    // (which required /workspace to be empty) with an in-place checkout that
+    // tolerates a pre-populated /workspace. `git init -q -b main .` creates a
+    // fresh repo on branch main; `git remote add origin` adds the upstream;
+    // `git fetch --depth 1 origin main` fetches the tip of main without
+    // downloading history; `git reset --hard origin/main` overwrites the
+    // working tree to match the fetched commit. Untracked files in pre-existing
+    // paths like .eve/ are left in place because reset --hard only touches
+    // tracked paths. SYNC_MAIN_COMMAND and AUTO_RECOVER_PUSH_COMMAND are
+    // unaffected since HEAD stays attached to a local branch named main and
+    // /workspace remains the repo root.
+    "git init -q -b main .",
+    "git remote add origin https://github.com/zico-io/ts-rogue.git",
+    "git fetch --depth 1 origin main",
+    "git reset --hard origin/main",
     "corepack pnpm install --frozen-lockfile",
     ...(screenshotTooling ? [installScreenshotTooling] : []),
   ].join(" && ");
