@@ -132,43 +132,30 @@ export interface StartupAuthResult {
 }
 
 /**
- * Shared retry/fallback core for `resolveStartupAuth` and
- * `resolveStartupNetworkPolicy`: mint with retries, falling back to an open,
- * unauthenticated policy so an existing workspace can still start. `logLabel`
- * keeps each public function's warning attributable to itself.
+ * Shared mint-with-retries core for `resolveStartupAuth` and
+ * `resolveStartupNetworkPolicy`. Rethrows on exhausted retries; each public
+ * wrapper owns its own fallback and warning so the log stays attributable
+ * to whichever entry point the caller actually used.
  */
 async function resolveAuth(
-  logLabel: string,
   mintPolicy: () => Promise<MintedGitHubPolicy>,
   timeoutMs: number,
   attempts: number,
   gapMs: number,
 ): Promise<StartupAuthResult> {
-  try {
-    const minted = await mintWithRetries(
-      mintPolicy,
-      attempts,
-      timeoutMs,
-      gapMs,
-    );
-    return {
-      policy: minted.policy,
-      authed: true,
-      expiresAtMs: minted.expiresAtMs,
-    };
-  } catch (err) {
-    console.warn(
-      `${logLabel}: GitHub token mint failed after retries; coming up on the unauthenticated OPEN network policy (git push/gh will fail until auth heals):`,
-      err instanceof Error ? err.message : err,
-    );
-    return { policy: OPEN_NETWORK_POLICY, authed: false };
-  }
+  const minted = await mintWithRetries(mintPolicy, attempts, timeoutMs, gapMs);
+  return {
+    policy: minted.policy,
+    authed: true,
+    expiresAtMs: minted.expiresAtMs,
+  };
 }
 
 /**
- * Also surfaces the minted token's real expiry so `onSession` can schedule
- * `keepTokenFresh`'s very first refresh off actual token life instead of a
- * blind constant (HAR-69/HAR-72).
+ * Resolves authenticated GitHub access, falling back to an open policy so an
+ * existing workspace can still start. Also surfaces the minted token's real
+ * expiry so `onSession` can schedule `keepTokenFresh`'s very first refresh
+ * off actual token life instead of a blind constant (HAR-69/HAR-72).
  *
  * Without this, `onSession` had no way to pass the token it had just minted
  * (and already knew the real `expiresAt` for) into `keepTokenFresh`'s
@@ -183,19 +170,22 @@ export async function resolveStartupAuth(
   attempts: number = STARTUP_MINT_ATTEMPTS,
   gapMs: number = STARTUP_MINT_RETRY_GAP_MS,
 ): Promise<StartupAuthResult> {
-  return resolveAuth(
-    "resolveStartupAuth",
-    mintPolicy,
-    timeoutMs,
-    attempts,
-    gapMs,
-  );
+  try {
+    return await resolveAuth(mintPolicy, timeoutMs, attempts, gapMs);
+  } catch (err) {
+    console.warn(
+      "resolveStartupAuth: GitHub token mint failed after retries; coming up on the unauthenticated OPEN network policy (git push/gh will fail until auth heals):",
+      err instanceof Error ? err.message : err,
+    );
+    return { policy: OPEN_NETWORK_POLICY, authed: false };
+  }
 }
 
 /**
  * Resolves authenticated GitHub access, falling back to an open policy so an
- * existing workspace can still start. A thin adapter over `resolveStartupAuth`
- * for callers that only need the policy, not the token's real expiry.
+ * existing workspace can still start. A thin adapter over `resolveAuth` for
+ * callers (bootstrap) that only need the policy, not the token's real
+ * expiry.
  */
 export async function resolveStartupNetworkPolicy(
   mintPolicy: () => Promise<SandboxNetworkPolicy> = githubNetworkPolicy,
@@ -203,14 +193,21 @@ export async function resolveStartupNetworkPolicy(
   attempts: number = STARTUP_MINT_ATTEMPTS,
   gapMs: number = STARTUP_MINT_RETRY_GAP_MS,
 ): Promise<{ policy: SandboxNetworkPolicy; authed: boolean }> {
-  const { policy, authed } = await resolveAuth(
-    "resolveStartupNetworkPolicy",
-    async () => ({ policy: await mintPolicy(), expiresAtMs: 0 }),
-    timeoutMs,
-    attempts,
-    gapMs,
-  );
-  return { policy, authed };
+  try {
+    const { policy, authed } = await resolveAuth(
+      async () => ({ policy: await mintPolicy(), expiresAtMs: 0 }),
+      timeoutMs,
+      attempts,
+      gapMs,
+    );
+    return { policy, authed };
+  } catch (err) {
+    console.warn(
+      "resolveStartupNetworkPolicy: GitHub token mint failed after retries; coming up on the unauthenticated OPEN network policy (git push/gh will fail until auth heals):",
+      err instanceof Error ? err.message : err,
+    );
+    return { policy: OPEN_NETWORK_POLICY, authed: false };
+  }
 }
 
 /** Requires authenticated GitHub access because bootstrap clones a private repository. */
@@ -453,29 +450,6 @@ export async function resolveSessionAuth(
     return { policy: OPEN_NETWORK_POLICY, authed: false };
   }
   return resolveStartupAuth(mintPolicy, timeoutMs, attempts, gapMs);
-}
-
-/**
- * Resolves session-start GitHub access for a given `gitAuthLevel`, falling
- * back to an open policy so an existing workspace can still start. A thin
- * adapter over `resolveSessionAuth` for callers that only need the policy,
- * not the token's real expiry.
- */
-export async function resolveSessionNetworkPolicy(
-  gitAuthLevel: GitAuthLevel,
-  mintPolicy: () => Promise<SandboxNetworkPolicy> = githubNetworkPolicy,
-  timeoutMs: number = TOKEN_MINT_TIMEOUT_MS,
-  attempts: number = STARTUP_MINT_ATTEMPTS,
-  gapMs: number = STARTUP_MINT_RETRY_GAP_MS,
-): Promise<{ policy: SandboxNetworkPolicy; authed: boolean }> {
-  const { policy, authed } = await resolveSessionAuth(
-    gitAuthLevel,
-    async () => ({ policy: await mintPolicy(), expiresAtMs: 0 }),
-    timeoutMs,
-    attempts,
-    gapMs,
-  );
-  return { policy, authed };
 }
 
 export function buildSandboxDefinition(
