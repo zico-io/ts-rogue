@@ -32,6 +32,10 @@
  * ENG-21: skill elements are now carried through resolution output (log text)
  * and status effects from `skill.applies` / monster `attackApplies` are rolled
  * on hit and attached to the target as `EffectInstance` objects.
+ *
+ * ENG-22: status effects tick at the start of each afflicted actor's turn
+ * (poison/burn deal damage, durations decrement, expired effects are removed)
+ * and are cleared from all battle actors when the battle ends.
  */
 
 import { DEFAULT_CLASS_ID, findClass } from "../../data/classes";
@@ -62,7 +66,13 @@ import {
 } from "../world/overworld";
 import type { DungeonState, WorldState } from "../world/types";
 import { findSkill, type SkillDef } from "./skills";
-import type { AppliedEffect, Element, StatusEffectId } from "./statusEffects";
+import type {
+  AppliedEffect,
+  EffectInstance,
+  Element,
+  StatusEffectId,
+} from "./statusEffects";
+import { findStatusEffect } from "./statusEffects";
 import type {
   BattleEnemy,
   BattleEvent,
@@ -461,7 +471,12 @@ function applyEffect(
   potency: number,
 ): void {
   target.effects = target.effects ?? [];
-  target.effects.push({ effectId, duration, potency });
+  target.effects.push({
+    effectId,
+    duration,
+    potency,
+    initialDuration: duration,
+  });
 }
 
 /** Render a hit's element as a log suffix, or "" for a plain physical hit. */
@@ -474,13 +489,85 @@ function rollAppliesEffects(
   target: BattleEnemy | PartyMember,
   applies: readonly AppliedEffect[] | undefined,
   rng: Rng,
+  logs: LogEntry[],
 ): void {
   if (!applies) return;
   for (const app of applies) {
     if (rng.next() < app.chance) {
       applyEffect(target, app.effectId, app.duration, 1);
+      const def = findStatusEffect(app.effectId);
+      const name = def?.name ?? app.effectId;
+      logs.push(entry(`${target.name} is afflicted with ${name}!`, "damage"));
     }
   }
+}
+
+/**
+ * Tick one effect instance on an actor: log the tick, decrement duration,
+ * log expiry, and signal whether the effect should be removed.
+ * Damage must already have been applied by the caller.
+ */
+function tickSingleEffect(
+  effect: EffectInstance,
+  damage: number,
+  actorName: string,
+  logs: LogEntry[],
+): EffectInstance | null {
+  const def = findStatusEffect(effect.effectId);
+  if (!def?.damagePerTurn) return effect;
+
+  logs.push(
+    entry(`${actorName} takes ${damage} ${def.name} damage!`, "damage"),
+  );
+
+  const nextDuration = effect.duration - 1;
+
+  if (nextDuration <= 0) {
+    logs.push(entry(`${def.name} wears off of ${actorName}.`, "system"));
+    return null; // Signal removal.
+  }
+
+  return { ...effect, duration: nextDuration };
+}
+
+/**
+ * Tick all damaging effects on a battle actor (party member or enemy).
+ * Called at the start of the actor's turn. Deals damage for poison/burn,
+ * decrements durations, removes expired effects, and logs everything.
+ */
+function tickEffects(actor: BattleEnemy | PartyMember, logs: LogEntry[]): void {
+  if (!actor.effects || actor.effects.length === 0) return;
+
+  const remaining: EffectInstance[] = [];
+  for (const effect of actor.effects) {
+    const def = findStatusEffect(effect.effectId);
+    if (!def?.damagePerTurn) {
+      remaining.push(effect);
+      continue;
+    }
+
+    const { amount, frontLoaded } = def.damagePerTurn;
+    let damage: number;
+    if (frontLoaded && effect.initialDuration && effect.initialDuration > 0) {
+      // Front-loaded curve: proportional to remaining duration / initial duration.
+      damage = Math.max(
+        1,
+        Math.round((amount * effect.duration) / effect.initialDuration),
+      );
+    } else {
+      // Flat damage per tick.
+      damage = Math.max(1, amount);
+    }
+
+    // Apply damage before checking expiry (so the final tick still deals damage).
+    actor.hp = Math.max(0, actor.hp - damage);
+
+    const result = tickSingleEffect(effect, damage, actor.name, logs);
+    if (result !== null) {
+      remaining.push(result);
+    }
+  }
+  actor.effects = remaining.length > 0 ? remaining : undefined;
 }
 
 /**
@@ -562,7 +649,7 @@ function applyMemberCommand(
           if (target.hp === 0)
             logs.push(entry(`${target.name} is defeated!`, "damage"));
 
-          rollAppliesEffects(target, skill.applies, rng);
+          rollAppliesEffects(target, skill.applies, rng, logs);
         }
       } else {
         // Heal skills always target the caster (self). Ally targeting is
@@ -629,6 +716,10 @@ interface AdvanceResult {
  *
  * ENG-21: enemy attacks now read the monster's `attackElement` and
  * `attackApplies` from the definition and apply status effects on hit.
+ *
+ * ENG-22: at the start of each actor's turn (party member or enemy), their
+ * active status effects with `damagePerTurn` (poison, burn) tick: damage is
+ * applied, duration decremented, and expired effects removed and logged.
  */
 function advanceRound(
   initiative: readonly string[],
@@ -646,6 +737,8 @@ function advanceRound(
     const member = party.find((m) => m.id === id);
     if (member) {
       if (member.hp > 0) {
+        // Tick effects at the start of this party member's turn.
+        tickEffects(member, logs);
         return { status: "ongoing", nextActorId: member.id };
       }
       continue;
@@ -653,6 +746,9 @@ function advanceRound(
 
     const enemy = enemies.find((e) => e.id === id);
     if (!enemy || enemy.hp <= 0) continue;
+
+    // Tick effects on the enemy at the start of its turn.
+    tickEffects(enemy, logs);
 
     const living = party.filter((m) => m.hp > 0);
     if (living.length === 0) return { status: "lost", nextActorId: null };
@@ -684,7 +780,7 @@ function advanceRound(
         ),
       );
 
-      rollAppliesEffects(target, attackApplies, rng);
+      rollAppliesEffects(target, attackApplies, rng, logs);
 
       if (party.every((m) => m.hp <= 0)) {
         return { status: "lost", nextActorId: null };
@@ -698,6 +794,22 @@ function advanceRound(
 }
 
 /**
+ * Clear all battle-scoped status effects from every actor (party members and
+ * enemies). Called by all three battle finalizers when the battle ends.
+ */
+function clearBattleEffects(
+  party: PartyMember[],
+  enemies: BattleEnemy[],
+): void {
+  for (const member of party) {
+    member.effects = undefined;
+  }
+  for (const enemy of enemies) {
+    enemy.effects = undefined;
+  }
+}
+
+/**
  * Apply victory: award XP/gold to every living member, level them up, clear
  * the battle and the dungeon encounter flag, and return to the battle's prior
  * scene. A boss victory also marks the dungeon cleared (Phase 6, ROG-12) so
@@ -705,6 +817,7 @@ function advanceRound(
  * as-is (no XP split math; full award to all living members per ROG-20 scope).
  * ENG-18: also runs the auto-dismantle filter on victory loot, converting
  * filtered-out items to gold immediately.
+ * ENG-22: clears all status effects from battle actors.
  */
 function finalizeWon(
   state: GameState,
@@ -717,6 +830,7 @@ function finalizeWon(
   loot: readonly ItemInstance[],
   nextItemId: number,
 ): GameState {
+  clearBattleEffects(party, enemies);
   const xpGain = enemies.reduce((sum, e) => sum + e.xp, 0);
   const goldGain = enemies.reduce((sum, e) => sum + e.gold, 0);
   // Check for a boss victory before clearing the encounter flag so the
@@ -808,6 +922,7 @@ function finalizeWon(
  * and the run continues. The penalty math is deterministic (no RNG) so the
  * run stays reproducible from the seed. The scene is left unchanged in
  * permadeath mode because the UI checks `gameOver` before routing by scene.
+ * ENG-22: clears all status effects from battle actors.
  */
 function finalizeLost(
   state: GameState,
@@ -815,6 +930,11 @@ function finalizeLost(
   rngState: RngState,
   itemUsed: string | null,
 ): GameState {
+  // Clear effects on the party (enemies are discarded so only party matters).
+  const clearedParty = state.party.map((member) => ({
+    ...member,
+    effects: undefined as typeof member.effects,
+  }));
   const inventory = itemUsed
     ? consumeItem(state.inventory, itemUsed)
     : state.inventory;
@@ -830,6 +950,7 @@ function finalizeLost(
       battleState: null,
       dungeonState: null,
       inventory,
+      party: clearedParty,
       flags: { ...state.flags, gameOver: true },
       log: [...state.log, ...finalLogs],
     };
@@ -848,7 +969,7 @@ function finalizeLost(
     rngState,
     scene: "village",
     gold: state.gold - goldLoss,
-    party: state.party.map((member) => ({
+    party: clearedParty.map((member) => ({
       ...member,
       hp: 1,
       mp: 0,
@@ -870,6 +991,7 @@ function finalizeFled(
   rngState: RngState,
   itemUsed: string | null,
 ): GameState {
+  clearBattleEffects(party, bs.enemies);
   const inventory = itemUsed
     ? consumeItem(state.inventory, itemUsed)
     : state.inventory;
