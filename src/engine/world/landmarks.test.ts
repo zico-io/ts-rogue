@@ -3,6 +3,7 @@ import {
   footprintCells,
   footprintFitsBounds,
   footprintIsClear,
+  isLandmarkTile,
   LANDMARK_FOOTPRINTS,
   paintFootprint,
 } from "./landmarks";
@@ -109,5 +110,18 @@ describe("paintFootprint", () => {
     const tiles = gridOf(["gggg", "gggg", "gggg", "gggg"]);
     paintFootprint(tiles, { x: 1, y: 1 }, { width: 2, height: 2 }, "village");
     expect(tiles).toEqual(gridOf(["gggg", "gvvg", "gvvg", "gggg"]));
+  });
+});
+
+describe("isLandmarkTile", () => {
+  it("is true for every tile listed in LANDMARK_FOOTPRINTS", () => {
+    for (const tile of Object.keys(LANDMARK_FOOTPRINTS) as Tile[]) {
+      expect(isLandmarkTile(tile)).toBe(true);
+    }
+  });
+
+  it("is false for a non-landmark tile", () => {
+    expect(isLandmarkTile("grass")).toBe(false);
+    expect(isLandmarkTile("mountain")).toBe(false);
   });
 });

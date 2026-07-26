@@ -17,6 +17,15 @@ export const LANDMARK_FOOTPRINTS: Record<LandmarkTile, Footprint> = {
   dungeonEntrance: { width: 1, height: 1 },
 };
 
+const LANDMARK_TILES = new Set<Tile>(
+  Object.keys(LANDMARK_FOOTPRINTS) as LandmarkTile[],
+);
+
+/** True when `tile` is a landmark tile, derived from `LANDMARK_FOOTPRINTS`'s keys. */
+export function isLandmarkTile(tile: Tile): tile is LandmarkTile {
+  return LANDMARK_TILES.has(tile);
+}
+
 /** Every tile covered by a landmark's footprint, anchored at its top-left cell. */
 export function footprintCells(anchor: Point, footprint: Footprint): Point[] {
   const cells: Point[] = [];
@@ -57,7 +66,7 @@ export function footprintIsClear(
   if (!footprintFitsBounds(anchor, footprint, width, height)) return false;
   return footprintCells(anchor, footprint).every((cell) => {
     const tile = tiles[cell.y][cell.x];
-    return isPassable(tile) && !(tile in LANDMARK_FOOTPRINTS);
+    return isPassable(tile) && !isLandmarkTile(tile);
   });
 }
 
