@@ -21,7 +21,6 @@ import {
   mintFreshPolicy,
   resolveBootstrapNetworkPolicy,
   resolveStartupNetworkPolicy,
-  SYNC_MAIN_COMMAND,
   WORKSPACE_GIT_CONFIG_ENV,
 } from "../agent/sandbox/sandbox";
 
@@ -530,19 +529,6 @@ describe("WORKSPACE_GIT_CONFIG_ENV", () => {
       GH_CONFIG_DIR: "/workspace/.config/gh",
       GIT_CONFIG_GLOBAL: "/workspace/.gitconfig",
     });
-  });
-});
-
-describe("SYNC_MAIN_COMMAND", () => {
-  it("only force-resyncs main when HEAD is already on main", () => {
-    expect(SYNC_MAIN_COMMAND).toContain('"$CURRENT_BRANCH" = "main"');
-    expect(SYNC_MAIN_COMMAND).toContain("git checkout -B main FETCH_HEAD");
-  });
-
-  it("leaves a non-main branch in place instead of resyncing", () => {
-    expect(SYNC_MAIN_COMMAND).toContain(
-      "leaving it in place instead of resyncing",
-    );
   });
 });
 

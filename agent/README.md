@@ -147,9 +147,12 @@ Agent Plan (steps about the work, not the procedure) and that any
 session_update posted does not echo those process terms.
 
 `onSession` can re-run mid-session (a new inbound Linear activity re-attaches
-the same sandbox); `SYNC_MAIN_COMMAND` only force-resyncs local `main` to
-`origin/main` when HEAD is already on `main`, so a reconnect can't silently
-discard an agent's in-progress feature branch or its not-yet-pushed commits.
+the same sandbox); it does no repo resync on attach, so a reconnect can't
+silently discard an agent's in-progress feature branch or its not-yet-pushed
+commits. Bootstrap checks out `origin/main` once; from there the agent picks up
+new upstream commits itself via `git fetch origin main && git rebase origin/main`
+(see `instructions.md`), which also keeps startup off a mandatory authed network
+call that a token outage would otherwise turn into a hard failure.
 
 GitHub push access depends on a background-refreshed token (HAR-5): startup
 retries the mint a couple of times before falling back to an open,
