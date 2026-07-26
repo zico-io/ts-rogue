@@ -246,25 +246,15 @@ export const onPullRequest = (
 };
 
 // --- Coarse pull_request_review webhook events (HAR-49) --------------------
-// eve 0.27.6's githubChannel has no onPullRequestReview hook, and its inbound
-// parser (node_modules/eve/dist/src/public/channels/github/inbound.js) never
-// recognizes the `pull_request_review` webhook event name - only
-// `pull_request`, `pull_request_review_comment`, `issues`, `check_suite`,
-// `check_run`, `workflow_run`, and `ping`. A bare "Approve" or "Request
-// changes" verdict carries no inline comment, so it fires only
-// `pull_request_review` and was silently dropped (acked, never dispatched).
-// This section intercepts that one event name ahead of eve's own route
-// handler (see the final `export default` below) and wakes the PR's own
-// turn - the same continuation token `onPullRequest` above dispatches to -
-// with the verdict attached. Every other event still flows through eve's
-// real handler, byte for byte, since we only replace the route's `.handler`
-// and keep the rest of the real channel (`adapter`, `receive`, `cors`)
-// untouched.
+// eve's githubChannel never dispatches on the `pull_request_review` webhook
+// event, so a bare "Approve"/"Request changes" with no inline comment was
+// silently dropped. This intercepts that one event ahead of eve's route
+// handler and wakes the PR's own turn (same continuation token as
+// `onPullRequest`) with the verdict attached; every other event still flows
+// through eve's real handler unchanged.
 
-// The only two review states this file branches on (see
-// `pullRequestReviewVerdict`), kept open (`string & {}`) the same way eve's
-// own `GitHubPullRequestAction` is - GitHub can send other states (e.g.
-// "commented", "dismissed") that never carry a dispatchable verdict here.
+// The only two states with a dispatchable verdict (see
+// `pullRequestReviewVerdict`); kept open since GitHub can send others.
 type GitHubPullRequestReviewState =
   | "approved"
   | "changes_requested"
@@ -306,15 +296,10 @@ interface GitHubPullRequestReviewWebhookPayload {
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
 
-// Validates the fields this handler actually dereferences without optional
-// chaining before any of them is trusted - the webhook signature only
-// proves who sent the request, not that its JSON body has the shape this
-// file expects. Everything else in the payload (installation, sender,
-// review.user, base/head refs/shas, default_branch, html_url) is only ever
-// read downstream with `??`/`?.`, so a malformed value there just resolves
-// to `undefined` - rejecting the whole payload for it buys nothing. Returns
-// `null` for anything that doesn't match, which the caller treats the same
-// as unparseable JSON.
+// Validates only the fields dereferenced without optional chaining -
+// everything else is read downstream with `??`/`?.`, so a malformed value
+// there just resolves to `undefined`. Returns `null` on a shape mismatch,
+// treated the same as unparseable JSON.
 const parsePullRequestReviewPayload = (
   value: unknown,
 ): GitHubPullRequestReviewWebhookPayload | null => {
@@ -343,10 +328,9 @@ const parsePullRequestReviewPayload = (
   return value as unknown as GitHubPullRequestReviewWebhookPayload;
 };
 
-// A coarse review only carries an actionable verdict when it is freshly
-// submitted with an approve/request-changes state; "commented" reviews carry
-// no verdict, and "edited"/"dismissed" actions touch a review already acted
-// on, not a fresh one. Exported for tests.
+// A verdict only exists for a freshly submitted approve/request-changes
+// review; "commented", "edited", and "dismissed" carry none. Exported for
+// tests.
 export const pullRequestReviewVerdict = (
   payload: Pick<GitHubPullRequestReviewWebhookPayload, "action" | "review">,
 ): "approved" | "changes_requested" | null => {
@@ -374,18 +358,9 @@ export const pullRequestReviewVerdictContext = (
   return lines.join("\n");
 };
 
-// Mirrors eve's internal `verifyGitHubRequest`
-// (node_modules/eve/dist/src/public/channels/github/verify.js), which is not
-// part of the public `eve/channels/github` API surface (only its
-// `GitHubWebhookVerifier` type is exported - see the comment on
-// `isBotMentioned` above for how that was confirmed for a sibling case).
-// This repo always configures `connectGitHubCredentials`, which always sets
-// `webhookVerifier` (Vercel OIDC) - so only that branch is implemented.
-// ponytail: a bring-your-own-App `webhookSecret` HMAC fallback is not
-// reimplemented here. Ceiling: this throws if `webhookVerifier` is ever
-// unset. Upgrade path: port `verifyGitHubRequest`'s HMAC branch verbatim if
-// this repo ever configures `githubChannel` with a raw `webhookSecret`
-// instead of Connect credentials.
+// Mirrors eve's internal (non-exported) webhook verification. This repo
+// always configures `connectGitHubCredentials`, which always sets
+// `webhookVerifier`, so only that branch is implemented.
 const verifyGitHubWebhookBody = async (
   request: Request,
   credentials: GitHubChannelCredentials,
@@ -405,25 +380,17 @@ const verifyGitHubWebhookBody = async (
   return typeof verified === "string" ? verified : rawBody;
 };
 
-// Continuation token for the PR's own timeline conversation - the same
-// token `onPullRequest`'s dispatch resumes (mirrors the non-exported
-// `continuationTokenFromState`/`githubContinuationToken` for
-// `conversationKind: "pull_request"`).
+// Continuation token for the PR's own timeline conversation, matching the
+// one `onPullRequest`'s dispatch resumes.
 const pullRequestConversationToken = (
   repositoryId: number,
   pullRequestNumber: number,
 ): string => `repo:${repositoryId}:pull:${pullRequestNumber}`;
 
-// Mirrors the exact `SessionAuthContext` shape the public `defaultGitHubAuth`
-// builds (node_modules/eve/dist/src/public/channels/github/defaults.js) for
-// a "pull_request" conversation. Not called directly: `defaultGitHubAuth`
-// demands a full `GitHubInboundContext`, which binds live `github.request`/
-// `thread.post`/`thread.react` handles this raw webhook route has no honest
-// way to supply (a raw `pull_request_review` delivery is not bound to a
-// channel-managed thread) - asserting a stub past the compiler would hide a
-// real shape mismatch instead of catching one. `defaultGitHubAuth` never
-// reads those handles itself, only the plain data fields reproduced below,
-// so this stays in sync by hand if that formula ever changes.
+// Mirrors the `SessionAuthContext` shape eve's `defaultGitHubAuth` builds
+// for a "pull_request" conversation. Built directly rather than through
+// `defaultGitHubAuth` since this raw webhook route has no live
+// `GitHubInboundContext` to hand it.
 const buildPullRequestReviewAuth = (input: {
   readonly deliveryId: string;
   readonly installationId: number | undefined;
@@ -449,11 +416,8 @@ const buildPullRequestReviewAuth = (input: {
   subject: input.sender.login,
 });
 
-// Handles one verified `pull_request_review` webhook delivery: parses the
-// payload, decides whether it carries a dispatchable verdict, and wakes the
-// PR's own turn (same continuation token as `onPullRequest`) when it does.
-// Exported for tests, which fake `credentials.webhookVerifier` and
-// `args.send` rather than exercising eve's real route dispatch.
+// Handles one verified `pull_request_review` delivery and wakes the PR's
+// own turn when it carries a dispatchable verdict. Exported for tests.
 export const handlePullRequestReviewWebhook = async (
   request: Request,
   args: Pick<RouteHandlerArgs<GitHubChannelState>, "send">,
@@ -541,12 +505,9 @@ const baseChannel = githubChannel({
   onPullRequest: onPullRequestWithStateSync,
 });
 
-// githubChannel always registers exactly one HTTP POST route (see
-// `GITHUB_CHANNEL_DEFAULT_ROUTE` in
-// node_modules/eve/dist/src/public/channels/github/constants.js) - there is
-// no websocket variant to guard against here. Asserted at runtime (rather
-// than cast past the compiler) so a future eve upgrade that changes this
-// fails loudly instead of destructuring `undefined`.
+// githubChannel always registers exactly one HTTP POST route; asserted at
+// runtime so a future eve upgrade that changes this fails loudly instead of
+// destructuring `undefined`.
 if (baseChannel.routes.length !== 1) {
   throw new Error(
     `githubChannel: expected exactly one route, got ${baseChannel.routes.length}.`,
