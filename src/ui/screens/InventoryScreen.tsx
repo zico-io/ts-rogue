@@ -459,7 +459,6 @@ function FilterSettingsSection({ rules, cursor }: FilterSettingsSectionProps) {
       <Box marginTop={1}>
         <Text color={theme.textMuted}>
           Row {cursor + 1}/{FILTER_ROW_COUNT} - Enter/Left/Right changes value
-          Row {cursor + 1}/{FILTER_ROW_COUNT} - Enter/Left/Right changes value
         </Text>
       </Box>
     </Box>
