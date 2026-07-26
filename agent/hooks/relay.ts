@@ -219,15 +219,12 @@ export default defineHook({
             event.data.result.output,
             event.data.result.isError,
           );
-      await post(
-        {
-          type: "action",
-          action: pending.action,
-          parameter: pending.parameter,
-          result: truncate(rawResult, MAX_ACTIVITY_TEXT_LENGTH),
-        },
-        {},
-      );
+      await post({
+        type: "action",
+        action: pending.action,
+        parameter: pending.parameter,
+        result: truncate(rawResult, MAX_ACTIVITY_TEXT_LENGTH),
+      });
     },
   },
 });
