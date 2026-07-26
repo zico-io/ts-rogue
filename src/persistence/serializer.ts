@@ -18,10 +18,11 @@ export function serialize(state: GameState): string {
  * (Phase 6, ROG-12), each party member's `classId` (ROG-17, defaulted to
  * the warrior class), the tavern `recruits` pool (ROG-21, empty on old saves),
  * `activatedWaypoints` (ENG-1, defaulted to just the village so an old save
- * still has a usable fast-travel picker), and plain-string log lines
- * (pre-ROG-31, upgraded to `LogEntry` with the neutral kind) are filled in
- * when absent. Everything is plain data so no non-serializable values are
- * introduced.
+ * still has a usable fast-travel picker), plain-string log lines
+ * (pre-ROG-31, upgraded to `LogEntry` with the neutral kind), and `stash`/
+ * `pendingLootTriage` (ENG-5, defaulted to an empty stash and no pending
+ * triage) are filled in when absent. Everything is plain data so no
+ * non-serializable values are introduced.
  */
 export function deserialize(json: string): GameState {
   const state = JSON.parse(json) as GameState;
@@ -39,5 +40,7 @@ export function deserialize(json: string): GameState {
   }
   if (!state.recruits) state.recruits = [];
   if (!state.activatedWaypoints) state.activatedWaypoints = ["village"];
+  if (!state.stash) state.stash = [];
+  if (state.pendingLootTriage === undefined) state.pendingLootTriage = null;
   return state;
 }

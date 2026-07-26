@@ -52,7 +52,7 @@ export function VillageOverview({
     <Screen
       state={state}
       title="Village"
-      hint="Controls: up/down + Enter, or i/c/s/t/o to act directly; 1-4 switch scenes; q to quit."
+      hint="Controls: up/down + Enter, or i/c/s/t/x/o to act directly; 1-4 switch scenes; q to quit."
     >
       {OPTIONS.map((option, index) => (
         <Text

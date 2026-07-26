@@ -34,6 +34,7 @@ import { DevConsole } from "./ui/screens/DevConsole";
 import { DungeonScreen } from "./ui/screens/DungeonScreen";
 import { GameOverScreen } from "./ui/screens/GameOverScreen";
 import { InventoryScreen } from "./ui/screens/InventoryScreen";
+import { LootTriageScreen } from "./ui/screens/LootTriageScreen";
 import { OverworldScreen } from "./ui/screens/OverworldScreen";
 import { SettingsScreen } from "./ui/screens/SettingsScreen";
 import { TitleScreen } from "./ui/screens/TitleScreen";
@@ -84,6 +85,10 @@ function App({
   );
   const state = useGameState(store);
   const gameOver = state.flags?.gameOver ?? false;
+  // ENG-5: the full-backpack triage overlay is driven directly by
+  // `state.pendingLootTriage`, not a local open/close toggle - it's a
+  // mandatory decision, so there is nothing to close from the outside.
+  const lootTriagePending = Boolean(state.pendingLootTriage?.drops.length);
 
   useEffect(() => pipeline.subscribe(setFatal), [pipeline]);
 
@@ -150,7 +155,11 @@ function App({
     },
     {
       isActive:
-        !fatal && !started && !consoleOpen && titleUi.view !== "settings",
+        !fatal &&
+        !started &&
+        !consoleOpen &&
+        !lootTriagePending &&
+        titleUi.view !== "settings",
     },
   );
 
@@ -188,7 +197,8 @@ function App({
         !consoleOpen &&
         !gameOver &&
         !zoomOpen &&
-        !inventoryOpen,
+        !inventoryOpen &&
+        !lootTriagePending,
     },
   );
 
@@ -215,7 +225,10 @@ function App({
         });
       }
     },
-    { isActive: !fatal && started && !consoleOpen && gameOver },
+    {
+      isActive:
+        !fatal && started && !consoleOpen && !lootTriagePending && gameOver,
+    },
   );
 
   // Clear the persisted save once the game is over so the next boot starts a
@@ -258,6 +271,8 @@ function App({
         state={state}
       />
     );
+  } else if (lootTriagePending) {
+    content = <LootTriageScreen dispatch={dispatch} state={state} />;
   } else if (zoomOpen) {
     content = (
       <ZoomScreen

@@ -79,7 +79,14 @@ export type Intent =
   | { kind: "confirmYes" | "confirmNo" }
   // Village overview: a direct single-letter jump to a menu option,
   // independent of cursor position (e.g. `i` opens the Inn from anywhere).
-  | { kind: "shortcut"; char: string };
+  | { kind: "shortcut"; char: string }
+  // Village stash (ENG-5): move a generated item between the field
+  // backpack and the unlimited village stash.
+  | { kind: "deposit" | "withdraw" }
+  // Loot-triage overlay (ENG-5): `choose` mode picks between the two
+  // resolutions before `swapPick` mode (menuUp/menuDown/confirm/cancel)
+  // narrows which carried item to dismantle.
+  | { kind: "chooseSwap" | "chooseDismantleDrop" };
 
 /** Binds a subset of `KeyName`s to intents for a given view. */
 export type Keymap = Partial<Record<KeyName, Intent>>;

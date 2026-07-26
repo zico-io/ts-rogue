@@ -14,6 +14,10 @@ import type { EquipmentSlotName } from "../../../engine/loot/equipment";
 import type { ItemInstance } from "../../../engine/loot/types";
 import type { GameState } from "../../../engine/state/types";
 import type { Intent, Keymap, KeyName } from "../../scene/input";
+// Type-only: `SortKey` is erased at compile time, so this doesn't create a
+// runtime import cycle even though `inventory/interaction.ts` imports
+// `PackEntry` (also type-only) from this module.
+import type { SortKey } from "../inventory/interaction";
 import type { VillageBuilding } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -32,6 +36,7 @@ export const OPTIONS: readonly MenuOption[] = [
   { key: "church", label: "Church - save your progress", shortcut: "c" },
   { key: "store", label: "Store - buy and sell items", shortcut: "s" },
   { key: "tavern", label: "Tavern - recruit party members", shortcut: "t" },
+  { key: "stash", label: "Stash - store gear for later", shortcut: "x" },
   {
     key: "overworld",
     label: "Leave town - venture into the overworld",
@@ -60,6 +65,7 @@ const overviewKeymap: Keymap = {
   "char:c": { kind: "shortcut", char: "c" },
   "char:s": { kind: "shortcut", char: "s" },
   "char:t": { kind: "shortcut", char: "t" },
+  "char:x": { kind: "shortcut", char: "x" },
   "char:o": { kind: "shortcut", char: "o" },
 };
 
@@ -502,6 +508,176 @@ export function reduceTavernUi(
     if (memberId && partyIndex !== 0) {
       return { state: { ...state, confirmId: memberId } };
     }
+  }
+  return { state };
+}
+
+// ---------------------------------------------------------------------------
+// Stash
+// ---------------------------------------------------------------------------
+
+/** Extracts the always-populated `backpack`-kind rows (no equipped slots here). */
+export type BackpackEntry = Extract<PackEntry, { kind: "backpack" }>;
+
+/**
+ * Builds the Stash view's pane rows from a flat gear array (ENG-5). Unlike
+ * `buildPackEntries`, there are no equipment slots to show here - `items`
+ * and `stash` are party-shared (`GameState.items`/`GameState.stash`), not
+ * per-member - so every row is the `backpack` `PackEntry` variant. Reusing
+ * that shape lets both panes flow straight through the Inventory screen's
+ * `sortPackEntries` without a separate sort implementation.
+ */
+export function buildStashEntries(
+  items: readonly ItemInstance[],
+): BackpackEntry[] {
+  return items.map((item) => ({ kind: "backpack" as const, item }));
+}
+
+export type StashMode = "backpack" | "stash";
+
+export interface StashUiState {
+  mode: StashMode;
+  backpackCursor: number;
+  stashCursor: number;
+  sortKey: SortKey;
+}
+
+export const INITIAL_STASH_UI_STATE: StashUiState = {
+  mode: "backpack",
+  backpackCursor: 0,
+  stashCursor: 0,
+  sortKey: "rarity",
+};
+
+export interface StashUiContext {
+  backpackEntries: readonly BackpackEntry[];
+  stashEntries: readonly BackpackEntry[];
+  /** The Inventory screen's `SORT_KEYS` cycle, passed in by the caller rather
+   * than imported here to avoid a runtime import cycle with
+   * `screens/inventory/interaction.ts` (which imports `PackEntry` from this
+   * module). */
+  sortKeys: readonly SortKey[];
+}
+
+export type StashUiEffect =
+  | { type: "deposit"; instanceId: string }
+  | { type: "withdraw"; instanceId: string }
+  | { type: "back" };
+
+export interface StashUiResult {
+  state: StashUiState;
+  effect?: StashUiEffect;
+}
+
+const stashCommonKeymap: Keymap = {
+  escape: { kind: "cancel" },
+  tab: { kind: "switchMode" },
+  up: { kind: "menuUp" },
+  down: { kind: "menuDown" },
+  "char:r": { kind: "cycleSort" },
+};
+
+const stashBackpackKeymap: Keymap = {
+  ...stashCommonKeymap,
+  "char:d": { kind: "deposit" },
+};
+
+const stashStashKeymap: Keymap = {
+  ...stashCommonKeymap,
+  "char:w": { kind: "withdraw" },
+};
+
+/** Resolves the `Intent` for a key press in the Stash, given its current mode. */
+export function resolveStashIntent(
+  mode: StashMode,
+  key: KeyName,
+): Intent | undefined {
+  return mode === "backpack" ? stashBackpackKeymap[key] : stashStashKeymap[key];
+}
+
+/**
+ * Pure transition function for the Stash's backpack/stash panes (ENG-5),
+ * modeled on `reduceStoreUi`: Tab switches which pane the cursor and
+ * deposit/withdraw target. Unlike the Store, `items`/`stash` are
+ * party-shared rather than per-member, so there is no member switcher here.
+ */
+export function reduceStashUi(
+  state: StashUiState,
+  intent: Intent,
+  ctx: StashUiContext,
+): StashUiResult {
+  if (intent.kind === "cancel") return { state, effect: { type: "back" } };
+  if (intent.kind === "switchMode") {
+    return {
+      state: {
+        ...state,
+        mode: state.mode === "backpack" ? "stash" : "backpack",
+      },
+    };
+  }
+  if (intent.kind === "cycleSort") {
+    const nextIndex =
+      (ctx.sortKeys.indexOf(state.sortKey) + 1) % ctx.sortKeys.length;
+    return { state: { ...state, sortKey: ctx.sortKeys[nextIndex] } };
+  }
+
+  if (state.mode === "backpack") {
+    const length = ctx.backpackEntries.length;
+    if (length === 0) return { state };
+    if (intent.kind === "menuUp") {
+      return {
+        state: {
+          ...state,
+          backpackCursor: (state.backpackCursor + length - 1) % length,
+        },
+      };
+    }
+    if (intent.kind === "menuDown") {
+      return {
+        state: {
+          ...state,
+          backpackCursor: (state.backpackCursor + 1) % length,
+        },
+      };
+    }
+    if (intent.kind === "deposit") {
+      const index = Math.min(state.backpackCursor, length - 1);
+      const selected = ctx.backpackEntries[index];
+      return selected
+        ? {
+            state,
+            effect: { type: "deposit", instanceId: selected.item.instanceId },
+          }
+        : { state };
+    }
+    return { state };
+  }
+
+  // mode === "stash"
+  const length = ctx.stashEntries.length;
+  if (length === 0) return { state };
+  if (intent.kind === "menuUp") {
+    return {
+      state: {
+        ...state,
+        stashCursor: (state.stashCursor + length - 1) % length,
+      },
+    };
+  }
+  if (intent.kind === "menuDown") {
+    return {
+      state: { ...state, stashCursor: (state.stashCursor + 1) % length },
+    };
+  }
+  if (intent.kind === "withdraw") {
+    const index = Math.min(state.stashCursor, length - 1);
+    const selected = ctx.stashEntries[index];
+    return selected
+      ? {
+          state,
+          effect: { type: "withdraw", instanceId: selected.item.instanceId },
+        }
+      : { state };
   }
   return { state };
 }

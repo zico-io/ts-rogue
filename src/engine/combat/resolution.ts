@@ -36,7 +36,9 @@ import { findShopItem } from "../../data/shops";
 import type { InventoryItem, PartyMember } from "../entities/party";
 import { consumeItem, healAmount, isHealItem } from "../loot/consumables";
 import { effectiveStats } from "../loot/equipment";
+import { FIELD_BACKPACK_CAP } from "../loot/inventory";
 import { describeItem } from "../loot/items";
+import { applyLootPickup, queueLootTriage } from "../loot/pickup";
 import { rollVictoryLoot } from "../loot/resolution";
 import type { ItemInstance } from "../loot/types";
 import { Rng, type RngState } from "../rng/rng";
@@ -691,7 +693,22 @@ function finalizeWon(
   const inventory = itemUsed
     ? consumeItem(state.inventory, itemUsed)
     : state.inventory;
-  const items = loot.length ? [...state.items, ...loot] : state.items;
+  // ENG-5: route victory loot through the same cap-aware pickup pipeline as
+  // `OpenChest` - a single battle can drop loot from several enemies at
+  // once, so more than one overflow item can queue for triage from one call.
+  const pickup = applyLootPickup(state.items, loot, FIELD_BACKPACK_CAP);
+  const pendingLootTriage = queueLootTriage(
+    state.pendingLootTriage,
+    pickup.queued,
+  );
+  const triageLogs = pickup.queued.length
+    ? [
+        entry(
+          `Your backpack is full - ${pickup.queued.length} item(s) await a swap-or-dismantle decision`,
+          "loot",
+        ),
+      ]
+    : [];
   const clearedDungeon = clearEncounter(state.dungeonState);
   const dungeonState =
     clearedDungeon && wasBossVictory
@@ -704,11 +721,12 @@ function finalizeWon(
     party: finalParty,
     gold: state.gold + goldGain,
     inventory,
-    items,
+    items: pickup.items,
     nextItemId,
+    pendingLootTriage,
     dungeonState,
     battleState: null,
-    log: [...state.log, ...finalLogs, ...lootLogs],
+    log: [...state.log, ...finalLogs, ...lootLogs, ...triageLogs],
   };
 }
 

@@ -57,13 +57,13 @@ const RARITY_ORDER: Record<Rarity, number> = {
  * item you'd most want to look at first); slot sorts alphabetically. Pure -
  * ties keep their relative order (`Array#sort` is stable).
  */
-export function sortPackEntries(
-  entries: readonly PackEntry[],
+export function sortPackEntries<T extends PackEntry>(
+  entries: readonly T[],
   sortKey: SortKey,
-): PackEntry[] {
+): T[] {
   const equipped = entries.filter((entry) => entry.kind === "equipped");
   const backpack = entries.filter(
-    (entry): entry is Extract<PackEntry, { kind: "backpack" }> =>
+    (entry): entry is Extract<T, { kind: "backpack" }> =>
       entry.kind === "backpack",
   );
   const sorted = [...backpack].sort((a, b) =>
