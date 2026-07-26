@@ -73,7 +73,10 @@ const SHORE_FRINGE_RATIO = 0.28;
 
 const DENSITY_SCALED_TILES = new Set<Tile>(["mountain", "forest"]);
 
-const LANDMARK_TILES = new Set<Tile>(["village", "dungeonEntrance"]);
+// Village renders its full 2x2 footprint as contiguous per-cell sprite
+// regions (see landmarkRegion), so only single-cell landmarks get the
+// organic per-tile scale jitter here.
+const JITTERED_LANDMARK_TILES = new Set<Tile>(["dungeonEntrance"]);
 const SHORE_SIDE_NAMES = ["north", "east", "south", "west"] as const;
 
 const TAU = Math.PI * 2;
@@ -359,8 +362,22 @@ export class OverworldSceneView {
           hasGrassOrForest = true;
         }
 
+        const texture = isPlayer
+          ? displayTile
+          : this.terrainTexture(map, terrain, cell.x, cell.y);
+        const region = isPlayer
+          ? undefined
+          : this.landmarkRegion(map, texture, cell.x, cell.y);
+        // Only the footprint's top-left cell carries the ground shadow and
+        // pulse halo, sized to the whole footprint, so a multi-tile landmark
+        // reads as one prop instead of one per covered cell.
+        const isFootprintAnchor =
+          region === undefined || (region.col === 0 && region.row === 0);
+        const footprintWide = region?.wide ?? 1;
+        const footprintHigh = region?.high ?? 1;
+
         let shadow: BlobHandle | undefined;
-        if (needsPropShadow(terrain, isPlayerMarker)) {
+        if (needsPropShadow(terrain, isPlayerMarker) && isFootprintAnchor) {
           seenShadows.add(cell.key);
           shadow = this.propShadows.get(cell.key);
           if (!shadow) {
@@ -370,7 +387,12 @@ export class OverworldSceneView {
         }
 
         let pulse: MarkerPulse | undefined;
-        if (!isPlayer && terrain !== undefined && needsMarkerPulse(terrain)) {
+        if (
+          !isPlayer &&
+          terrain !== undefined &&
+          needsMarkerPulse(terrain) &&
+          isFootprintAnchor
+        ) {
           seenPulses.add(cell.key);
           pulse = this.markerPulses.get(cell.key);
           if (!pulse) {
@@ -389,16 +411,15 @@ export class OverworldSceneView {
           this.viewportSprites.set(cell.key, sprite);
         }
 
-        const texture = isPlayer
-          ? displayTile
-          : this.terrainTexture(map, terrain, cell.x, cell.y);
-        sprite.setTexture(texture);
+        sprite.setTexture(texture, region);
 
         sprite.setTint(0xffffff);
 
         const scale = isPlayer
           ? 1
-          : this.terrainScale(map, terrain, cell.x, cell.y);
+          : region
+            ? 1
+            : this.terrainScale(map, terrain, cell.x, cell.y);
         const size = tilePx * scale;
         sprite.setPosition(
           cellX - (size - tilePx) / 2,
@@ -407,24 +428,28 @@ export class OverworldSceneView {
         sprite.setSize(size, size);
 
         if (shadow) {
-          const shadowWidth = tilePx * SHADOW_WIDTH_RATIO * scale;
-          const shadowHeight = tilePx * SHADOW_HEIGHT_RATIO * scale;
+          const shadowWidth =
+            tilePx * footprintWide * SHADOW_WIDTH_RATIO * scale;
+          const shadowHeight =
+            tilePx * footprintHigh * SHADOW_HEIGHT_RATIO * scale;
           shadow.setColor(toPixiColor(theme.background));
           shadow.setAlpha(SHADOW_ALPHA);
           shadow.setSize(shadowWidth, shadowHeight);
           shadow.setPosition(
-            cellX + (tilePx - shadowWidth) / 2,
-            cellY + tilePx - shadowHeight * 0.85,
+            cellX + (tilePx * footprintWide - shadowWidth) / 2,
+            cellY + tilePx * footprintHigh - shadowHeight * 0.85,
           );
         }
 
         if (pulse) {
-          const pulseSize = tilePx * PULSE_SIZE_RATIO;
+          const pulseSize =
+            Math.min(tilePx * footprintWide, tilePx * footprintHigh) *
+            PULSE_SIZE_RATIO;
           pulse.handle.setColor(pulse.color);
           pulse.handle.setSize(pulseSize, pulseSize);
           pulse.handle.setPosition(
-            cellX + (tilePx - pulseSize) / 2,
-            cellY + (tilePx - pulseSize) / 2,
+            cellX + (tilePx * footprintWide - pulseSize) / 2,
+            cellY + (tilePx * footprintHigh - pulseSize) / 2,
           );
         }
 
@@ -498,6 +523,28 @@ export class OverworldSceneView {
     return terrain;
   }
 
+  /**
+   * The sub-region of a multi-cell landmark texture this map cell covers,
+   * anchored at the landmark's top-left cell, or undefined for a single-cell
+   * texture. Draws the footprint as one continuous sprite: one crop per
+   * covered cell, contiguous and non-overlapping (ENG-7/ENG-8).
+   */
+  private landmarkRegion(
+    map: OverworldMap,
+    texture: TileName,
+    x: number,
+    y: number,
+  ): MultiCellRegion | undefined {
+    const { wide, high } = footprintOf(texture);
+    if (wide <= 1 && high <= 1) return undefined;
+    const anchor = texture === "village" ? map.village : undefined;
+    if (!anchor) return undefined;
+    const col = x - anchor.x;
+    const row = y - anchor.y;
+    if (col < 0 || col >= wide || row < 0 || row >= high) return undefined;
+    return { col, row, wide, high };
+  }
+
   private terrainScale(
     map: OverworldMap,
     terrain: Tile,
@@ -507,7 +554,7 @@ export class OverworldSceneView {
     if (DENSITY_SCALED_TILES.has(terrain)) {
       return clusterScale(sameNeighborCount(map, x, y, terrain));
     }
-    if (LANDMARK_TILES.has(terrain)) {
+    if (JITTERED_LANDMARK_TILES.has(terrain)) {
       return landmarkScale(x, y);
     }
     return 1;

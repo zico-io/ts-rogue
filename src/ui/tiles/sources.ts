@@ -38,7 +38,10 @@ export const TILE_SOURCES = {
   mountainLarge: { sheet: "forgottenPlains", x: 148, y: 32, w: 12, h: 24 },
   forest: at("overworldProps", 0, 7, 2, 2),
 
-  village: at("constructions", 1, 13, 4, 4),
+  village: {
+    ...at("constructions", 1, 13, 4, 4),
+    multiCell: { wide: 2, high: 2 },
+  },
   dungeonEntrance: at("constructions", 6, 0, 3, 3),
 
   multiCellFixture: {

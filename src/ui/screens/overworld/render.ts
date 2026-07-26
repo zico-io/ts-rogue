@@ -1,3 +1,4 @@
+import { LANDMARK_FOOTPRINTS } from "../../../engine/world/landmarks";
 import {
   MINIMAP_SCALE,
   VIEWPORT_HEIGHT,
@@ -45,8 +46,35 @@ const TILE_GLYPHS: Record<Tile, TileGlyph> = {
 
 export const PLAYER_GLYPH: TileGlyph = { char: "@", color: theme.biome.player };
 
+// The village's 2x2 footprint reads as one small settlement - a peaked roof
+// over a wall with a door and a window - instead of four repeated glyphs.
+const VILLAGE_FOOTPRINT_GLYPHS: readonly (readonly TileGlyph[])[] = [
+  [
+    { char: "/", color: theme.biome.village },
+    { char: "\\", color: theme.biome.village },
+  ],
+  [
+    { char: "H", color: theme.biome.village },
+    { char: "n", color: theme.biome.village },
+  ],
+];
+
 export function glyphFor(tile: Tile): TileGlyph {
   return TILE_GLYPHS[tile];
+}
+
+/** Glyph for a specific map cell, resolving multi-tile landmark footprints. */
+export function glyphAt(map: OverworldMap, point: Point): TileGlyph {
+  const tile = map.tiles[point.y][point.x];
+  if (tile === "village") {
+    const footprint = LANDMARK_FOOTPRINTS.village;
+    const dx = point.x - map.village.x;
+    const dy = point.y - map.village.y;
+    if (dx >= 0 && dx < footprint.width && dy >= 0 && dy < footprint.height) {
+      return VILLAGE_FOOTPRINT_GLYPHS[dy][dx];
+    }
+  }
+  return glyphFor(tile);
 }
 
 function resolveDim(
@@ -81,7 +109,7 @@ export function buildViewportRows(
     const row: Cell[] = [];
     for (let x = originX; x < originX + width; x++) {
       const isPlayer = x === player.x && y === player.y;
-      const glyph = isPlayer ? PLAYER_GLYPH : glyphFor(map.tiles[y][x]);
+      const glyph = isPlayer ? PLAYER_GLYPH : glyphAt(map, { x, y });
       const tile = isPlayer ? "player" : map.tiles[y][x];
       row.push({ ...glyph, key: `${x},${y}`, x, y, tile });
     }

@@ -354,6 +354,88 @@ describe("OverworldSceneView", () => {
     ]);
   });
 
+  it("draws the generated village as one contiguous 2x2 footprint, not four repeated tiles (ENG-7)", () => {
+    const factory = fakeFactory();
+    const view = new OverworldSceneView(factory);
+    const state = newGame(1);
+    const map = generateOverworldMap(state.seed);
+    const positioned = {
+      ...state,
+      worldState: {
+        ...state.worldState,
+        player: { x: map.village.x + 3, y: map.village.y + 3 },
+      },
+    };
+
+    view.render(positioned, map, SIZE, TILE_PX);
+
+    const villageSprites = factory.sprites.filter((sprite) =>
+      sprite.setTexture.mock.calls.some((call) => call[0] === "village"),
+    );
+    expect(villageSprites).toHaveLength(4);
+
+    const placements = villageSprites.map((sprite) => ({
+      region: sprite.setTexture.mock.calls.at(-1)?.[1] as MultiCellRegion,
+      position: sprite.setPosition.mock.calls.at(-1) as [number, number],
+      size: sprite.setSize.mock.calls.at(-1) as [number, number],
+    }));
+
+    for (const placement of placements) {
+      expect(placement.region).toBeDefined();
+      expect(placement.region.wide).toBe(2);
+      expect(placement.region.high).toBe(2);
+      expect(placement.size).toEqual([TILE_PX, TILE_PX]);
+    }
+    const regionKeys = placements
+      .map((p) => `${p.region.col},${p.region.row}`)
+      .sort();
+    expect(regionKeys).toEqual(["0,0", "0,1", "1,0", "1,1"]);
+
+    const byRegion = new Map(
+      placements.map((p) => [`${p.region.col},${p.region.row}`, p.position]),
+    );
+    const anchor = byRegion.get("0,0");
+    expect(anchor).toBeDefined();
+    if (!anchor) throw new Error("unreachable");
+    expect(byRegion.get("1,0")).toEqual([anchor[0] + TILE_PX, anchor[1]]);
+    expect(byRegion.get("0,1")).toEqual([anchor[0], anchor[1] + TILE_PX]);
+    expect(byRegion.get("1,1")).toEqual([
+      anchor[0] + TILE_PX,
+      anchor[1] + TILE_PX,
+    ]);
+  });
+
+  it("draws exactly one ground-shadow and one pulse halo for the whole village footprint, not one per covered cell (ENG-7)", () => {
+    const factory = fakeFactory();
+    const view = new OverworldSceneView(factory);
+    const state = newGame(1);
+    const map = generateOverworldMap(state.seed);
+    const positioned = {
+      ...state,
+      worldState: {
+        ...state.worldState,
+        player: { x: map.village.x + 3, y: map.village.y + 3 },
+      },
+    };
+
+    view.render(positioned, map, SIZE, TILE_PX);
+
+    const shadowColor = toPixiColor(theme.background);
+    const villageShadows = factory.blobs.filter(
+      (blob) =>
+        blob.setColor.mock.calls.some((call) => call[0] === shadowColor) &&
+        blob.setAlpha.mock.calls.some((call) => call[0] === 0.32) &&
+        blob.setSize.mock.calls.at(-1)?.[0] === TILE_PX * 2 * 0.62,
+    );
+    expect(villageShadows).toHaveLength(1);
+
+    const villageColor = toPixiColor(theme.biome.village);
+    const villagePulses = factory.blobs.filter((blob) =>
+      blob.setColor.mock.calls.some((call) => call[0] === villageColor),
+    );
+    expect(villagePulses).toHaveLength(1);
+  });
+
   it("draws a ground-shadow blob under the player marker and mountain/forest/village/dungeonEntrance props, but not under plain grass/water (ROG-65)", () => {
     const factory = fakeFactory();
     const view = new OverworldSceneView(factory);

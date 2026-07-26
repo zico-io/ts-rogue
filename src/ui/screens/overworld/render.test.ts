@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { LANDMARK_FOOTPRINTS } from "../../../engine/world/landmarks";
 import { generateOverworldMap } from "../../../engine/world/overworld";
 import {
   buildMinimapRows,
@@ -82,6 +83,29 @@ describe("buildViewportRows (responsive)", () => {
       expect(rows.length).toBeLessThanOrEqual(height);
       for (const row of rows) expect(row.length).toBeLessThanOrEqual(width);
     }
+  });
+});
+
+describe("buildViewportRows (village footprint)", () => {
+  it("renders the village's 2x2 footprint as four distinct, non-repeated glyphs (ENG-7)", () => {
+    const map = generateOverworldMap(1);
+    const observer = { x: map.village.x, y: map.village.y + 5 };
+    const rows = buildViewportRows(map, observer, { width: 30, height: 15 });
+    const originX = cameraOrigin(observer.x, 30, map.width);
+    const originY = cameraOrigin(observer.y, 15, map.height);
+
+    const { width, height } = LANDMARK_FOOTPRINTS.village;
+    const chars: string[] = [];
+    for (let dy = 0; dy < height; dy++) {
+      for (let dx = 0; dx < width; dx++) {
+        const cell =
+          rows[map.village.y + dy - originY][map.village.x + dx - originX];
+        chars.push(cell.char);
+      }
+    }
+
+    expect(new Set(chars).size).toBe(chars.length);
+    for (const char of chars) expect(char).not.toBe("@");
   });
 });
 

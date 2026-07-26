@@ -1,4 +1,9 @@
 import { Rng } from "../rng/rng";
+import {
+  footprintIsClear,
+  LANDMARK_FOOTPRINTS,
+  paintFootprint,
+} from "./landmarks";
 import type { OverworldMap, Point, Tile, WorldState } from "./types";
 
 export const OVERWORLD_WIDTH = 42;
@@ -172,8 +177,12 @@ export function generateOverworldMap(seed: number): OverworldMap {
   }
 
   const village: Point = { x: 3, y: Math.floor(height / 2) };
+  const villageFootprint = LANDMARK_FOOTPRINTS.village;
   clearSafeArea(tiles, village, VILLAGE_SAFE_RADIUS, width, height);
-  tiles[village.y][village.x] = "village";
+  if (!footprintIsClear(tiles, village, villageFootprint, isPassable)) {
+    throw new Error("Village footprint does not fit within its safe area");
+  }
+  paintFootprint(tiles, village, villageFootprint, "village");
 
   const reached = reachableFrom(tiles, width, height, village);
 

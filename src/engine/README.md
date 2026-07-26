@@ -43,7 +43,12 @@ loot before returning to the originating scene.
 - Warrior, Rogue, and Wizard classes define starting stats, per-level growth,
   and known skills through the `CLASSES` data table.
 - The overworld contains passable biomes, a village, reachable dungeon
-  entrances, and a seeded encounter meter.
+  entrances, and a seeded encounter meter. The village occupies a 2x2
+  footprint (`world/landmarks.ts`); `map.village` is its top-left anchor
+  cell, every covered cell carries the `village` tile so movement and the
+  village-entry trigger work from any of the four cells, and generation
+  rejects a footprint that would overlap impassable terrain or another
+  landmark.
 - Fast travel: evac leaves any dungeon (outside battle) for the overworld on
   the entrance tile without touching dungeon progress, and zoom teleports
   between landmarks (village, dungeon entrances) already visited this run.

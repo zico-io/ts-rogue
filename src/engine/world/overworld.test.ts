@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { footprintCells, LANDMARK_FOOTPRINTS } from "./landmarks";
 import {
   biomeDanger,
   generateOverworldMap,
@@ -26,6 +27,31 @@ describe("generateOverworldMap", () => {
       for (const dy of [-1, 0, 1]) {
         const neighbor = { x: map.village.x + dx, y: map.village.y + dy };
         expect(isPassable(tileAt(map, neighbor))).toBe(true);
+      }
+    }
+  });
+
+  it("occupies the village's full 2x2 footprint, anchored at map.village (ENG-7)", () => {
+    for (const seed of [1, 2, 3, 42, 999]) {
+      const map = generateOverworldMap(seed);
+      const cells = footprintCells(map.village, LANDMARK_FOOTPRINTS.village);
+      expect(cells).toHaveLength(4);
+      for (const cell of cells) {
+        expect(tileAt(map, cell)).toBe("village");
+      }
+    }
+  });
+
+  it("keeps landmark footprints from overlapping each other (ENG-7)", () => {
+    for (const seed of [1, 2, 3, 42, 999]) {
+      const map = generateOverworldMap(seed);
+      const villageCells = new Set(
+        footprintCells(map.village, LANDMARK_FOOTPRINTS.village).map(
+          (c) => `${c.x},${c.y}`,
+        ),
+      );
+      for (const entrance of map.dungeonEntrances) {
+        expect(villageCells.has(`${entrance.x},${entrance.y}`)).toBe(false);
       }
     }
   });
