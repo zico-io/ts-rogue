@@ -5,7 +5,7 @@ export interface Footprint {
   readonly height: number;
 }
 
-export type LandmarkTile = "village" | "dungeonEntrance";
+export type LandmarkTile = Extract<Tile, "village" | "dungeonEntrance">;
 
 /**
  * Footprint size (in tiles) for each landmark kind. A landmark's occupied
@@ -57,7 +57,7 @@ export function footprintIsClear(
   if (!footprintFitsBounds(anchor, footprint, width, height)) return false;
   return footprintCells(anchor, footprint).every((cell) => {
     const tile = tiles[cell.y][cell.x];
-    return isPassable(tile) && tile !== "village" && tile !== "dungeonEntrance";
+    return isPassable(tile) && !(tile in LANDMARK_FOOTPRINTS);
   });
 }
 
