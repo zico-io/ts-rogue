@@ -1,6 +1,8 @@
 import type { LinearChannelConfig } from "eve/channels/linear";
 import { callLinearGraphQL } from "eve/channels/linear";
 
+import { isPlainObject } from "./is-plain-object";
+
 // Harness-owned Linear issue lifecycle: the model no longer decides workflow
 // state, the harness reconciles it deterministically on lifecycle events
 // (session created -> In Progress with parent cascade, PR opened -> In
@@ -77,9 +79,6 @@ export const shouldMove = (
     target.position > current.position
   );
 };
-
-const isPlainObject = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
 
 const readState = (value: unknown): WorkflowState | null =>
   isPlainObject(value) &&

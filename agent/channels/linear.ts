@@ -33,6 +33,7 @@ import {
   updateLinearAgentSession,
 } from "eve/channels/linear";
 
+import { isPlainObject } from "../lib/is-plain-object";
 import { advanceIssueState } from "../lib/issue-state";
 import { listLiveAgentSessions } from "../lib/live-sessions";
 
@@ -63,9 +64,6 @@ import { listLiveAgentSessions } from "../lib/live-sessions";
 // in `dispatchAgentSession`, and session failed -> Blocked in
 // `createLinearDefaultEvents`. See `agent/README.md` for what this does and
 // does not cover.
-
-const isPlainObject = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
 
 const hasNonEmptyString = <K extends string>(
   value: Record<string, unknown>,
