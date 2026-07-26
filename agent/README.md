@@ -558,6 +558,25 @@ Two changes, both in this repo:
   instead of parking silently. GitHub has no native auth signal like Linear's
   "Link account" elicitation, so a plain comment is the whole affordance.
 
+### Project create/update tooling (HAR-47)
+
+`connections/linear.ts`'s allow-list previously exposed only `save_issue` as a
+write, so a request like "promote this issue to a project, and demote its
+sub-issues to normal issues" (surfaced while working ENG-9) had no tool to act
+on: `list_projects`/`get_project` are read-only, and `save_issue`'s `project`
+field only accepts an *existing* project. The Linear MCP server has always
+published `save_project` (create-if-no-`id`/update-if-`id`, mirroring
+`save_issue`'s own shape) - it just sat outside the allow-list alongside the
+other writes this repo deliberately keeps out. `save_project` is now allowed;
+`agent/lib/tool-label.ts` gained a matching friendly label, and
+`instructions.md`'s new "Promoting an issue to a project" section gives the
+model the sequencing a bare tool addition doesn't: create the project, clear
+`parentId`/set `project` on each former sub-issue, then link the original
+issue back to the project and move it to a terminal state. This is a
+human-directed action only - nothing in the sizing gate or ralph mode reaches
+for `save_project` on its own - so it needs no extra approval gate beyond the
+connection's existing `never()`.
+
 ### Handoff to a fresh session (HAR-12, HAR-15)
 
 HAR-12 asked for eve's own token-quota HITL (a continue/stop prompt raised

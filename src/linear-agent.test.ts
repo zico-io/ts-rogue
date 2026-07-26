@@ -43,14 +43,15 @@ describe("Linear agent interaction", () => {
   it("keeps progress out of issue comments", () => {
     // The allow-list is the guard now: session posts must flow through the
     // authored session_update/handoff tools, so no comment/write tool beyond
-    // save_issue may be discoverable.
+    // save_issue and save_project (HAR-47) may be discoverable.
     const tools = linearConnection.tools as { allow: string[] };
     expect(tools.allow).not.toContain("save_comment");
     expect(tools.allow).toContain("save_issue");
+    expect(tools.allow).toContain("save_project");
     const writes = tools.allow.filter(
       (name) => !/^(get_|list_|search_)/.test(name),
     );
-    expect(writes).toEqual(["save_issue"]);
+    expect(writes).toEqual(["save_issue", "save_project"]);
   });
 
   it("keeps session-level statuses for the session owner only", () => {

@@ -85,6 +85,16 @@ Hand off ready sub-issues instead of driving any of them in this session, at mos
 - On that merge turn: the harness has already moved the merged sub-issue to Done when its pull request merged; verify, then hand off every newly ready sub-issue the same way, carrying forward what this merge just shipped.
 - When no sub-issue is ready and all are Done, post a closing summary to the parent, move the parent to Done, and hand off.
 
+# Promoting an issue to a project
+
+A human sometimes asks you to turn an issue with sub-issues into a Linear Project instead - "promote this to a project, and its sub-issues to normal issues." `save_project` (mirroring `save_issue`: create when no `id`, update when one is given) is the tool for this; sequence it as one turn, not a breakdown:
+
+- Create the project with `save_project`: `name` from the issue's title, `description` carrying its original description/acceptance criteria, `team` matching the issue's team, and `lead`/`state`/`targetDate` when the request or issue supplies them.
+- Reparent each former sub-issue onto the new project with `save_issue`: `parentId: null` to clear the parent, `project` set to the new project.
+- Link the original issue back to the project (`links: [{ url, title }]` pointing at the project) and move its state to a terminal type (Done/Canceled) since the work now lives on the project - never delete it.
+
+This is always a direct response to an explicit human request in the conversation, never something the sizing gate or ralph mode triggers on its own.
+
 # Delegation
 
 You own one issue end to end. Split the work by a bright line, and do not spend a second turn deciding which side a task is on:
