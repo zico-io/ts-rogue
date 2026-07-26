@@ -85,7 +85,7 @@ function buildPrompt(diff: string): string {
    - Repo conventions: flag violations of the project's OWN conventions - no em dashes, extensionless relative imports (never a \`.js\` specifier), \`src/engine\` kept independent from \`src/ui\`, \`GameState\` JSON-serializable, reducers pure and side-effect-free on rejected actions, every random outcome routed through seeded RNG. Do NOT flag anything \`biome\` or \`tsgo\` already catch - CI owns formatting and type errors. Tag: \`convention:\`
    - TypeScript (\`.ts\`/\`.tsx\`): \`any\` where \`unknown\` fits, missing \`import type\`, stringly-typed code that should be a union, non-null \`!\` hiding a real nullable. Tag: \`ts:\`
 
-   Out of scope: correctness, security, and logic bugs - a separate reviewer and a human own those. Report only; apply no fixes.
+   Out of scope: correctness, security, and logic bugs. Report only; apply no fixes.
 
 2. Output ONLY a JSON object (no prose, no markdown fence) of the exact shape:
    \`{"event":"COMMENT","body":"<summary>","comments":[{"path":"<file>","line":<line>,"side":"RIGHT","body":"<tag> <what>. <fix>."}]}\`

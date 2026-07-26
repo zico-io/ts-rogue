@@ -35,7 +35,7 @@ export default defineOpenAPIConnection({
   baseUrl: "https://api.vercel.com",
 
   description:
-    "Vercel REST API for the ts-rogue-eve project: OTEL request traces (getProjectTrace), the observability query engine (createObservabilityQuery - the same engine backing the Agent Runs and Workflow dashboards; eve tags every Vercel Workflow run with $eve.type session/turn/subagent, $eve.parent, $eve.root, $eve.subagent, $eve.trigger, $eve.title, and per-turn $eve.model/$eve.input_tokens/$eve.output_tokens/$eve.cache_read_tokens/$eve.tool_count - filter or group by these with OData syntax, e.g. \"$eve.root eq 'abc-123'\"; call getObservabilitySchema first to list metrics and their dimensions), and read-only Sandbox inspection (sandboxes, sessions, commands). " +
+    "Read-only Vercel traces, observability queries, and Sandbox inspection for ts-rogue Eve. Call getObservabilitySchema before querying unfamiliar metrics. " +
     `Always pass teamId=${teamId}; the default projectId is ${projectId}.`,
   auth: {
     getToken: async () => {

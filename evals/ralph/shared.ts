@@ -62,6 +62,6 @@ export const drivesIssue = (node: unknown, id: string): boolean => {
       s,
     ) ||
     /"kind"\s*:\s*"(delegate|subagent)"|"toolName"\s*:\s*"agent"/i.test(s) ||
-    /save_issue|update[_-]?issue/i.test(s)
+    /handoff|save_issue|update[_-]?issue/i.test(s)
   );
 };

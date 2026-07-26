@@ -177,7 +177,7 @@ describe("GitHub agent events", () => {
 
     expect(result).not.toBeNull();
     expect(result?.context).toEqual([
-      expect.stringContaining("PR review-feedback turns"),
+      expect.stringContaining("GitHub maintenance turns"),
     ]);
   });
 
@@ -346,7 +346,7 @@ describe("debt-review context (HAR-18)", () => {
     expect(result).toContain("#42 in zico-io/ts-rogue");
     expect(result).toContain(DEBT_ISSUE_LABEL);
     expect(result).toContain(String(DEBT_REMEDIATION_THRESHOLD));
-    expect(result).toContain("PR merge debt-review turns");
+    expect(result).toContain("GitHub maintenance turns");
   });
 });
 

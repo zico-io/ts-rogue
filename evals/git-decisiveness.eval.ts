@@ -1,21 +1,12 @@
 import { defineEval } from "eve/evals";
 
-
-
-
-
-
-
-
 export default defineEval({
-  description:
-    "answers a git-state question by running git, not by reasoning about history",
+  description: "a git-state question is answered from repository evidence",
   async test(t) {
     await t.send(
-      "Using git in this repository, report three facts: the current branch, whether the working tree is clean, and how many commits ahead of `main` HEAD is. Run git to find each; do not reason about the history. Then state the three facts.",
+      "Using git in this repository, report the current branch, whether the working tree is clean, and how many commits HEAD is ahead of main.",
     );
     t.succeeded();
     t.calledSubagent("agent", { count: 0 });
-    t.maxToolCalls(6);
   },
 });

@@ -109,45 +109,41 @@ export function buildOrientationBrief(
   const lines = [
     "# Orientation brief",
     "",
-    "Auto-generated at session start. This is authoritative repository state:",
-    "treat it as settled and do not re-derive it with git archaeology.",
-    "",
+    "Generated at session start:",
     `- Branch: \`${facts.branch}\` at \`${facts.headSha}\``,
     `- Working tree: ${facts.clean ? "clean" : "dirty"}`,
-    "- `main` was synced from origin at session start.",
+    "- `main`: synced from origin",
   ];
   if (facts.branch !== "main") {
     if (facts.upstream === null) {
       lines.push(
-        `- This branch has no upstream on origin yet. If it has local commits from a prior session, push them now (\`git push -u origin ${facts.branch}\`) before doing new work - onSession already tried this automatically once GitHub auth was confirmed, so a still-missing upstream likely means that push failed.`,
+        `- Upstream: none; preserve existing commits with \`git push -u origin ${facts.branch}\``,
       );
     } else if (facts.unpushedCount > 0) {
       lines.push(
-        `- ${facts.unpushedCount} commit(s) on this branch are not yet on \`${facts.upstream}\` (the automatic push-on-session-start didn't clear them) - push now with \`git push\`; if it keeps failing, back the commits up per the git-push-failure recovery steps in \`instructions.md\` before reporting a blocker.`,
+        `- Unpushed: ${facts.unpushedCount} commit(s) ahead of \`${facts.upstream}\`; push or use the backup procedure in \`instructions.md\``,
       );
     }
   }
   if (facts.worktrees && facts.worktrees.length > 0) {
     lines.push(
-      `- Leftover worktrees from a prior turn: ${facts.worktrees
+      `- Leftover worktrees: ${facts.worktrees
         .map((path) => `\`${path}\``)
-        .join(
-          ", ",
-        )}. Each may hold a branch with unpushed commits the checks above cannot see - push (or back up) each worktree's branch from inside it, then \`git worktree remove\` it before starting new work.`,
+        .join(", ")}; preserve their commits before removing them`,
     );
   }
   if (screenshotTooling) {
     lines.push(
       screenshotTooling.available
-        ? "- Screenshot tooling (`scripts/play-web.mjs`): available - a PR with a rendered UI/visual change must include a screenshot."
-        : `- Screenshot tooling (\`scripts/play-web.mjs\`): unavailable (${screenshotTooling.reason}) - try it once for a UI-visual PR; if it still fails, say so explicitly in the PR and session update instead of omitting evidence.`,
+        ? "- Screenshot tooling: available"
+        : `- Screenshot tooling: unavailable (${screenshotTooling.reason}); disclose missing visual evidence`,
     );
   }
   if (typeof githubAuthed === "boolean") {
     lines.push(
       githubAuthed
-        ? "- GitHub auth: confirmed at session start - `git push` and GitHub API calls should work normally."
-        : "- GitHub auth: not confirmed at session start (the token service was slow or unavailable). Background retry is bounded and recovery in this turn is not guaranteed. If a `git push` or GitHub API call fails, retry at most twice, about 60 seconds apart, then back your work up and report a blocker per `instructions.md` - do not keep sleeping and retrying beyond that.",
+        ? "- GitHub auth: confirmed"
+        : "- GitHub auth: not confirmed; retry failed operations twice, then back up work and report the blocker",
     );
   }
   lines.push(

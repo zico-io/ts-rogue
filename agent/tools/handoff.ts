@@ -53,7 +53,7 @@ export const createLinearComment = async (input: {
 
 export default defineTool({
   description:
-    "Hand off a Linear issue to a brand-new Agent Session with an empty context window and its own fresh token quota, seeded by a comment carrying `brief`. Two uses: (1) Self-continuation - the current session has run long enough to risk hitting its own token-quota limit. Pass the current issue's id and a full continuation packet (what's done with evidence, what's left, the exact next action), then end your own turn immediately after calling it. (2) Ralph-mode dependency unlock - a sub-issue just became ready because its blocker(s) merged. Pass that sub-issue's id and a brief carrying context its own issue packet won't have: what the predecessor(s) shipped (their PR), and any decisions or gotchas that affect this sub-issue's approach. Use this instead of a bare delegate assignment so the new session starts informed, not blind. Either way, `brief` must let a fresh agent with zero conversation history proceed without re-reading anything. If the issue already has another live Agent Session, this tool creates nothing and returns `alreadyLive` with that session's id and URL - treat the issue as in flight and report the existing session; never retry the handoff.",
+    "Start an informed Agent Session for a Linear issue. Use for a ready sub-issue or to continue long-running work with fresh context. The brief must state what is done, what remains, and the next action. Existing live sessions are returned instead of duplicated.",
   inputSchema: z.object({
     issueId: z.string().min(1),
     brief: z.string().min(1).max(8000),

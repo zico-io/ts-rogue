@@ -59,13 +59,13 @@ const MAIN_MERGE_SYNCED =
   "A pull request was merged into main. The sandbox checkout has already updated automatically; no manual repository sync is needed.";
 
 const ralphAdvanceContext = (ref: string) =>
-  `The merged pull request closes Linear issue ${ref}. If ${ref} is a sub-issue of a parent issue you are ralphing (an in-progress issue group), advance that group per the "Issue groups" instructions: confirm ${ref} is Done, then hand off every newly ready sub-issue to the agent via Linear. If ${ref} is a standalone issue, no further action is needed.`;
+  `The merged pull request closes Linear issue ${ref}. If it belongs to an active issue group, confirm it is Done and hand off every newly ready sub-issue per the "Issue groups" instructions. If it is standalone, no further action is needed.`;
 
 const REVIEW_FEEDBACK_CONTEXT =
-  'Reviewer feedback landed on this pull request (see the comment above). This is a PR review-feedback turn (see "PR review-feedback turns" in the contract): validate it, then either fix the code or reply - nothing else.';
+  'Reviewer feedback landed on this pull request. Validate it, then either make the focused fix or reply in the thread per "GitHub maintenance turns."';
 
 export const debtReviewContext = (prNumber: number): string => {
-  return `A merged pull request (#${prNumber} in zico-io/ts-rogue) may carry unresolved review-comment threads. Audit them per the "PR merge debt-review turns" section in the contract.
+  return `A merged pull request (#${prNumber} in zico-io/ts-rogue) may carry unresolved review-comment threads. Audit them per "GitHub maintenance turns."
 
 Label for debt issues: ${DEBT_ISSUE_LABEL}
 Remediation threshold (open issues before auto-fix): ${DEBT_REMEDIATION_THRESHOLD}

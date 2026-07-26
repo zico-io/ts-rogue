@@ -154,7 +154,7 @@ describe("parseScreenshotToolingStatus", () => {
 });
 
 describe("buildOrientationBrief", () => {
-  it("states settled facts and forbids re-deriving them", () => {
+  it("summarizes settled repository facts", () => {
     const brief = buildOrientationBrief({
       branch: "main",
       headSha: "abc1234",
@@ -166,11 +166,10 @@ describe("buildOrientationBrief", () => {
 
     expect(brief).toContain("`main` at `abc1234`");
     expect(brief).toContain("Working tree: clean");
-    expect(brief).toContain("do not re-derive it");
     expect(brief).toContain("- abc1234 feat: thing");
   });
 
-  it("reports available screenshot tooling as a hard requirement for UI-visual PRs", () => {
+  it("reports available screenshot tooling", () => {
     const brief = buildOrientationBrief(
       {
         branch: "main",
@@ -184,7 +183,6 @@ describe("buildOrientationBrief", () => {
     );
     expect(brief).toContain("Screenshot tooling");
     expect(brief).toContain("available");
-    expect(brief).toContain("must include a screenshot");
   });
 
   it("reports unavailable screenshot tooling with its reason and the disclose-don't-omit instruction", () => {
@@ -200,7 +198,7 @@ describe("buildOrientationBrief", () => {
       { available: false, reason: "missing system libraries" },
     );
     expect(brief).toContain("unavailable (missing system libraries)");
-    expect(brief).toContain("say so explicitly");
+    expect(brief).toContain("disclose missing visual evidence");
   });
 
   it("omits the screenshot-tooling line entirely when no status was supplied", () => {
@@ -231,7 +229,7 @@ describe("buildOrientationBrief", () => {
     expect(brief).toContain("GitHub auth: confirmed");
   });
 
-  it("reports unconfirmed GitHub auth with retry-before-blocker guidance", () => {
+  it("reports unconfirmed GitHub auth with bounded retry guidance", () => {
     const brief = buildOrientationBrief(
       {
         branch: "main",
@@ -246,8 +244,8 @@ describe("buildOrientationBrief", () => {
     );
     expect(brief).toContain("GitHub auth: not confirmed");
 
-    expect(brief).toContain("retry at most twice");
-    expect(brief).toContain("do not keep sleeping and retrying");
+    expect(brief).toContain("retry failed operations twice");
+    expect(brief).toContain("back up work");
   });
 
   it("omits the GitHub auth line entirely when no status was supplied", () => {
@@ -272,7 +270,7 @@ describe("buildOrientationBrief", () => {
       unpushedCount: 5,
     });
     expect(brief).not.toContain("unpushed");
-    expect(brief).not.toContain("no upstream on origin yet");
+    expect(brief).not.toContain("Upstream: none");
   });
 
   it("flags a feature branch with no upstream yet and points at the fix", () => {
@@ -284,7 +282,7 @@ describe("buildOrientationBrief", () => {
       upstream: null,
       unpushedCount: 0,
     });
-    expect(brief).toContain("no upstream on origin yet");
+    expect(brief).toContain("Upstream: none");
     expect(brief).toContain("git push -u origin nico/har-5-fix");
   });
 
@@ -298,8 +296,8 @@ describe("buildOrientationBrief", () => {
       unpushedCount: 3,
     });
     expect(brief).toContain("3 commit(s)");
-    expect(brief).toContain("not yet on `origin/nico/har-5-fix`");
-    expect(brief).toContain("recovery steps in `instructions.md`");
+    expect(brief).toContain("ahead of `origin/nico/har-5-fix`");
+    expect(brief).toContain("backup procedure in `instructions.md`");
   });
 
   it("surfaces leftover worktrees with push-before-remove guidance", () => {
@@ -314,7 +312,7 @@ describe("buildOrientationBrief", () => {
     });
     expect(brief).toContain("Leftover worktrees");
     expect(brief).toContain("/workspace/.worktrees/ROG-12");
-    expect(brief).toContain("git worktree remove");
+    expect(brief).toContain("preserve their commits");
   });
 
   it("omits the worktree line when none are left behind", () => {
@@ -340,6 +338,6 @@ describe("buildOrientationBrief", () => {
       unpushedCount: 0,
     });
     expect(brief).not.toContain("unpushed");
-    expect(brief).not.toContain("no upstream on origin yet");
+    expect(brief).not.toContain("Upstream: none");
   });
 });
