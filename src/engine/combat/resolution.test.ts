@@ -1311,52 +1311,45 @@ describe("ENG-25 status-effect clearing stays GameState-serializable", () => {
 });
 
 describe("ENG-25 reapplying an active effect refreshes it instead of stacking", () => {
+  // Seed 2 is a fixed fixture, found once offline: with this seed frost's
+  // wet-apply roll (chance 0.5) succeeds on both the first and second cast
+  // against this target. Hardcoded rather than searched at test time so the
+  // assertion is a direct, cheap check against a known-deterministic seed
+  // instead of an opaque, repeated re-simulation.
+  const REFRESH_DEMO_SEED = 2;
+
   it("casting frost twice in a row on an already-wet target keeps a single wet instance and refreshes its duration", () => {
+    const wizard = createStartingHero("wizard", "hero-1", "Wizard");
+    const fatSlime = makeEnemy(
+      "slime-1",
+      "slime",
+      "Slime",
+      999,
+      SLIME_STATS,
+      5,
+      5,
+    );
+    const first = reduce(stateInBattle(REFRESH_DEMO_SEED, fatSlime, wizard), {
+      type: "BattleSkill",
+      skillId: "frost",
+      targetId: "slime-1",
+    });
+    const firstWet = first.battleState?.enemies[0].effects?.find(
+      (e) => e.effectId === "wet",
+    );
+    expect(firstWet).toBeDefined();
+    expect(first.battleState?.activeMemberId).toBe("hero-1");
+
     // A freshly (re)applied effect still ticks once more later in the same
-    // round (the enemy's own turn immediately follows the hero's cast), so a
-    // successful refresh surfaces as duration 2 (3, ticked once) versus a
-    // failed reapplication roll leaving the pre-existing instance at 1 (2,
-    // ticked once). Either outcome must stay a single instance; we search for
-    // a seed that demonstrates the refreshed-duration case specifically.
-    let found: GameState | null = null;
-    for (let seed = 1; seed < 400 && !found; seed++) {
-      const wizard = createStartingHero("wizard", "hero-1", "Wizard");
-      const fatSlime = makeEnemy(
-        "slime-1",
-        "slime",
-        "Slime",
-        999,
-        SLIME_STATS,
-        5,
-        5,
-      );
-      const first = reduce(stateInBattle(seed, fatSlime, wizard), {
-        type: "BattleSkill",
-        skillId: "frost",
-        targetId: "slime-1",
-      });
-      const firstEnemy = first.battleState?.enemies[0];
-      const firstWet = firstEnemy?.effects?.find((e) => e.effectId === "wet");
-      if (!firstWet) continue;
-      if (first.battleState?.activeMemberId !== "hero-1") continue;
-
-      const second = reduce(first, {
-        type: "BattleSkill",
-        skillId: "frost",
-        targetId: "slime-1",
-      });
-      const secondEnemy = second.battleState?.enemies[0];
-      const wetInstances = (secondEnemy?.effects ?? []).filter(
-        (e) => e.effectId === "wet",
-      );
-      if (wetInstances.length !== 1) continue;
-      if (wetInstances[0].duration !== 2) continue;
-      found = second;
-    }
-
-    expect(found).not.toBeNull();
-    const enemy = found?.battleState?.enemies[0];
-    const wetInstances = (enemy?.effects ?? []).filter(
+    // round (the enemy's own turn immediately follows the hero's cast), so
+    // the refreshed instance surfaces as duration 2 (3, ticked once) rather
+    // than 3.
+    const second = reduce(first, {
+      type: "BattleSkill",
+      skillId: "frost",
+      targetId: "slime-1",
+    });
+    const wetInstances = (second.battleState?.enemies[0].effects ?? []).filter(
       (e) => e.effectId === "wet",
     );
     expect(wetInstances).toHaveLength(1);
