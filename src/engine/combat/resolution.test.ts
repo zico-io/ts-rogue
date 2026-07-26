@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createStartingHero, type PartyMember } from "../entities/party";
 import { Rng } from "../rng/rng";
-import { newGame, reduce } from "../state/store";
+import { GameStore, newGame, reduce } from "../state/store";
 import type { GameEvent, GameState, Scene } from "../state/types";
 import { createInitialDungeonState } from "../world/dungeon";
 import { generateOverworldMap } from "../world/overworld";
@@ -1176,5 +1176,191 @@ describe("ENG-23 shocked stun-lite and damage vulnerability", () => {
       }
     }
     expect(sawSkip).toBe(true);
+  });
+});
+
+describe("ENG-25 status-effect clearing stays GameState-serializable", () => {
+  function poisonedSoloState(seed: number, enemyHp: number): GameState {
+    const slime = makeEnemy(
+      "slime-1",
+      "slime",
+      "Slime",
+      enemyHp,
+      SLIME_STATS,
+      5,
+      5,
+    );
+    const hero = { ...createStartingHero(), hp: 20 };
+    const base = stateInBattle(seed, slime, hero);
+    return {
+      ...base,
+      party: [
+        {
+          ...base.party[0],
+          effects: [
+            {
+              effectId: "poison" as const,
+              duration: 1,
+              potency: 1,
+              initialDuration: 1,
+            },
+          ],
+        },
+      ],
+    };
+  }
+
+  // Drives `state` through `store.dispatch` via `drive`, then asserts the
+  // dispatch raised no serialization incident and the resulting party's
+  // effects key was actually removed (not merely falsy).
+  function expectEffectsDroppedAfter(
+    state: GameState,
+    drive: (store: GameStore) => GameState,
+  ): GameState {
+    const store = new GameStore(state);
+    const incidents: unknown[] = [];
+    store.subscribeIncidents((incident) => incidents.push(incident));
+
+    const after = drive(store);
+
+    expect(incidents).toEqual([]);
+    expect("effects" in after.party[0]).toBe(false);
+    return after;
+  }
+
+  it("a battle won while an actor carries an effect raises no incident and drops the effects key entirely", () => {
+    const state = poisonedSoloState(1, 1);
+    const target = state.battleState?.enemies[0];
+    if (!target) throw new Error("expected a battle target");
+
+    const after = expectEffectsDroppedAfter(state, (store) =>
+      store.dispatch({ type: "BattleAttack", targetId: target.id }),
+    );
+
+    expect(after.battleState).toBeNull();
+  });
+
+  it("an effect ticking to expiry mid-battle raises no incident and drops the effects key entirely", () => {
+    const state = poisonedSoloState(2, 999);
+
+    const after = expectEffectsDroppedAfter(state, (store) =>
+      store.dispatch({ type: "BattleDefend" }),
+    );
+
+    expect(after.battleState?.status).toBe("ongoing");
+    expect(
+      after.log.some((l) => l.text.includes("Poison wears off of Hero")),
+    ).toBe(true);
+  });
+
+  it("fleeing while an actor carries an effect raises no incident and drops the effects key entirely", () => {
+    const base = poisonedSoloState(3, 999);
+    const state: GameState = {
+      ...base,
+      party: [
+        {
+          ...base.party[0],
+          stats: { str: 99, agi: 999, vit: 99, int: 99 },
+        },
+      ],
+    };
+
+    const after = expectEffectsDroppedAfter(state, (store) => {
+      let result = store.getState();
+      for (
+        let attempt = 0;
+        attempt < 10 && result.battleState !== null;
+        attempt++
+      ) {
+        result = store.dispatch({ type: "BattleFlee" });
+      }
+      return result;
+    });
+
+    expect(after.battleState).toBeNull();
+  });
+
+  it("losing a battle while an actor carries an effect raises no incident and drops the effects key entirely", () => {
+    const strongSlime = makeEnemy(
+      "slime-1",
+      "slime",
+      "Slime",
+      999,
+      { str: 40, agi: 20, vit: 20, int: 1 },
+      5,
+      5,
+    );
+    const weakHero = { ...createStartingHero(), hp: 1 };
+    const base = stateInBattle(4, strongSlime, weakHero);
+    const state: GameState = {
+      ...base,
+      party: [
+        {
+          ...base.party[0],
+          effects: [
+            {
+              effectId: "poison" as const,
+              duration: 3,
+              potency: 1,
+              initialDuration: 3,
+            },
+          ],
+        },
+      ],
+    };
+
+    const after = expectEffectsDroppedAfter(state, (store) =>
+      store.dispatch({ type: "BattleDefend" }),
+    );
+
+    expect(after.battleState).toBeNull();
+  });
+});
+
+describe("ENG-25 reapplying an active effect refreshes it instead of stacking", () => {
+  // Seed 2 is a fixed fixture, found once offline: with this seed frost's
+  // wet-apply roll (chance 0.5) succeeds on both the first and second cast
+  // against this target. Hardcoded rather than searched at test time so the
+  // assertion is a direct, cheap check against a known-deterministic seed
+  // instead of an opaque, repeated re-simulation.
+  const REFRESH_DEMO_SEED = 2;
+
+  it("casting frost twice in a row on an already-wet target keeps a single wet instance and refreshes its duration", () => {
+    const wizard = createStartingHero("wizard", "hero-1", "Wizard");
+    const fatSlime = makeEnemy(
+      "slime-1",
+      "slime",
+      "Slime",
+      999,
+      SLIME_STATS,
+      5,
+      5,
+    );
+    const first = reduce(stateInBattle(REFRESH_DEMO_SEED, fatSlime, wizard), {
+      type: "BattleSkill",
+      skillId: "frost",
+      targetId: "slime-1",
+    });
+    const firstWet = first.battleState?.enemies[0].effects?.find(
+      (e) => e.effectId === "wet",
+    );
+    expect(firstWet).toBeDefined();
+    expect(first.battleState?.activeMemberId).toBe("hero-1");
+
+    // A freshly (re)applied effect still ticks once more later in the same
+    // round (the enemy's own turn immediately follows the hero's cast), so
+    // the refreshed instance surfaces as duration 2 (3, ticked once) rather
+    // than 3.
+    const second = reduce(first, {
+      type: "BattleSkill",
+      skillId: "frost",
+      targetId: "slime-1",
+    });
+    const wetInstances = (second.battleState?.enemies[0].effects ?? []).filter(
+      (e) => e.effectId === "wet",
+    );
+    expect(wetInstances).toHaveLength(1);
+    expect(wetInstances[0].duration).toBe(2);
+    expect(wetInstances[0].initialDuration).toBe(3);
   });
 });

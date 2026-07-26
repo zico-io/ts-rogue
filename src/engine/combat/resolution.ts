@@ -360,6 +360,17 @@ function applyEffect(
   potency: number,
 ): void {
   target.effects = target.effects ?? [];
+  // Reapplying an active effect refreshes it in place rather than stacking a
+  // second, independently ticking instance of the same status.
+  const existing = target.effects.find(
+    (effect) => effect.effectId === effectId,
+  );
+  if (existing) {
+    existing.duration = duration;
+    existing.initialDuration = duration;
+    existing.potency = potency;
+    return;
+  }
   target.effects.push({
     effectId,
     duration,
@@ -456,7 +467,14 @@ function tickEffects(actor: BattleEnemy | PartyMember, logs: LogEntry[]): void {
       }
     }
   }
-  actor.effects = remaining.length > 0 ? remaining : undefined;
+  if (remaining.length > 0) {
+    actor.effects = remaining;
+  } else {
+    // Delete rather than assign `undefined`: GameState must stay strictly
+    // JSON-serializable, and an explicit `undefined` property value fails
+    // that check even though the key would be dropped on stringify.
+    delete actor.effects;
+  }
 }
 
 function shouldSkipTurn(
@@ -732,10 +750,10 @@ function clearBattleEffects(
   enemies: BattleEnemy[],
 ): void {
   for (const member of party) {
-    member.effects = undefined;
+    delete member.effects;
   }
   for (const enemy of enemies) {
-    enemy.effects = undefined;
+    delete enemy.effects;
   }
 }
 
@@ -838,10 +856,15 @@ function finalizeLost(
   rngState: RngState,
   itemUsed: string | null,
 ): GameState {
-  const clearedParty = state.party.map((member) => ({
-    ...member,
-    effects: undefined,
-  }));
+  // Rest-destructure to omit `effects` entirely rather than assigning it
+  // `undefined`: GameState must stay strictly JSON-serializable, and an
+  // explicit `undefined` property value fails that check. (tickEffects and
+  // clearBattleEffects instead `delete` the key because they already hold a
+  // mutable local copy to mutate in place; this map builds a fresh object
+  // per member, so the single-expression omission is the simpler fit here.)
+  const clearedParty = state.party.map(
+    ({ effects: _effects, ...cleared }) => cleared,
+  );
   const inventory = itemUsed
     ? consumeItem(state.inventory, itemUsed)
     : state.inventory;
