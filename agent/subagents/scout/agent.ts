@@ -7,5 +7,5 @@ export default defineAgent({
   // deepseek reasoning stream desyncs the AI Gateway assembler even with
   // `reasoning: "none"`, and the durable-step replays turned a ~2.5-minute
   // scout into a 21-minute one (ENG-19, 2026-07-26; see agent/README.md).
-  model: "anthropic/claude-haiku-4-5",
+  model: "anthropic/claude-haiku-4.5",
 });

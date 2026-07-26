@@ -11,7 +11,7 @@ export default defineAgent({
   //
   // There is no separate cheap "coding worker" model any more: substantive
   // implementation is delegated to the declared `coder` subagent
-  // (agent/subagents/coder/, its own sandbox, anthropic/claude-haiku-4-5),
+  // (agent/subagents/coder/, its own sandbox, anthropic/claude-haiku-4.5),
   // and the built-in `agent` tool's quick same-sandbox mechanical work just
   // runs this same orchestrator model. This replaces the old dynamic
   // `codingWorkerModel`, which swapped deepseek onto the built-in coding child

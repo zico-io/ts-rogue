@@ -12,5 +12,5 @@ export default defineAgent({
   // `reasoning: "none"`, and each "recoverable" failure replays this
   // subagent's whole durable turn from scratch - measured at 15-70 minutes
   // per coder run on 2026-07-26 (see agent/README.md's workaround audit).
-  model: "anthropic/claude-haiku-4-5",
+  model: "anthropic/claude-haiku-4.5",
 });

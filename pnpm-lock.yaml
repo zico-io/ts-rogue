@@ -4,6 +4,12 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+catalogs:
+  default:
+    eve:
+      specifier: ^0.27.6
+      version: 0.27.6
+
 importers:
 
   .:
@@ -15,7 +21,7 @@ importers:
         specifier: ^7.0.37
         version: 7.0.37(zod@4.4.3)
       eve:
-        specifier: ^0.27.6
+        specifier: 'catalog:'
         version: 0.27.6(ai@7.0.37(zod@4.4.3))(vite@8.1.5(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.23.1))
       ink:
         specifier: ^7
@@ -76,8 +82,8 @@ importers:
   src/web:
     dependencies:
       eve:
-        specifier: ^0.25.2
-        version: 0.25.2(ai@7.0.37(zod@4.4.3))(vite@8.1.5(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.23.1))
+        specifier: 'catalog:'
+        version: 0.27.6(ai@7.0.37(zod@4.4.3))(vite@8.1.5(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.23.1))
       next:
         specifier: ^15.5.21
         version: 15.5.21(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -1297,26 +1303,6 @@ packages:
 
   estree-walker@3.0.3:
     resolution: {integrity: sha512-7RUKfXgSMMkzt6ZuXmqapOurLGPPfgj6l9uRZ7lRGolvk0y2yocc35LdcxKC5PQZdn2DMqioAQ2NoWcrTKmm6g==}
-
-  eve@0.25.2:
-    resolution: {integrity: sha512-TT6zdOfUSZNte9qWpGOGlzVpz91lIRFFpSxe+feTrxWnUlY5jNnUo46zt3AmRIdlauIlIw2k5JU5kQB2hUO57w==}
-    engines: {node: '>=24'}
-    hasBin: true
-    peerDependencies:
-      '@opentelemetry/api': ^1.0.0
-      ai: ^7.0.26
-      braintrust: ^3.0.0
-      just-bash: ^3.0.0
-      microsandbox: ^0.5.0
-    peerDependenciesMeta:
-      '@opentelemetry/api':
-        optional: true
-      braintrust:
-        optional: true
-      just-bash:
-        optional: true
-      microsandbox:
-        optional: true
 
   eve@0.27.6:
     resolution: {integrity: sha512-t2Xr/nlVGc0+Fy9fav8p/CJrwMSQM0zyuOGY1F1XapN0UFssGYBGa6Ml/Q5OnowvWwsGH4m0Tf2QAccayVCvtw==}
@@ -3220,50 +3206,6 @@ snapshots:
   estree-walker@3.0.3:
     dependencies:
       '@types/estree': 1.0.9
-
-  eve@0.25.2(ai@7.0.37(zod@4.4.3))(vite@8.1.5(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.23.1)):
-    dependencies:
-      ai: 7.0.37(zod@4.4.3)
-      nitro: 3.0.260610-beta(vite@8.1.5(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.23.1))
-    transitivePeerDependencies:
-      - '@azure/app-configuration'
-      - '@azure/cosmos'
-      - '@azure/data-tables'
-      - '@azure/identity'
-      - '@azure/keyvault-secrets'
-      - '@azure/storage-blob'
-      - '@capacitor/preferences'
-      - '@deno/kv'
-      - '@electric-sql/pglite'
-      - '@libsql/client'
-      - '@netlify/blobs'
-      - '@netlify/runtime'
-      - '@planetscale/database'
-      - '@upstash/redis'
-      - '@vercel/blob'
-      - '@vercel/functions'
-      - '@vercel/kv'
-      - '@vercel/queue'
-      - aws4fetch
-      - better-sqlite3
-      - chokidar
-      - dotenv
-      - drizzle-orm
-      - giget
-      - idb-keyval
-      - ioredis
-      - jiti
-      - lru-cache
-      - miniflare
-      - mongodb
-      - mysql2
-      - rollup
-      - sqlite3
-      - uploadthing
-      - vite
-      - wrangler
-      - xml2js
-      - zephyr-agent
 
   eve@0.27.6(ai@7.0.37(zod@4.4.3))(vite@8.1.5(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.23.1)):
     dependencies:
