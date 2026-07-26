@@ -12,7 +12,7 @@ import {
   itemStatLine,
 } from "../../engine/loot/items";
 import type { LootFilterRules } from "../../engine/loot/lootFilter";
-import type { ItemInstance } from "../../engine/loot/types";
+import type { ItemInstance, Rarity } from "../../engine/loot/types";
 import type { GameEvent, GameState } from "../../engine/state/types";
 import { Screen } from "../components/Screen";
 import { normalizeInkKey } from "../hooks/normalizeInkKey";
@@ -26,7 +26,6 @@ import {
   reduceInventoryUi,
   resolveInventoryIntent,
   type SortKey,
-  STAT_LABEL,
   sortPackEntries,
 } from "./inventory/interaction";
 import {
@@ -409,7 +408,7 @@ interface FilterSettingsSectionProps {
  * InventoryScreen dispatches SetLootFilter on every change.
  */
 function FilterSettingsSection({ rules, cursor }: FilterSettingsSectionProps) {
-  const rarityDisplay = (rarity: string | undefined): string =>
+  const rarityDisplay = (rarity: Rarity | undefined): string =>
     rarity ?? "none";
 
   return (
@@ -449,7 +448,7 @@ function FilterSettingsSection({ rules, cursor }: FilterSettingsSectionProps) {
         return (
           <FilterRow
             key={stat}
-            label={STAT_LABEL[stat]}
+            label={stat}
             value={enabled ? "yes" : "no"}
             active={cursor === row}
           />

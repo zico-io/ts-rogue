@@ -143,17 +143,6 @@ const ILVL_OFFSET_VALUES: readonly (number | undefined)[] = [
 ];
 
 /**
- * Labels for the 4 core stats, used in the affix-type keep-list rows.
- * Maps from `ItemStat` to the display string.
- */
-export const STAT_LABEL: Record<ItemStat, string> = {
-  str: "str",
-  agi: "agi",
-  vit: "vit",
-  int: "int",
-};
-
-/**
  * All 4 `ItemStat` values in a stable order matching the cursor rows.
  * Row 4-7 map to these indices: str, agi, vit, int.
  */
