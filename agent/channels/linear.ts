@@ -36,6 +36,10 @@ import {
 import { isPlainObject } from "../lib/is-plain-object";
 import { advanceIssueState } from "../lib/issue-state";
 import { listLiveAgentSessions } from "../lib/live-sessions";
+import {
+  isMirrorSessionById,
+  isMirrorSessionFromRaw,
+} from "../lib/mirror-session";
 import type { PendingAction } from "../lib/pending-action";
 import { toolActionParameter, toolActionResult } from "../lib/tool-activity";
 import { toolLabel } from "../lib/tool-label";
@@ -944,8 +948,21 @@ export const guardedOnAgentSession: NonNullable<
   const base = defaultOnAgentSession(ctx, event);
   if (base === null || event.action !== "created") return base;
   const session = event.agentSession;
+  // App-created sessions are either self-handoff successors (which must
+  // dispatch) or this app's own mirror cards (per-child top-level cards, see
+  // `hooks/relay.ts`, which must NOT dispatch a turn - a null return skips both
+  // dispatch and issue-state sync). Distinguish by the mirror marker; only
+  // app-created sessions pay the lookup, free from `event.raw` when Linear
+  // emits externalUrls else one GraphQL read. Non-app sessions can never be
+  // mirrors, so they skip it entirely and keep the duplicate-guard path below.
   if (session.creatorId != null && session.creatorId === session.appUserId) {
-    return base;
+    const isMirror =
+      isMirrorSessionFromRaw(event.raw) ||
+      (await isMirrorSessionById({
+        credentials: agentCredentials,
+        agentSessionId: session.id,
+      }));
+    return isMirror ? null : base;
   }
   const issueId = session.issueId ?? session.issue?.id;
   if (issueId == null) return base;

@@ -1,6 +1,11 @@
 import { callLinearGraphQL } from "eve/channels/linear";
 import type { LinearChannelConfig } from "eve/channels/linear";
 
+import {
+  EXTERNAL_LINKS_SELECTION,
+  externalLinksAreMirror,
+} from "./mirror-session";
+
 // Shared pre-check for the one-live-session-per-issue invariant (HAR-26
 // follow-up): both the `handoff` tool (before creating a session) and the
 // Linear channel's created-webhook guard (before dispatching one) ask the
@@ -52,6 +57,7 @@ export const listLiveAgentSessions = async (input: {
           status?: string;
           createdAt?: string;
           url?: string | null;
+          externalLinks?: unknown;
           activities?: { nodes?: readonly { updatedAt?: string }[] };
         }[];
       };
@@ -64,6 +70,7 @@ export const listLiveAgentSessions = async (input: {
           agentSessions(first: 50) {
             nodes {
               id status createdAt url
+              ${EXTERNAL_LINKS_SELECTION}
               activities(last: 1) { nodes { updatedAt } }
             }
           }
@@ -83,6 +90,12 @@ export const listLiveAgentSessions = async (input: {
       ) {
         return [];
       }
+      // Mirror sessions (per-child top-level cards, see `hooks/relay.ts`) are
+      // not real work and must never block a legitimate handoff/dispatch or be
+      // counted by the one-live-session-per-issue guard.
+      if (externalLinksAreMirror(node.externalLinks)) {
+        return [];
+      }
       // Most recent activity is the truest "last active" signal; fall back to
       // the session's own createdAt when it has no activities yet (a genuinely
       // new pending session). An unparseable timestamp (NaN) is NOT treated as
@@ -90,7 +103,10 @@ export const listLiveAgentSessions = async (input: {
       const lastActiveIso =
         node.activities?.nodes?.[0]?.updatedAt ?? node.createdAt;
       const lastActiveMs = Date.parse(lastActiveIso ?? "");
-      if (Number.isFinite(lastActiveMs) && now - lastActiveMs > STALE_SESSION_MS) {
+      if (
+        Number.isFinite(lastActiveMs) &&
+        now - lastActiveMs > STALE_SESSION_MS
+      ) {
         return [];
       }
       return [
