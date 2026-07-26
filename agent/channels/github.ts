@@ -3,6 +3,11 @@ import {
   connectLinearCredentials,
 } from "@vercel/connect/eve";
 import {
+  type HttpRouteDefinition,
+  POST,
+  type RouteHandlerArgs,
+} from "eve/channels";
+import {
   defaultGitHubAuth,
   type GitHubChannel,
   type GitHubChannelCredentials,
@@ -14,7 +19,7 @@ import {
   type GitHubPullRequestEvent,
   githubChannel,
 } from "eve/channels/github";
-import { POST, type RouteHandlerArgs } from "eve/channels";
+import type { SessionAuthContext } from "eve/context";
 import type { SessionContext } from "eve/tools";
 
 import { advanceIssueState, type IssueStateTarget } from "../lib/issue-state";
@@ -84,7 +89,6 @@ const ralphAdvanceContext = (ref: string) =>
 // inlining its own procedure.
 const REVIEW_FEEDBACK_CONTEXT =
   'Reviewer feedback landed on this pull request (see the comment above). This is a PR review-feedback turn (see "PR review-feedback turns" in the contract): validate it, then either fix the code or reply - nothing else.';
-
 
 // Context for a merge-wake turn to audit unresolved review-comment threads
 // from the merged PR and file GitHub issues for any still-real debt. See
@@ -351,6 +355,17 @@ export const onPullRequest = (
 // and keep the rest of the real channel (`adapter`, `receive`, `cors`)
 // untouched.
 
+// Known GitHub pull-request review states, kept open (`string & {}`) the
+// same way eve's own `GitHubPullRequestAction` is - GitHub can send a state
+// this file never branches on. Only "approved" and "changes_requested"
+// carry a fresh, dispatchable verdict (see `pullRequestReviewVerdict`).
+type GitHubPullRequestReviewState =
+  | "approved"
+  | "changes_requested"
+  | "commented"
+  | "dismissed"
+  | (string & {});
+
 // Minimal shape read from a `pull_request_review` webhook payload - only the
 // fields this handler actually uses.
 interface GitHubPullRequestReviewWebhookPayload {
@@ -371,7 +386,7 @@ interface GitHubPullRequestReviewWebhookPayload {
   readonly review: {
     readonly body: string | null;
     readonly html_url?: string;
-    readonly state: string;
+    readonly state: GitHubPullRequestReviewState;
     readonly user?: {
       readonly id?: number;
       readonly login?: string;
@@ -385,6 +400,45 @@ interface GitHubPullRequestReviewWebhookPayload {
   };
 }
 
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null;
+
+// Validates the fields this handler actually dereferences without optional
+// chaining before any of them is trusted - the webhook signature only
+// proves who sent the request, not that its JSON body has the shape this
+// file expects. Everything else in the payload (installation, sender,
+// review.user, base/head refs/shas, default_branch, private) is optional
+// downstream and already read defensively with `??`/`?.`. Returns `null`
+// for anything that doesn't match, which the caller treats the same as
+// unparseable JSON.
+const parsePullRequestReviewPayload = (
+  value: unknown,
+): GitHubPullRequestReviewWebhookPayload | null => {
+  if (!isPlainObject(value)) return null;
+  const { action, pull_request, repository, review } = value;
+  if (typeof action !== "string") return null;
+  if (!isPlainObject(pull_request) || typeof pull_request.number !== "number") {
+    return null;
+  }
+  if (
+    !isPlainObject(repository) ||
+    typeof repository.id !== "number" ||
+    typeof repository.name !== "string" ||
+    !isPlainObject(repository.owner) ||
+    typeof repository.owner.login !== "string"
+  ) {
+    return null;
+  }
+  if (
+    !isPlainObject(review) ||
+    typeof review.state !== "string" ||
+    (review.body !== null && typeof review.body !== "string")
+  ) {
+    return null;
+  }
+  return value as unknown as GitHubPullRequestReviewWebhookPayload;
+};
+
 // A coarse review only carries an actionable verdict when it is freshly
 // submitted with an approve/request-changes state; "commented" reviews carry
 // no verdict, and "edited"/"dismissed" actions touch a review already acted
@@ -393,10 +447,9 @@ export const pullRequestReviewVerdict = (
   payload: Pick<GitHubPullRequestReviewWebhookPayload, "action" | "review">,
 ): "approved" | "changes_requested" | null => {
   if (payload.action !== "submitted") return null;
-  return payload.review.state === "approved" ||
-    payload.review.state === "changes_requested"
-    ? payload.review.state
-    : null;
+  if (payload.review.state === "approved") return "approved";
+  if (payload.review.state === "changes_requested") return "changes_requested";
+  return null;
 };
 
 // Message appended as the woken turn's dispatch context. Exported for tests.
@@ -457,6 +510,41 @@ const pullRequestConversationToken = (
   pullRequestNumber: number,
 ): string => `repo:${repositoryId}:pull:${pullRequestNumber}`;
 
+// Mirrors the exact `SessionAuthContext` shape the public `defaultGitHubAuth`
+// builds (node_modules/eve/dist/src/public/channels/github/defaults.js) for
+// a "pull_request" conversation. Not called directly: `defaultGitHubAuth`
+// demands a full `GitHubInboundContext`, which binds live `github.request`/
+// `thread.post`/`thread.react` handles this raw webhook route has no honest
+// way to supply (a raw `pull_request_review` delivery is not bound to a
+// channel-managed thread) - asserting a stub past the compiler would hide a
+// real shape mismatch instead of catching one. `defaultGitHubAuth` never
+// reads those handles itself, only the plain data fields reproduced below,
+// so this stays in sync by hand if that formula ever changes.
+const buildPullRequestReviewAuth = (input: {
+  readonly deliveryId: string;
+  readonly installationId: number | undefined;
+  readonly pullRequestNumber: number;
+  readonly repository: { fullName: string; id: number; owner: string };
+  readonly sender: { id: number; login: string; type: string };
+}): SessionAuthContext => ({
+  attributes: {
+    conversation_kind: "pull_request",
+    delivery_id: input.deliveryId,
+    installation_id: String(input.installationId ?? ""),
+    issue_number: "",
+    pull_request_number: String(input.pullRequestNumber),
+    repository: input.repository.fullName,
+    repository_id: String(input.repository.id),
+    user_login: input.sender.login,
+    user_type: input.sender.type,
+  },
+  authenticator: "github-webhook",
+  issuer: `github:${input.repository.owner}`,
+  principalId: `github:${input.sender.id}`,
+  principalType: input.sender.type === "Bot" ? "service" : "user",
+  subject: input.sender.login,
+});
+
 // Handles one verified `pull_request_review` webhook delivery: parses the
 // payload, decides whether it carries a dispatchable verdict, and wakes the
 // PR's own turn (same continuation token as `onPullRequest`) when it does.
@@ -474,12 +562,15 @@ export const handlePullRequestReviewWebhook = async (
     return new Response("unauthorized", { status: 401 });
   }
 
-  let payload: GitHubPullRequestReviewWebhookPayload;
+  let parsedJson: unknown;
   try {
-    payload = JSON.parse(rawBody);
+    parsedJson = JSON.parse(rawBody);
   } catch {
     return Response.json({ ignored: true, ok: true });
   }
+
+  const payload = parsePullRequestReviewPayload(parsedJson);
+  if (payload === null) return Response.json({ ignored: true, ok: true });
 
   const verdict = pullRequestReviewVerdict(payload);
   if (verdict === null) return Response.json({ ignored: true, ok: true });
@@ -489,48 +580,18 @@ export const handlePullRequestReviewWebhook = async (
   const repositoryId = payload.repository.id;
   const pullRequestNumber = payload.pull_request.number;
   const reviewer = payload.review.user ?? payload.sender;
-  const repositoryRef = {
-    fullName: `${owner}/${repo}`,
-    id: repositoryId,
-    name: repo,
-    owner,
-    private: payload.repository.private ?? false,
-  };
 
-  const auth = defaultGitHubAuth({
-    conversation: {
-      issueNumber: null,
-      kind: "pull_request",
-      pullRequestNumber,
-    },
-    delivery: {
-      event: "pull_request_review",
-      hookId: request.headers.get("x-github-hook-id") ?? undefined,
-      id: request.headers.get("x-github-delivery") ?? crypto.randomUUID(),
-    },
-    github: {
-      installationId: payload.installation?.id,
-      repository: repositoryRef,
-      request: async () => {
-        throw new Error("not used for auth derivation");
-      },
-    },
-    repository: repositoryRef,
+  const auth = buildPullRequestReviewAuth({
+    deliveryId: request.headers.get("x-github-delivery") ?? crypto.randomUUID(),
+    installationId: payload.installation?.id,
+    pullRequestNumber,
+    repository: { fullName: `${owner}/${repo}`, id: repositoryId, owner },
     sender: {
-      htmlUrl: undefined,
       id: reviewer?.id ?? 0,
       login: reviewer?.login ?? "unknown",
       type: reviewer?.type ?? "User",
-      url: undefined,
     },
-    thread: {
-      kind: "pull_request",
-      post: async () => {
-        throw new Error("not used for auth derivation");
-      },
-      react: async () => {},
-    },
-  } as GitHubInboundContext);
+  });
 
   await args.send(pullRequestReviewVerdictContext(payload, verdict), {
     auth,
@@ -577,21 +638,22 @@ const baseChannel = githubChannel({
   onPullRequest: onPullRequestWithStateSync,
 });
 
-const baseRouteOrUndefined = baseChannel.routes?.[0];
+// githubChannel always registers exactly one HTTP POST route (see
+// `GITHUB_CHANNEL_DEFAULT_ROUTE` in
+// node_modules/eve/dist/src/public/channels/github/constants.js) - there is
+// no websocket variant to guard against here.
+const [baseRoute] = baseChannel.routes as [
+  HttpRouteDefinition<GitHubChannelState>,
+];
 
 export default {
   ...baseChannel,
-  routes:
-    baseRouteOrUndefined && baseRouteOrUndefined.transport !== "websocket"
-      ? [
-          POST(baseRouteOrUndefined.path, async (request, args) => {
-            if (
-              request.headers.get("x-github-event") === "pull_request_review"
-            ) {
-              return handlePullRequestReviewWebhook(request, args, credentials);
-            }
-            return baseRouteOrUndefined.handler(request, args);
-          }),
-        ]
-      : baseChannel.routes,
+  routes: [
+    POST(baseRoute.path, async (request, args) => {
+      if (request.headers.get("x-github-event") === "pull_request_review") {
+        return handlePullRequestReviewWebhook(request, args, credentials);
+      }
+      return baseRoute.handler(request, args);
+    }),
+  ],
 } satisfies GitHubChannel;

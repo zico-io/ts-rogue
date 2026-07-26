@@ -785,5 +785,34 @@ describe("coarse pull_request_review webhook handler (HAR-49)", () => {
       expect(response.ok).toBe(true);
       expect(sendFn).not.toHaveBeenCalled();
     });
+
+    it("returns ok-true for well-formed JSON missing required fields without calling send", async () => {
+      const sendFn = vi.fn();
+      const credentials = {
+        webhookVerifier: async () => true,
+      };
+
+      const request = new Request("https://example.test/eve/v1/github", {
+        method: "POST",
+        body: JSON.stringify({
+          action: "submitted",
+          pull_request: { number: 42 },
+          repository: { id: 7, name: "ts-rogue" }, // missing owner.login
+          review: { state: "approved", body: null },
+        }),
+        headers: {
+          "x-github-event": "pull_request_review",
+        },
+      });
+
+      const response = await handlePullRequestReviewWebhook(
+        request,
+        { send: sendFn },
+        credentials,
+      );
+
+      expect(response.ok).toBe(true);
+      expect(sendFn).not.toHaveBeenCalled();
+    });
   });
 });

@@ -23,7 +23,19 @@ vi.mock("eve/channels/github", () => ({
   defaultGitHubAuth: () => ({ attributes: {} }),
   githubChannel: (config: Record<string, unknown>) => {
     capturedConfig.current = config;
-    return config;
+    // A real GitHubChannel always carries its one HTTP POST route (see
+    // agent/channels/github.ts's `baseRoute` destructure) - stub it here so
+    // module load mirrors production instead of special-casing a bare mock.
+    return {
+      ...config,
+      routes: [
+        {
+          method: "POST",
+          path: "/eve/v1/github",
+          handler: async () => new Response("mock"),
+        },
+      ],
+    };
   },
 }));
 
