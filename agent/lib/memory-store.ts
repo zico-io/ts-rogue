@@ -1,4 +1,4 @@
-import { type Client, createClient } from "@libsql/client";
+import { type Client, createClient, type Row } from "@libsql/client";
 import { mintMemoryDatabaseCredential } from "./memory";
 
 /**
@@ -41,23 +41,34 @@ const MIGRATIONS = [
   "CREATE INDEX IF NOT EXISTS memories_category_idx ON memories (category)",
 ];
 
-interface MemoryRow {
-  key: string;
-  value: string;
-  category: string;
-  source: string;
-  created_at: string;
-  updated_at: string;
+const MEMORY_COLUMNS = [
+  "key",
+  "value",
+  "category",
+  "source",
+  "created_at",
+  "updated_at",
+] as const;
+
+/** Reads and validates one text column from a query result row. */
+function readTextColumn(row: Row, column: (typeof MEMORY_COLUMNS)[number]): string {
+  const value = row[column];
+  if (typeof value !== "string") {
+    throw new Error(
+      `memory-store: expected column "${column}" to be text, got ${typeof value}`,
+    );
+  }
+  return value;
 }
 
-function rowToMemory(row: MemoryRow): Memory {
+function rowToMemory(row: Row): Memory {
   return {
-    key: row.key,
-    value: row.value,
-    category: row.category,
-    source: row.source,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
+    key: readTextColumn(row, "key"),
+    value: readTextColumn(row, "value"),
+    category: readTextColumn(row, "category"),
+    source: readTextColumn(row, "source"),
+    createdAt: readTextColumn(row, "created_at"),
+    updatedAt: readTextColumn(row, "updated_at"),
   };
 }
 
@@ -106,7 +117,7 @@ export class LibsqlMemoryStore implements MemoryStore {
           sql: "SELECT * FROM memories ORDER BY updated_at DESC LIMIT ?",
           args: [options.limit],
         });
-    return result.rows.map((row) => rowToMemory(row as unknown as MemoryRow));
+    return result.rows.map(rowToMemory);
   }
 
   async put(memory: {
@@ -135,7 +146,7 @@ export class LibsqlMemoryStore implements MemoryStore {
     if (!row) {
       throw new Error(`memory-store: failed to read back "${memory.key}" after put`);
     }
-    return rowToMemory(row as unknown as MemoryRow);
+    return rowToMemory(row);
   }
 
   async delete(key: string): Promise<boolean> {
