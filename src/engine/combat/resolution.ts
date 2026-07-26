@@ -509,21 +509,19 @@ function rollAppliesEffects(
  */
 function tickSingleEffect(
   effect: EffectInstance,
+  effectName: string,
   damage: number,
   actorName: string,
   logs: LogEntry[],
 ): EffectInstance | null {
-  const def = findStatusEffect(effect.effectId);
-  if (!def?.damagePerTurn) return effect;
-
   logs.push(
-    entry(`${actorName} takes ${damage} ${def.name} damage!`, "damage"),
+    entry(`${actorName} takes ${damage} ${effectName} damage!`, "damage"),
   );
 
   const nextDuration = effect.duration - 1;
 
   if (nextDuration <= 0) {
-    logs.push(entry(`${def.name} wears off of ${actorName}.`, "system"));
+    logs.push(entry(`${effectName} wears off of ${actorName}.`, "system"));
     return null; // Signal removal.
   }
 
@@ -562,7 +560,7 @@ function tickEffects(actor: BattleEnemy | PartyMember, logs: LogEntry[]): void {
     // Apply damage before checking expiry (so the final tick still deals damage).
     actor.hp = Math.max(0, actor.hp - damage);
 
-    const result = tickSingleEffect(effect, damage, actor.name, logs);
+    const result = tickSingleEffect(effect, def.name, damage, actor.name, logs);
     if (result !== null) {
       remaining.push(result);
     }
@@ -933,7 +931,7 @@ function finalizeLost(
   // Clear effects on the party (enemies are discarded so only party matters).
   const clearedParty = state.party.map((member) => ({
     ...member,
-    effects: undefined as typeof member.effects,
+    effects: undefined,
   }));
   const inventory = itemUsed
     ? consumeItem(state.inventory, itemUsed)
