@@ -17,3 +17,5 @@ dist/
 /src/web/next-env.d.ts
 /.worktrees/
 /ORIENTATION.md
+/.gitconfig
+/.config/

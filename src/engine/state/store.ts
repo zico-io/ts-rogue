@@ -13,8 +13,7 @@ import { consumeItem, healAmount, isHealItem } from "../loot/consumables";
 import { type EquipmentSlotName, equipTargetSlot } from "../loot/equipment";
 import { FIELD_BACKPACK_CAP, isFieldBackpackFull } from "../loot/inventory";
 import { describeItem, itemSellPrice } from "../loot/items";
-import type { LootFilterRules } from "../loot/lootFilter";
-import { EMPTY_LOOT_FILTER } from "../loot/lootFilter";
+import { EMPTY_LOOT_FILTER, type LootFilterRules } from "../loot/lootFilter";
 import { applyLootPickup, queueLootTriage } from "../loot/pickup";
 import { rollChestLoot } from "../loot/resolution";
 import { Rng } from "../rng/rng";
@@ -734,7 +733,7 @@ function recruitMember(state: GameState, classId: string): GameState {
 /** Next party-unique member id (`member-<n>`), avoiding collisions after dismiss/rehire. */
 function nextMemberId(party: readonly PartyMember[]): string {
   const maxSuffix = party.reduce((max, member) => {
-    const n = Number.parseInt(member.id.replace(/^\\D+/, ""), 10);
+    const n = Number.parseInt(member.id.replace(/^\D+/, ""), 10);
     return Number.isFinite(n) && n > max ? n : max;
   }, 0);
   return `member-${maxSuffix + 1}`;

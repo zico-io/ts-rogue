@@ -8,15 +8,12 @@
  */
 
 import { findAffix } from "../../data/affixes";
-import type { ItemInstance, ItemStat, Rarity } from "./types";
-
-/** Numeric ordering of rarities for comparison (lower = weaker). */
-const RARITY_ORDER: Record<Rarity, number> = {
-  common: 0,
-  magic: 1,
-  rare: 2,
-  unique: 3,
-};
+import {
+  type ItemInstance,
+  type ItemStat,
+  RARITY_ORDER,
+  type Rarity,
+} from "./types";
 
 export interface LootFilterRules {
   /**
