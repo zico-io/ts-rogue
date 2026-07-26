@@ -189,14 +189,6 @@ function GearSection({
   inspecting,
   sortKey,
 }: GearSectionProps) {
-  let compare: string | null = null;
-  if (selected?.kind === "backpack") {
-    const target = equipTargetSlot(member, selected.item);
-    const targetLabel =
-      EQUIP_SLOTS.find((entry) => entry.slot === target)?.label ?? "?";
-    compare = `Equipping into ${targetLabel}: ${deltaLine(compareItem(member, selected.item))}`;
-  }
-
   const inspectedItem =
     selected?.kind === "backpack"
       ? selected.item
@@ -244,14 +236,60 @@ function GearSection({
           </Text>
         );
       })}
-      {compare ? (
-        <Text color={theme.gold}>{compare}</Text>
+      {selected?.kind === "backpack" ? (
+        <ComparePanel member={member} item={selected.item} />
       ) : (
         <Text color={theme.textMuted}>
           Select a backpack item to compare against its slot.
         </Text>
       )}
       {inspecting && inspectedItem && <InspectPanel item={inspectedItem} />}
+    </Box>
+  );
+}
+
+interface ComparePanelProps {
+  member: GameState["party"][number];
+  item: ItemInstance;
+}
+
+/**
+ * Side-by-side comparison of the item currently equipped in the target slot
+ * versus the highlighted backpack item (ENG-14). Shows name, rarity color,
+ * stat totals for each side, plus a net-delta summary line.
+ */
+function ComparePanel({ member, item }: ComparePanelProps) {
+  const targetSlot = equipTargetSlot(member, item);
+  const slotDef = EQUIP_SLOTS.find((entry) => entry.slot === targetSlot);
+  const slotLabel = slotDef?.label ?? "Unknown";
+  const equipped = targetSlot ? member.equipment[targetSlot] : null;
+  const delta = compareItem(member, item);
+
+  return (
+    <Box flexDirection="column" marginTop={1}>
+      <Box flexDirection="row">
+        {/* Equipped column */}
+        <Box flexDirection="column" marginRight={4}>
+          <Text color={theme.textMuted}>Equipped ({slotLabel})</Text>
+          {equipped ? (
+            <>
+              <Text color={theme.rarity[equipped.rarity]}>
+                {describeItem(equipped)}
+              </Text>
+              <Text color={theme.text}>{itemStatLine(equipped)}</Text>
+            </>
+          ) : (
+            <Text color={theme.textFaint}>(empty)</Text>
+          )}
+        </Box>
+        {/* Highlighted column */}
+        <Box flexDirection="column">
+          <Text color={theme.textMuted}>In backpack</Text>
+          <Text color={theme.rarity[item.rarity]}>{describeItem(item)}</Text>
+          <Text color={theme.text}>{itemStatLine(item)}</Text>
+        </Box>
+      </Box>
+      <Text color={theme.gold}>Delta: {deltaLine(delta)}</Text>
     </Box>
   );
 }
