@@ -295,9 +295,10 @@ and gives the batching rule a concrete example.
 
 ### Shared sandbox recipe (HAR-26)
 
-`agent/sandbox.ts` no longer defines the provisioning building blocks itself:
-they moved to `agent/lib/sandbox.ts` so a subagent (`agent/subagents/<id>/sandbox.ts`,
-HAR-27..30) can compose them without duplicating this file. The root's own
+`agent/sandbox/sandbox.ts` no longer defines the provisioning building blocks
+itself: they moved to `agent/lib/sandbox.ts` so a subagent
+(`agent/subagents/<id>/sandbox.ts`, HAR-27..30) can compose them without
+duplicating this file. The root's own
 `bootstrap`/`onSession` are still written out by hand here, since only the
 root builds the `ORIENTATION.md` brief; they just call the shared
 `buildBootstrapCommand`, `resolveStartupNetworkPolicy`, `keepTokenFresh`, and
@@ -339,6 +340,28 @@ delegated `agent`-tool child, sharing one sandbox per session), while
 exercise a PR branch. The `agent` tool - not a `pi` subprocess - remains the
 coding-delegation path; it already inherits this sandbox's toolchain and
 `instructions.md`'s ponytail rules with no further wiring.
+
+### Seed-workspace folder layout (HAR-36)
+
+The root sandbox uses eve's folder layout, `agent/sandbox/sandbox.ts` plus
+`agent/sandbox/workspace/**`, instead of the `agent/sandbox.ts` shorthand.
+`agent/sandbox/workspace/.config/gh/hosts.yml` and
+`agent/sandbox/workspace/.gitconfig` are real, reviewable files with the same
+content `buildBootstrapCommand`'s `SEED_GH_CLI_AUTH_COMMAND` heredoc and
+`git config --global --add safe.directory '*'` line used to write with shell
+(HAR-35 relocated `gh`/git config under `/workspace` via `GH_CONFIG_DIR`/
+`GIT_CONFIG_GLOBAL`; this just replaces how that content gets there). eve
+mirrors `workspace/**` into `/workspace` before bootstrap's command ever
+runs, so the root calls `buildBootstrapCommand({ seedGitHubConfig: false })`
+to skip the now-redundant shell writes; `buildBootstrapCommand` still seeds
+them via shell by default for every subagent composing
+`buildSandboxDefinition`, since none of them have a seeded workspace of their
+own. Seed content (like authored sandbox source) is tracked automatically by
+eve's template revalidation, so editing either seed file rebuilds the
+template on the next session. Bootstrap keeps owning everything that touches
+the root filesystem or is dynamically generated - the apt HTTPS-mirror
+rewrite, `/usr/local/bin` symlinks, package installs, the verified-chromium
+check, the repository checkout (HAR-34), and `pnpm install`.
 
 ### Scout subagent (HAR-27)
 

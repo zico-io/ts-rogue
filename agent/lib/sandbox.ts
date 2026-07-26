@@ -278,7 +278,7 @@ export const WORKSPACE_GIT_CONFIG_GLOBAL_PATH = "/workspace/.gitconfig";
  * which would also redirect other HOME-backed tools' config with no such
  * need) that relocate gh/git's config into `/workspace` (HAR-35, part 2 of
  * HAR-21). Passed as the Vercel Sandbox backend's `env` option (see
- * `vercel(opts)` in `agent/sandbox.ts` and `buildSandboxDefinition` below),
+ * `vercel(opts)` in `agent/sandbox/sandbox.ts` and `buildSandboxDefinition` below),
  * which becomes this sandbox's default environment for every command run
  * against it - both `buildBootstrapCommand`'s own shell steps below and
  * every later ad hoc `gh`/`git` invocation the agent or a subagent's shell
@@ -333,11 +333,23 @@ const SEED_GH_CLI_AUTH_COMMAND = [
  * identical output) gates whether the Playwright chromium install/verify
  * step runs at all - only the root and a future `playtester` subagent need
  * it, so other subagents skip it to keep their own bootstrap leaner.
+ *
+ * `seedGitHubConfig` (default `true`) gates the shell-heredoc seeding of
+ * `gh`'s `hosts.yml` and git's `safe.directory` config below. A sandbox
+ * using the `agent/sandbox/sandbox.ts` folder layout already mirrors
+ * `agent/sandbox/workspace/**` (real, reviewable copies of that same
+ * content, HAR-36) into `/workspace` before this command ever runs, so the
+ * root passes `false` to skip the redundant shell writes; every other
+ * caller (subagents composing {@link buildSandboxDefinition}, which has no
+ * seeded workspace of its own) keeps the default and still gets the shell
+ * seeding.
  */
 export function buildBootstrapCommand(options?: {
   screenshotTooling?: boolean;
+  seedGitHubConfig?: boolean;
 }): string {
   const screenshotTooling = options?.screenshotTooling ?? true;
+  const seedGitHubConfig = options?.seedGitHubConfig ?? true;
   const verifyChromiumLaunches = `node -e "require('playwright').chromium.launch().then(b=>b.close())"`;
   const installScreenshotTooling = [
     "mkdir -p /workspace/.eve",
@@ -367,7 +379,7 @@ export function buildBootstrapCommand(options?: {
     // invoke `fd`/`bat` directly instead of learning the distro rename.
     "(sudo ln -sf /usr/bin/fdfind /usr/local/bin/fd || true)",
     "(sudo ln -sf /usr/bin/batcat /usr/local/bin/bat || true)",
-    SEED_GH_CLI_AUTH_COMMAND,
+    ...(seedGitHubConfig ? [SEED_GH_CLI_AUTH_COMMAND] : []),
     "(npm install -g @earendil-works/pi-coding-agent@0.81.1 || true)",
     // Ponytail is a YAGNI/minimal-diff ruleset for coding agents (see
     // https://github.com/DietrichGebert/ponytail); `pi install` fetches it as
@@ -385,7 +397,9 @@ export function buildBootstrapCommand(options?: {
     // HAR-35) when present, so this now lands in
     // WORKSPACE_GIT_CONFIG_GLOBAL_PATH under /workspace instead of
     // $HOME/.gitconfig.
-    "git config --global --add safe.directory '*'",
+    ...(seedGitHubConfig
+      ? ["git config --global --add safe.directory '*'"]
+      : []),
     // HAR-34: replaced `git clone https://github.com/zico-io/ts-rogue.git .`
     // (which required /workspace to be empty) with an in-place checkout that
     // tolerates a pre-populated /workspace. `git init -q -b main .` creates a
@@ -508,7 +522,7 @@ export async function resolveSessionNetworkPolicy(
  *
  * The root itself does not use this: its `onSession` also writes the
  * `ORIENTATION.md` brief, which this generic helper knows nothing about, so
- * `agent/sandbox.ts` keeps its own explicit `bootstrap`/`onSession` bodies,
+ * `agent/sandbox/sandbox.ts` keeps its own explicit `bootstrap`/`onSession` bodies,
  * backed by the same exported building blocks this function composes.
  */
 export function buildSandboxDefinition(

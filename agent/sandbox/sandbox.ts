@@ -7,7 +7,7 @@ import {
   parseGitFacts,
   parseScreenshotToolingStatus,
   SCREENSHOT_STATUS_PATH,
-} from "./lib/orientation";
+} from "../lib/orientation";
 import {
   AUTO_RECOVER_PUSH_COMMAND,
   buildBootstrapCommand,
@@ -25,13 +25,13 @@ import {
   type TokenRefreshTiming,
   withTimeout,
   WORKSPACE_GIT_CONFIG_ENV,
-} from "./lib/sandbox";
+} from "../lib/sandbox";
 
 // Re-exported so downstream imports (src/sandbox-token-refresh.test.ts,
 // src/prewarm-sandbox.test.ts, agent/hooks/prewarm-sandbox.ts) that reach for
-// this shared sandbox-provisioning infrastructure via "../agent/sandbox" (the
-// root's own module) keep working unchanged now that its definitions live in
-// ./lib/sandbox for a future subagent's sandbox.ts to compose too.
+// this shared sandbox-provisioning infrastructure via "../agent/sandbox/sandbox"
+// (the root's own module) keep working unchanged now that its definitions live
+// in ../lib/sandbox for a future subagent's sandbox.ts to compose too.
 export {
   AUTO_RECOVER_PUSH_COMMAND,
   buildBootstrapCommand,
@@ -61,7 +61,14 @@ export default defineSandbox({
     const { policy } = await resolveStartupNetworkPolicy();
     const sandbox = await use({ networkPolicy: policy });
     const setup = await sandbox.run({
-      command: buildBootstrapCommand({ screenshotTooling: true }),
+      // This folder-layout sandbox mirrors `workspace/**` (this directory's
+      // `hosts.yml`/`.gitconfig` seed files, HAR-36) into `/workspace` before
+      // this command ever runs, so `seedGitHubConfig: false` skips
+      // buildBootstrapCommand's own shell-heredoc equivalent of that seeding.
+      command: buildBootstrapCommand({
+        screenshotTooling: true,
+        seedGitHubConfig: false,
+      }),
     });
     if (setup.exitCode !== 0)
       throw new Error(setup.stderr || "Sandbox pre-warming failed");

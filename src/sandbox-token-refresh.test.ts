@@ -22,7 +22,7 @@ import {
   resolveStartupNetworkPolicy,
   SYNC_MAIN_COMMAND,
   WORKSPACE_GIT_CONFIG_ENV,
-} from "../agent/sandbox";
+} from "../agent/sandbox/sandbox";
 
 // Runs a git command in `cwd`, returning trimmed stdout; throws on failure.
 function git(cwd: string, args: string[]): string {
@@ -425,6 +425,21 @@ describe("buildBootstrapCommand", () => {
       "oauth_token: placeholder-overwritten-by-network-broker",
     );
     expect(command).not.toContain("$HOME/.config/gh");
+  });
+
+  it("skips the shell-heredoc gh/git config seeding when seedGitHubConfig is false (HAR-36)", () => {
+    // The `agent/sandbox/sandbox.ts` folder layout mirrors
+    // `agent/sandbox/workspace/**` (real hosts.yml/.gitconfig files) into
+    // /workspace before this command runs, so the root passes
+    // seedGitHubConfig: false to avoid writing the same content twice.
+    const command = buildBootstrapCommand({ seedGitHubConfig: false });
+    expect(command).not.toContain("/workspace/.config/gh/hosts.yml");
+    expect(command).not.toContain("safe.directory");
+    // Everything else in the command is unaffected.
+    expect(command).toContain(
+      "apt-get install -y tmux ripgrep fd-find bat eza gh",
+    );
+    expect(command).toContain("git init -q -b main .");
   });
 
   it("installs the ponytail ruleset into pi (HAR-3)", () => {
