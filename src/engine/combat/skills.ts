@@ -15,6 +15,9 @@
  * above is unaffected); an optional `applies` list declares status effects
  * the skill may inflict on hit. Resolution wiring that reads either field is
  * out of scope for ENG-10 - it lands in ENG-11+.
+ *
+ * ENG-21: Flame is now tagged `element: "fire"`; Frost is tagged
+ * `element: "ice"` and applies "wet" on hit (ice-themed moisture).
  */
 import { findClass } from "../../data/classes";
 import type { AppliedEffect, Element } from "./statusEffects";
@@ -52,6 +55,7 @@ export const SKILLS: readonly SkillDef[] = [
     kind: "attack",
     power: 8,
     target: "enemy",
+    element: "fire",
   },
   {
     id: "heal",
@@ -61,7 +65,7 @@ export const SKILLS: readonly SkillDef[] = [
     power: 10,
     target: "self",
   },
-  // Wizard spell (ROG-17): a costlier int-scaled blast.
+  // Wizard spell (ROG-17): a costlier int-scaled blast, ice-flavoured.
   {
     id: "frost",
     name: "Frost",
@@ -70,6 +74,8 @@ export const SKILLS: readonly SkillDef[] = [
     power: 14,
     target: "enemy",
     stat: "int",
+    element: "ice",
+    applies: [{ effectId: "wet", chance: 0.5, duration: 3 }],
   },
   // Warrior melee (ROG-17): a str-scaled power strike.
   {
