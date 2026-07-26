@@ -20,3 +20,9 @@ describe("footprintOf / footprintCells (ENG-8)", () => {
     ]);
   });
 });
+
+describe("village texture (ENG-7)", () => {
+  it("declares a 2x2 footprint so it draws as one settlement, not four repeats", () => {
+    expect(footprintOf("village")).toEqual({ wide: 2, high: 2 });
+  });
+});

@@ -190,22 +190,35 @@ keyed by frame name. `main.ts` looks sprites up by name, e.g.
    loadAtlas(); new Sprite(sheet.textures["<name>"])`, and set
    `texture.source.scaleMode = "nearest"` before scaling it up.
 
-### Multi-cell textures (ENG-8)
+### Multi-cell textures (ENG-8) and the 2x2 village footprint (ENG-7)
 
 A `TILE_SOURCES` entry can declare `multiCell: { wide, high }` to keep its
 natural multi-cell size instead of the default single-8x8-cell squish -
 `scripts/build-atlas.ts` packs it at `wide*8 x high*8` pixels rather than
 resizing it down to one cell. `sources.ts`'s `footprintOf`/`footprintCells`
 enumerate the covered `(col, row)` cells, and `overworldView.ts`'s
-`drawFootprint` places one sprite per covered grid cell, each showing only
-its own sub-region of the source texture (`pixiOverworldDrawFactory.ts`'s
-`setTexture(name, region)`, via Pixi's `Texture.frame`) - so the whole
-texture reads as one continuous image across its footprint instead of a
-single squished-and-rescaled sprite or tiled repeats of a 1x1 frame. This is
-the enabling capability only: no live overworld tile uses a multi-cell
-footprint yet (`multiCellFixture` is a debug-only demo, shown via `?dev`);
-actually placing a multi-tile landmark on the map (e.g. a 2x2 village) is a
-follow-up (ENG-7).
+`drawFootprint`/`landmarkRegion` place one sprite per covered grid cell, each
+showing only its own sub-region of the source texture
+(`pixiOverworldDrawFactory.ts`'s `setTexture(name, region)`, via Pixi's
+`Texture.frame`) - so the whole texture reads as one continuous image across
+its footprint instead of a single squished-and-rescaled sprite or tiled
+repeats of a 1x1 frame. `multiCellFixture` remains a debug-only demo (shown
+via `?dev`) exercising the same mechanism.
+
+The village is the first live user: `village` declares `multiCell: { wide: 2,
+high: 2 }`, and the shared map data (`engine/world/landmarks.ts`) places its
+whole 2x2 footprint at generation time - `map.village` is the footprint's
+top-left anchor cell, and every covered cell is painted with the `village`
+tile so movement, passability, and the village-entry trigger in
+`engine/state/store.ts` all work unchanged from any of the four cells.
+`overworldView.ts`'s `landmarkRegion` maps each covered cell back to its
+`(col, row)` sub-region so the four sprites tile into one contiguous
+building; the ground-shadow and pulse halo only draw once, anchored at the
+footprint's top-left cell and sized to the whole footprint, so a multi-tile
+landmark reads as one prop instead of one per covered cell. The Ink TUI
+(`ui/screens/overworld/render.ts`) mirrors this with `glyphAt`, rendering the
+footprint as four distinct ASCII glyphs (a peaked roof over a walled door and
+window) instead of a repeated `H`.
 
 ### Overworld terrain auto-tile stand-in (ROG-73)
 
@@ -225,10 +238,12 @@ tile instead:
   with that count (`clusterScale`): an isolated tile draws smaller, a dense
   cluster draws larger and with real extra rock detail, not just a blurrier
   upscale.
-- A **village**/**dungeonEntrance** landmark gets a small per-instance size
-  variation (`landmarkScale`, hashed from its tile coordinate - never
-  `Math.random`, so a given map always renders identically) instead of every
-  instance drawing at the same size.
+- A **dungeonEntrance** landmark (still single-cell) gets a small
+  per-instance size variation (`landmarkScale`, hashed from its tile
+  coordinate - never `Math.random`, so a given map always renders
+  identically) instead of every instance drawing at the same size. The
+  **village**'s 2x2 footprint draws at a fixed 1:1 scale instead so its four
+  sprite regions stay pixel-aligned and contiguous (see ENG-7 above).
 
 The vendored Minifantasy Tiny Overworld packs (ROG-68) don't ship a
 documented bitmask autotile blob table for cross-biome edges - the pack does
