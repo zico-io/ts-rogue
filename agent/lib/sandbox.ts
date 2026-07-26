@@ -122,30 +122,6 @@ async function mintWithRetries<T>(
   }
 }
 
-/**
- * Resolves authenticated GitHub access, falling back to an open policy so an
- * existing workspace can still start.
- */
-export async function resolveStartupNetworkPolicy(
-  mintPolicy: () => Promise<SandboxNetworkPolicy> = githubNetworkPolicy,
-  timeoutMs: number = TOKEN_MINT_TIMEOUT_MS,
-  attempts: number = STARTUP_MINT_ATTEMPTS,
-  gapMs: number = STARTUP_MINT_RETRY_GAP_MS,
-): Promise<{ policy: SandboxNetworkPolicy; authed: boolean }> {
-  try {
-    return {
-      policy: await mintWithRetries(mintPolicy, attempts, timeoutMs, gapMs),
-      authed: true,
-    };
-  } catch (err) {
-    console.warn(
-      "resolveStartupNetworkPolicy: GitHub token mint failed after retries; coming up on the unauthenticated OPEN network policy (git push/gh will fail until auth heals):",
-      err instanceof Error ? err.message : err,
-    );
-    return { policy: OPEN_NETWORK_POLICY, authed: false };
-  }
-}
-
 export interface StartupAuthResult {
   policy: SandboxNetworkPolicy;
 
@@ -156,9 +132,43 @@ export interface StartupAuthResult {
 }
 
 /**
- * Like `resolveStartupNetworkPolicy`, but also surfaces the minted token's
- * real expiry so `onSession` can schedule `keepTokenFresh`'s very first
- * refresh off actual token life instead of a blind constant (HAR-69/HAR-72).
+ * Shared retry/fallback core for `resolveStartupAuth` and
+ * `resolveStartupNetworkPolicy`: mint with retries, falling back to an open,
+ * unauthenticated policy so an existing workspace can still start. `logLabel`
+ * keeps each public function's warning attributable to itself.
+ */
+async function resolveAuth(
+  logLabel: string,
+  mintPolicy: () => Promise<MintedGitHubPolicy>,
+  timeoutMs: number,
+  attempts: number,
+  gapMs: number,
+): Promise<StartupAuthResult> {
+  try {
+    const minted = await mintWithRetries(
+      mintPolicy,
+      attempts,
+      timeoutMs,
+      gapMs,
+    );
+    return {
+      policy: minted.policy,
+      authed: true,
+      expiresAtMs: minted.expiresAtMs,
+    };
+  } catch (err) {
+    console.warn(
+      `${logLabel}: GitHub token mint failed after retries; coming up on the unauthenticated OPEN network policy (git push/gh will fail until auth heals):`,
+      err instanceof Error ? err.message : err,
+    );
+    return { policy: OPEN_NETWORK_POLICY, authed: false };
+  }
+}
+
+/**
+ * Also surfaces the minted token's real expiry so `onSession` can schedule
+ * `keepTokenFresh`'s very first refresh off actual token life instead of a
+ * blind constant (HAR-69/HAR-72).
  *
  * Without this, `onSession` had no way to pass the token it had just minted
  * (and already knew the real `expiresAt` for) into `keepTokenFresh`'s
@@ -173,16 +183,34 @@ export async function resolveStartupAuth(
   attempts: number = STARTUP_MINT_ATTEMPTS,
   gapMs: number = STARTUP_MINT_RETRY_GAP_MS,
 ): Promise<StartupAuthResult> {
-  try {
-    const minted = await mintWithRetries(mintPolicy, attempts, timeoutMs, gapMs);
-    return { policy: minted.policy, authed: true, expiresAtMs: minted.expiresAtMs };
-  } catch (err) {
-    console.warn(
-      "resolveStartupAuth: GitHub token mint failed after retries; coming up on the unauthenticated OPEN network policy (git push/gh will fail until auth heals):",
-      err instanceof Error ? err.message : err,
-    );
-    return { policy: OPEN_NETWORK_POLICY, authed: false };
-  }
+  return resolveAuth(
+    "resolveStartupAuth",
+    mintPolicy,
+    timeoutMs,
+    attempts,
+    gapMs,
+  );
+}
+
+/**
+ * Resolves authenticated GitHub access, falling back to an open policy so an
+ * existing workspace can still start. A thin adapter over `resolveStartupAuth`
+ * for callers that only need the policy, not the token's real expiry.
+ */
+export async function resolveStartupNetworkPolicy(
+  mintPolicy: () => Promise<SandboxNetworkPolicy> = githubNetworkPolicy,
+  timeoutMs: number = TOKEN_MINT_TIMEOUT_MS,
+  attempts: number = STARTUP_MINT_ATTEMPTS,
+  gapMs: number = STARTUP_MINT_RETRY_GAP_MS,
+): Promise<{ policy: SandboxNetworkPolicy; authed: boolean }> {
+  const { policy, authed } = await resolveAuth(
+    "resolveStartupNetworkPolicy",
+    async () => ({ policy: await mintPolicy(), expiresAtMs: 0 }),
+    timeoutMs,
+    attempts,
+    gapMs,
+  );
+  return { policy, authed };
 }
 
 /** Requires authenticated GitHub access because bootstrap clones a private repository. */
@@ -222,6 +250,26 @@ export function nextRefreshDelayMs(
     ceilingMs,
     Math.max(MIN_TOKEN_REFRESH_MS, untilExpiry - TOKEN_EXPIRY_BUFFER_MS),
   );
+}
+
+/**
+ * Computes `keepTokenFresh`'s initial delay from a session-start auth
+ * result: the real-expiry-aware delay when a token was actually minted, or
+ * `retryMs` to check back soon when the session came up unauthed.
+ *
+ * Both `onSession` implementations (root agent and playtester subagent)
+ * call this instead of inlining the ternary, so the exact scheduling
+ * decision they make is one shared, directly-testable function rather than
+ * duplicated logic (HAR-69/HAR-72).
+ */
+export function initialTokenRefreshDelayMs(
+  auth: Pick<StartupAuthResult, "authed" | "expiresAtMs">,
+  ceilingMs: number = TOKEN_REFRESH_MS,
+  retryMs: number = TOKEN_RETRY_MS,
+): number {
+  return auth.authed && auth.expiresAtMs !== undefined
+    ? nextRefreshDelayMs(auth.expiresAtMs, ceilingMs)
+    : retryMs;
 }
 
 /**
@@ -389,24 +437,10 @@ export interface SandboxRecipeOptions {
   screenshotTooling?: boolean;
 }
 
-export async function resolveSessionNetworkPolicy(
-  gitAuthLevel: GitAuthLevel,
-  mintPolicy: () => Promise<SandboxNetworkPolicy> = githubNetworkPolicy,
-  timeoutMs: number = TOKEN_MINT_TIMEOUT_MS,
-  attempts: number = STARTUP_MINT_ATTEMPTS,
-  gapMs: number = STARTUP_MINT_RETRY_GAP_MS,
-): Promise<{ policy: SandboxNetworkPolicy; authed: boolean }> {
-  if (gitAuthLevel === "none") {
-    return { policy: OPEN_NETWORK_POLICY, authed: false };
-  }
-  return resolveStartupNetworkPolicy(mintPolicy, timeoutMs, attempts, gapMs);
-}
-
 /**
- * Like `resolveSessionNetworkPolicy`, but also surfaces the minted token's
- * real expiry (see `resolveStartupAuth`) so `onSession` can give
- * `keepTokenFresh`'s first refresh the same expiry-aware scheduling every
- * later refresh already gets (HAR-69/HAR-72).
+ * Like `resolveStartupAuth`, but first honors `gitAuthLevel === "none"` by
+ * skipping the mint entirely (used by the playtester subagent, which never
+ * needs push access).
  */
 export async function resolveSessionAuth(
   gitAuthLevel: GitAuthLevel,
@@ -419,6 +453,29 @@ export async function resolveSessionAuth(
     return { policy: OPEN_NETWORK_POLICY, authed: false };
   }
   return resolveStartupAuth(mintPolicy, timeoutMs, attempts, gapMs);
+}
+
+/**
+ * Resolves session-start GitHub access for a given `gitAuthLevel`, falling
+ * back to an open policy so an existing workspace can still start. A thin
+ * adapter over `resolveSessionAuth` for callers that only need the policy,
+ * not the token's real expiry.
+ */
+export async function resolveSessionNetworkPolicy(
+  gitAuthLevel: GitAuthLevel,
+  mintPolicy: () => Promise<SandboxNetworkPolicy> = githubNetworkPolicy,
+  timeoutMs: number = TOKEN_MINT_TIMEOUT_MS,
+  attempts: number = STARTUP_MINT_ATTEMPTS,
+  gapMs: number = STARTUP_MINT_RETRY_GAP_MS,
+): Promise<{ policy: SandboxNetworkPolicy; authed: boolean }> {
+  const { policy, authed } = await resolveSessionAuth(
+    gitAuthLevel,
+    async () => ({ policy: await mintPolicy(), expiresAtMs: 0 }),
+    timeoutMs,
+    attempts,
+    gapMs,
+  );
+  return { policy, authed };
 }
 
 export function buildSandboxDefinition(
@@ -445,24 +502,19 @@ export function buildSandboxDefinition(
         throw new Error(setup.stderr || "Sandbox pre-warming failed");
     },
     async onSession({ use }) {
-      const { policy, authed, expiresAtMs } = await resolveSessionAuth(
-        options.gitAuthLevel,
-      );
+      const auth = await resolveSessionAuth(options.gitAuthLevel);
       const sandbox = await use({
-        networkPolicy: policy,
+        networkPolicy: auth.policy,
         timeout: SANDBOX_TIMEOUT_MS,
       });
-      if (options.gitAuthLevel === "push-capable" && authed) {
+      if (options.gitAuthLevel === "push-capable" && auth.authed) {
         try {
           await sandbox.run({ command: AUTO_RECOVER_PUSH_COMMAND });
         } catch {}
       }
       if (options.gitAuthLevel !== "none") {
         keepTokenFresh(sandbox, mintFreshPolicyWithExpiry, {
-          initialMs:
-            authed && expiresAtMs !== undefined
-              ? nextRefreshDelayMs(expiresAtMs, TOKEN_REFRESH_MS)
-              : TOKEN_RETRY_MS,
+          initialMs: initialTokenRefreshDelayMs(auth),
         });
       }
     },

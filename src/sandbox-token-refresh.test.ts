@@ -19,6 +19,7 @@ import {
   AUTO_RECOVER_PUSH_COMMAND,
   buildBootstrapCommand,
   dependencyRevalidationKey,
+  initialTokenRefreshDelayMs,
   keepTokenFresh,
   MAX_MINT_FAILURES,
   MAX_SET_POLICY_FAILURES,
@@ -429,16 +430,17 @@ describe("resolveStartupAuth", () => {
     expect(res).toEqual({ policy: { allow: { "*": [] } }, authed: false });
   });
 
-  it("lets a real onSession compute a first refresh shorter than TOKEN_REFRESH_MS instead of the old blind guess (HAR-72)", async () => {
+  it("feeds a real mint's short-lived expiry into onSession's actual scheduling function (HAR-72)", async () => {
     // A session-start mint whose real life is much shorter than the flat
     // TOKEN_REFRESH_MS constant onSession used to hand keepTokenFresh as
-    // its first-ever delay. nextRefreshDelayMs must be the one deciding
-    // the first schedule, not TOKEN_REFRESH_MS, or this token goes
-    // unrefreshed well past its own expiry.
+    // its first-ever delay. This drives resolveStartupAuth's real output
+    // straight into initialTokenRefreshDelayMs - the exact function both
+    // onSession implementations call - rather than re-deriving the
+    // schedule inline, so it exercises the actual HAR-72 fix.
     const now = Date.now();
     const shortLivedExpiry = now + 25 * 60 * 1000;
 
-    const { authed, expiresAtMs } = await resolveStartupAuth(
+    const auth = await resolveStartupAuth(
       () =>
         Promise.resolve(
           minted(
@@ -449,13 +451,43 @@ describe("resolveStartupAuth", () => {
       1000,
     );
 
-    const initialMs =
-      authed && expiresAtMs !== undefined
-        ? nextRefreshDelayMs(expiresAtMs, TOKEN_REFRESH_MS)
-        : TOKEN_REFRESH_MS;
+    const initialMs = initialTokenRefreshDelayMs(auth);
 
     expect(initialMs).toBeLessThan(TOKEN_REFRESH_MS);
     expect(initialMs).toBe(5 * 60 * 1000);
+  });
+});
+
+describe("initialTokenRefreshDelayMs", () => {
+  it("schedules off the real expiry when the session came up authed (HAR-69/HAR-72)", () => {
+    const now = Date.now();
+    const delay = initialTokenRefreshDelayMs(
+      { authed: true, expiresAtMs: now + 25 * 60 * 1000 },
+      45 * 60 * 1000,
+      1000,
+    );
+
+    expect(delay).toBe(5 * 60 * 1000);
+  });
+
+  it("falls back to retryMs when the session came up unauthed", () => {
+    const delay = initialTokenRefreshDelayMs(
+      { authed: false, expiresAtMs: undefined },
+      45 * 60 * 1000,
+      1000,
+    );
+
+    expect(delay).toBe(1000);
+  });
+
+  it("falls back to retryMs when authed is true but no expiry was captured", () => {
+    const delay = initialTokenRefreshDelayMs(
+      { authed: true, expiresAtMs: undefined },
+      45 * 60 * 1000,
+      1000,
+    );
+
+    expect(delay).toBe(1000);
   });
 });
 

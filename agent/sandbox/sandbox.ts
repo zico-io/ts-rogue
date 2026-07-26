@@ -12,6 +12,7 @@ import {
   AUTO_RECOVER_PUSH_COMMAND,
   buildBootstrapCommand,
   dependencyRevalidationKey,
+  initialTokenRefreshDelayMs,
   keepTokenFresh,
   MAX_MINT_FAILURES,
   MAX_SET_POLICY_FAILURES,
@@ -37,6 +38,7 @@ export {
   AUTO_RECOVER_PUSH_COMMAND,
   buildBootstrapCommand,
   dependencyRevalidationKey,
+  initialTokenRefreshDelayMs,
   keepTokenFresh,
   MAX_MINT_FAILURES,
   MAX_SET_POLICY_FAILURES,
@@ -84,14 +86,14 @@ export default defineSandbox({
     // seed keepTokenFresh's first refresh off its real expiry, instead of
     // that first refresh falling back to a blind TOKEN_REFRESH_MS guess
     // (HAR-69/HAR-72).
-    const { policy, authed, expiresAtMs } = await resolveStartupAuth();
+    const auth = await resolveStartupAuth();
 
     const sandbox = await use({
-      networkPolicy: policy,
+      networkPolicy: auth.policy,
       timeout: SANDBOX_TIMEOUT_MS,
     });
 
-    if (authed) {
+    if (auth.authed) {
       try {
         await sandbox.run({ command: AUTO_RECOVER_PUSH_COMMAND });
       } catch {}
@@ -109,16 +111,13 @@ export default defineSandbox({
           content: buildOrientationBrief(
             parseGitFacts(facts.stdout),
             parseScreenshotToolingStatus(screenshotStatus.stdout),
-            authed,
+            auth.authed,
           ),
         });
     } catch {}
 
     keepTokenFresh(sandbox, mintFreshPolicyWithExpiry, {
-      initialMs:
-        authed && expiresAtMs !== undefined
-          ? nextRefreshDelayMs(expiresAtMs, TOKEN_REFRESH_MS)
-          : TOKEN_RETRY_MS,
+      initialMs: initialTokenRefreshDelayMs(auth),
     });
   },
 });
