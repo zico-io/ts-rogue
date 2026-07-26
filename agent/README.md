@@ -260,6 +260,7 @@ against; each future audit updates the date and verdicts.
 | Session handoff instead of quota continuation | `tools/handoff.ts` | Token-quota HITL prompt not overridable; `commentCreate` unexported | Still no public hook (0.27.1 only changed decline behavior) |
 | File-based child session-id handoff | `hooks/relay.ts` | `subagent.called` declared in the hook vocabulary but never dispatched to authored hooks/channels | Still absent from `ChannelEvents` |
 | Eager sandbox prewarm + durable token re-mint | `hooks/prewarm-sandbox.ts` | Lazy sandbox creation; no session-end hook; in-process token timers don't survive harness recycling | Unchanged |
+| Subagent models pinned off deepseek-v4-flash | `subagents/coder/agent.ts`, `subagents/scout/agent.ts` | The gateway/ai@7 stream assembler desyncs on deepseek reasoning parts (`text part <id> not found`) even with `reasoning: "none"`, and a task-mode "recoverable" model-call failure replays the entire durable turn with no retry cap - measured 15-70 min of silent replay per coder run, 4x replays on a scout (2026-07-26 runtime logs) | New - model swap to `anthropic/claude-haiku-4-5` sidesteps the failure class; assembler desync + unbounded turn replay reported upstream (vercel/eve#1227) |
 | Sandbox lifetime/timeout re-assertion, token fallback chain | `sandbox.ts` | Create-time options don't apply to resumed sandboxes (ROG-65); connect token cache staleness | Unchanged. eve 0.27.5's `workspace/` seed files were evaluated and rejected: seed paths are workspace-relative only (the files this bootstrap writes live in `~/.config` and `/etc`), and seeding `/workspace` would have broken bootstrap's `git clone` into an empty directory - HAR-34 replaced the clone with an in-place `git init`/`git remote add`/`git fetch`/`git reset --hard` sequence, which no longer requires an empty `/workspace`, but eve's `workspace/**` seed-file layout itself is not yet adopted (separate follow-up HAR-36) |
 | Vercel introspection | `connections/vercel.ts` + `connections/vercel-api.ts` | Vercel MCP server lacks sandbox/trace/observability tools; no Vercel-API credential helper in `@vercel/connect/eve` | Retired the hand-rolled `tools/vercel_*.ts` + `lib/vercel-api.ts` layer in favor of an MCP + OpenAPI connection pair. `VERCEL_TOKEN` env still required for observability/traces (OIDC bearers 403 there; sandbox endpoints would accept them). `teamId`/`projectId` now derived from OIDC claims. Accepted loss: sandbox command logs (see "Vercel debugging connections") |
 | Agent Session posting in code | `tools/session_update.ts`, `tools/handoff.ts`, `hooks/relay.ts`, `channels/linear.ts` | `mcp.linear.app` exposes no Agent Session tools (`agentActivityCreate`, `agentSessionCreateOnComment`), and hooks/channel code cannot call connection tools at all | Not replaceable by the Linear MCP connection until Linear ships agent-session MCP tools |
@@ -385,8 +386,12 @@ delegation whose scope isn't yet clear, trade its own context budget for
 locating relevant files, call paths, reusable utilities, and invariants/
 gotchas, and hand back a compressed summary (capped at roughly 200 lines) sized
 to drop directly into `coder`'s packet, instead of the root exploring
-inline itself. `instructions.md`'s Delegation section now names it as the tool
-to reach for in that situation.
+inline itself. `instructions.md`'s Delegation section makes it opt-in and
+rare: a scout runs serially in front of the coder, so on the 2026-07-26 run
+sample it added 2.5-21 minutes before implementation began, while sessions
+that skipped it dispatched their coder in under 5 - the contract now says to
+skip scout whenever the issue packet already anchors the work in code terms,
+and to reach for it only when the scope field cannot be filled at all.
 
 ### Reviewer subagent (HAR-28)
 
@@ -471,11 +476,16 @@ is now the single coding path: the old dynamic `codingWorkerModel` that
 swapped `deepseek/deepseek-v4-flash` onto the built-in `agent`-tool child has
 been removed, so the built-in tool's quick mechanical work just runs the root
 model and the `coder` subagent owns all substantive coding. Its own
-`agent.ts` runs `deepseek/deepseek-v4-flash` with `reasoning: "none"` - the
-model's default interleaved reasoning parts desync the AI-Gateway stream
-assembler (`text part <id> not found`) and crash-loop the durable step, so
-reasoning is disabled (the gateway exposes no deepseek reasoning
-providerOption; the normalized AI SDK setting is the only lever). Its
+`agent.ts` runs `anthropic/claude-haiku-4-5`. It (and `scout`) previously ran
+`deepseek/deepseek-v4-flash`, whose interleaved reasoning parts desync the
+AI-Gateway stream assembler (`text part <id> not found`) and crash-loop the
+durable step; `reasoning: "none"` (the #138 fix) did not stop the gateway
+emitting those parts, and since a "recoverable" model-call failure in task
+mode replays the subagent's whole turn from scratch, coders measured on
+2026-07-26 spent 15-70 minutes per run replaying finished work (and ENG-19's
+scout turned a 2.5-minute recon into a 21-minute one). Swapping the model off
+deepseek removes the failure class; the assembler bug itself is tracked
+upstream (see the workaround audit). Its
 `instructions.md` is a packet-driven implementation
 contract only (trust the packet, read only task-relevant files and their
 callers, climb the ponytail ladder, respect the architecture invariants, run
