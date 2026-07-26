@@ -60,7 +60,7 @@ export function extractReviewJson(modelOutput: string): unknown {
 const commentSchema = z.object({
   path: z.string(),
   line: z.number(),
-  side: z.literal("RIGHT"),
+  side: z.unknown().optional().transform(() => "RIGHT" as const),
   body: z.string(),
 });
 
@@ -69,6 +69,10 @@ const reviewSchema = z.object({
   body: z.string(),
   comments: z.array(commentSchema),
 });
+
+export function parseReview(modelOutput: string) {
+  return reviewSchema.parse(extractReviewJson(modelOutput));
+}
 
 function buildPrompt(diff: string): string {
   return `You ponytail-review exactly one pull request per invocation for ts-rogue, a TypeScript terminal dungeon crawler.
@@ -163,8 +167,7 @@ async function main() {
     prompt,
   });
 
-  const raw = extractReviewJson(modelOutput);
-  const parsed = reviewSchema.parse(raw);
+  const parsed = parseReview(modelOutput);
 
   const validLines = parseDiffAddedLines(diff);
   const filteredComments = parsed.comments.filter((c) => {

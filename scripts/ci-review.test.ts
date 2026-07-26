@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { extractReviewJson, parseDiffAddedLines } from "./ci-review";
+import {
+  extractReviewJson,
+  parseDiffAddedLines,
+  parseReview,
+} from "./ci-review";
 
 describe("parseDiffAddedLines", () => {
   it("records a simple added line in a single file", () => {
@@ -118,5 +122,14 @@ describe("extractReviewJson", () => {
       body: "net: clean. Ship.",
       comments: [],
     });
+  });
+});
+
+describe("parseReview", () => {
+  it("normalizes model-supplied comment sides for GitHub", () => {
+    const input =
+      '{"event":"COMMENT","body":"review","comments":[{"path":"agent/agent.ts","line":1,"side":"right","body":"shrink: test"}]}';
+
+    expect(parseReview(input).comments[0]?.side).toBe("RIGHT");
   });
 });
