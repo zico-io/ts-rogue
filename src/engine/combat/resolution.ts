@@ -36,6 +36,13 @@
  * ENG-22: status effects tick at the start of each afflicted actor's turn
  * (poison/burn deal damage, durations decrement, expired effects are removed)
  * and are cleared from all battle actors when the battle ends.
+ *
+ * ENG-23: status effects that skip a turn (stun, frozen) or have a shocked
+ * stun-lite skip prevent the afflicted actor from acting; shocked also makes
+ * the target take bonus damage. Non-damaging effects now also expire (duration
+ * decrements every turn). Effects with an `initiativePenalty` (slow, chilled)
+ * reorder the initiative array at the end of each dispatch via a positional-
+ * shift proxy (not a full SPD recompute).
  */
 
 import { DEFAULT_CLASS_ID, findClass } from "../../data/classes";
@@ -111,6 +118,11 @@ export const FLEE_MAX = 0.9;
 /** Level-up curve: xp needed to advance from `level` to `level + 1`. */
 export const XP_BASE = 10;
 export const XP_GROWTH = 1.5;
+
+/** Chance a shocked actor seizes up and skips their turn (ENG-23). */
+export const SHOCKED_SKIP_CHANCE = 0.5;
+/** Damage multiplier when the target has a `damageVulnerable` effect (ENG-23). */
+export const SHOCKED_VULNERABLE_MULTIPLIER = 1.5;
 
 /* -------------------------------------------------------------------------- */
 /* Derived stats                                                              */
@@ -490,6 +502,7 @@ function rollAppliesEffects(
   applies: readonly AppliedEffect[] | undefined,
   rng: Rng,
   logs: LogEntry[],
+  pendingReorders: Array<{ id: string; penalty: number }>,
 ): void {
   if (!applies) return;
   for (const app of applies) {
@@ -498,6 +511,9 @@ function rollAppliesEffects(
       const def = findStatusEffect(app.effectId);
       const name = def?.name ?? app.effectId;
       logs.push(entry(`${target.name} is afflicted with ${name}!`, "damage"));
+      if (def?.initiativePenalty) {
+        pendingReorders.push({ id: target.id, penalty: def.initiativePenalty });
+      }
     }
   }
 }
@@ -529,9 +545,10 @@ function tickSingleEffect(
 }
 
 /**
- * Tick all damaging effects on a battle actor (party member or enemy).
+ * Tick all effects on a battle actor (party member or enemy).
  * Called at the start of the actor's turn. Deals damage for poison/burn,
- * decrements durations, removes expired effects, and logs everything.
+ * decrements durations for all effects, removes expired effects, and logs
+ * everything.
  */
 function tickEffects(actor: BattleEnemy | PartyMember, logs: LogEntry[]): void {
   if (!actor.effects || actor.effects.length === 0) return;
@@ -539,33 +556,128 @@ function tickEffects(actor: BattleEnemy | PartyMember, logs: LogEntry[]): void {
   const remaining: EffectInstance[] = [];
   for (const effect of actor.effects) {
     const def = findStatusEffect(effect.effectId);
-    if (!def?.damagePerTurn) {
-      remaining.push(effect);
-      continue;
-    }
 
-    const { amount, frontLoaded } = def.damagePerTurn;
-    let damage: number;
-    if (frontLoaded && effect.initialDuration && effect.initialDuration > 0) {
-      // Front-loaded curve: proportional to remaining duration / initial duration.
-      damage = Math.max(
-        1,
-        Math.round((amount * effect.duration) / effect.initialDuration),
+    if (def?.damagePerTurn) {
+      // Damaging effect: deal damage, then decrement/expire.
+      const { amount, frontLoaded } = def.damagePerTurn;
+      let damage: number;
+      if (frontLoaded && effect.initialDuration && effect.initialDuration > 0) {
+        // Front-loaded curve: proportional to remaining duration / initial duration.
+        damage = Math.max(
+          1,
+          Math.round((amount * effect.duration) / effect.initialDuration),
+        );
+      } else {
+        // Flat damage per tick.
+        damage = Math.max(1, amount);
+      }
+
+      // Apply damage before checking expiry (so the final tick still deals damage).
+      actor.hp = Math.max(0, actor.hp - damage);
+
+      const result = tickSingleEffect(
+        effect,
+        def.name,
+        damage,
+        actor.name,
+        logs,
       );
+      if (result !== null) {
+        remaining.push(result);
+      }
     } else {
-      // Flat damage per tick.
-      damage = Math.max(1, amount);
-    }
-
-    // Apply damage before checking expiry (so the final tick still deals damage).
-    actor.hp = Math.max(0, actor.hp - damage);
-
-    const result = tickSingleEffect(effect, def.name, damage, actor.name, logs);
-    if (result !== null) {
-      remaining.push(result);
+      // Non-damaging effect: just decrement duration and remove if expired.
+      const nextDuration = effect.duration - 1;
+      if (nextDuration <= 0) {
+        const name = def?.name ?? effect.effectId;
+        logs.push(entry(`${name} wears off of ${actor.name}.`, "system"));
+        // Don't push — effect expired.
+      } else {
+        remaining.push({ ...effect, duration: nextDuration });
+      }
     }
   }
   actor.effects = remaining.length > 0 ? remaining : undefined;
+}
+
+/**
+ * Check whether a living actor has a status effect that prevents them from
+ * acting this turn. Returns true if the turn should be skipped.
+ *
+ * Two kinds of skip:
+ * 1. skipsTurn (stun, frozen) — unconditional skip, logs the effect name.
+ * 2. shocked — stun-lite: roll SHOCKED_SKIP_CHANCE; on success, skip and log.
+ */
+function shouldSkipTurn(
+  actor: BattleEnemy | PartyMember,
+  rng: Rng,
+  logs: LogEntry[],
+): boolean {
+  if (!actor.effects) return false;
+  for (const effect of actor.effects) {
+    const def = findStatusEffect(effect.effectId);
+    if (def?.skipsTurn) {
+      logs.push(
+        entry(
+          `${actor.name} is ${def.name.toLowerCase()} and can't move!`,
+          "system",
+        ),
+      );
+      return true;
+    }
+    if (effect.effectId === "shocked") {
+      if (rng.next() < SHOCKED_SKIP_CHANCE) {
+        logs.push(
+          entry(
+            `${actor.name} seizes up from the shock and can't act!`,
+            "system",
+          ),
+        );
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * If the target has an active effect with `damageVulnerable` (e.g. shocked),
+ * multiply incoming damage by SHOCKED_VULNERABLE_MULTIPLIER (rounded up).
+ * Returns the original `damage` unchanged if no vulnerability is active.
+ */
+function applyVulnerability(
+  target: BattleEnemy | PartyMember,
+  damage: number,
+): number {
+  if (!target.effects) return damage;
+  for (const effect of target.effects) {
+    const def = findStatusEffect(effect.effectId);
+    if (def?.damageVulnerable) {
+      return Math.ceil(damage * SHOCKED_VULNERABLE_MULTIPLIER);
+    }
+  }
+  return damage;
+}
+
+/**
+ * Positional-shift proxy for a full initiative re-roll (ENG-23). Moves the
+ * combatant identified by `id` `penalty` positions later in the order,
+ * clamping to the end of the array. This is NOT a physically-accurate SPD
+ * recompute — it is a simpler ceiling that is sufficient for slow/chilled.
+ */
+export function applyInitiativePenalty(
+  order: readonly string[],
+  id: string,
+  penalty: number,
+): string[] {
+  const idx = order.indexOf(id);
+  if (idx === -1) return [...order];
+  const newIdx = Math.min(order.length - 1, idx + penalty);
+  if (newIdx === idx) return [...order];
+  const copy = [...order];
+  copy.splice(idx, 1);
+  copy.splice(newIdx, 0, id);
+  return copy;
 }
 
 /**
@@ -583,6 +695,7 @@ function applyMemberCommand(
   enemies: BattleEnemy[],
   rng: Rng,
   logs: LogEntry[],
+  pendingReorders: Array<{ id: string; penalty: number }>,
 ): MemberActionResult {
   let defending = false;
   let itemUsed: string | null = null;
@@ -601,10 +714,11 @@ function applyMemberCommand(
             entry(`${actor.name} attacks ${target.name} but misses!`, "damage"),
           );
         } else {
-          target.hp = Math.max(0, target.hp - result.damage);
+          const finalDamage = applyVulnerability(target, result.damage);
+          target.hp = Math.max(0, target.hp - finalDamage);
           logs.push(
             entry(
-              `${actor.name} hits ${target.name} for ${result.damage}${result.crit ? " - crit!" : ""}`,
+              `${actor.name} hits ${target.name} for ${finalDamage}${result.crit ? " - crit!" : ""}`,
               "damage",
             ),
           );
@@ -635,19 +749,20 @@ function applyMemberCommand(
                   variance * (DAMAGE_VARIANCE_MAX - DAMAGE_VARIANCE_MIN)),
             ),
           );
-          target.hp = Math.max(0, target.hp - damage);
+          const finalDamage = applyVulnerability(target, damage);
+          target.hp = Math.max(0, target.hp - finalDamage);
 
           const elementTag = formatElementTag(skill.element);
           logs.push(
             entry(
-              `${actor.name} casts ${skill.name} on ${target.name} for ${damage}${elementTag}!`,
+              `${actor.name} casts ${skill.name} on ${target.name} for ${finalDamage}${elementTag}!`,
               "damage",
             ),
           );
           if (target.hp === 0)
             logs.push(entry(`${target.name} is defeated!`, "damage"));
 
-          rollAppliesEffects(target, skill.applies, rng, logs);
+          rollAppliesEffects(target, skill.applies, rng, logs, pendingReorders);
         }
       } else {
         // Heal skills always target the caster (self). Ally targeting is
@@ -718,6 +833,13 @@ interface AdvanceResult {
  * ENG-22: at the start of each actor's turn (party member or enemy), their
  * active status effects with `damagePerTurn` (poison, burn) tick: damage is
  * applied, duration decremented, and expired effects removed and logged.
+ *
+ * ENG-23: at the start of each actor's turn, all effects (including non-
+ * damaging ones) decrement duration and expire. Actors with skipsTurn effects
+ * (stun, frozen) or who fail a shocked stun-lite check skip their action
+ * entirely. Enemies skip their attack; party members are not paused for a
+ * command. Damage from any source is multiplied by the vulnerability
+ * multiplier when the target has a `damageVulnerable` effect (shocked).
  */
 function advanceRound(
   initiative: readonly string[],
@@ -727,6 +849,7 @@ function advanceRound(
   defendingIds: Set<string>,
   rng: Rng,
   logs: LogEntry[],
+  pendingReorders: Array<{ id: string; penalty: number }>,
 ): AdvanceResult {
   for (let step = 0; step < initiative.length; step++) {
     const index = (fromIndex + 1 + step) % initiative.length;
@@ -737,6 +860,10 @@ function advanceRound(
       if (member.hp > 0) {
         // Tick effects at the start of this party member's turn.
         tickEffects(member, logs);
+        // Skip turn if stunned, frozen, or shocked seizes up.
+        if (shouldSkipTurn(member, rng, logs)) {
+          continue;
+        }
         return { status: "ongoing", nextActorId: member.id };
       }
       continue;
@@ -747,6 +874,11 @@ function advanceRound(
 
     // Tick effects on the enemy at the start of its turn.
     tickEffects(enemy, logs);
+
+    // Skip turn if stunned, frozen, or shocked seizes up.
+    if (shouldSkipTurn(enemy, rng, logs)) {
+      continue;
+    }
 
     const living = party.filter((m) => m.hp > 0);
     if (living.length === 0) return { status: "lost", nextActorId: null };
@@ -768,17 +900,18 @@ function advanceRound(
         entry(`${enemy.name} attacks ${target.name} but misses!`, "damage"),
       );
     } else {
-      target.hp = Math.max(0, target.hp - attack.damage);
+      const finalDamage = applyVulnerability(target, attack.damage);
+      target.hp = Math.max(0, target.hp - finalDamage);
 
       const elementTag = formatElementTag(attackElement);
       logs.push(
         entry(
-          `${enemy.name} hits ${target.name} for ${attack.damage}${elementTag}${attack.crit ? " - crit!" : ""}`,
+          `${enemy.name} hits ${target.name} for ${finalDamage}${elementTag}${attack.crit ? " - crit!" : ""}`,
           "damage",
         ),
       );
 
-      rollAppliesEffects(target, attackApplies, rng, logs);
+      rollAppliesEffects(target, attackApplies, rng, logs, pendingReorders);
 
       if (party.every((m) => m.hp <= 0)) {
         return { status: "lost", nextActorId: null };
@@ -786,8 +919,14 @@ function advanceRound(
     }
   }
 
-  // Defensive fallback: unreachable given the invariant that at least one
-  // party member is alive whenever a round is being advanced.
+  // If the full round was walked and no party member paused (all were stunned,
+  // frozen, shocked, or KO'd), return the first living member if any survive.
+  // They will be re-checked for skip effects at the start of their next turn
+  // on the next dispatch. If no one lives, the party is lost.
+  const firstAliveMember = party.find((m) => m.hp > 0);
+  if (firstAliveMember) {
+    return { status: "ongoing", nextActorId: firstAliveMember.id };
+  }
   return { status: "lost", nextActorId: null };
 }
 
@@ -1062,6 +1201,7 @@ export function resolveBattleEvent(
   const enemies = bs.enemies.map((enemy) => ({ ...enemy }));
   const defendingIds = new Set(bs.defendingIds);
   const logs: LogEntry[] = [];
+  const pendingReorders: Array<{ id: string; penalty: number }> = [];
 
   // party is a positional clone of state.party; index to actor's clone.
   const actorCopy = party[state.party.indexOf(actor)];
@@ -1074,6 +1214,7 @@ export function resolveBattleEvent(
     enemies,
     rng,
     logs,
+    pendingReorders,
   );
   if (result.defending) defendingIds.add(actorCopy.id);
   const itemUsed = result.itemUsed;
@@ -1093,6 +1234,7 @@ export function resolveBattleEvent(
       defendingIds,
       rng,
       logs,
+      pendingReorders,
     );
     status = advance.status;
     nextActorId = advance.nextActorId;
@@ -1134,6 +1276,19 @@ export function resolveBattleEvent(
   const inventory = itemUsed
     ? consumeItem(state.inventory, itemUsed)
     : state.inventory;
+
+  // Apply pending initiative reorders from status effects applied this
+  // dispatch. The in-progress round's traversal used the original
+  // `bs.initiative`; only the next dispatch sees the adjusted order.
+  let finalInitiative = bs.initiative;
+  for (const reorder of pendingReorders) {
+    finalInitiative = applyInitiativePenalty(
+      finalInitiative,
+      reorder.id,
+      reorder.penalty,
+    );
+  }
+
   return {
     ...state,
     rngState,
@@ -1146,6 +1301,7 @@ export function resolveBattleEvent(
       awaitingCommand: true,
       activeMemberId: nextActorId,
       defendingIds: [...defendingIds],
+      initiative: finalInitiative,
     },
     log: [...state.log, ...logs],
   };
