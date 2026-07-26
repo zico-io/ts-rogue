@@ -73,58 +73,6 @@ const MAIN_MERGE_SYNCED =
 const ralphAdvanceContext = (ref: string) =>
   `The merged pull request closes Linear issue ${ref}. If ${ref} is a sub-issue of a parent issue you are ralphing (an in-progress issue group), advance that group per the "Issue groups" instructions: confirm ${ref} is Done, then hand off every newly ready sub-issue to the agent via Linear. If ${ref} is a standalone issue, no further action is needed.`;
 
-// The two-lens ponytail review, inlined as a review turn's context. Ported from
-// bask/fleet's PONYTAIL_REVIEW_PROMPT and retargeted to ts-rogue's contract and
-// its native GitHub-over-curl posting (gh is not installed; auth is injected at
-// the network boundary). Findings must anchor to added/changed diff lines or
-// GitHub rejects the whole review.
-const ponytailReviewContext = (
-  prNumber: number,
-  baseRef: string,
-  headRef: string,
-  // Set only for a re-review triggered by a push to an already-reviewed PR
-  // (`synchronize`): the head sha the *previous* review covered, taken from
-  // the webhook payload's own `before` field. Scoping the diff to just what
-  // changed since then avoids re-flagging - and re-posting findings on -
-  // lines a prior review already passed judgment on.
-  reReviewSinceSha: string | null,
-) => {
-  const fetchCmd = reReviewSinceSha
-    ? `git fetch origin ${reReviewSinceSha} ${headRef}`
-    : `git fetch origin ${baseRef} ${headRef}`;
-  const diffCmd = reReviewSinceSha
-    ? `git diff ${reReviewSinceSha}...origin/${headRef}`
-    : `git diff origin/${baseRef}...origin/${headRef}`;
-  const scopeNote = reReviewSinceSha
-    ? `\nThis is a re-review triggered by a new push, not the PR's first review. Review ONLY the diff introduced since the last review (${reReviewSinceSha} to the new head) - do not re-review or re-report on parts of the PR a prior review already covered. If fetching ${reReviewSinceSha} fails (a rebase or force-push can make an old commit unreachable), fall back to the full origin/${baseRef}...origin/${headRef} diff instead.\n`
-    : "";
-  return `Ponytail-review pull request #${prNumber} in zico-io/ts-rogue. This is a review-only turn (see "PR review turns"): review and post, nothing else.
-${scopeNote}
-Get the diff (the working tree is on main; fetch the PR's refs):
-  ${fetchCmd}
-  ${diffCmd}
-Read a changed file's full context with \`git show origin/${headRef}:<path>\` when a lens needs it.
-
-Apply two lenses in one pass.
-
-LENS 1 - over-engineering (every changed file):
-Unnecessary complexity: reinvented standard library, unneeded dependencies, speculative abstractions, dead flexibility, boilerplate, one-implementation interfaces, config for values that never change.
-Tags: delete: / stdlib: / native: / yagni: / shrink:
-
-LENS 2 - conventions & stack idioms (per file, only where it fits):
-- Repo conventions: skim AGENTS.md, biome.json, tsconfig.json, then flag violations of the project's OWN conventions - no em dashes, extensionless relative imports (never a .js specifier), src/engine kept independent from src/ui, GameState JSON-serializable, reducers pure and side-effect-free on rejected actions, every random outcome routed through seeded RNG. Do NOT flag anything \`biome\` or \`tsgo\` already catch - CI owns formatting and type errors. Tag: convention:
-- TypeScript (.ts/.tsx): \`any\` where \`unknown\` fits, missing \`import type\`, stringly-typed code that should be a union, non-null \`!\` hiding a real nullable. Tag: ts:
-
-Out of scope: correctness, security, and logic bugs - a separate reviewer and a human own those. Report only; apply no fixes.
-
-Post the findings as ONE pull-request review via curl. Each finding's line MUST be a line the diff ADDS or CHANGES (a line the diff shows with a leading +); a comment on any other line makes GitHub reject the entire review. Auth is injected at the network boundary - do NOT add an Authorization header. Write the body to a file (to avoid shell-quoting issues) and post it exactly once:
-  cat > /tmp/review.json <<'JSON'
-  {"event":"COMMENT","body":"<summary>","comments":[{"path":"<file>","line":<line>,"side":"RIGHT","body":"<tag> <what>. <fix>."}]}
-  JSON
-  curl -sS -X POST -H "Accept: application/vnd.github+json" https://api.github.com/repos/zico-io/ts-rogue/pulls/${prNumber}/reviews -d @/tmp/review.json
-<summary> is exactly one line: \`net: -<N> lines, <M> convention fixes.\` when you found something, or \`net: clean. Ship.\` when you did not (post it with an empty comments array). Do not post any other comment, summary, or confirmation - the review posted via curl above is the only reply this turn produces. Then stop.`;
-};
-
 // Context for a turn woken by review feedback landing on a pull request (see
 // "PR review-feedback turns" in instructions.md for the full contract). Kept
 // short and pointed at that section rather than repeated here, matching how
@@ -230,27 +178,6 @@ export const onComment = (
     : null;
 };
 
-// Marks a dispatched turn's auth as "review-only" (HAR-24): ponytail's
-// auto-review turn already posts its findings as a native PR review via the
-// curl call in ponytailReviewContext above, so the agent's own trailing
-// assistant text for that turn is a second, redundant top-level comment
-// ("Review posted: ...") duplicating what the review UI already shows. The
-// flag rides in the dispatch auth's attributes (the one piece of dispatch-time
-// data a later `message.completed` handler can still read, via
-// `ctx.session.auth.initiator`) so that handler can skip posting it.
-export const REVIEW_ONLY_TURN_ATTRIBUTE = "tsRogueReviewOnlyTurn";
-
-const reviewOnlyAuth = (ctx: GitHubInboundContext) => {
-  const auth = defaultGitHubAuth(ctx);
-  return {
-    ...auth,
-    attributes: { ...auth.attributes, [REVIEW_ONLY_TURN_ATTRIBUTE]: "true" },
-  };
-};
-
-const isReviewOnlyTurn = (ctx: SessionContext): boolean =>
-  ctx.session.auth.initiator?.attributes[REVIEW_ONLY_TURN_ATTRIBUTE] === "true";
-
 // GitHub's own comment-body size cap, mirrored here because eve's internal
 // `splitGitHubCommentBody` isn't part of the public `eve/channels/github`
 // API surface (only `defaultGitHubAuth` is exported from that module - see
@@ -272,18 +199,15 @@ const splitCommentBody = (body: string): readonly string[] => {
 
 // Posts a completed assistant message as a GitHub comment, mirroring eve's
 // built-in `message.completed` handler (`postCommentChunks` in
-// `defaults.js`), except it skips the post entirely for a review-only turn
-// (see `isReviewOnlyTurn` above) to eliminate the duplicate comment from
-// HAR-24. Declaring this handler in `events` replaces eve's built-in for this
-// key rather than layering on top of it, so the non-review path re-implements
-// the same chunk-and-post behavior the default provided.
+// `defaults.js`). Declaring this handler in `events` replaces eve's built-in
+// for this key rather than layering on top of it, so it re-implements the same
+// chunk-and-post behavior the default provided.
 export const onMessageCompleted = async (
   data: { finishReason?: string; message: string | null },
   channel: GitHubEventContext,
-  ctx: SessionContext,
+  _ctx: SessionContext,
 ): Promise<void> => {
   if (data.finishReason === "tool-calls" || !data.message) return;
-  if (isReviewOnlyTurn(ctx)) return;
   for (const chunk of splitCommentBody(data.message)) {
     await channel.thread.post(chunk);
   }
@@ -401,48 +325,6 @@ export const onPullRequest = (
           ? [MAIN_MERGE_SYNCED, ralphAdvanceContext(ref)]
           : [MAIN_MERGE_SYNCED]),
         debtReviewContext(pullRequest.pullRequestNumber),
-      ],
-    };
-  }
-  // Auto ponytail-review on a newly opened / newly ready pull request, and
-  // again on every push to it (`synchronize`) - the latter is what turns a
-  // fix-and-resolve into a fresh re-review (HAR-24) with no extra
-  // resolution-tracking: pushing a fix commit, whether from a human or from
-  // this agent's own "PR review-feedback turns" handling, already fires
-  // this same GitHub event.
-  if (
-    pullRequest.action === "opened" ||
-    pullRequest.action === "ready_for_review" ||
-    pullRequest.action === "synchronize"
-  ) {
-    const raw = pullRequest.raw as {
-      draft?: boolean;
-      head?: { ref?: string };
-      base?: { ref?: string };
-      before?: string;
-    };
-    // Event-time draft flag, not a live fetch: a PR opened as a draft then
-    // marked ready fires both events; gating on the payload's own draft flag
-    // reviews exactly once (a ready_for_review payload is never a draft).
-    if (raw.draft === true) return null;
-    const head = raw.head?.ref;
-    if (!head) return null;
-    const base = raw.base?.ref ?? "main";
-    // `before` is only meaningful on `synchronize` (the sha the previous
-    // review saw); GitHub also omits it once in a while (e.g. a synthetic
-    // replay), in which case ponytailReviewContext falls back to the full
-    // base...head diff.
-    const reReviewSinceSha =
-      pullRequest.action === "synchronize" && raw.before ? raw.before : null;
-    return {
-      auth: reviewOnlyAuth(context),
-      context: [
-        ponytailReviewContext(
-          pullRequest.pullRequestNumber,
-          base,
-          head,
-          reReviewSinceSha,
-        ),
       ],
     };
   }

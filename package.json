@@ -27,7 +27,7 @@
     "typecheck": "tsgo --noEmit",
     "test:unit": "vitest run",
     "test": "pnpm test:unit",
-    "lint": "biome ci src && biome lint agent",
+    "lint": "biome ci src && biome lint agent scripts",
     "format": "biome format --write .",
     "version-packages": "changeset version"
   },

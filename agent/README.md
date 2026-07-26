@@ -406,13 +406,62 @@ The root's own "PR review turns" section in `instructions.md` no longer does
 the review inline: it now delegates the whole job to `reviewer`, passing the
 turn's review context (PR number, diff-fetch commands, the two lenses, the
 posting endpoint/JSON) as the subagent's `message` and relaying nothing else
-back. `channels/github.ts`'s `onPullRequest` is unchanged - it still builds
-that context string and dispatches a review-only turn exactly as before;
-only what the root *does* with that turn changed. This is what enables a
-Workflow fan-out reviewing several open pull requests in parallel (documented in `instructions.md`'s Delegation section, guarded by `evals/delegation/workflow-parallel-fanout.eval.ts`)
+back. As of HAR-63, automatic per-PR review dispatch moved out of the Eve
+channel entirely into `.github/workflows/review.yml` + `scripts/ci-review.ts`,
+which call the model directly via the Vercel AI Gateway (`AI_GATEWAY_API_KEY`
+secret) with no Eve Agent Session involved, eliminating a full agent turn's
+orchestration cost for what was always a mechanical diff-review-post pipeline.
+The `reviewer` subagent and the root's own "PR review turns" section in
+`instructions.md` remain in place for any future on-demand or explicit review
+request (e.g. a human asking the agent to review a specific PR), but are no
+longer what triggers an automatic review on PR open or push. This is what
+enables a Workflow fan-out reviewing several open pull requests in parallel
+(documented in `instructions.md`'s Delegation section, guarded by
+`evals/delegation/workflow-parallel-fanout.eval.ts`)
 (`Promise.all(prs.map((n) => tools.reviewer({ message: ... })))`), which a
 bare copy of the root (the built-in `agent` tool) cannot do on its own since
 every copy carries the full root contract instead of a lean review-only one.
+
+### Review triggering moved to CI (HAR-63)
+
+HAR-63 moved the automatic per-PR review dispatch out of the Eve channel and
+into a dedicated GitHub Actions workflow, removing the following from
+`agent/channels/github.ts`:
+
+- The `ponytailReviewContext` function that built the two-lens review context
+  string for the agent turn.
+- The `REVIEW_ONLY_TURN_ATTRIBUTE` constant, `reviewOnlyAuth`, and
+  `isReviewOnlyTurn` helpers that marked these turns for special handling
+  (suppressing the duplicate trailing comment since the review was already
+  posted via curl).
+- The `if (pullRequest.action === "opened" || ...)` branch inside
+  `onPullRequest` that dispatched the review-only turn.
+- The review-only skip inside `onMessageCompleted` that prevented HAR-24's
+  duplicate trailing comment (no longer needed since no review-only turn is
+  dispatched).
+
+The automatic review now lives in `.github/workflows/review.yml` and
+`scripts/ci-review.ts`. It calls `generateText` against
+`anthropic/claude-sonnet-5` via the Vercel AI Gateway using the
+`AI_GATEWAY_API_KEY` repo secret, validates each model-proposed comment
+against the diff's actual added or changed lines before posting (GitHub
+rejects the whole review otherwise), and posts via GitHub's REST API using
+the Actions-native `GITHUB_TOKEN` - no new GitHub credential is needed, only
+the model-call credential.
+
+The explicit decision behind this split is that debt-review (HAR-18) stays on
+the existing Eve merge-wake path unchanged, because its auto-remediation step
+needs the `coder` subagent and its detection step needs `gh`/GraphQL
+thread-resolution access - neither available to a bare CI script. Only the
+plain "open or push -> lens review -> post" pipeline moved to CI; the
+merge-triggered debt audit and ralph-advance remain in the Eve channel.
+
+`scripts/ci-review.ts`'s prompt duplicates the same two-lens text as
+`agent/subagents/reviewer/instructions.md` by hand - one is a TypeScript
+template literal, the other a static markdown prompt eve loads for the
+`reviewer` subagent, so neither can import or reference the other at
+runtime. Both files carry a comment pointing at the other's location; keep
+them in sync by hand when either lens changes.
 
 ### Coder subagent (HAR-30)
 
@@ -635,22 +684,22 @@ the model choosing to call `save_issue`. Four transitions are now reconciled
 in code, all through `lib/issue-state.ts` (`advanceIssueState`, hand-rolled
 over the public `callLinearGraphQL` transport like `lib/live-sessions.ts`):
 
-- **Session created → In Progress**, cascading to an unstarted parent so a
+- **Session created -> In Progress**, cascading to an unstarted parent so a
   group's parent never sits in Todo while sub-issues are in flight. Runs in
   `channels/linear.ts`'s `dispatchAgentSession` *after* `send()` (state sync
   never delays dispatch; the `waitUntil`-tracked promise keeps it alive) and
   only for `created` events - every `prompted` event follows a created one
   that already synced. A guard-declined duplicate session never reaches it.
-- **PR opened / ready for review → In Review**, keyed off
+- **PR opened / ready for review -> In Review**, keyed off
   `linearRefFromPullRequest` in `channels/github.ts`'s
   `onPullRequestWithStateSync` wrapper (eve runs `onPullRequest` under
   `waitUntil` and accepts an async result). Skipped silently when the team
   has no started-type state named like "review". `synchronize` is excluded -
   state was set at open.
-- **PR merged to main → Done**, same wrapper. The sync deliberately completes
+- **PR merged to main -> Done**, same wrapper. The sync deliberately completes
   before the dispatch decision returns, so the woken ralph-advance turn
   already observes the merged sub-issue Done when it recomputes readiness.
-- **Session failed → Blocked** (`session.failed` only - `turn.failed` is
+- **Session failed -> Blocked** (`session.failed` only - `turn.failed` is
   recoverable), so an unrecoverably dead session never leaves its issue
   falsely In Progress. Skipped silently when the team has no state named
   like "Blocked".
@@ -683,9 +732,8 @@ the shared pre-check:
   session when the issue already has another live session, returning
   `alreadyLive` with that session's id and URL so the model reports instead
   of duplicating. The caller's own session is excluded (its id rides in the
-  dispatch-auth attributes `defaultLinearAuth` stamps, the same side channel
-  HAR-24's review-only flag uses), since self-continuation hands off the very
-  issue the caller is still live on.
+  dispatch-auth attributes `defaultLinearAuth` stamps), since
+  self-continuation hands off the very issue the caller is still live on.
 - **At dispatch** - `channels/linear.ts` (`guardedOnAgentSession`, the third
   behavior change vs. the built-in channel) declines a `created` webhook for
   an issue that already has an older live session: it posts one `response`
@@ -708,11 +756,11 @@ already mandates `handoff` over bare delegate assignment.
 
 ### Review-feedback turns (HAR-16)
 
-`channels/github.ts` already dispatches an in-repo ponytail auto-review when a
-pull request opens or leaves draft (`onPullRequest`'s `opened`/`ready_for_review`
-branch), posting inline comments through GitHub's pull-request-review API.
-Those comments, and any a human reviewer leaves the same way, arrive back at
-eve as `pull_request_review_comment` webhook events - the only granularity of
+The `.github/workflows/review.yml` CI workflow (HAR-63) now posts the
+auto-review when a pull request opens or leaves draft, replacing the former
+`onPullRequest` dispatch in `channels/github.ts`. The posted inline comments,
+and any a human reviewer leaves the same way, arrive back at eve as
+`pull_request_review_comment` webhook events - the only granularity of
 "pull request review" eve's public `githubChannel` API parses; the coarser
 `pull_request_review` event (a review submitted with only a top-level
 verdict/body and no inline comments) isn't parsed by eve at all as of the
@@ -746,9 +794,9 @@ with `in_reply_to_id`; eve's normalized `GitHubComment` drops that field, so
 hatch `onPullRequest` already uses for fields the normalized event omits.
 
 The dispatched turn carries a short context string pointing at
-`instructions.md`'s new "PR review-feedback turns" section rather than
+`instructions.md`'s "PR review-feedback turns" section rather than
 repeating the procedure inline, the same pattern `ponytailReviewContext`
-already uses for "PR review turns". That section tells the agent to check
+already used for "PR review turns". That section tells the agent to check
 out the pull request's branch with `gh pr checkout`, ground itself with
 `git log`/`git status` before changing anything, fix and push a follow-up
 commit when the feedback names a concrete change (or reply in the thread
@@ -776,9 +824,9 @@ counter file, or Linear custom field was added.
 Remediation reuses the existing `coder` subagent with a packet naming every
 open debt issue to fix, rather than adding a new dispatch path.  The
 `debtReviewContext` function follows the same pattern as
-`ponytailReviewContext` and `REVIEW_FEEDBACK_CONTEXT`: it embeds the
-threshold constants and a reference to the new `instructions.md` section
-instead of repeating the procedure inline.
+`ponytailReviewContext` (now removed per HAR-63) and `REVIEW_FEEDBACK_CONTEXT`:
+it embeds the threshold constants and a reference to the "PR merge debt-review
+turns" section in `instructions.md` instead of repeating the procedure inline.
 
 ## Development
 
