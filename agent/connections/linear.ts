@@ -28,17 +28,34 @@ export default defineMcpClientConnection({
   // sub-issues to normal issues" - the Linear MCP server has always
   // published `save_project`, it just sat outside this allow-list.
   // instructions.md's "Promoting an issue to a project" section covers the
-  // create-project/reparent-sub-issues/link-back sequencing. The rest stays
-  // read-only lookup: every other write (save_comment, save_document,
-  // delete_*, merge_diff, submit_diff_review, attachments, creating labels,
-  // releases, status updates) stays out - session posts go through the
-  // authored `session_update`/`handoff` tools instead. An unknown name in
-  // `allow` is inert; if a flow needs a missing read tool, connection_search
-  // will surface the gap - widen then.
+  // create-project/reparent-sub-issues/link-back sequencing.
+  //
+  // The `linear-project-manager` and `linear-project-update` skills (HAR-64)
+  // extend that same project-content write surface: `save_milestone`,
+  // `save_document`, and `create_issue_label` are the writes the
+  // project-manager scaffolding procedure needs (milestones as dependency
+  // groups, Decision Log / Meeting Notes documents, project labels), and
+  // `save_status_update` (+ the read `get_status_updates`) is what
+  // project-update posts. These are all project-content objects the same way
+  // `save_project` is - not Agent-Session activity - so they belong in the
+  // allow-list, following the HAR-47 precedent. In particular a project
+  // *status update* is Linear's project health feed; it does not flip any
+  // Agent-Session lifecycle state, so it is unlike `save_comment` (a session
+  // post), which stays out and is routed through the authored
+  // `session_update`/`handoff` tools instead.
+  //
+  // The rest stays read-only lookup: every remaining write (save_comment,
+  // delete_*, merge_diff, submit_diff_review, attachments, releases) stays
+  // out. An unknown name in `allow` is inert; if a flow needs a missing read
+  // tool, connection_search will surface the gap - widen then.
   tools: {
     allow: [
       "save_issue",
       "save_project",
+      "save_milestone",
+      "save_document",
+      "save_status_update",
+      "create_issue_label",
       "get_issue",
       "list_issues",
       "list_comments",
@@ -52,6 +69,7 @@ export default defineMcpClientConnection({
       "list_projects",
       "list_cycles",
       "list_milestones",
+      "get_status_updates",
       "get_document",
       "list_documents",
       "search_documentation",
@@ -61,6 +79,10 @@ export default defineMcpClientConnection({
   // upstream by the ask_question breakdown approval. `save_project` never
   // runs in ralph flow at all - it is only reachable from an explicit human
   // request in the conversation (instructions.md's "Promoting an issue to a
-  // project") - so it needs no separate gate either.
+  // project") - so it needs no separate gate either. The HAR-64
+  // project-workflow writes (save_milestone/save_document/save_status_update/
+  // create_issue_label) are the same shape: reachable only from an explicit
+  // human request via the two Linear skills, each of which parks on
+  // `ask_question` for approval before it writes - so no separate gate here.
   approval: never(),
 });
