@@ -456,6 +456,13 @@ thread-resolution access - neither available to a bare CI script. Only the
 plain "open or push -> lens review -> post" pipeline moved to CI; the
 merge-triggered debt audit and ralph-advance remain in the Eve channel.
 
+`scripts/ci-review.ts`'s prompt duplicates the same two-lens text as
+`agent/subagents/reviewer/instructions.md` by hand - one is a TypeScript
+template literal, the other a static markdown prompt eve loads for the
+`reviewer` subagent, so neither can import or reference the other at
+runtime. Both files carry a comment pointing at the other's location; keep
+them in sync by hand when either lens changes.
+
 ### Coder subagent (HAR-30)
 
 `agent/subagents/coder/` is the declared specialist that replaces the

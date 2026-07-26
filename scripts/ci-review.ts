@@ -14,7 +14,7 @@ import { z } from "zod";
  */
 export function parseDiffAddedLines(diff: string): Map<string, Set<number>> {
   const result = new Map<string, Set<number>>();
-  let currentFile: string | null = null;
+  let currentLines: Set<number> | null = null;
   let newLineCounter = 0;
 
   const lines = diff.split("\n");
@@ -29,14 +29,13 @@ export function parseDiffAddedLines(diff: string): Map<string, Set<number>> {
     // File header for the new-file side
     const fileMatch = line.match(/^\+\+\+\s+b\/(.+)$/);
     if (fileMatch) {
-      currentFile = fileMatch[1];
-      if (!result.has(currentFile)) {
-        result.set(currentFile, new Set());
-      }
+      const path = fileMatch[1];
+      currentLines = result.get(path) ?? new Set();
+      result.set(path, currentLines);
       continue;
     }
 
-    // Index / diff --git / --- lines – skip
+    // Index / diff --git / --- lines - skip
     if (
       line.startsWith("--- ") ||
       line.startsWith("diff --git ") ||
@@ -46,13 +45,13 @@ export function parseDiffAddedLines(diff: string): Map<string, Set<number>> {
     }
 
     // Hunk body processing
-    if (currentFile) {
+    if (currentLines) {
       if (line.startsWith("+") && !line.startsWith("+++")) {
         // Added line
-        result.get(currentFile)!.add(newLineCounter);
+        currentLines.add(newLineCounter);
         newLineCounter++;
       } else if (line.startsWith(" ")) {
-        // Context line – advances the counter
+        // Context line - advances the counter
         newLineCounter++;
       }
       // Lines starting with `-` do not advance the counter
@@ -95,7 +94,6 @@ const reviewSchema = z.object({
   comments: z.array(commentSchema),
 });
 
-type Review = z.infer<typeof reviewSchema>;
 
 // ---------------------------------------------------------------
 // Prompt construction
@@ -103,6 +101,12 @@ type Review = z.infer<typeof reviewSchema>;
 
 /**
  * Build the review prompt from the diff and the two-lens instructions.
+ *
+ * The lens text below is a hand-synced copy of the same two lenses in
+ * `agent/subagents/reviewer/instructions.md` - that file is a static markdown
+ * prompt eve loads for the `reviewer` subagent, so it can't import this
+ * module's constant, and this module can't render markdown as its own
+ * prompt. Keep both in sync by hand when editing either lens.
  */
 function buildPrompt(diff: string): string {
   return `You ponytail-review exactly one pull request per invocation for ts-rogue, a TypeScript terminal dungeon crawler.
@@ -177,7 +181,7 @@ async function main() {
   ];
 
   if (BEFORE_SHA) {
-    // Re-review – scope to only what changed since the last push
+    // Re-review - scope to only what changed since the last push
     const scopedArgs = ["diff", `${BEFORE_SHA}...${HEAD_SHA}`];
     try {
       diff = execFileSync("git", scopedArgs, {
@@ -185,7 +189,7 @@ async function main() {
         stdio: "pipe",
       });
     } catch {
-      // Force-push or rebase made BEFORE_SHA unreachable – fall back to full diff
+      // Force-push or rebase made BEFORE_SHA unreachable - fall back to full diff
       diff = execFileSync("git", fullDiffArgs, {
         encoding: "utf-8",
         stdio: "pipe",
@@ -212,7 +216,7 @@ async function main() {
 
   // Parse & validate the model output
   const raw = extractReviewJson(modelOutput);
-  const parsed: Review = reviewSchema.parse(raw);
+  const parsed = reviewSchema.parse(raw);
 
   // Filter comments to only valid lines from the diff
   const validLines = parseDiffAddedLines(diff);
@@ -220,7 +224,7 @@ async function main() {
     const fileLines = validLines.get(c.path);
     if (!fileLines || !fileLines.has(c.line)) {
       console.warn(
-        `[ci-review] Dropping comment for ${c.path}:${c.line} – not in diff added lines`,
+        `[ci-review] Dropping comment for ${c.path}:${c.line} - not in diff added lines`,
       );
       return false;
     }
