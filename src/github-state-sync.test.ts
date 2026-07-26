@@ -170,7 +170,7 @@ describe("onPullRequest state-sync wrapper", () => {
     expect(result?.context?.join("\n")).toContain("HAR-9");
   });
 
-  it("moves the issue to In Review and still dispatches the auto-review", async () => {
+  it("moves the issue to In Review and returns null (auto-review dispatch moved to CI)", async () => {
     const event = pr("opened", {
       base: { ref: "main" },
       head: { ref: "feat/ROG-3" },
@@ -181,7 +181,7 @@ describe("onPullRequest state-sync wrapper", () => {
     expect(advanceIssueStateMock).toHaveBeenCalledWith(
       expect.objectContaining({ issueRef: "ROG-3", target: "inReview" }),
     );
-    expect(result?.context?.[0]).toContain("Ponytail-review pull request #7");
+    expect(result).toBeNull();
   });
 
   it("passes null decisions through untouched with no sync", async () => {
