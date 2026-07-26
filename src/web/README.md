@@ -190,6 +190,23 @@ keyed by frame name. `main.ts` looks sprites up by name, e.g.
    loadAtlas(); new Sprite(sheet.textures["<name>"])`, and set
    `texture.source.scaleMode = "nearest"` before scaling it up.
 
+### Multi-cell textures (ENG-8)
+
+A `TILE_SOURCES` entry can declare `multiCell: { wide, high }` to keep its
+natural multi-cell size instead of the default single-8x8-cell squish -
+`scripts/build-atlas.ts` packs it at `wide*8 x high*8` pixels rather than
+resizing it down to one cell. `sources.ts`'s `footprintOf`/`footprintCells`
+enumerate the covered `(col, row)` cells, and `overworldView.ts`'s
+`drawFootprint` places one sprite per covered grid cell, each showing only
+its own sub-region of the source texture (`pixiOverworldDrawFactory.ts`'s
+`setTexture(name, region)`, via Pixi's `Texture.frame`) - so the whole
+texture reads as one continuous image across its footprint instead of a
+single squished-and-rescaled sprite or tiled repeats of a 1x1 frame. This is
+the enabling capability only: no live overworld tile uses a multi-cell
+footprint yet (`multiCellFixture` is a debug-only demo, shown via `?dev`);
+actually placing a multi-tile landmark on the map (e.g. a 2x2 village) is a
+follow-up (ENG-7).
+
 ### Overworld terrain auto-tile stand-in (ROG-73)
 
 `render/overworldView.ts`'s `OverworldSceneView` does not draw every

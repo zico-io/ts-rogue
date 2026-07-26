@@ -1181,6 +1181,12 @@ export async function bootGame(
    * guard/shape, but delegates the actual drawing to `OverworldSceneView`
    * (framework-free, unit-tested in `overworldView.test.ts`) instead of
    * building `Text` lines directly.
+   *
+   * In `--dev`/`?dev` builds only, also passes a fixed multi-cell debug
+   * fixture (ENG-8) so the underlying texture-mapping capability - a
+   * texture spanning more than one grid cell, drawn as one continuous
+   * image instead of tiled 1x1 repeats - is visible in the running game
+   * ahead of ENG-7 wiring a real multi-tile landmark onto the map.
    */
   function renderOverworldContent(state: GameState): void {
     if (state.scene !== "overworld") return;
@@ -1192,6 +1198,9 @@ export async function bootGame(
       map,
       { width: rect.width, height: rect.height },
       overworldTilePx(rect.width),
+      flags.dev
+        ? { name: "multiCellFixture", originCol: 1, originRow: 1 }
+        : undefined,
     );
   }
 

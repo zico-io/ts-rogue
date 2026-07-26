@@ -5,10 +5,14 @@
  * art at render time with nearest-neighbor filtering. (The terminal renderer is
  * pure ASCII and draws no tiles.)
  *
- * Frames pack at 8x8 - Minifantasy's native grid. Most frames crop an 8x8 tile
- * straight through; a few (the 2-tile tree, the multi-tile buildings, the
- * trimmed player sprite) crop a larger region and resize down to the 8x8 output
- * so every atlas frame is one uniform cell.
+ * Frames pack at 8x8 - Minifantasy's native grid - unless they declare
+ * `multiCell` (ENG-8), in which case the output keeps that many 8x8 cells
+ * (`wide*8 x high*8`) instead of squishing down to one. Everything else (the
+ * 2-tile tree, the multi-tile buildings, the trimmed player sprite) still
+ * crops a larger region and resizes down to the uniform 8x8 output cell, as
+ * before. Frames pack into simple left-to-right, top-to-bottom shelves sized
+ * to their own output dimensions rather than one fixed-size grid, since a
+ * `multiCell` frame's cell no longer matches everything else's.
  *
  * Import-time palette-lock grade (ROG-67 art direction §2.4/WEB-1): after each
  * frame is cropped/resized, a modest `sharp` grade (warmer + a touch more
@@ -34,17 +38,24 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
-import { SHEETS, TILE_SOURCES, type TileName } from "../src/ui/tiles/sources";
+import {
+  footprintOf,
+  SHEETS,
+  TILE_SOURCES,
+  type TileName,
+} from "../src/ui/tiles/sources";
 
 const SHEET_DIR = fileURLToPath(new URL("../assets/minifantasy/", import.meta.url));
 const OUT_DIR = fileURLToPath(
   new URL("../src/web/public/atlas/", import.meta.url),
 );
-/** Every frame ships at this size regardless of the source crop's resolution. */
+/** Every frame ships in multiples of this size regardless of the source crop's resolution. */
 const OUTPUT_TILE = 8;
 /** Transparent gutter between packed frames so nearest-neighbor sampling never bleeds across a frame edge. */
 const PADDING = 1;
 const COLUMNS = 4;
+/** Row-wrap budget for the shelf packer, matching the old fixed `COLUMNS`-wide grid's total width. */
+const SHELF_WIDTH = COLUMNS * (OUTPUT_TILE + PADDING * 2);
 
 /** Palette-lock grade knobs (ROG-67 §2.4) - kept modest so frames stay recognizable. */
 const GRADE_SATURATION = 1.12;
@@ -67,42 +78,61 @@ interface AtlasFrame {
   spriteSourceSize: { x: number; y: number; w: number; h: number };
 }
 
-/** Crops a frame's source rect, resizes it to the 8x8 output cell, and applies the palette-lock grade. */
-async function extractFrame(name: TileName): Promise<Buffer> {
+/** Output pixel size for a frame: its declared `multiCell` footprint in 8px cells, or one uniform 8x8 cell. */
+function outputSizeFor(name: TileName): { width: number; height: number } {
+  const { wide, high } = footprintOf(name);
+  return { width: wide * OUTPUT_TILE, height: high * OUTPUT_TILE };
+}
+
+/** Crops a frame's source rect, resizes it to its output size, and applies the palette-lock grade. */
+async function extractFrame(
+  name: TileName,
+): Promise<{ buffer: Buffer; width: number; height: number }> {
   const src = TILE_SOURCES[name];
-  return sharp(`${SHEET_DIR}${SHEETS[src.sheet]}`)
+  const { width, height } = outputSizeFor(name);
+  const buffer = await sharp(`${SHEET_DIR}${SHEETS[src.sheet]}`)
     .extract({ left: src.x, top: src.y, width: src.w, height: src.h })
-    .resize(OUTPUT_TILE, OUTPUT_TILE, { kernel: "nearest", fit: "fill" })
+    .resize(width, height, { kernel: "nearest", fit: "fill" })
     .modulate({ saturation: GRADE_SATURATION, brightness: GRADE_BRIGHTNESS })
     .linear(GRADE_CONTRAST_SLOPE, GRADE_CONTRAST_OFFSET)
     .sharpen()
     .png()
     .toBuffer();
+  return { buffer, width, height };
 }
-
-const cell = OUTPUT_TILE + PADDING * 2;
-const rows = Math.ceil(ATLAS_FRAMES.length / COLUMNS);
-const sheetWidth = COLUMNS * cell;
-const sheetHeight = rows * cell;
 
 mkdirSync(OUT_DIR, { recursive: true });
 
 const frames: Record<string, AtlasFrame> = {};
 const composites: { input: Buffer; left: number; top: number }[] = [];
 
-for (let i = 0; i < ATLAS_FRAMES.length; i++) {
-  const name = ATLAS_FRAMES[i];
-  const col = i % COLUMNS;
-  const row = Math.floor(i / COLUMNS);
-  const left = col * cell + PADDING;
-  const top = row * cell + PADDING;
-  composites.push({ input: await extractFrame(name), left, top });
+// Shelf packer: place frames left-to-right, wrapping to a new row (as tall as
+// the tallest frame placed on it) once a row would exceed `SHELF_WIDTH`. A
+// fixed-size grid can't host a `multiCell` frame's bigger-than-uniform output
+// next to everything else's 8x8 cells.
+let cursorX = PADDING;
+let cursorY = PADDING;
+let rowHeight = 0;
+let sheetWidth = 0;
+
+for (const name of ATLAS_FRAMES) {
+  const { buffer, width, height } = await extractFrame(name);
+  if (cursorX > PADDING && cursorX + width + PADDING > SHELF_WIDTH) {
+    cursorY += rowHeight + PADDING * 2;
+    cursorX = PADDING;
+    rowHeight = 0;
+  }
+  composites.push({ input: buffer, left: cursorX, top: cursorY });
   frames[name] = {
-    frame: { x: left, y: top, w: OUTPUT_TILE, h: OUTPUT_TILE },
-    sourceSize: { w: OUTPUT_TILE, h: OUTPUT_TILE },
-    spriteSourceSize: { x: 0, y: 0, w: OUTPUT_TILE, h: OUTPUT_TILE },
+    frame: { x: cursorX, y: cursorY, w: width, h: height },
+    sourceSize: { w: width, h: height },
+    spriteSourceSize: { x: 0, y: 0, w: width, h: height },
   };
+  sheetWidth = Math.max(sheetWidth, cursorX + width + PADDING);
+  rowHeight = Math.max(rowHeight, height);
+  cursorX += width + PADDING * 2;
 }
+const sheetHeight = cursorY + rowHeight + PADDING;
 
 await sharp({
   create: {

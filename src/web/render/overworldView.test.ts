@@ -5,6 +5,7 @@ import type { OverworldMap, Tile } from "../../engine/world/types";
 import { theme, toPixiColor } from "../../ui/theme";
 import type {
   BlobHandle,
+  MultiCellRegion,
   OverworldDrawFactory,
   SpriteHandle,
 } from "./overworldView";
@@ -19,7 +20,9 @@ import type { RectHandle } from "./sceneView";
 
 interface FakeSprite extends SpriteHandle {
   setPosition: ReturnType<typeof vi.fn<(x: number, y: number) => void>>;
-  setTexture: ReturnType<typeof vi.fn<(name: string) => void>>;
+  setTexture: ReturnType<
+    typeof vi.fn<(name: string, region?: MultiCellRegion) => void>
+  >;
   setSize: ReturnType<typeof vi.fn<(width: number, height: number) => void>>;
   setTint: ReturnType<typeof vi.fn<(color: number) => void>>;
   destroy: ReturnType<typeof vi.fn<() => void>>;
@@ -305,6 +308,64 @@ describe("OverworldSceneView", () => {
     const bgWidth = meterBg?.setSize.mock.calls.at(-1)?.[0] as number;
     const fillWidth = meterFill?.setSize.mock.calls.at(-1)?.[0] as number;
     expect(fillWidth).toBeCloseTo(bgWidth, 0);
+  });
+
+  it("draws a multi-cell fixture as one continuous image - one sprite per covered cell, each its own sub-region, contiguous and non-overlapping (ENG-8)", () => {
+    const factory = fakeFactory();
+    const view = new OverworldSceneView(factory);
+    const state = newGame(1);
+    const map = generateOverworldMap(state.seed);
+
+    view.render(state, map, SIZE, TILE_PX, {
+      name: "multiCellFixture",
+      originCol: 1,
+      originRow: 1,
+    });
+
+    const footprintSprites = factory.sprites.filter((sprite) =>
+      sprite.setTexture.mock.calls.some(
+        (call) => call[0] === "multiCellFixture",
+      ),
+    );
+    // A 2x2 footprint (`multiCellFixture`'s declared `multiCell`) covers 4
+    // grid cells, one sprite each - not one squished sprite, not a fifth
+    // "whole texture" sprite anywhere else.
+    expect(footprintSprites).toHaveLength(4);
+
+    const placements = footprintSprites.map((sprite) => ({
+      region: sprite.setTexture.mock.calls.at(-1)?.[1] as MultiCellRegion,
+      position: sprite.setPosition.mock.calls.at(-1) as [number, number],
+      size: sprite.setSize.mock.calls.at(-1) as [number, number],
+    }));
+
+    // Every sprite reports the same 2x2 footprint and a distinct (col,row)
+    // sub-region covering all four combinations.
+    for (const placement of placements) {
+      expect(placement.region.wide).toBe(2);
+      expect(placement.region.high).toBe(2);
+      expect(placement.size).toEqual([TILE_PX, TILE_PX]);
+    }
+    const regionKeys = placements
+      .map((p) => `${p.region.col},${p.region.row}`)
+      .sort();
+    expect(regionKeys).toEqual(["0,0", "0,1", "1,0", "1,1"]);
+
+    // Positions form a contiguous 2x2 block anchored at (originCol,
+    // originRow) with no seams (a stray gap) or misaligned sub-tiles (a
+    // sub-region's position not lining up with its (col,row) * TILE_PX
+    // offset from the anchor).
+    const byRegion = new Map(
+      placements.map((p) => [`${p.region.col},${p.region.row}`, p.position]),
+    );
+    const anchor = byRegion.get("0,0");
+    expect(anchor).toBeDefined();
+    if (!anchor) throw new Error("unreachable");
+    expect(byRegion.get("1,0")).toEqual([anchor[0] + TILE_PX, anchor[1]]);
+    expect(byRegion.get("0,1")).toEqual([anchor[0], anchor[1] + TILE_PX]);
+    expect(byRegion.get("1,1")).toEqual([
+      anchor[0] + TILE_PX,
+      anchor[1] + TILE_PX,
+    ]);
   });
 
   it("draws a ground-shadow blob under the player marker and mountain/forest/village/dungeonEntrance props, but not under plain grass/water (ROG-65)", () => {
