@@ -5,7 +5,7 @@ import { defineHook, type HookContext } from "eve/hooks";
 
 import type { PendingAction } from "../lib/pending-action";
 import { toolLabel } from "../lib/tool-label";
-import { truncate } from "../lib/truncate";
+import { MAX_ACTIVITY_TEXT_LENGTH, truncate } from "../lib/truncate";
 
 // The built-in `agent` child runs in its own session and stream, so its work
 // never reaches the Linear channel. This hook is a copy of the root's hooks
@@ -195,8 +195,6 @@ const withIssuePrefix = (
   return content;
 };
 
-const MAX_PARAMETER = 300;
-
 export default defineHook({
   events: {
     async "message.received"(event, ctx) {
@@ -222,7 +220,7 @@ export default defineHook({
         }
         const raw = JSON.stringify(action.input);
         const label = toolLabel(action.toolName);
-        const parameter = truncate(raw, MAX_PARAMETER);
+        const parameter = truncate(raw, MAX_ACTIVITY_TEXT_LENGTH);
         relay.update((s) => ({
           ...s,
           pendingActions: {
@@ -271,7 +269,7 @@ export default defineHook({
           type: "action",
           action: pending.action,
           parameter: pending.parameter,
-          result: truncate(rawResult, MAX_PARAMETER),
+          result: truncate(rawResult, MAX_ACTIVITY_TEXT_LENGTH),
         },
         {},
       );

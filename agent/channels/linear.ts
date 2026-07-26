@@ -37,7 +37,7 @@ import { isPlainObject } from "../lib/is-plain-object";
 import { advanceIssueState } from "../lib/issue-state";
 import { listLiveAgentSessions } from "../lib/live-sessions";
 import type { PendingAction } from "../lib/pending-action";
-import { truncate } from "../lib/truncate";
+import { MAX_ACTIVITY_TEXT_LENGTH, truncate } from "../lib/truncate";
 
 // Hand-rolled port of eve's built-in `linearChannel()` (see
 // `node_modules/eve/dist/src/public/channels/linear/linearChannel.js`),
@@ -234,7 +234,7 @@ interface LinearImageFilePart {
 }
 
 const MARKDOWN_IMAGE_PATTERN =
-  /!\[([^\]\r\n]*)\]\(\s*(?:<([^>\r\n]+)>|([^\s)\r\n]+))(?:\\s+(?:"[^"\r\n]*"|'[^'\r\n]*'|\([^)\r\n]*\)))?\s*\)/gu;
+  /!\[([^\]\r\n]*)\]\(\s*(?:<([^>\r\n]+)>|([^\s)\r\n]+))(?:\s+(?:"[^"\r\n]*"|'[^'\r\n]*'|\([^)\r\n]*\)))?\s*\)/gu;
 
 export function extractLinearUploadImageReferences(
   text: string,
@@ -390,8 +390,11 @@ function buildLinearHandle(input: {
 }
 
 type LinearStateWithPending = LinearChannelState & {
-  pendingActionsByCallId: Record<string, PendingAction>;
+  pendingActionsByCallId?: Record<string, PendingAction>;
 };
+
+const pendingState = (channel: LinearChannelContext): LinearStateWithPending =>
+  channel.state as LinearStateWithPending;
 
 function initialLinearState(): LinearChannelState {
   const state: LinearStateWithPending = {
@@ -701,7 +704,7 @@ function createLinearDefaultEvents(options: {
       );
     },
     async "actions.requested"(data, channel) {
-      const state = channel.state as LinearStateWithPending;
+      const state = pendingState(channel);
       const pending = state.pendingToolCallMessage;
       state.pendingToolCallMessage = null;
       if (pending) {
@@ -730,10 +733,10 @@ function createLinearDefaultEvents(options: {
       for (const action of data.actions) {
         const label = actionLabel(action);
         const parameter = actionParameter(action);
-        if (action.kind === "tool-call" && state.pendingActionsByCallId) {
-          state.pendingActionsByCallId[action.callId] = {
-            action: label,
-            parameter,
+        if (action.kind === "tool-call") {
+          state.pendingActionsByCallId = {
+            ...(state.pendingActionsByCallId ?? {}),
+            [action.callId]: { action: label, parameter },
           };
         }
         await postActivity(
@@ -865,13 +868,14 @@ function createLinearDefaultEvents(options: {
 
       // New behavior: promote completed tool-call ephemeral chips to durable.
       if (data.result.kind !== "tool-result") return;
-      const state = channel.state as LinearStateWithPending;
+      const state = pendingState(channel);
       const pending = state.pendingActionsByCallId?.[data.result.callId];
       if (!pending) return;
       // Consume the entry (immutable delete). The `pending` check above
-      // guarantees `pendingActionsByCallId` is defined.
+      // tells us the callId exists, but `pendingActionsByCallId` itself may
+      // be absent on states persisted before this field was added.
       const { [data.result.callId]: _, ...rest } =
-        state.pendingActionsByCallId;
+        state.pendingActionsByCallId ?? {};
       state.pendingActionsByCallId = rest;
       let rawResult: string;
       if (data.error?.message) {
@@ -890,7 +894,7 @@ function createLinearDefaultEvents(options: {
           type: "action",
           action: pending.action,
           parameter: pending.parameter,
-          result: truncate(rawResult, 300),
+          result: truncate(rawResult, MAX_ACTIVITY_TEXT_LENGTH),
         },
         {}, // No ephemeral -> durable
       );
