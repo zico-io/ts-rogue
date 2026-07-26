@@ -1,7 +1,7 @@
 import type { BattleEvent, BattleState } from "../combat/types";
 import type { InventoryItem, PartyMember } from "../entities/party";
 import type { LootFilterRules } from "../loot/lootFilter";
-import type { PendingLootTriage } from "../loot/pickup";
+import type { LootPickupOutcome, PendingLootTriage } from "../loot/pickup";
 import type { EquipmentSlotName, ItemInstance } from "../loot/types";
 import type { RngState } from "../rng/rng";
 import type { DungeonState, WorldState } from "../world/types";
@@ -94,6 +94,13 @@ export interface GameState {
    * the future settings-pane issue (ENG-19) can refine to partial updates.
    */
   lootFilter: LootFilterRules;
+  /**
+   * Outcome of the most recent auto-dismantle filter pass (ENG-18). Set by
+   * `OpenChest` and `finalizeWon` after the filter runs; `null` when no
+   * pickup has occurred yet this run. Intended for the UI toast (ENG-20)
+   * to display without re-deriving what happened.
+   */
+  lastLootOutcome: LootPickupOutcome | null;
 }
 
 /** A single-tile movement delta on the overworld grid. */
@@ -130,6 +137,8 @@ export type StepDirection = "forward" | "back";
  * the named carried item (freeing a slot for the drop) or the drop itself.
  * ENG-17 adds `SetLootFilter` (whole-object replace for the loot filter
  * rules persisted on `GameState.lootFilter`).
+ * ENG-18 adds last-loot-outcome tracking (no new event, just a state field
+ * set by existing reducers).
  */
 export type GameEvent =
   | {

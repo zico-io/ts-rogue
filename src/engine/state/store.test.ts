@@ -1216,6 +1216,48 @@ describe("Phase 5 loot, equip, and sell", () => {
     });
   });
 
+  describe("OpenChest auto-dismantle filter (ENG-18)", () => {
+    it("empty lootFilter: nothing dismantled, lastLootOutcome set with empty dismantled array", () => {
+      let state = withToughHero(enterDungeon(1234));
+      const chest = findDungeonTile(state, "chest");
+      expect(chest).toBeDefined();
+      state = walkTo(state, chest ?? { x: 0, y: 0 });
+      const goldBefore = state.gold;
+      state = reduce(state, { type: "OpenChest" });
+      expect(state.lastLootOutcome).not.toBeNull();
+      expect(state.lastLootOutcome?.dismantled).toEqual([]);
+      expect(state.lastLootOutcome?.goldGained).toBe(0);
+      expect(state.lastLootOutcome?.kept).toHaveLength(1);
+      expect(state.gold).toBeGreaterThan(goldBefore); /* chest gold added */
+    });
+
+    it("configured filter dismantles a common-rarity chest drop and adds its gold", () => {
+      let state = withToughHero(enterDungeon(1234));
+      const chest = findDungeonTile(state, "chest");
+      expect(chest).toBeDefined();
+      state = walkTo(state, chest ?? { x: 0, y: 0 });
+      /* Filter: dismantle anything below magic on tier 1. Seed 1234 floor 1 drops a common tunic.*/
+      state = reduce(state, {
+        type: "SetLootFilter",
+        rules: { minRarityByTier: { 1: "magic" }, keepAffixStats: [] },
+      });
+      const goldBefore = state.gold;
+      const itemsBefore = state.items.length;
+      state = reduce(state, { type: "OpenChest" });
+      /* Common tunic: baseValue=5 * common=1 = 5 gold from dismantle */
+      expect(state.lastLootOutcome?.dismantled).toHaveLength(1);
+      expect(state.lastLootOutcome?.goldGained).toBeGreaterThan(0);
+      expect(state.lastLootOutcome?.kept).toHaveLength(0);
+      expect(state.gold).toBeGreaterThan(goldBefore);
+      /* Gold should include chest gold PLUS dismantle proceeds (greater than chest gold only) */
+      expect(state.gold - goldBefore).toBeGreaterThan(
+        state.lastLootOutcome?.goldGained ?? 0,
+      );
+      /* The dismantled item was never added to state.items (items length unchanged) */
+      expect(state.items.length).toBe(itemsBefore);
+    });
+  });
+
   describe("finalizeWon overflow queues triage instead of over-capping (ENG-5)", () => {
     it("queues victory loot for triage when the backpack is already full", () => {
       let state = withToughHero(enterDungeon(1234));

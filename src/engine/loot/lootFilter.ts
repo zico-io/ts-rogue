@@ -50,6 +50,17 @@ export interface LootFilterContext {
 }
 
 /**
+ * Map a dungeon floor number to the tier used by loot tables and filter rules.
+ * Matches the same cutoffs as `chestLootTableFor` in data/lootTables.ts:
+ * floor <= 1 -> 1, floor === 2 -> 2, else -> 3.
+ */
+export function dungeonTierForFloor(floor: number): number {
+  if (floor <= 1) return 1;
+  if (floor === 2) return 2;
+  return 3;
+}
+
+/**
  * Decide whether `item` should be dismantled given the active filter rules
  * and context.
  *
