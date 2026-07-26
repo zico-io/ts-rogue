@@ -40,7 +40,11 @@ Automatic ponytail pull-request review runs in GitHub Actions through
 The `Workflow` tool (`tools/workflow.ts`) lets the root orchestrate several
 `agent` calls - fan-out, chained results, loop/conditional dispatch - from one
 model-authored JavaScript program run as a single durable step, instead of one
-model turn per batch of direct `agent` calls.
+model turn per batch of direct `agent` calls. `hooks/workflow-progress.ts`
+posts an ephemeral chip for each call a running `Workflow` step dispatches and
+a durable chip with its truncated result when it finishes, so a human watching
+the Linear Agent Session sees each call as it happens instead of only the
+step's final synthesized result.
 
 Parent issues with independently shippable sub-issues use the `handoff` tool.
 Each ready sub-issue receives its own Linear Agent Session and predecessor
@@ -55,6 +59,7 @@ context. Blocking relations in Linear determine readiness.
 | `channels/` | Eve, Linear, and GitHub message adapters |
 | `connections/` | Allow-listed Linear and read-only Vercel capabilities |
 | `hooks/prewarm-sandbox.ts` | Starts sandbox creation and refreshes brokered GitHub auth |
+| `hooks/workflow-progress.ts` | Streams per-call `Workflow` progress to the Linear Agent Session |
 | `sandbox/` and `lib/sandbox.ts` | Vercel Sandbox bootstrap, network policy, token refresh, and recovery |
 | `lib/orientation.ts` | Builds the session's concise `ORIENTATION.md` brief |
 | `skills/` | Optional Eve, Linear project, and README-hygiene procedures |
