@@ -3,6 +3,7 @@ import {
   chestLootFor,
   chestLootMessage,
   dungeonDefFor,
+  findDungeon,
 } from "../../data/dungeons";
 import { findShopItem, sellPriceFor } from "../../data/shops";
 import { resolveBattleEvent, startBattle } from "../combat/resolution";
@@ -257,13 +258,17 @@ function moveOverworld(
       (point) => point.x === target.x && point.y === target.y,
     );
     const dungeonId = dungeonWaypointId(entranceIndex);
+    const dungeonDef = findDungeon(dungeonId);
+    const descendMessage = dungeonDef
+      ? `You descend into ${dungeonDef.name} (recommended level ${dungeonDef.recommendedLevel})`
+      : "You descend into the dungeon";
     return {
       ...state,
       scene: "dungeon",
       worldState: { ...state.worldState, player: target },
       dungeonState: createInitialDungeonState(state.seed, dungeonId, 1),
       activatedWaypoints: activateWaypoint(state.activatedWaypoints, dungeonId),
-      log: [...state.log, entry("You descend into the dungeon", "quest")],
+      log: [...state.log, entry(descendMessage, "quest")],
     };
   }
 
