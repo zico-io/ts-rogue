@@ -156,7 +156,6 @@ export class DungeonSceneView {
 
   private spawnMote(): void {
     const { width, height } = this.viewportSize;
-    if (width <= 0 || height <= 0) return;
     const seed = this.moteSeed++;
     const isEmber = seed % EMBER_EVERY_NTH === 0;
     const x = hash01(seed, 11) * width;

@@ -104,18 +104,6 @@ describe("ParticleField", () => {
     expect(factory.particles[0].setPosition).toHaveBeenLastCalledWith(0, 100);
   });
 
-  it("skips the alpha fade when fadeOut is false", () => {
-    const factory = fakeFactory();
-    const field = new ParticleField(factory, 10);
-    field.spawn({ x: 0, y: 0, color: 0, size: 1, lifeMs: 500, fadeOut: false });
-
-    field.tick(400);
-
-    // Only the initial setAlpha(1) from spawn(); tick never fades it.
-    expect(factory.particles[0].setAlpha).toHaveBeenCalledTimes(1);
-    expect(factory.particles[0].setAlpha).toHaveBeenCalledWith(1);
-  });
-
   it("clear destroys every live particle immediately", () => {
     const factory = fakeFactory();
     const field = new ParticleField(factory, 10);

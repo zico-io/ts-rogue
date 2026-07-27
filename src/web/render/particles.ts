@@ -22,14 +22,10 @@ export interface ParticleSpawn {
 
   /** Pixels/ms^2 added to vy every ms; positive falls, negative rises faster over time. */
   gravity?: number;
-
-  /** Fades alpha to 0 over the particle's life. Defaults to true. */
-  fadeOut?: boolean;
 }
 
-interface LiveParticle extends Required<Omit<ParticleSpawn, "fadeOut">> {
+interface LiveParticle extends Required<ParticleSpawn> {
   handle: ParticleHandle;
-  fadeOut: boolean;
   elapsed: number;
 }
 
@@ -77,7 +73,6 @@ export class ParticleField {
       vx: spawn.vx ?? 0,
       vy: spawn.vy ?? 0,
       gravity: spawn.gravity ?? 0,
-      fadeOut: spawn.fadeOut ?? true,
       elapsed: 0,
     });
   }
@@ -94,11 +89,9 @@ export class ParticleField {
       particle.x += particle.vx * deltaMs;
       particle.y += particle.vy * deltaMs;
       particle.handle.setPosition(particle.x, particle.y);
-      if (particle.fadeOut) {
-        particle.handle.setAlpha(
-          Math.max(0, 1 - particle.elapsed / particle.lifeMs),
-        );
-      }
+      particle.handle.setAlpha(
+        Math.max(0, 1 - particle.elapsed / particle.lifeMs),
+      );
       survivors.push(particle);
     }
     this.particles = survivors;
