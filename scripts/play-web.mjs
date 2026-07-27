@@ -15,6 +15,19 @@ const PORT = 5173;
 const HOST = "127.0.0.1";
 const URL_BASE = `http://${HOST}:${PORT}`;
 
+// A shot captured at the session's full 1280x800 viewport as a PNG runs
+// ~250KB, which is ~100K tokens once base64-embedded as Markdown text.
+// That's the only way a caller without filesystem access to this sandbox
+// (the playtester subagent, for example) can receive the image, and that
+// single shot was enough on its own to trip Eve's session token budget
+// (HAR-77). Capturing at a smaller viewport and as JPEG by default cuts a
+// shot to well under a tenth of that size using Playwright's own screenshot
+// options, with no extra dependency and no meaningful loss of legibility for
+// pixel art. `shot --full` (or an explicit `.png` path) opts back into a
+// lossless capture at the session's actual configured viewport.
+const SHOT_WIDTH_PX = 640;
+const SHOT_HEIGHT_PX = 400;
+
 const KEY_MAP = {
   Up: "ArrowUp",
   Down: "ArrowDown",
@@ -121,12 +134,18 @@ async function cmdShot(args) {
     console.error("no web session; run: node scripts/play-web.mjs start");
     process.exit(1);
   }
+  const full = args.includes("--full");
+  const positional = args.filter((a) => !a.startsWith("--"));
   const { chromium } = await import("playwright");
   const state = readState();
   const seed = state.seed ?? 1;
-  const width = state.width ?? 1280;
-  const height = state.height ?? 800;
-  const outPath = path.resolve(args[0] ?? path.join(FRAMES, "frame.png"));
+  const sessionWidth = state.width ?? 1280;
+  const sessionHeight = state.height ?? 800;
+  const width = full ? sessionWidth : Math.min(sessionWidth, SHOT_WIDTH_PX);
+  const height = full ? sessionHeight : Math.min(sessionHeight, SHOT_HEIGHT_PX);
+  const outPath = path.resolve(
+    positional[0] ?? path.join(FRAMES, full ? "frame.png" : "frame.jpg"),
+  );
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
 
   const query = `?seed=${seed}&fresh${state.dev ? "&dev" : ""}`;
@@ -148,7 +167,10 @@ async function cmdShot(args) {
       await sleep(120);
     }
     await sleep(500);
-    await page.screenshot({ path: outPath });
+    const asPng = path.extname(outPath).toLowerCase() === ".png";
+    await page.screenshot(
+      asPng ? { path: outPath } : { path: outPath, type: "jpeg", quality: 80 },
+    );
     console.log(outPath);
   } finally {
     await browser.close();
