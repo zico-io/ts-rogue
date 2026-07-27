@@ -119,6 +119,17 @@ export function dungeonDefFor(dungeonId: string): DungeonDef {
   return findDungeon(dungeonId) ?? DUNGEONS[0];
 }
 
+// Resolves the floor band covering `floor`, clamping to the nearest band
+// when a floor falls outside the def's declared range.
+export function floorBandFor(def: DungeonDef, floor: number): DungeonFloorBand {
+  const bands = def.floorBands;
+  const match = bands.find(
+    (band) => floor >= band.minFloor && floor <= band.maxFloor,
+  );
+  if (match) return match;
+  return floor < bands[0].minFloor ? bands[0] : bands[bands.length - 1];
+}
+
 // True iff every story dungeon def has a clearedAt entry (the endgame
 // trigger ROG-28 consumes). Pure over the persistent clearedAt record (see
 // GameState.clearedAt), independent of any single session's DungeonState.
