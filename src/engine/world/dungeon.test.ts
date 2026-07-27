@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { dungeonDefFor } from "../../data/dungeons";
 import {
   createInitialDungeonState,
-  DUNGEON_FLOORS,
   DUNGEON_HEIGHT,
   DUNGEON_INITIAL_FACING,
   DUNGEON_WIDTH,
@@ -12,6 +12,8 @@ import {
   rotateFacing,
 } from "./dungeon";
 import type { DungeonFeature, DungeonLayout, Point } from "./types";
+
+const FLOOR_COUNT = dungeonDefFor("dungeon-0").floorCount;
 
 describe("generateDungeonLayout", () => {
   it("is a pure function of seed + dungeonId + floor: identical inputs -> identical layout", () => {
@@ -45,11 +47,11 @@ describe("generateDungeonLayout", () => {
 
   it("places the entrance on a floor tile, one objective, and at least one chest per floor", () => {
     for (const seed of [1, 2, 3, 42, 999]) {
-      for (let floor = 1; floor <= DUNGEON_FLOORS; floor++) {
+      for (let floor = 1; floor <= FLOOR_COUNT; floor++) {
         const layout = generateDungeonLayout(seed, "dungeon-0", floor);
         expect(isDungeonWall(layout, layout.entrance)).toBe(false);
         const counts = countFeatures(layout);
-        if (floor < DUNGEON_FLOORS) {
+        if (floor < FLOOR_COUNT) {
           expect(counts.stairsDown).toBe(1);
           expect(counts.bossMarker).toBe(0);
         } else {
@@ -63,7 +65,7 @@ describe("generateDungeonLayout", () => {
 
   it("keeps the objective reachable from the entrance on foot (playable slice)", () => {
     for (const seed of [1, 2, 3, 42, 999]) {
-      for (let floor = 1; floor <= DUNGEON_FLOORS; floor++) {
+      for (let floor = 1; floor <= FLOOR_COUNT; floor++) {
         const layout = generateDungeonLayout(seed, "dungeon-0", floor);
         const objective = findObjective(layout);
         expect(objective).toBeDefined();
@@ -72,6 +74,35 @@ describe("generateDungeonLayout", () => {
         }
       }
     }
+  });
+
+  it("places the boss marker at the def's floorCount, not a fixed global (ROG-89)", () => {
+    const shortDef = dungeonDefFor("sunken-crypt");
+    const longDef = dungeonDefFor("howling-cave");
+    expect(shortDef.floorCount).not.toBe(longDef.floorCount);
+
+    const shortLast = generateDungeonLayout(
+      7,
+      "sunken-crypt",
+      shortDef.floorCount,
+    );
+    expect(countFeatures(shortLast).bossMarker).toBe(1);
+
+    // The short def's final floor is only a regular floor for the longer def.
+    const longAtShortDepth = generateDungeonLayout(
+      7,
+      "howling-cave",
+      shortDef.floorCount,
+    );
+    expect(countFeatures(longAtShortDepth).bossMarker).toBe(0);
+    expect(countFeatures(longAtShortDepth).stairsDown).toBe(1);
+
+    const longLast = generateDungeonLayout(
+      7,
+      "howling-cave",
+      longDef.floorCount,
+    );
+    expect(countFeatures(longLast).bossMarker).toBe(1);
   });
 });
 

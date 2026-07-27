@@ -1,3 +1,4 @@
+import { DUNGEONS, type DungeonDef } from "../../data/dungeons";
 import type { OverworldMap, Point } from "./types";
 
 export type WaypointKind = "village" | "dungeonEntrance";
@@ -12,8 +13,23 @@ export interface Waypoint {
 
 export const VILLAGE_WAYPOINT_ID = "village";
 
+// Fixed entrance slots are assigned story dungeons in ascending tier order.
+// overworld.ts sorts dungeonEntrances near-to-far from the village, so
+// entrance index 0 is nearest and gets the lowest-tier dungeon.
+const STORY_DUNGEONS_NEAR_TO_FAR: readonly DungeonDef[] = [...DUNGEONS].sort(
+  (a, b) => a.tier - b.tier,
+);
+
+export function storyDungeonForEntrance(
+  entranceIndex: number,
+): DungeonDef | undefined {
+  return STORY_DUNGEONS_NEAR_TO_FAR[entranceIndex];
+}
+
 export function dungeonWaypointId(entranceIndex: number): string {
-  return `dungeon-${entranceIndex}`;
+  return (
+    storyDungeonForEntrance(entranceIndex)?.id ?? `dungeon-${entranceIndex}`
+  );
 }
 
 export function allWaypoints(map: OverworldMap): Waypoint[] {

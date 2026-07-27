@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { DungeonDef } from "../../data/dungeons";
 import { createStartingHero, type PartyMember } from "../entities/party";
 import { Rng } from "../rng/rng";
 import { GameStore, newGame, reduce } from "../state/store";
@@ -104,15 +105,20 @@ function battleVsMany(
   };
 }
 
-function stateWithEnemies(seed: number, enemies: BattleEnemy[]): GameState {
+function stateWithEnemies(
+  seed: number,
+  enemies: BattleEnemy[],
+  heroOverride: Partial<PartyMember> = {},
+): GameState {
   const base = newGame(seed);
+  const hero = { ...base.party[0], ...heroOverride };
   const ds = createInitialDungeonState(seed, "dungeon-0", 1);
   return {
     ...base,
     scene: "battle",
-    party: [base.party[0]],
+    party: [hero],
     dungeonState: { ...ds, encounter: { kind: "wandering", floor: 1 } },
-    battleState: battleVsMany(enemies),
+    battleState: battleVsMany(enemies, hero.id),
   };
 }
 
@@ -316,6 +322,67 @@ describe("pickEnemyGroup", () => {
   });
 });
 
+describe("pickEnemyGroup (ROG-89: def-aware dungeons)", () => {
+  const goblinBossDef: DungeonDef = {
+    id: "test-goblin-den",
+    name: "Test Goblin Den",
+    theme: "cave",
+    tier: 1,
+    floorCount: 2,
+    palette: [{ monsterId: "goblin", weight: 1 }],
+    bossId: "goblin",
+    floorBands: [{ minFloor: 1, maxFloor: 2, lootTableRef: "tier-1" }],
+    recommendedLevel: 1,
+    story: true,
+  };
+
+  const weightedDef: DungeonDef = {
+    ...goblinBossDef,
+    id: "test-weighted",
+    palette: [
+      { monsterId: "slime", weight: 3 },
+      { monsterId: "goblin", weight: 1 },
+    ],
+  };
+
+  it("spawns the def's bossId instead of the hardcoded dungeon-guardian", () => {
+    const group = pickEnemyGroup(new Rng(1234), "boss", 2, goblinBossDef);
+    expect(group).toHaveLength(1);
+    expect(group[0].defId).toBe("goblin");
+  });
+
+  it("falls back to dungeon-guardian when no def is given (overworld encounters)", () => {
+    const group = pickEnemyGroup(new Rng(1234), "boss", 2);
+    expect(group[0].defId).toBe("dungeon-guardian");
+  });
+
+  it("rolls wandering enemies from the def's palette, not the flat minFloor filter", () => {
+    for (let seed = 1; seed <= 20; seed++) {
+      const group = pickEnemyGroup(
+        new Rng(seed),
+        "wandering",
+        1,
+        goblinBossDef,
+      );
+      for (const enemy of group) expect(enemy.defId).toBe("goblin");
+    }
+  });
+
+  it("weights the palette roll reproducibly for a fixed seed", () => {
+    const rollOnce = () =>
+      Array.from({ length: 50 }, (_, i) =>
+        pickEnemyGroup(new Rng(9000 + i), "wandering", 3, weightedDef).map(
+          (enemy) => enemy.defId,
+        ),
+      );
+    expect(rollOnce()).toEqual(rollOnce());
+
+    const seen = new Set(rollOnce().flat());
+    expect(seen.has("slime")).toBe(true);
+    expect(seen.has("goblin")).toBe(true);
+  });
+});
+
 describe("ENG-29 melee reachability: front row must fall before back row is targetable", () => {
   it("rejects a basic attack aimed at a living back-row enemy while the front row survives, and opens it once the front row clears", () => {
     const front = makeEnemy(
@@ -374,6 +441,146 @@ describe("ENG-29 melee reachability: front row must fall before back row is targ
       (e) => e.id === "slime-back",
     );
     expect(backAfter?.hp).toBeLessThan(999);
+  });
+});
+
+describe("ENG-28 shape resolution & per-target rolls", () => {
+  const front = (id: string, hp = 999) =>
+    makeEnemy(id, "slime", id.toUpperCase(), hp, SLIME_STATS, 5, 3, "front");
+  const back = (id: string, hp = 999) =>
+    makeEnemy(id, "slime", id.toUpperCase(), hp, SLIME_STATS, 5, 3, "back");
+
+  it("a row skill (hailstorm) damages exactly the living enemies in its row and no others, with independent per-target damage and status rolls", () => {
+    const wizard = createStartingHero("wizard", "hero-1", "Wizard");
+    const f1 = front("f1");
+    const f2 = front("f2");
+    const b1 = back("b1");
+    const state = stateWithEnemies(1, [f1, f2, b1], wizard);
+
+    const after = reduce(state, {
+      type: "BattleSkill",
+      skillId: "hailstorm",
+      targetId: "f1",
+    });
+
+    const enemies = after.battleState?.enemies ?? [];
+    const f1After = enemies.find((e) => e.id === "f1");
+    const f2After = enemies.find((e) => e.id === "f2");
+    const b1After = enemies.find((e) => e.id === "b1");
+
+    expect(f1After?.hp).toBeLessThan(999);
+    expect(f2After?.hp).toBeLessThan(999);
+    expect(b1After?.hp).toBe(999);
+
+    // Same seed, same skill, two front-row targets: the damage differs and
+    // only one of the two picked up "wet" - each target rolled its own
+    // crit/damage/status independently rather than one roll broadcast to
+    // the whole row.
+    expect(f1After?.hp).not.toBe(f2After?.hp);
+    const f1Wet = f1After?.effects?.some((e) => e.effectId === "wet");
+    const f2Wet = f2After?.effects?.some((e) => e.effectId === "wet");
+    expect(f1Wet).not.toBe(f2Wet);
+  });
+
+  it("a column skill (skewer) hits one enemy per row along the anchor's lane and leaves the other lane untouched", () => {
+    const f1 = front("f1");
+    const f2 = front("f2");
+    const b1 = back("b1");
+    const b2 = back("b2");
+    const state = stateWithEnemies(1, [f1, f2, b1, b2]);
+
+    const after = reduce(state, {
+      type: "BattleSkill",
+      skillId: "skewer",
+      targetId: "f2",
+    });
+
+    const enemies = after.battleState?.enemies ?? [];
+    expect(enemies.find((e) => e.id === "f1")?.hp).toBe(999);
+    expect(enemies.find((e) => e.id === "b1")?.hp).toBe(999);
+    expect(enemies.find((e) => e.id === "f2")?.hp).toBeLessThan(999);
+    expect(enemies.find((e) => e.id === "b2")?.hp).toBeLessThan(999);
+  });
+
+  it("a blast skill (meteor) damages every living enemy and skips the already-dead one", () => {
+    const wizard = createStartingHero("wizard", "hero-1", "Wizard");
+    const e1 = front("e1");
+    const e2 = front("e2");
+    const e3 = back("e3");
+    const dead = back("dead1", 0);
+    const state = stateWithEnemies(1, [e1, e2, e3, dead], wizard);
+
+    const after = reduce(state, {
+      type: "BattleSkill",
+      skillId: "meteor",
+      targetId: "e1",
+    });
+
+    const enemies = after.battleState?.enemies ?? [];
+    expect(enemies.find((e) => e.id === "e1")?.hp).toBeLessThan(999);
+    expect(enemies.find((e) => e.id === "e2")?.hp).toBeLessThan(999);
+    expect(enemies.find((e) => e.id === "e3")?.hp).toBeLessThan(999);
+    expect(enemies.find((e) => e.id === "dead1")?.hp).toBe(0);
+
+    // Independent per-target damage rolls: three targets, three different
+    // damage totals from the same cast.
+    const damages = new Set(
+      ["e1", "e2", "e3"].map(
+        (id) => 999 - (enemies.find((e) => e.id === id)?.hp ?? 999),
+      ),
+    );
+    expect(damages.size).toBe(3);
+  });
+
+  it("a randomN skill (scattershot) hits hitCount distinct living targets, each rolled independently", () => {
+    const rogue = createStartingHero("rogue", "hero-1", "Rogue");
+    const e1 = front("e1");
+    const e2 = front("e2");
+    const e3 = back("e3");
+    const state = stateWithEnemies(1, [e1, e2, e3], rogue);
+
+    const after = reduce(state, {
+      type: "BattleSkill",
+      skillId: "scattershot",
+      targetId: "e1",
+    });
+
+    const hitLines = after.log.filter((l) => l.text.includes("Scattershot"));
+    expect(hitLines).toHaveLength(3);
+
+    const enemies = after.battleState?.enemies ?? [];
+    for (const id of ["e1", "e2", "e3"]) {
+      expect(enemies.find((e) => e.id === id)?.hp).toBeLessThan(999);
+    }
+  });
+
+  it("a monster with a multi-target skill (Meteor) casts it against the whole party through the same resolver advanceRound uses", () => {
+    const memberA = createStartingHero("warrior", "member-a", "Aria");
+    const memberB = createStartingHero("warrior", "member-b", "Boro");
+    const guardian = makeEnemy(
+      "guardian-1",
+      "dungeon-guardian",
+      "Guardian",
+      999,
+      { str: 12, agi: 5, vit: 14, int: 2 },
+      80,
+      120,
+    );
+    // Seed 2 is a fixed fixture: on member-a's and member-b's first
+    // defends, the guardian's turn picks its "meteor" (allEnemies) skill
+    // over its single-target "cleave" and hits both party members in the
+    // same cast.
+    const state = stateInMultiBattle(2, [memberA, memberB], guardian);
+
+    let after = reduce(state, { type: "BattleDefend" });
+    expect(after.battleState).not.toBeNull();
+    after = reduce(after, { type: "BattleDefend" });
+
+    expect(after.log.some((l) => l.text.includes("Meteor"))).toBe(true);
+    const aAfter = after.party.find((m) => m.id === memberA.id);
+    const bAfter = after.party.find((m) => m.id === memberB.id);
+    expect(aAfter?.hp).toBeLessThan(memberA.hp);
+    expect(bAfter?.hp).toBeLessThan(memberB.hp);
   });
 });
 

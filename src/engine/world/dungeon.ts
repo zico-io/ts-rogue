@@ -13,8 +13,6 @@ import type {
 export const DUNGEON_WIDTH = 28;
 export const DUNGEON_HEIGHT = 20;
 
-export const DUNGEON_FLOORS = 3;
-
 export const FOV_RADIUS = 3;
 
 export const DUNGEON_ENCOUNTER_CHANCE = 0.12;
@@ -152,7 +150,8 @@ export function generateDungeonLayout(
   floor: number,
 ): DungeonLayout {
   const fseed = floorSeed(seed, dungeonId, floor);
-  const isBossFloor = floor >= DUNGEON_FLOORS;
+  const floorCount = dungeonDefFor(dungeonId).floorCount;
+  const isBossFloor = floor >= floorCount;
 
   const saved = RNG.getState();
   try {

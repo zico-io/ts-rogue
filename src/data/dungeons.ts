@@ -111,12 +111,21 @@ export function findDungeon(id: string): DungeonDef | undefined {
   return DUNGEONS.find((dungeon) => dungeon.id === id);
 }
 
-// Resolves the def for a live dungeon run. Falls back to the first story def
-// for a placeholder waypoint id (e.g. "dungeon-0") that entrance->dungeon
-// assignment (ROG-90) hasn't mapped to a real DungeonDef yet, so every
-// dungeonId is always resolvable to some theme.
+// Resolves the def driving a live dungeon run. Falls back to the first story
+// def for a dungeonId that doesn't match one yet -- e.g. the placeholder
+// `dungeon-<entranceIndex>` ids overworld generation assigns until ROG-90
+// wires real entrance-to-dungeon assignment.
 export function dungeonDefFor(dungeonId: string): DungeonDef {
   return findDungeon(dungeonId) ?? DUNGEONS[0];
+}
+
+// True iff every story dungeon def has a clearedAt entry (the endgame
+// trigger ROG-28 consumes). Pure over the persistent clearedAt record (see
+// GameState.clearedAt), independent of any single session's DungeonState.
+export function allStoryDungeonsCleared(
+  clearedAt: Readonly<Record<string, number>>,
+): boolean {
+  return DUNGEONS.every((dungeon) => !dungeon.story || dungeon.id in clearedAt);
 }
 
 interface DungeonThemeFlavor {

@@ -35,7 +35,7 @@ export const CLASSES: readonly ClassDef[] = [
     maxHp: 24,
     maxMp: 6,
     growth: { hp: 8, mp: 2, str: 2, agi: 1, vit: 2, int: 0 },
-    skills: ["cleave", "second-wind"],
+    skills: ["cleave", "second-wind", "skewer"],
   },
   {
     id: "rogue",
@@ -45,7 +45,7 @@ export const CLASSES: readonly ClassDef[] = [
     maxHp: 18,
     maxMp: 10,
     growth: { hp: 5, mp: 3, str: 1, agi: 2, vit: 1, int: 1 },
-    skills: ["backstab", "pinpoint"],
+    skills: ["backstab", "pinpoint", "scattershot"],
   },
   {
     id: "wizard",
@@ -56,7 +56,7 @@ export const CLASSES: readonly ClassDef[] = [
     maxHp: 14,
     maxMp: 18,
     growth: { hp: 4, mp: 6, str: 0, agi: 1, vit: 1, int: 2 },
-    skills: ["flame", "heal", "frost"],
+    skills: ["flame", "heal", "frost", "hailstorm", "meteor"],
   },
 ];
 

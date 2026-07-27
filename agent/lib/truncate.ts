@@ -23,9 +23,7 @@ export const truncatePreservingTrailingUrl = (
 
   const url = urlMatch[0];
   // Reserve 2 chars for the "… " joiner so the total never exceeds `max`.
-  const leadInBudget = max - url.length - 2;
-  if (leadInBudget <= 0) return url;
-
+  const leadInBudget = Math.max(0, max - url.length - 2);
   const leadIn = text.slice(0, text.length - url.length).slice(0, leadInBudget).trimEnd();
   return leadIn.length === 0 ? url : `${leadIn}… ${url}`;
 };

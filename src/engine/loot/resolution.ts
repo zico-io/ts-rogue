@@ -26,7 +26,7 @@ export interface LootEnemy {
   hp: number;
 }
 
-function weightedPick<T extends { weight: number }>(
+export function weightedPick<T extends { weight: number }>(
   rng: Rng,
   entries: readonly T[],
 ): T {

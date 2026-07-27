@@ -33,7 +33,7 @@ const BLOBS: readonly Blob[] = [
   { tile: "water", count: 4, minRadius: 2, maxRadius: 3 },
 ];
 
-function chebyshev(a: Point, b: Point): number {
+export function chebyshev(a: Point, b: Point): number {
   return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
 }
 
@@ -206,6 +206,11 @@ export function generateOverworldMap(seed: number): OverworldMap {
     dungeonEntrances.push(chosen);
     tiles[chosen.y][chosen.x] = "dungeonEntrance";
   }
+  // Nearest-to-farthest order so entrance index lines up with ascending
+  // story dungeon tier (see dungeonWaypointId in ./waypoints).
+  dungeonEntrances.sort(
+    (a, b) => chebyshev(a, village) - chebyshev(b, village),
+  );
 
   return {
     width,

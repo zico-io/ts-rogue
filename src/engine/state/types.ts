@@ -38,6 +38,12 @@ export interface GameState {
 
   dungeonState: DungeonState | null;
 
+  // Persistent per-story-dungeon completion record, keyed by the def id
+  // (dungeonDefFor(id).id) rather than the entrance's raw dungeonId, so it
+  // survives the ROG-90 entrance remap. Distinct from DungeonState.cleared,
+  // which is a per-session flag on the current run only.
+  clearedAt: Readonly<Record<string, number>>;
+
   battleState: BattleState | null;
   flags: GameFlags;
 
