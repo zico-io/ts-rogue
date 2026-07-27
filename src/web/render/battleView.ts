@@ -1,5 +1,6 @@
 import { findShopItem } from "../../data/shops";
 import { classSkills, type SkillDef } from "../../engine/combat/skills";
+import type { Element } from "../../engine/combat/statusEffects";
 import type { BattleEnemy, BattleState } from "../../engine/combat/types";
 import type { PartyMember } from "../../engine/entities/party";
 import {
@@ -14,6 +15,7 @@ import {
 } from "../../ui/screens/battle/interaction";
 import { packEnemyColumns } from "../../ui/screens/battle/render";
 import { theme, toPixiColor } from "../../ui/theme";
+import { ParticleField, type ParticleHandle } from "./particles";
 
 export interface DrawHandle {
   setPosition(x: number, y: number): void;
@@ -44,6 +46,7 @@ export interface BattleDrawFactory {
   createSprite(): BattleSpriteHandle;
   createRect(): BattleRectHandle;
   createText(initialText: string): BattleTextHandle;
+  createParticle(): ParticleHandle;
 }
 
 export interface PixelSize {
@@ -80,6 +83,37 @@ const FLOATER_LIFE_MS = 700;
 const FLOATER_DRIFT_PX_PER_MS = 0.04;
 const FLASH_MS = 150;
 
+// Effects (WEB-7). Keyed effects are procedural particle bursts today, not
+// yet the pre-animated Minifantasy sprite sheets ART_DIRECTION.md §6 calls
+// for - those sheets aren't vendored (see assets/README.md) - but they sit
+// behind the same BattleDrawFactory seam, so swapping in real frames later
+// is a factory change, not a view rewrite.
+const BURST_PARTICLE_CAP = 48;
+
+const SPELL_BURST_COUNT = 10;
+const SPELL_BURST_SPEED_PX_PER_MS = 0.12;
+const SPELL_BURST_LIFE_MS = 420;
+const SPELL_BURST_SIZE_PX = 4;
+const SPELL_BURST_GRAVITY = 0.00015;
+
+const MELEE_SPARK_COUNT = 5;
+const MELEE_SPARK_SPEED_PX_PER_MS = 0.16;
+const MELEE_SPARK_LIFE_MS = 220;
+const MELEE_SPARK_SIZE_PX = 3;
+// A narrow forward-facing arc reads as a slash rather than an explosion.
+const MELEE_ARC_RADIANS = Math.PI / 2;
+
+const HEAL_SPARK_COUNT = 5;
+const HEAL_SPARK_RISE_PX_PER_MS = 0.05;
+const HEAL_SPARK_LIFE_MS = 550;
+const HEAL_SPARK_SIZE_PX = 3;
+const HEAL_SPARK_SPREAD_PX = 24;
+
+const SHAKE_MAGNITUDE_PX = 3;
+const SHAKE_FREQUENCY = 0.9;
+
+const TAU = Math.PI * 2;
+
 interface Floater {
   handle: BattleTextHandle;
   x: number;
@@ -108,6 +142,11 @@ export class BattleSceneView {
   private readonly lastHp = new Map<string, number>();
   private floaters: Floater[] = [];
 
+  private readonly bursts: ParticleField;
+  private reducedMotion = false;
+  private logCursor: number | undefined;
+  private pendingElement: Element | undefined;
+
   private artPx = MIN_ART_PX;
 
   private targetHighlight: BattleRectHandle | undefined;
@@ -115,7 +154,9 @@ export class BattleSceneView {
   private actorStatus: BattleTextHandle | undefined;
   private menuLines: BattleTextHandle[] = [];
 
-  constructor(private readonly factory: BattleDrawFactory) {}
+  constructor(private readonly factory: BattleDrawFactory) {
+    this.bursts = new ParticleField(factory, BURST_PARTICLE_CAP);
+  }
 
   render(
     state: GameState,
@@ -124,6 +165,8 @@ export class BattleSceneView {
   ): void {
     const bs = state.battleState;
     if (state.scene !== "battle" || !bs) return;
+
+    this.capturePendingElement(state.log);
 
     this.artPx = artPxFor(pixelSize);
 
@@ -170,6 +213,99 @@ export class BattleSceneView {
         this.flashes.set(id, next);
       }
     }
+
+    this.bursts.tick(deltaMS);
+  }
+
+  /** Numerals, name/HP text, and hit-flash tint stay - only the additive
+   * particle effects and hit-shake are removed, per ART_DIRECTION.md §6's
+   * "additive and prefers-reduced-motion-gated" guardrail. */
+  setReducedMotion(reduced: boolean): void {
+    this.reducedMotion = reduced;
+    if (reduced) this.bursts.clear();
+  }
+
+  private capturePendingElement(log: GameState["log"]): void {
+    if (this.logCursor === undefined) {
+      // First render: don't react to log history from before this view
+      // existed (e.g. resuming a save mid-battle).
+      this.logCursor = log.length;
+      this.pendingElement = undefined;
+      return;
+    }
+    this.pendingElement =
+      log.length > this.logCursor
+        ? log
+            .slice(this.logCursor)
+            .find((line) => line.kind === "damage" && line.element)?.element
+        : undefined;
+    this.logCursor = log.length;
+  }
+
+  private consumePendingElement(): Element {
+    const element = this.pendingElement ?? "physical";
+    this.pendingElement = undefined;
+    return element;
+  }
+
+  private spawnHitBurst(x: number, y: number, element: Element): void {
+    if (this.reducedMotion) return;
+    const color = toPixiColor(theme.element[element]);
+    if (element === "physical") {
+      for (let i = 0; i < MELEE_SPARK_COUNT; i++) {
+        const angle =
+          -MELEE_ARC_RADIANS / 2 +
+          (i / Math.max(1, MELEE_SPARK_COUNT - 1)) * MELEE_ARC_RADIANS;
+        this.bursts.spawn({
+          x,
+          y,
+          vx: Math.cos(angle) * MELEE_SPARK_SPEED_PX_PER_MS,
+          vy: Math.sin(angle) * MELEE_SPARK_SPEED_PX_PER_MS,
+          size: MELEE_SPARK_SIZE_PX,
+          color,
+          lifeMs: MELEE_SPARK_LIFE_MS,
+        });
+      }
+      return;
+    }
+    for (let i = 0; i < SPELL_BURST_COUNT; i++) {
+      const angle = (i / SPELL_BURST_COUNT) * TAU;
+      this.bursts.spawn({
+        x,
+        y,
+        vx: Math.cos(angle) * SPELL_BURST_SPEED_PX_PER_MS,
+        vy: Math.sin(angle) * SPELL_BURST_SPEED_PX_PER_MS,
+        gravity: SPELL_BURST_GRAVITY,
+        size: SPELL_BURST_SIZE_PX,
+        color,
+        lifeMs: SPELL_BURST_LIFE_MS,
+      });
+    }
+  }
+
+  private spawnHealSparkle(x: number, y: number): void {
+    if (this.reducedMotion) return;
+    const color = toPixiColor(theme.heal);
+    for (let i = 0; i < HEAL_SPARK_COUNT; i++) {
+      const spread =
+        (i / Math.max(1, HEAL_SPARK_COUNT - 1) - 0.5) * HEAL_SPARK_SPREAD_PX;
+      this.bursts.spawn({
+        x: x + spread,
+        y,
+        vy: -HEAL_SPARK_RISE_PX_PER_MS,
+        size: HEAL_SPARK_SIZE_PX,
+        color,
+        lifeMs: HEAL_SPARK_LIFE_MS,
+      });
+    }
+  }
+
+  private shakeOffset(id: string): number {
+    if (this.reducedMotion) return 0;
+    const elapsed = this.flashes.get(id);
+    if (elapsed === undefined) return 0;
+    const decay = 1 - elapsed / FLASH_MS;
+    return Math.sin(elapsed * SHAKE_FREQUENCY) * SHAKE_MAGNITUDE_PX * decay;
   }
 
   private applyTint(id: string, color: number): void {
@@ -179,15 +315,30 @@ export class BattleSceneView {
     else art.handle.setColor(color);
   }
 
-  private checkDamage(id: string, hp: number, x: number, y: number): void {
+  private checkDamage(
+    id: string,
+    hp: number,
+    x: number,
+    y: number,
+    kind: "enemy" | "actor",
+  ): void {
     const prev = this.lastHp.get(id);
-    if (prev !== undefined && hp < prev) {
-      const handle = this.factory.createText("");
-      handle.setText(`-${prev - hp}`);
-      handle.setColor(toPixiColor(theme.danger));
-      handle.setPosition(x, y);
-      this.floaters.push({ handle, x, y, elapsed: 0 });
-      this.flashes.set(id, 0);
+    if (prev !== undefined) {
+      if (hp < prev) {
+        const handle = this.factory.createText("");
+        handle.setText(`-${prev - hp}`);
+        handle.setColor(toPixiColor(theme.danger));
+        handle.setPosition(x, y);
+        this.floaters.push({ handle, x, y, elapsed: 0 });
+        this.flashes.set(id, 0);
+        this.spawnHitBurst(
+          x,
+          y,
+          kind === "enemy" ? this.consumePendingElement() : "physical",
+        );
+      } else if (hp > prev && kind === "actor") {
+        this.spawnHealSparkle(x, y);
+      }
     }
     this.lastHp.set(id, hp);
   }
@@ -242,7 +393,7 @@ export class BattleSceneView {
     x: number,
     y: number,
   ): void {
-    this.checkDamage(enemy.id, enemy.hp, x + this.artPx / 2, y);
+    this.checkDamage(enemy.id, enemy.hp, x + this.artPx / 2, y, "enemy");
 
     const baseColor = toPixiColor(enemyDisplayColor(enemy, selected));
     this.normalTint.set(enemy.id, baseColor);
@@ -294,7 +445,8 @@ export class BattleSceneView {
       this.artHandles.set(enemy.id, entry);
     }
 
-    entry.handle.setPosition(x, y);
+    const shakeX = this.shakeOffset(enemy.id);
+    entry.handle.setPosition(x + shakeX, y);
     if (entry.kind === "sprite") {
       entry.handle.setTexture(enemy.sprite as string);
       entry.handle.setSize(this.artPx, this.artPx);
@@ -354,7 +506,7 @@ export class BattleSceneView {
     const x = FIELD_PADDING_PX;
     const y = this.menuTopY(pixelSize, menuRowCount) - MENU_ROW_HEIGHT_PX;
 
-    this.checkDamage(actor.id, actor.hp, x + 40, y);
+    this.checkDamage(actor.id, actor.hp, x + 40, y, "actor");
 
     const tint = this.flashes.has(actor.id)
       ? toPixiColor(theme.danger)

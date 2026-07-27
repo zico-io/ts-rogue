@@ -1,6 +1,7 @@
 import type { DungeonFacing, DungeonState } from "../../engine/world/types";
 import { poseFromState, renderMinimap } from "../../ui/screens/dungeon/render";
 import { dungeonRamp, theme, toPixiColor } from "../../ui/theme";
+import { hash01 } from "../../ui/tiles/overworldVariants";
 import {
   type Billboard,
   castBillboards,
@@ -8,6 +9,7 @@ import {
   MAX_DEPTH,
   type WallColumn,
 } from "./dungeonRaycast";
+import { ParticleField, type ParticleHandle } from "./particles";
 import type { DrawHandle, RectHandle, TextHandle } from "./sceneView";
 
 export interface WallColumnHandle extends DrawHandle {
@@ -29,6 +31,7 @@ export interface DungeonDrawFactory {
   createWallColumn(): WallColumnHandle;
   createBillboardSprite(): BillboardSpriteHandle;
   createText(initialText: string): TextHandle;
+  createParticle(): ParticleHandle;
 }
 
 export interface PixelSize {
@@ -57,6 +60,22 @@ const FACING_OFFSET: Record<DungeonFacing, { dx: number; dy: number }> = {
   south: { dx: 0, dy: 0.35 },
   west: { dx: -0.35, dy: 0 },
 };
+
+// Ambient dust motes/embers (WEB-7): a light Pixi particle layer drifting
+// through the torchlight, per ART_DIRECTION.md §6. Every third spawn is a
+// brighter, faster-rising ember (mirrors OverworldSceneView's leaf/firefly
+// split); the rest are dim, slow-drifting dust. No `Math.random` - spawn
+// order is hashed the same way `overworldVariants.ts` hashes tile variety,
+// so a render is always reproducible.
+const MOTE_CAP = 14;
+const MOTE_LIFE_MS_MIN = 3000;
+const MOTE_LIFE_MS_RANGE = 3000;
+const MOTE_DRIFT_PX_PER_MS = 0.006;
+const MOTE_RISE_PX_PER_MS = 0.01;
+const MOTE_SIZE_PX = 2;
+const EMBER_RISE_PX_PER_MS = 0.03;
+const EMBER_SIZE_PX = 1.5;
+const EMBER_EVERY_NTH = 3;
 
 function minimapCellColor(
   glyph: string,
@@ -96,7 +115,15 @@ export class DungeonSceneView {
   private facingMark: RectHandle | undefined;
   private statusText: TextHandle | undefined;
 
-  constructor(private readonly factory: DungeonDrawFactory) {}
+  private readonly motes: ParticleField;
+  private reducedMotion = false;
+  private moteSeed = 0;
+  private viewportSize: PixelSize = { width: 0, height: 0 };
+  private torchColor = 0xffffff;
+
+  constructor(private readonly factory: DungeonDrawFactory) {
+    this.motes = new ParticleField(factory, MOTE_CAP);
+  }
 
   render(ds: DungeonState, pixelSize: PixelSize, confirmingExit = false): void {
     const camera = poseFromState(ds);
@@ -109,6 +136,44 @@ export class DungeonSceneView {
     this.drawBillboards(billboards, ramp);
     this.drawMinimap(ds, ramp, pixelSize);
     this.drawStatus(ds, pixelSize, confirmingExit);
+
+    this.viewportSize = pixelSize;
+    this.torchColor = toPixiColor(ramp[0]);
+  }
+
+  tick(deltaMs: number): void {
+    this.motes.tick(deltaMs);
+    if (this.reducedMotion) return;
+    const { width, height } = this.viewportSize;
+    if (width <= 0 || height <= 0) return;
+    while (!this.motes.atCapacity) this.spawnMote();
+  }
+
+  setReducedMotion(reduced: boolean): void {
+    this.reducedMotion = reduced;
+    if (reduced) this.motes.clear();
+  }
+
+  private spawnMote(): void {
+    const { width, height } = this.viewportSize;
+    const seed = this.moteSeed++;
+    const isEmber = seed % EMBER_EVERY_NTH === 0;
+    const x = hash01(seed, 11) * width;
+    // Motes/embers rise from the lower half of the frame, roughly torch
+    // height, and drift up past the horizon.
+    const y = height * (0.55 + hash01(seed, 29) * 0.35);
+    const drift = (hash01(seed, 47) - 0.5) * 2 * MOTE_DRIFT_PX_PER_MS;
+    const lifeMs = MOTE_LIFE_MS_MIN + hash01(seed, 61) * MOTE_LIFE_MS_RANGE;
+
+    this.motes.spawn({
+      x,
+      y,
+      vx: drift,
+      vy: isEmber ? -EMBER_RISE_PX_PER_MS : -MOTE_RISE_PX_PER_MS,
+      size: isEmber ? EMBER_SIZE_PX : MOTE_SIZE_PX,
+      color: isEmber ? toPixiColor(theme.warn) : this.torchColor,
+      lifeMs,
+    });
   }
 
   private drawSky(pixelSize: PixelSize, ramp: readonly string[]): void {

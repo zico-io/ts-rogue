@@ -1,15 +1,25 @@
-import { Graphics, Sprite, Text, type Texture } from "pixi.js";
+import {
+  Graphics,
+  type ParticleContainer,
+  Sprite,
+  Text,
+  type Texture,
+} from "pixi.js";
 import type {
   BattleDrawFactory,
   BattleRectHandle,
   BattleSpriteHandle,
   BattleTextHandle,
 } from "./battleView";
+import type { ParticleHandle } from "./particles";
+import { createPixiParticleDrawFactory } from "./pixiParticleDrawFactory";
 
 export function createPixiBattleDrawFactory(
   container: { addChild(child: Sprite | Graphics | Text): void },
   textures: Record<string, Texture>,
+  particleContainer: ParticleContainer,
 ): BattleDrawFactory {
+  const particles = createPixiParticleDrawFactory(particleContainer);
   return {
     hasTexture(name: string): boolean {
       return name in textures;
@@ -126,6 +136,9 @@ export function createPixiBattleDrawFactory(
           text.destroy();
         },
       };
+    },
+    createParticle(): ParticleHandle {
+      return particles.createParticle();
     },
   };
 }

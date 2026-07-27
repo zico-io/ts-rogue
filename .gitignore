@@ -20,3 +20,4 @@ dist/
 /.gitconfig
 /.config/
 attachments/
+src/web/tsconfig.tsbuildinfo

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { BattleEnemy, BattleState } from "../../engine/combat/types";
+import { entry } from "../../engine/log";
 import { newGame } from "../../engine/state/store";
 import type { GameState } from "../../engine/state/types";
 import { INITIAL_BATTLE_UI_STATE } from "../../ui/screens/battle/interaction";
@@ -11,6 +12,7 @@ import type {
   BattleTextHandle,
 } from "./battleView";
 import { artPxFor, BattleSceneView } from "./battleView";
+import type { ParticleHandle } from "./particles";
 
 interface FakeSprite extends BattleSpriteHandle {
   setPosition: ReturnType<typeof vi.fn<(x: number, y: number) => void>>;
@@ -36,10 +38,19 @@ interface FakeText extends BattleTextHandle {
   width: number;
 }
 
+interface FakeParticle extends ParticleHandle {
+  setPosition: ReturnType<typeof vi.fn<(x: number, y: number) => void>>;
+  setSize: ReturnType<typeof vi.fn<(size: number) => void>>;
+  setColor: ReturnType<typeof vi.fn<(color: number) => void>>;
+  setAlpha: ReturnType<typeof vi.fn<(alpha: number) => void>>;
+  destroy: ReturnType<typeof vi.fn<() => void>>;
+}
+
 interface FakeFactory extends BattleDrawFactory {
   sprites: FakeSprite[];
   rects: FakeRect[];
   texts: FakeText[];
+  particles: FakeParticle[];
   textureNames: Set<string>;
 }
 
@@ -47,10 +58,12 @@ function fakeFactory(textureNames: readonly string[] = []): FakeFactory {
   const sprites: FakeSprite[] = [];
   const rects: FakeRect[] = [];
   const texts: FakeText[] = [];
+  const particles: FakeParticle[] = [];
   return {
     sprites,
     rects,
     texts,
+    particles,
     textureNames: new Set(textureNames),
     hasTexture(name: string) {
       return this.textureNames.has(name);
@@ -86,6 +99,17 @@ function fakeFactory(textureNames: readonly string[] = []): FakeFactory {
         width: initialText.length * 8,
       };
       texts.push(handle);
+      return handle;
+    },
+    createParticle(): ParticleHandle {
+      const handle: FakeParticle = {
+        setPosition: vi.fn(),
+        setSize: vi.fn(),
+        setColor: vi.fn(),
+        setAlpha: vi.fn(),
+        destroy: vi.fn(),
+      };
+      particles.push(handle);
       return handle;
     },
   };
@@ -358,5 +382,113 @@ describe("BattleSceneView", () => {
     expect(factory.sprites.length).toBe(spriteCountAfterFirst);
 
     expect(factory.texts.length).toBeGreaterThanOrEqual(textCountAfterFirst);
+  });
+
+  it("spawns a fire-colored burst on an enemy hit tagged with a fire-element log line", () => {
+    const factory = fakeFactory(["slime"]);
+    const view = new BattleSceneView(factory);
+    const enemy = makeEnemy({ hp: 20, maxHp: 20 });
+    const primed = stateInBattle([enemy]);
+    view.render(primed, SIZE, INITIAL_BATTLE_UI_STATE);
+
+    const damaged = stateInBattle([{ ...enemy, hp: 12 }]);
+    damaged.log = [
+      ...primed.log,
+      entry("Hero casts Flame on Slime for 8 (fire)!", "damage", {
+        element: "fire",
+      }),
+    ];
+    view.render(damaged, SIZE, INITIAL_BATTLE_UI_STATE);
+
+    const fireColor = toPixiColor(theme.element.fire);
+    const fireParticles = factory.particles.filter((particle) =>
+      particle.setColor.mock.calls.some((call) => call[0] === fireColor),
+    );
+    expect(fireParticles.length).toBeGreaterThan(0);
+  });
+
+  it("spawns a physical-colored burst on a plain melee hit with no element tag", () => {
+    const factory = fakeFactory(["slime"]);
+    const view = new BattleSceneView(factory);
+    const enemy = makeEnemy({ hp: 20, maxHp: 20 });
+    const primed = stateInBattle([enemy]);
+    view.render(primed, SIZE, INITIAL_BATTLE_UI_STATE);
+
+    const damaged = stateInBattle([{ ...enemy, hp: 15 }]);
+    damaged.log = [
+      ...primed.log,
+      entry("Hero hits Slime for 5", "damage", { element: "physical" }),
+    ];
+    view.render(damaged, SIZE, INITIAL_BATTLE_UI_STATE);
+
+    const physicalColor = toPixiColor(theme.element.physical);
+    const sparkParticles = factory.particles.filter((particle) =>
+      particle.setColor.mock.calls.some((call) => call[0] === physicalColor),
+    );
+    expect(sparkParticles.length).toBeGreaterThan(0);
+  });
+
+  it("spawns heal-colored sparkles when the active member's HP rises between renders", () => {
+    const factory = fakeFactory(["slime"]);
+    const view = new BattleSceneView(factory);
+    const state = stateInBattle([makeEnemy()]);
+    state.party[0].hp = 5;
+    view.render(state, SIZE, INITIAL_BATTLE_UI_STATE);
+
+    const healed = { ...state, party: [{ ...state.party[0], hp: 15 }] };
+    view.render(healed, SIZE, INITIAL_BATTLE_UI_STATE);
+
+    const healColor = toPixiColor(theme.heal);
+    const healParticles = factory.particles.filter((particle) =>
+      particle.setColor.mock.calls.some((call) => call[0] === healColor),
+    );
+    expect(healParticles.length).toBeGreaterThan(0);
+  });
+
+  it("ages and removes burst particles via tick", () => {
+    const factory = fakeFactory(["slime"]);
+    const view = new BattleSceneView(factory);
+    const enemy = makeEnemy({ hp: 20, maxHp: 20 });
+    const primed = stateInBattle([enemy]);
+    view.render(primed, SIZE, INITIAL_BATTLE_UI_STATE);
+
+    const damaged = stateInBattle([{ ...enemy, hp: 10 }]);
+    damaged.log = [
+      ...primed.log,
+      entry("Hero hits Slime for 10", "damage", { element: "physical" }),
+    ];
+    view.render(damaged, SIZE, INITIAL_BATTLE_UI_STATE);
+
+    const spawned = factory.particles.filter(
+      (particle) => !particle.destroy.mock.calls.length,
+    );
+    expect(spawned.length).toBeGreaterThan(0);
+
+    view.tick(5000);
+    for (const particle of spawned) {
+      expect(particle.destroy).toHaveBeenCalled();
+    }
+  });
+
+  it("suppresses new burst/sparkle particles once reduced motion is enabled, but keeps damage numerals", () => {
+    const factory = fakeFactory(["slime"]);
+    const view = new BattleSceneView(factory);
+    view.setReducedMotion(true);
+    const enemy = makeEnemy({ hp: 20, maxHp: 20 });
+    const primed = stateInBattle([enemy]);
+    view.render(primed, SIZE, INITIAL_BATTLE_UI_STATE);
+
+    const damaged = stateInBattle([{ ...enemy, hp: 10 }]);
+    damaged.log = [
+      ...primed.log,
+      entry("Hero hits Slime for 10", "damage", { element: "fire" }),
+    ];
+    view.render(damaged, SIZE, INITIAL_BATTLE_UI_STATE);
+
+    expect(factory.particles.length).toBe(0);
+    const floater = factory.texts.find((text) =>
+      text.setText.mock.calls.some((call) => call[0] === "-10"),
+    );
+    expect(floater).toBeDefined();
   });
 });

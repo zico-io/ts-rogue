@@ -93,6 +93,8 @@ interface Counts {
   columnDestroys: number;
   billboards: number;
   billboardDestroys: number;
+  particles: number;
+  particleDestroys: number;
 }
 
 function createFakeFactory(): { factory: DungeonDrawFactory; counts: Counts } {
@@ -103,8 +105,22 @@ function createFakeFactory(): { factory: DungeonDrawFactory; counts: Counts } {
     columnDestroys: 0,
     billboards: 0,
     billboardDestroys: 0,
+    particles: 0,
+    particleDestroys: 0,
   };
   const factory: DungeonDrawFactory = {
+    createParticle() {
+      counts.particles++;
+      return {
+        setPosition() {},
+        setSize() {},
+        setColor() {},
+        setAlpha() {},
+        destroy: () => {
+          counts.particleDestroys++;
+        },
+      };
+    },
     createRect() {
       counts.rects++;
       const handle = fakeRect();
@@ -257,5 +273,47 @@ describe("DungeonSceneView", () => {
     view.render(ds, { width: 100, height: 100 }, true);
 
     expect(seenTexts.at(-1)).toBe("Evac to the entrance? [y/n]");
+  });
+
+  it("spawns ambient dust motes/embers up to the cap once ticked after a render", () => {
+    const { factory, counts } = createFakeFactory();
+    const view = new DungeonSceneView(factory);
+    const ds = buildState(buildRoomLayout(9, 9), { x: 4, y: 4 });
+
+    view.render(ds, { width: 200, height: 150 });
+    expect(counts.particles).toBe(0);
+
+    view.tick(16);
+    expect(counts.particles).toBeGreaterThan(0);
+
+    const afterFirstTick = counts.particles;
+    view.tick(16);
+    // Already at the cap - ticking again shouldn't spawn more.
+    expect(counts.particles).toBe(afterFirstTick);
+  });
+
+  it("does not spawn motes before the first render (no viewport size yet)", () => {
+    const { factory, counts } = createFakeFactory();
+    const view = new DungeonSceneView(factory);
+
+    expect(() => view.tick(16)).not.toThrow();
+    expect(counts.particles).toBe(0);
+  });
+
+  it("clears motes and stops spawning once reduced motion is enabled", () => {
+    const { factory, counts } = createFakeFactory();
+    const view = new DungeonSceneView(factory);
+    const ds = buildState(buildRoomLayout(9, 9), { x: 4, y: 4 });
+
+    view.render(ds, { width: 200, height: 150 });
+    view.tick(16);
+    const spawned = counts.particles;
+    expect(spawned).toBeGreaterThan(0);
+
+    view.setReducedMotion(true);
+    expect(counts.particleDestroys).toBe(spawned);
+
+    view.tick(16);
+    expect(counts.particles).toBe(spawned);
   });
 });

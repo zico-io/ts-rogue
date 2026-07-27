@@ -1,4 +1,4 @@
-import { Application, Container, Text } from "pixi.js";
+import { Application, Container, type ParticleContainer, Text } from "pixi.js";
 import { CLASSES } from "../data/classes";
 import { SHOP_ITEMS, sellPriceFor } from "../data/shops";
 import { atkFrom, defFrom, spdFrom } from "../engine/combat/resolution";
@@ -53,6 +53,7 @@ import { createPixiBattleDrawFactory } from "./render/pixiBattleDrawFactory";
 import { createPixiDrawFactory } from "./render/pixiDrawFactory";
 import { createPixiDungeonDrawFactory } from "./render/pixiDungeonDrawFactory";
 import { createPixiOverworldDrawFactory } from "./render/pixiOverworldDrawFactory";
+import { createEffectParticleContainer } from "./render/pixiParticleDrawFactory";
 import { type ContentRect, SceneChromeView } from "./render/sceneView";
 import { SCENE_ORDER, SceneSwitcher, type SceneView } from "./scenes";
 
@@ -336,18 +337,35 @@ export async function bootGame(
   }
 
   let overworldView: OverworldSceneView | undefined;
+  let battleView: BattleSceneView | undefined;
+  let dungeonView: DungeonSceneView | undefined;
 
   const reducedMotionQuery = window.matchMedia(
     "(prefers-reduced-motion: reduce)",
   );
-  const applyReducedMotion = (reduced: boolean) =>
+  const applyReducedMotion = (reduced: boolean) => {
     overworldView?.setReducedMotion(reduced);
+    battleView?.setReducedMotion(reduced);
+    dungeonView?.setReducedMotion(reduced);
+  };
   const handleReducedMotionChange = (event: MediaQueryListEvent) =>
     applyReducedMotion(event.matches);
   reducedMotionQuery.addEventListener("change", handleReducedMotionChange);
   disposers.push(() =>
     reducedMotionQuery.removeEventListener("change", handleReducedMotionChange),
   );
+
+  // Effect particles (WEB-7) render above everything else added to a scene's
+  // content container - sprites, text, HUD bits added over the run - via a
+  // high zIndex rather than draw order, so they never get buried under a
+  // later-added handle.
+  function attachEffectParticleLayer(container: Container): ParticleContainer {
+    container.sortableChildren = true;
+    const layer = createEffectParticleContainer();
+    layer.zIndex = 1000;
+    container.addChild(layer);
+    return layer;
+  }
 
   async function setupOverworldView(): Promise<void> {
     const sheet = await loadAtlas();
@@ -366,15 +384,18 @@ export async function bootGame(
 
   app.ticker.add((ticker) => overworldView?.tick(ticker.deltaMS));
 
-  let battleView: BattleSceneView | undefined;
-
   async function setupBattleView(): Promise<void> {
     const textures = await loadBattlerTextures();
+    const particles = attachEffectParticleLayer(
+      entries.battle.contentContainer,
+    );
     const factory = createPixiBattleDrawFactory(
       entries.battle.contentContainer,
       textures,
+      particles,
     );
     battleView = new BattleSceneView(factory);
+    applyReducedMotion(reducedMotionQuery.matches);
   }
   try {
     await setupBattleView();
@@ -384,21 +405,26 @@ export async function bootGame(
 
   app.ticker.add((ticker) => battleView?.tick(ticker.deltaMS));
 
-  let dungeonView: DungeonSceneView | undefined;
-
   async function setupDungeonView(): Promise<void> {
     const sheet = await loadAtlas();
+    const particles = attachEffectParticleLayer(
+      entries.dungeon.contentContainer,
+    );
     const factory = createPixiDungeonDrawFactory(
       entries.dungeon.contentContainer,
       sheet,
+      particles,
     );
     dungeonView = new DungeonSceneView(factory);
+    applyReducedMotion(reducedMotionQuery.matches);
   }
   try {
     await setupDungeonView();
   } catch (error) {
     store.reportFailure("dungeon-view", error, true);
   }
+
+  app.ticker.add((ticker) => dungeonView?.tick(ticker.deltaMS));
 
   let cachedOverworldMap: OverworldMap | undefined;
   let cachedOverworldSeed: number | undefined;

@@ -1,5 +1,6 @@
 import {
   Graphics,
+  type ParticleContainer,
   Rectangle,
   Sprite,
   type Spritesheet,
@@ -12,6 +13,8 @@ import type {
   DungeonDrawFactory,
   WallColumnHandle,
 } from "./dungeonView";
+import type { ParticleHandle } from "./particles";
+import { createPixiParticleDrawFactory } from "./pixiParticleDrawFactory";
 import type { RectHandle, TextHandle } from "./sceneView";
 
 function buildWallTexelTextures(sheet: Spritesheet): Texture[] {
@@ -39,8 +42,10 @@ function buildWallTexelTextures(sheet: Spritesheet): Texture[] {
 export function createPixiDungeonDrawFactory(
   container: { addChild(child: Sprite | Graphics | Text): void },
   sheet: Spritesheet,
+  particleContainer: ParticleContainer,
 ): DungeonDrawFactory {
   const wallTexelTextures = buildWallTexelTextures(sheet);
+  const particles = createPixiParticleDrawFactory(particleContainer);
 
   return {
     createRect(): RectHandle {
@@ -154,6 +159,9 @@ export function createPixiDungeonDrawFactory(
           text.destroy();
         },
       };
+    },
+    createParticle(): ParticleHandle {
+      return particles.createParticle();
     },
   };
 }
