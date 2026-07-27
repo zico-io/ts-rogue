@@ -17,6 +17,7 @@ import { EMPTY_LOOT_FILTER, type LootFilterRules } from "../loot/lootFilter";
 import {
   applyLootPickupWithFilter,
   buildLootFilterContext,
+  lootLogEntries,
   queueLootTriage,
 } from "../loot/pickup";
 import { rollChestLoot } from "../loot/resolution";
@@ -397,19 +398,24 @@ function openChest(state: GameState): GameState {
     state.pendingLootTriage,
     pickup.queued,
   );
-  let message = chestLootMessage(loot);
-  if (chest.items.length > 0) {
-    message = `${message.replace(/!$/, "")}, plus ${describeItem(chest.items[0])}!`;
-  }
-  const logs = [...state.log, entry(message, "loot")];
-  if (pickup.queued.length > 0) {
-    logs.push(
-      entry(
-        `Your backpack is full - ${pickup.queued.length} item(s) await a swap-or-dismantle decision`,
-        "loot",
-      ),
-    );
-  }
+  // ENG-20: base chest loot line (fixed drops, no rarity), then the shared
+  // kept/dismantle lines (`lootLogEntries`, also used by battle victory's
+  // `finalizeWon`), then the triage-full line if the backpack overflowed.
+  const baseLine = entry(chestLootMessage(loot), "loot");
+  const triageLines = pickup.queued.length
+    ? [
+        entry(
+          `Your backpack is full - ${pickup.queued.length} item(s) await a swap-or-dismantle decision`,
+          "loot",
+        ),
+      ]
+    : [];
+  const logs = [
+    ...state.log,
+    baseLine,
+    ...lootLogEntries(pickup.outcome),
+    ...triageLines,
+  ];
   return {
     ...state,
     rngState: rng.getState(),
