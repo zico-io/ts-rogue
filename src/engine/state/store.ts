@@ -3,6 +3,8 @@ import {
   chestLootFor,
   chestLootMessage,
   dungeonDefFor,
+  dungeonDescendFlavor,
+  dungeonEntryFlavor,
   findDungeon,
 } from "../../data/dungeons";
 import { findShopItem, sellPriceFor } from "../../data/shops";
@@ -263,13 +265,18 @@ function moveOverworld(
     const descendMessage = dungeonDef
       ? `You descend into ${dungeonDef.name} (recommended level ${dungeonDef.recommendedLevel})`
       : "You descend into the dungeon";
+    const dungeonState = createInitialDungeonState(state.seed, dungeonId, 1);
     return {
       ...state,
       scene: "dungeon",
       worldState: { ...state.worldState, player: target },
-      dungeonState: createInitialDungeonState(state.seed, dungeonId, 1),
+      dungeonState,
       activatedWaypoints: activateWaypoint(state.activatedWaypoints, dungeonId),
-      log: [...state.log, entry(descendMessage, "quest")],
+      log: [
+        ...state.log,
+        entry(descendMessage, "quest"),
+        entry(dungeonEntryFlavor(dungeonState.theme), "quest"),
+      ],
     };
   }
 
@@ -465,7 +472,10 @@ function descendStairs(state: GameState): GameState {
   return {
     ...state,
     dungeonState: next,
-    log: [...state.log, entry(`You descend to floor ${nextFloor}`, "quest")],
+    log: [
+      ...state.log,
+      entry(dungeonDescendFlavor(next.theme, nextFloor), "quest"),
+    ],
   };
 }
 

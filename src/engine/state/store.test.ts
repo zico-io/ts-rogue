@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { allStoryDungeonsCleared, dungeonDefFor } from "../../data/dungeons";
+import {
+  allStoryDungeonsCleared,
+  dungeonDefFor,
+  dungeonEntryFlavor,
+} from "../../data/dungeons";
 import { deserialize, serialize } from "../../persistence/save";
 import { atkFrom, startBattle } from "../combat/resolution";
 import type { PartyMember } from "../entities/party";
@@ -294,8 +298,11 @@ describe("game store", () => {
       const def = storyDungeonForEntrance(0);
       expect(after.scene).toBe("dungeon");
       expect(after.worldState.player).toEqual(entrance);
-      expect(after.log.at(-1)?.text).toBe(
+      expect(after.log.at(-2)?.text).toBe(
         `You descend into ${def?.name} (recommended level ${def?.recommendedLevel})`,
+      );
+      expect(after.log.at(-1)?.text).toBe(
+        dungeonEntryFlavor(dungeonDefFor(dungeonWaypointId(0)).theme),
       );
       expect(after.dungeonState).not.toBeNull();
       expect(after.dungeonState?.floor).toBe(1);
@@ -328,8 +335,11 @@ describe("game store", () => {
       const def = storyDungeonForEntrance(entranceIndex);
       expect(def).toBeDefined();
       expect(def?.name).not.toBe(storyDungeonForEntrance(0)?.name);
-      expect(after.log.at(-1)?.text).toBe(
+      expect(after.log.at(-2)?.text).toBe(
         `You descend into ${def?.name} (recommended level ${def?.recommendedLevel})`,
+      );
+      expect(after.log.at(-1)?.text).toBe(
+        dungeonEntryFlavor(dungeonDefFor(dungeonWaypointId(entranceIndex)).theme),
       );
       expect(after.dungeonState?.dungeonId).toBe(
         dungeonWaypointId(entranceIndex),
@@ -469,8 +479,11 @@ describe("Dungeon", () => {
     );
     expect(state.dungeonState?.cleared).toBe(false);
     const def = storyDungeonForEntrance(0);
-    expect(state.log.at(-1)?.text).toBe(
+    expect(state.log.at(-2)?.text).toBe(
       `You descend into ${def?.name} (recommended level ${def?.recommendedLevel})`,
+    );
+    expect(state.log.at(-1)?.text).toBe(
+      dungeonEntryFlavor(dungeonDefFor(dungeonWaypointId(0)).theme),
     );
   });
 
