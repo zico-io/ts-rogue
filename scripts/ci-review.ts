@@ -45,6 +45,29 @@ export function parseDiffAddedLines(diff: string): Map<string, Set<number>> {
   return result;
 }
 
+/**
+ * Restricts a unified diff to only the file blocks whose path is in `paths`.
+ * Used to build the incremental review diff as a literal subset of the full
+ * base...head PR diff: a raw BEFORE_SHA...HEAD_SHA diff can include commits
+ * that merged the base branch into the PR branch, pulling in files and lines
+ * GitHub's compare view never shows and that filterCommentsToValidLines will
+ * always reject, silently dropping every comment the model makes about them.
+ * Slicing the full diff by path instead guarantees every line the model sees
+ * is already inside the full diff's valid line set.
+ */
+export function restrictDiffToPaths(
+  diff: string,
+  paths: ReadonlySet<string>,
+): string {
+  const blocks = diff.split(/(?=^diff --git )/m);
+  return blocks
+    .filter((block) => {
+      const match = block.match(/^diff --git a\/.+ b\/(.+)$/m);
+      return match !== null && paths.has(match[1]);
+    })
+    .join("");
+}
+
 /** Parses JSON with or without one surrounding Markdown code fence. */
 export function extractReviewJson(modelOutput: string): unknown {
   const trimmed = modelOutput.trim();
@@ -173,10 +196,14 @@ async function main() {
   let promptDiff = fullDiff;
   if (BEFORE_SHA) {
     try {
-      promptDiff = execFileSync("git", ["diff", `${BEFORE_SHA}...${HEAD_SHA}`], {
-        encoding: "utf-8",
-        stdio: "pipe",
-      });
+      const changedPaths = execFileSync(
+        "git",
+        ["diff", `${BEFORE_SHA}...${HEAD_SHA}`, "--name-only"],
+        { encoding: "utf-8", stdio: "pipe" },
+      )
+        .split("\n")
+        .filter(Boolean);
+      promptDiff = restrictDiffToPaths(fullDiff, new Set(changedPaths));
     } catch {
       promptDiff = fullDiff;
     }
