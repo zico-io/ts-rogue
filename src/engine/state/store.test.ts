@@ -1,4 +1,9 @@
 import { describe, expect, it } from "vitest";
+import {
+  allStoryDungeonsCleared,
+  dungeonDefFor,
+  dungeonEntryFlavor,
+} from "../../data/dungeons";
 import { deserialize, serialize } from "../../persistence/save";
 import { atkFrom, startBattle } from "../combat/resolution";
 import type { PartyMember } from "../entities/party";
@@ -7,7 +12,7 @@ import { describeItem, itemSellPrice } from "../loot/items";
 import { EMPTY_LOOT_FILTER, type LootFilterRules } from "../loot/lootFilter";
 import type { ItemInstance } from "../loot/types";
 import { Rng } from "../rng/rng";
-import { isDungeonWall } from "../world/dungeon";
+import { createInitialDungeonState, isDungeonWall } from "../world/dungeon";
 import { generateOverworldMap, isPassable, tileAt } from "../world/overworld";
 import type {
   DungeonFacing,
@@ -15,6 +20,7 @@ import type {
   DungeonLayout,
   Point,
 } from "../world/types";
+import { dungeonWaypointId } from "../world/waypoints";
 import { GameStore, INN_COST_PER_MEMBER, newGame, reduce } from "./store";
 import type { GameEvent, GameState } from "./types";
 
@@ -291,14 +297,19 @@ describe("game store", () => {
       });
       expect(after.scene).toBe("dungeon");
       expect(after.worldState.player).toEqual(entrance);
-      expect(after.log.at(-1)?.text).toBe("You descend into the dungeon");
+      expect(after.log.at(-1)?.text).toBe(
+        dungeonEntryFlavor(dungeonDefFor(dungeonWaypointId(0)).theme),
+      );
       expect(after.dungeonState).not.toBeNull();
       expect(after.dungeonState?.floor).toBe(1);
-      expect(after.dungeonState?.dungeonId).toBe("dungeon-0");
+      expect(after.dungeonState?.dungeonId).toBe(dungeonWaypointId(0));
       expect(after.dungeonState?.player).toEqual(
         after.dungeonState?.layout.entrance,
       );
-      expect(after.activatedWaypoints).toEqual(["village", "dungeon-0"]);
+      expect(after.activatedWaypoints).toEqual([
+        "village",
+        dungeonWaypointId(0),
+      ]);
     });
 
     it("re-entering an already-activated dungeon entrance does not duplicate its waypoint", () => {
@@ -325,7 +336,10 @@ describe("game store", () => {
         },
         enter,
       );
-      expect(second.activatedWaypoints).toEqual(["village", "dungeon-0"]);
+      expect(second.activatedWaypoints).toEqual([
+        "village",
+        dungeonWaypointId(0),
+      ]);
     });
 
     it("accumulates encounter danger on wild tiles below the threshold", () => {
@@ -371,7 +385,6 @@ describe("game store", () => {
   });
 });
 
-/** Finds a passable tile adjacent to an impassable one, for blocked-move tests. */
 function findBlockedStep(map: ReturnType<typeof generateOverworldMap>): {
   from: { x: number; y: number };
   dx: -1 | 0 | 1;
@@ -402,7 +415,6 @@ function findBlockedStep(map: ReturnType<typeof generateOverworldMap>): {
   throw new Error("no blocked step found for this map");
 }
 
-/** Finds a passable tile adjacent to `target`, for entrance/village approach tests. */
 function findPassableNeighbor(
   map: ReturnType<typeof generateOverworldMap>,
   target: { x: number; y: number },
@@ -427,12 +439,14 @@ describe("Dungeon", () => {
     const state = enterDungeon(1);
     expect(state.scene).toBe("dungeon");
     expect(state.dungeonState?.floor).toBe(1);
-    expect(state.dungeonState?.dungeonId).toBe("dungeon-0");
+    expect(state.dungeonState?.dungeonId).toBe(dungeonWaypointId(0));
     expect(state.dungeonState?.player).toEqual(
       state.dungeonState?.layout.entrance,
     );
     expect(state.dungeonState?.cleared).toBe(false);
-    expect(state.log.at(-1)?.text).toBe("You descend into the dungeon");
+    expect(state.log.at(-1)?.text).toBe(
+      dungeonEntryFlavor(dungeonDefFor(dungeonWaypointId(0)).theme),
+    );
   });
 
   it("TurnDungeon rotates the facing without mutating the previous state or logging", () => {
@@ -533,7 +547,9 @@ describe("Dungeon", () => {
     state = reduce(state, { type: "OpenChest" });
     expect(state.gold).toBeGreaterThan(goldBefore);
     expect(state.inventory.length).toBeGreaterThan(inventoryBefore);
-    expect(state.log.at(-1)?.text).toMatch(/You open the chest and find/);
+    expect(
+      state.log.find((l) => /You open the chest and find/.test(l.text)),
+    ).toBeDefined();
 
     const stairs1 = findDungeonTile(state, "stairsDown");
     expect(stairs1).toBeDefined();
@@ -559,7 +575,6 @@ describe("Dungeon", () => {
   });
 });
 
-/** Enter floor 1 of dungeon 0 from the overworld, via the real MoveOverworld path. */
 function enterDungeon(seed: number): GameState {
   const map = generateOverworldMap(seed);
   const entrance = map.dungeonEntrances[0];
@@ -574,7 +589,6 @@ function enterDungeon(seed: number): GameState {
   );
 }
 
-/** First tile on the current dungeon floor carrying `feature`, or undefined. */
 function findDungeonTile(
   state: GameState,
   feature: DungeonFeature,
@@ -589,7 +603,6 @@ function findDungeonTile(
   return undefined;
 }
 
-/** Facing needed to step from `from` onto an orthogonally adjacent `to`. */
 function facingFor(from: Point, to: Point): DungeonFacing {
   if (to.x - from.x === 1) return "east";
   if (to.x - from.x === -1) return "west";
@@ -597,7 +610,6 @@ function facingFor(from: Point, to: Point): DungeonFacing {
   return "north";
 }
 
-/** Rotate (right turns only) until the party faces `facing`. */
 function turnTo(state: GameState, facing: DungeonFacing): GameState {
   let s = state;
   let guard = 0;
@@ -607,7 +619,6 @@ function turnTo(state: GameState, facing: DungeonFacing): GameState {
   return s;
 }
 
-/** Shortest path of floor tiles from `from` to `to` (inclusive), or null. */
 function bfsPath(
   layout: DungeonLayout,
   from: Point,
@@ -649,11 +660,6 @@ function bfsPath(
   return null;
 }
 
-/**
- * Drive the real reducer to walk the party to `target`, fleeing any wandering
- * encounters triggered en route. Returns when the party stands on `target`.
- */
-/** Overpower the hero so traversal tests can fight through wandering encounters. */
 function withToughHero(state: GameState): GameState {
   const tough: PartyMember = {
     ...state.party[0],
@@ -666,7 +672,6 @@ function withToughHero(state: GameState): GameState {
   return { ...state, party: [tough] };
 }
 
-/** Drive an active battle to resolution by attacking the first living enemy. */
 function fightToResolution(state: GameState): GameState {
   let s = state;
   for (let i = 0; i < 200 && s.scene === "battle"; i++) {
@@ -1035,7 +1040,9 @@ describe("Phase 5 loot, equip, and sell", () => {
       state = reduce(state, { type: "OpenChest" });
       expect(state.items.length).toBe(itemsBefore + 1);
       expect(state.nextItemId).toBe(nextBefore + 1);
-      expect(state.log.at(-1)?.text).toMatch(/You open the chest and find/);
+      expect(
+        state.log.find((l) => /You open the chest and find/.test(l.text)),
+      ).toBeDefined();
     });
   });
 
@@ -1228,33 +1235,81 @@ describe("Phase 5 loot, equip, and sell", () => {
       expect(state.lastLootOutcome?.dismantled).toEqual([]);
       expect(state.lastLootOutcome?.goldGained).toBe(0);
       expect(state.lastLootOutcome?.kept).toHaveLength(1);
-      expect(state.gold).toBeGreaterThan(goldBefore); /* chest gold added */
+      expect(state.gold).toBeGreaterThan(goldBefore);
     });
 
-    it("configured filter dismantles a common-rarity chest drop and adds its gold", () => {
+    it("configured filter dismantles a below-threshold chest drop and adds its gold", () => {
       let state = withToughHero(enterDungeon(1234));
       const chest = findDungeonTile(state, "chest");
       expect(chest).toBeDefined();
       state = walkTo(state, chest ?? { x: 0, y: 0 });
-      /* Filter: dismantle anything below magic on tier 1. Seed 1234 floor 1 drops a common tunic.*/
+
+      /* Seed 1234's sunken-crypt floor 1 chest drops a magic-rarity item. */
       state = reduce(state, {
         type: "SetLootFilter",
-        rules: { minRarityByTier: { 1: "magic" }, keepAffixStats: [] },
+        rules: { minRarityByTier: { 1: "rare" }, keepAffixStats: [] },
       });
       const goldBefore = state.gold;
       const itemsBefore = state.items.length;
       state = reduce(state, { type: "OpenChest" });
-      /* Common tunic: baseValue=5 * common=1 = 5 gold from dismantle */
+
       expect(state.lastLootOutcome?.dismantled).toHaveLength(1);
       expect(state.lastLootOutcome?.goldGained).toBeGreaterThan(0);
       expect(state.lastLootOutcome?.kept).toHaveLength(0);
       expect(state.gold).toBeGreaterThan(goldBefore);
-      /* Gold should include chest gold PLUS dismantle proceeds (greater than chest gold only) */
+
       expect(state.gold - goldBefore).toBeGreaterThan(
         state.lastLootOutcome?.goldGained ?? 0,
       );
-      /* The dismantled item was never added to state.items (items length unchanged) */
+
       expect(state.items.length).toBe(itemsBefore);
+    });
+  });
+
+  describe("OpenChest loot toast (ENG-20)", () => {
+    it("kept item log entry carries its rarity", () => {
+      let state = withToughHero(enterDungeon(1234));
+      const chest = findDungeonTile(state, "chest");
+      expect(chest).toBeDefined();
+      state = walkTo(state, chest ?? { x: 0, y: 0 });
+      state = reduce(state, { type: "OpenChest" });
+      // With seed 1234 floor 1 and empty loot filter, the chest's generated
+      // item should be kept and its log entry should carry a rarity.
+      const keptLines = state.log.filter((l) => l.text.startsWith("Looted "));
+      expect(keptLines.length).toBeGreaterThanOrEqual(1);
+      for (const line of keptLines) {
+        expect(line.kind).toBe("loot");
+        expect(line.rarity).toBeDefined();
+        expect(["common", "magic", "rare", "unique"]).toContain(line.rarity);
+      }
+    });
+
+    it("dismantle summary line appears with correct count and gold when filter discards items", () => {
+      let state = withToughHero(enterDungeon(1234));
+      const chest = findDungeonTile(state, "chest");
+      expect(chest).toBeDefined();
+      state = walkTo(state, chest ?? { x: 0, y: 0 });
+      /* Filter: dismantle anything below rare on tier 1. Seed 1234's sunken-crypt floor 1 drops a magic item. */
+      state = reduce(state, {
+        type: "SetLootFilter",
+        rules: { minRarityByTier: { 1: "rare" }, keepAffixStats: [] },
+      });
+      const goldBefore = state.gold;
+      state = reduce(state, { type: "OpenChest" });
+      /* Verify a dismantle summary line exists */
+      const dismantleLine = state.log.find((l) =>
+        l.text.startsWith("Dismantled "),
+      );
+      expect(dismantleLine).toBeDefined();
+      expect(dismantleLine?.text).toMatch(/^Dismantled \d+ item\(s\) -> \d+g$/);
+      expect(dismantleLine?.kind).toBe("loot");
+      /* The summary gold should match the actual gold gained from dismantle */
+      expect(state.lastLootOutcome?.dismantled.length).toBeGreaterThan(0);
+      expect(dismantleLine?.text).toContain(
+        `${state.lastLootOutcome?.goldGained}g`,
+      );
+      /* Total gold gained includes chest gold + dismantle proceeds */
+      expect(state.gold).toBeGreaterThan(goldBefore);
     });
   });
 
@@ -1317,7 +1372,7 @@ describe("Phase 5 loot, equip, and sell", () => {
     it("reproduces the playable slice deterministically", () => {
       const runOnce = () => {
         let state = withToughHero(enterDungeon(1234));
-        // Descend to floor 3, fighting through wandering encounters.
+
         for (let floor = 1; floor < 3; floor++) {
           const stairs = findDungeonTile(state, "stairsDown");
           state = walkTo(state, stairs ?? { x: 0, y: 0 });
@@ -1330,11 +1385,10 @@ describe("Phase 5 loot, equip, and sell", () => {
       };
 
       const state = runOnce();
-      // Victory returns to the dungeon and clears the battle.
+
       expect(state.scene).toBe("dungeon");
       expect(state.battleState).toBeNull();
-      // The boss kill yielded loot, including a unique signature (implicit) drop
-      // rolled from the dungeon guardian's monster-implicit pool.
+
       expect(state.items.length).toBeGreaterThanOrEqual(1);
       const signature = state.items.find(
         (item) => item.baseId.startsWith("guardian-") && item.implicit !== null,
@@ -1342,7 +1396,6 @@ describe("Phase 5 loot, equip, and sell", () => {
       expect(signature).toBeDefined();
       expect(signature?.rarity).toBe("unique");
 
-      // Equip the signature drop -> it leaves the backpack and fills a slot.
       const sigId = signature?.instanceId ?? "";
       let after = reduce(state, {
         type: "EquipItem",
@@ -1355,7 +1408,6 @@ describe("Phase 5 loot, equip, and sell", () => {
       expect(inSlot).toBe(true);
       expect(after.items.map((i) => i.instanceId)).not.toContain(sigId);
 
-      // Sell a dupe (the generic boss drop) in town -> gold rises, backpack shrinks.
       const dupe =
         after.items.find((i) => i.instanceId !== sigId) ?? after.items[0];
       expect(dupe).toBeDefined();
@@ -1366,17 +1418,11 @@ describe("Phase 5 loot, equip, and sell", () => {
         dupe.instanceId,
       );
 
-      // The whole descend + boss fight path (loot included) is deterministic.
       expect(runOnce()).toEqual(runOnce());
     });
   });
 });
 
-/* -------------------------------------------------------------------------- */
-/* Phase 6 (ROG-12): exit dungeon, death handling, save/restore integrity     */
-/* -------------------------------------------------------------------------- */
-
-/** Weaken the hero so a battle resolves to a loss (1 HP, zero stats). */
 function withWeakHero(state: GameState): GameState {
   const weak: PartyMember = {
     ...state.party[0],
@@ -1389,7 +1435,6 @@ function withWeakHero(state: GameState): GameState {
   return { ...state, party: [weak] };
 }
 
-/** A tough hero with a controlled strength so a battle lasts many rounds. */
 function withControlledHero(state: GameState, str: number): GameState {
   const hero: PartyMember = {
     ...state.party[0],
@@ -1402,7 +1447,6 @@ function withControlledHero(state: GameState, str: number): GameState {
   return { ...state, party: [hero] };
 }
 
-/** Start a battle of the given kind on the current dungeon floor. */
 function withBattle(state: GameState, kind: "wandering" | "boss"): GameState {
   const floor = state.dungeonState?.floor ?? 1;
   const rng = new Rng(state.seed, state.rngState);
@@ -1418,7 +1462,6 @@ function withBattle(state: GameState, kind: "wandering" | "boss"): GameState {
   };
 }
 
-/** Drive an active battle by attacking until it resolves (win or lose). */
 function fightToEnd(state: GameState): GameState {
   let s = state;
   for (let i = 0; i < 200 && s.scene === "battle"; i++) {
@@ -1453,10 +1496,10 @@ describe("Phase 6: exit dungeon", () => {
     expect(after.scene).toBe("overworld");
     expect(after.dungeonState).toBeNull();
     expect(after.battleState).toBeNull();
-    // ENG-1: evac deliberately no longer resets the danger accumulator.
+
     expect(after.worldState.encounterMeter).toBe(42);
     expect(after.log.at(-1)?.text).toBe("You emerge from the dungeon");
-    // The player stays at the dungeon entrance tile on the overworld.
+
     expect(after.worldState.player).toEqual(map.dungeonEntrances[0]);
   });
 
@@ -1474,12 +1517,10 @@ describe("Phase 6: exit dungeon", () => {
     state = reduce(state, { type: "OpenChest" });
     expect(state.gold).toBeGreaterThan(50);
 
-    // Exit back to the overworld.
     state = reduce(state, { type: "ExitDungeon" });
     expect(state.scene).toBe("overworld");
     expect(state.dungeonState).toBeNull();
 
-    // Re-enter the same dungeon entrance: a fresh floor 1 (cleared reset).
     const map = generateOverworldMap(1234);
     const entrance = map.dungeonEntrances[0];
     const approach = findPassableNeighbor(map, entrance);
@@ -1517,7 +1558,10 @@ describe("Zoom (ENG-1 fast travel)", () => {
 
   it("is a no-op when the waypoint has not been activated yet", () => {
     const state = newGame(1);
-    const after = reduce(state, { type: "Zoom", waypointId: "dungeon-0" });
+    const after = reduce(state, {
+      type: "Zoom",
+      waypointId: dungeonWaypointId(0),
+    });
     expect(after.scene).toBe(state.scene);
     expect(after.worldState.player).toEqual(state.worldState.player);
     expect(after.log.at(-1)?.text).toBe(
@@ -1561,7 +1605,7 @@ describe("Zoom (ENG-1 fast travel)", () => {
 
     const after = reduce(backInVillage, {
       type: "Zoom",
-      waypointId: "dungeon-0",
+      waypointId: dungeonWaypointId(0),
     });
     expect(after.scene).toBe("overworld");
     expect(after.worldState.player).toEqual(entrance);
@@ -1584,14 +1628,14 @@ describe("Zoom (ENG-1 fast travel)", () => {
       dx: approach.dx,
       dy: approach.dy,
     });
-    expect(state.activatedWaypoints).toEqual(["village", "dungeon-0"]);
+    expect(state.activatedWaypoints).toEqual(["village", dungeonWaypointId(0)]);
 
     state = reduce(state, { type: "ExitDungeon" });
     state = reduce(state, { type: "Zoom", waypointId: "village" });
     expect(state.scene).toBe("village");
     expect(state.worldState.player).toEqual(map.village);
 
-    state = reduce(state, { type: "Zoom", waypointId: "dungeon-0" });
+    state = reduce(state, { type: "Zoom", waypointId: dungeonWaypointId(0) });
     expect(state.scene).toBe("overworld");
     expect(state.worldState.player).toEqual(entrance);
     expect(state.dungeonState).toBeNull();
@@ -1627,7 +1671,7 @@ describe("Zoom (ENG-1 fast travel)", () => {
       },
       { type: "MoveOverworld", dx: approach.dx, dy: approach.dy },
     );
-    expect(state.activatedWaypoints).toEqual(["village", "dungeon-0"]);
+    expect(state.activatedWaypoints).toEqual(["village", dungeonWaypointId(0)]);
 
     const fresh = newGame(seed);
     expect(fresh.activatedWaypoints).toEqual(["village"]);
@@ -1648,7 +1692,7 @@ describe("Phase 6: death handling", () => {
     expect(result.dungeonState).toBeNull();
     expect(result.party[0].hp).toBe(1);
     expect(result.party[0].mp).toBe(0);
-    expect(result.gold).toBe(50); // 100 - floor(100/2)
+    expect(result.gold).toBe(50);
     expect(result.flags.gameOver).toBe(false);
     expect(
       result.log.some((m) => m.text.includes("revived at the village")),
@@ -1686,7 +1730,7 @@ describe("Phase 6: death handling", () => {
 describe("Phase 6: boss victory marks the dungeon cleared", () => {
   it("defeating the floor-3 boss sets cleared=true and logs completion", () => {
     let state = withToughHero(enterDungeon(1234));
-    // Descend to floor 3, fighting through wandering encounters.
+
     for (let floor = 1; floor < 3; floor++) {
       const stairs = findDungeonTile(state, "stairsDown");
       state = walkTo(state, stairs ?? { x: 0, y: 0 });
@@ -1705,11 +1749,18 @@ describe("Phase 6: boss victory marks the dungeon cleared", () => {
     expect(state.log.some((m) => m.text.includes("dungeon is cleared"))).toBe(
       true,
     );
+
+    // Persistent clearedAt (ROG-91) is keyed by the def's real id, which
+    // entrance 0 already resolves to post-ROG-90. Distinct from the session
+    // cleared flag.
+    const defId = dungeonDefFor(dungeonWaypointId(0)).id;
+    expect(state.dungeonState?.dungeonId).toBe(dungeonWaypointId(0));
+    expect(state.clearedAt[defId]).toBeTypeOf("number");
   });
 
   it("a wandering victory does NOT mark the dungeon cleared", () => {
     let state = withToughHero(enterDungeon(1234));
-    // Walk until a wandering encounter triggers.
+
     let found = false;
     for (let i = 0; i < 60 && !found; i++) {
       const ds = state.dungeonState;
@@ -1729,11 +1780,107 @@ describe("Phase 6: boss victory marks the dungeon cleared", () => {
       ) {
         state = fightToResolution(state);
         expect(state.dungeonState?.cleared).toBe(false);
+        expect(state.clearedAt).toEqual({});
         found = true;
       }
     }
-    // If no wandering encounter triggered, the cleared flag should still be false.
+
     if (!found) expect(state.dungeonState?.cleared).toBe(false);
+  });
+});
+
+describe("ROG-91: persistent per-dungeon clearedAt and all-cleared check", () => {
+  // Wins a boss battle for `dungeonId` directly, bypassing overworld/maze
+  // navigation, so several dungeons can be cleared in one deterministic test.
+  function winBossBattle(
+    seed: number,
+    dungeonId: string,
+    clearedAt: Record<string, number> = {},
+  ): GameState {
+    const base = withToughHero(newGame(seed));
+    const def = dungeonDefFor(dungeonId);
+    const ds = createInitialDungeonState(seed, dungeonId, def.floorCount);
+    const rng = new Rng(base.seed, base.rngState);
+    const battle = startBattle(
+      rng,
+      base.party,
+      "boss",
+      ds.floor,
+      "dungeon",
+      def,
+    );
+    const state: GameState = {
+      ...base,
+      scene: "battle",
+      rngState: rng.getState(),
+      battleState: battle,
+      dungeonState: { ...ds, encounter: { kind: "boss", floor: ds.floor } },
+      clearedAt,
+    };
+    return fightToResolution(state);
+  }
+
+  it("clearing a dungeon sets its clearedAt record", () => {
+    const result = winBossBattle(1234, "sunken-crypt");
+    expect(result.clearedAt["sunken-crypt"]).toBeTypeOf("number");
+  });
+
+  it("stays false until the last story boss falls, then flips true", () => {
+    expect(allStoryDungeonsCleared({})).toBe(false);
+
+    const afterFirst = winBossBattle(1234, "sunken-crypt");
+    expect(allStoryDungeonsCleared(afterFirst.clearedAt)).toBe(false);
+
+    const afterSecond = winBossBattle(
+      1234,
+      "howling-cave",
+      afterFirst.clearedAt,
+    );
+    expect(allStoryDungeonsCleared(afterSecond.clearedAt)).toBe(false);
+
+    const afterLast = winBossBattle(
+      1234,
+      "forgotten-ruins",
+      afterSecond.clearedAt,
+    );
+    expect(allStoryDungeonsCleared(afterLast.clearedAt)).toBe(true);
+  });
+
+  it("a rejected battle command is a no-op, clearedAt included", () => {
+    const base = withToughHero(newGame(1234));
+    const def = dungeonDefFor("sunken-crypt");
+    const ds = createInitialDungeonState(1234, "sunken-crypt", def.floorCount);
+    const rng = new Rng(base.seed, base.rngState);
+    const battle = startBattle(
+      rng,
+      base.party,
+      "boss",
+      ds.floor,
+      "dungeon",
+      def,
+    );
+    const state: GameState = {
+      ...base,
+      scene: "battle",
+      rngState: rng.getState(),
+      battleState: battle,
+      dungeonState: { ...ds, encounter: { kind: "boss", floor: ds.floor } },
+    };
+
+    const result = reduce(state, {
+      type: "BattleSkill",
+      skillId: "not-a-real-skill",
+      targetId: battle.enemies[0].id,
+    });
+
+    expect(result).toBe(state);
+    expect(result.clearedAt).toEqual({});
+  });
+
+  it("a non-boss action never writes clearedAt", () => {
+    const state = withToughHero(enterDungeon(1234));
+    const result = reduce(state, { type: "TurnDungeon", direction: "right" });
+    expect(result.clearedAt).toEqual({});
   });
 });
 
@@ -1768,14 +1915,12 @@ describe("Phase 6: save/restore integrity", () => {
     const seed = 1234;
 
     const toMidBattle = (s: GameState): GameState => {
-      // Controlled strength so the boss (60 HP) survives the first hit and
-      // the battle is still ongoing after one attack.
       s = withControlledHero(s, 10);
       s = withBattle(s, "boss");
       const target = s.battleState?.enemies.find((e) => e.hp > 0);
       if (!target) throw new Error("no living enemy at battle start");
       s = reduce(s, { type: "BattleAttack", targetId: target.id });
-      // Battle must still be ongoing for a mid-battle save point.
+
       if (s.scene !== "battle" || !s.battleState) {
         throw new Error(
           "boss died in one hit; increase floor/HP for this seed",
@@ -1813,8 +1958,6 @@ describe("Phase 6: save/restore integrity", () => {
   });
 
   it("deserialize backfills flags and cleared for older saves", () => {
-    // Simulate a pre-Phase-6 save that lacks `flags` and `cleared`. Typed as
-    // a plain record so `delete` is allowed on what would be required fields.
     const legacy: Record<string, unknown> = JSON.parse(
       JSON.stringify({
         ...newGame(1),
@@ -1833,7 +1976,6 @@ describe("Phase 6: save/restore integrity", () => {
   it("full-loop save/load: serialize mid-dungeon, deserialize, and the final state matches a no-save control", () => {
     const seed = 1234;
 
-    // A longer sequence: enter, open chest, descend, open another chest, exit.
     const runFull = (s: GameState): GameState => {
       s = withToughHero(s);
       const chest1 = findDungeonTile(s, "chest");
@@ -1851,10 +1993,8 @@ describe("Phase 6: save/restore integrity", () => {
       return s;
     };
 
-    // Control: no save/load.
     const control = runFull(enterDungeon(seed));
 
-    // Test: save after descending to floor 2, then continue.
     let testState = withToughHero(enterDungeon(seed));
     const chest1 = findDungeonTile(testState, "chest");
     testState = walkTo(testState, chest1 ?? { x: 0, y: 0 });
@@ -1862,9 +2002,9 @@ describe("Phase 6: save/restore integrity", () => {
     const stairs = findDungeonTile(testState, "stairsDown");
     testState = walkTo(testState, stairs ?? { x: 0, y: 0 });
     testState = reduce(testState, { type: "DescendStairs" });
-    // Save mid-dungeon (on floor 2).
+
     testState = deserialize(serialize(testState));
-    // Continue.
+
     const chest2 = findDungeonTile(testState, "chest");
     if (chest2) {
       testState = walkTo(testState, chest2);

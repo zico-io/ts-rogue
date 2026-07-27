@@ -1,12 +1,3 @@
-/**
- * Global input bindings (ROG-45): scene hotkeys, the dev-console toggle, and
- * quit. These fire regardless of which scene/screen owns focus, so `app.tsx`
- * (Ink) and the browser keyboard manager both resolve against the same
- * table instead of hand-rolling their own digit/quit maps.
- *
- * No imports from `ink`, `pixi.js`, `react`, or the DOM here.
- */
-
 import type { Intent, Keymap, KeyName } from "./input";
 
 export const globalKeymap: Keymap = {
@@ -17,18 +8,16 @@ export const globalKeymap: Keymap = {
   "`": { kind: "toggleConsole" },
   q: { kind: "quit" },
   "ctrl+c": { kind: "quit" },
-  // ENG-1: opens the fast-travel picker. Handlers gate this to the
-  // overworld/village scenes themselves (evac first inside a dungeon).
+
   "char:z": { kind: "openZoom" },
-  // ENG-3: opens the dedicated inventory screen. Deliberately not `char:i` -
-  // the village overview's own local keymap already binds `char:i` to the
-  // Inn, and Ink fires every active `useInput` hook for a keypress with no
-  // stopPropagation, so a global `char:i` binding would fire alongside the
-  // village's Inn shortcut. Handlers gate this to non-battle scenes.
+
   "char:v": { kind: "openInventory" },
+
+  // Capital C so it does not collide with the village overview's lowercase
+  // `c` (church) shortcut.
+  "char:C": { kind: "openCharacterSheet" },
 };
 
-/** Resolves the global `Intent` bound to a key press, if any. */
 export function resolveGlobalIntent(key: KeyName): Intent | undefined {
   return globalKeymap[key];
 }

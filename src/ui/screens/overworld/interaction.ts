@@ -1,15 +1,6 @@
-/**
- * Overworld input handling (ROG-45; extracted from `OverworldScreen.tsx`'s
- * inline `useInput` closure). The overworld has no local UI state of its
- * own - movement and leaving to the village both dispatch straight through
- * to the engine - so `OverworldUiState` is a unit type and `reduceOverworldUi`
- * only ever produces an effect, never a state change.
- */
-
 import type { MoveDelta } from "../../../engine/state/types";
 import type { Intent, Keymap, KeyName } from "../../scene/input";
 
-/** No local UI state; kept as a record so `reduceOverworldUi` still returns `{ state }`. */
 export type OverworldUiState = Record<string, never>;
 
 export type OverworldUiEffect =
@@ -33,12 +24,10 @@ const overworldKeymap: Keymap = {
   escape: { kind: "cancel" },
 };
 
-/** Resolves the `Intent` for a key press on the overworld. */
 export function resolveOverworldIntent(key: KeyName): Intent | undefined {
   return overworldKeymap[key];
 }
 
-/** Pure transition function for the overworld: it only ever emits effects. */
 export function reduceOverworldUi(
   state: OverworldUiState,
   intent: Intent,

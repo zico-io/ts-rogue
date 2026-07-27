@@ -1,27 +1,19 @@
-/**
- * Overworld generation and traversal rules (PROJECT_PLAN Phase 2, §4.3).
- *
- * The map is a pure function of a single numeric seed: `generateOverworldMap`
- * never reads or writes `GameState.rngState`, so it can be (re)computed on
- * demand from `GameState.seed` instead of being duplicated into the
- * serialized state tree. Calling it twice with the same seed always returns
- * an identical map (same tiles, same village, same dungeon entrances).
- */
-
 import { Rng } from "../rng/rng";
+import {
+  footprintIsClear,
+  LANDMARK_FOOTPRINTS,
+  paintFootprint,
+} from "./landmarks";
 import type { OverworldMap, Point, Tile, WorldState } from "./types";
 
 export const OVERWORLD_WIDTH = 42;
 export const OVERWORLD_HEIGHT = 21;
 
-/** Camera viewport size for the follow-cam (PROJECT_PLAN Phase 2 deliverable). */
 export const VIEWPORT_WIDTH = 21;
 export const VIEWPORT_HEIGHT = 11;
 
-/** Tiles per minimap cell; both map dimensions divide evenly by this. */
 export const MINIMAP_SCALE = 3;
 
-/** Encounter meter value that triggers a battle (PROJECT_PLAN §4.3). */
 export const ENCOUNTER_THRESHOLD = 100;
 
 const DUNGEON_ENTRANCE_COUNT = 3;
@@ -41,19 +33,14 @@ const BLOBS: readonly Blob[] = [
   { tile: "water", count: 4, minRadius: 2, maxRadius: 3 },
 ];
 
-function chebyshev(a: Point, b: Point): number {
+export function chebyshev(a: Point, b: Point): number {
   return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
 }
 
-/** Impassable tiles block movement; every other tile can be walked onto. */
 export function isPassable(tile: Tile): boolean {
   return tile !== "mountain" && tile !== "water";
 }
 
-/**
- * Per-step encounter danger for a biome (PROJECT_PLAN §4.3). Waypoint tiles
- * carry no danger of their own - they trigger a scene change instead.
- */
 export function biomeDanger(tile: Tile): number {
   switch (tile) {
     case "grass":
@@ -127,7 +114,6 @@ function clearSafeArea(
   }
 }
 
-/** BFS over passable tiles from `start`; returns every tile reachable on foot. */
 function reachableFrom(
   tiles: Tile[][],
   width: number,
@@ -167,13 +153,6 @@ function reachableFrom(
   return reached;
 }
 
-/**
- * Generate a deterministic overworld for `seed`. Scatters forest/mountain/
- * water blobs onto a grass base, guarantees the village's surroundings are
- * walkable, then places dungeon entrances only on tiles reachable on foot
- * from the village (so the playable slice - walk from the village to a
- * dungeon entrance - is always possible).
- */
 export function generateOverworldMap(seed: number): OverworldMap {
   const width = OVERWORLD_WIDTH;
   const height = OVERWORLD_HEIGHT;
@@ -198,8 +177,12 @@ export function generateOverworldMap(seed: number): OverworldMap {
   }
 
   const village: Point = { x: 3, y: Math.floor(height / 2) };
+  const villageFootprint = LANDMARK_FOOTPRINTS.village;
   clearSafeArea(tiles, village, VILLAGE_SAFE_RADIUS, width, height);
-  tiles[village.y][village.x] = "village";
+  if (!footprintIsClear(tiles, village, villageFootprint, isPassable)) {
+    throw new Error("Village footprint does not fit within its safe area");
+  }
+  paintFootprint(tiles, village, villageFootprint, "village");
 
   const reached = reachableFrom(tiles, width, height, village);
 
@@ -223,6 +206,11 @@ export function generateOverworldMap(seed: number): OverworldMap {
     dungeonEntrances.push(chosen);
     tiles[chosen.y][chosen.x] = "dungeonEntrance";
   }
+  // Nearest-to-farthest order so entrance index lines up with ascending
+  // story dungeon tier (see dungeonWaypointId in ./waypoints).
+  dungeonEntrances.sort(
+    (a, b) => chebyshev(a, village) - chebyshev(b, village),
+  );
 
   return {
     width,
@@ -233,7 +221,6 @@ export function generateOverworldMap(seed: number): OverworldMap {
   };
 }
 
-/** Starting `worldState` for a fresh run: the player begins on the village tile. */
 export function createInitialWorldState(map: OverworldMap): WorldState {
   return { player: { ...map.village }, encounterMeter: 0 };
 }

@@ -41,37 +41,10 @@ import { isPlainObject } from "../lib/is-plain-object";
 import { advanceIssueState } from "../lib/issue-state";
 import { listLiveAgentSessions } from "../lib/live-sessions";
 import type { PendingAction } from "../lib/pending-action";
+import { stripLeadingProseHeader } from "../lib/prose";
 import { toolActionParameter, toolActionResult } from "../lib/tool-activity";
 import { toolLabel } from "../lib/tool-label";
 import { MAX_ACTIVITY_TEXT_LENGTH, truncate } from "../lib/truncate";
-
-// Hand-rolled port of eve's built-in `linearChannel()` (see
-// `node_modules/eve/dist/src/public/channels/linear/linearChannel.js`),
-// reimplemented via `defineChannel` so the agent-session dispatch path can
-// reach the route's `cancel()` primitive - the built-in convenience wrapper
-// doesn't expose it. Everything below calls the same publicly exported
-// building blocks the built-in wrapper calls, with three exceptions the
-// wrapper needs but the package does not actually export from
-// `eve/channels/linear` (confirmed against the runtime module's own key
-// list, not just its `.d.ts` files): webhook signature verification, the
-// default progress/response/HITL/error event handlers, and inbound image
-// attachment (`attachLinearInboundImages`/`resolveLinearAccessToken`, which
-// the built-in gained in eve 0.27.3). All are reimplemented below from the
-// de-minified built-in source (`verify.js`/`auth.js`, `defaults.js`,
-// `inbound-images.js` under `eve/dist/src/public/channels/linear/`), built
-// only from genuinely public primitives (`signLinearWebhookBody`,
-// `node:crypto`, `createLinearAgentActivity`/`renderLinearInputRequests`,
-// and global `fetch`) - see `verifyInboundSignature`,
-// `createLinearDefaultEvents`, and `attachLinearInboundImages`. Six actual
-// behavior changes from the built-in: the unconditional `cancel()` before
-// `send()` in `dispatchAgentSession`, the `authorization.*` handlers
-// the built-in defaults lack entirely - see the banner above
-// `connectionDisplayName` - the duplicate-session guard in
-// `guardedOnAgentSession`, and the `stop` signal handler in `dispatchAgentSession`, and the two harness-owned issue-lifecycle syncs
-// (`lib/issue-state.ts`): session created -> In Progress with parent cascade
-// in `dispatchAgentSession`, and session failed -> Blocked in
-// `createLinearDefaultEvents`. See `agent/README.md` for what this does and
-// does not cover.
 
 const hasNonEmptyString = <K extends string>(
   value: Record<string, unknown>,
@@ -101,10 +74,6 @@ const jsonOk = (body: Record<string, unknown>) =>
     status: 200,
   });
 
-// Port of `resolveLinearWebhookSecret` (`eve/dist/src/public/channels/linear/auth.js`,
-// not exported from the `eve/channels/linear` barrel): a thunk resolves once,
-// a string is used directly, and an unset value falls back to
-// `LINEAR_WEBHOOK_SECRET` before failing.
 async function resolveWebhookSecret(
   secret: LinearWebhookSecret | undefined,
 ): Promise<string> {
@@ -120,11 +89,6 @@ async function resolveWebhookSecret(
   return resolved;
 }
 
-// Port of `resolveLinearAccessToken` (`eve/dist/src/public/channels/linear/auth.js`,
-// not exported from the `eve/channels/linear` barrel - same story as
-// `resolveWebhookSecret` above): a thunk resolves once, a string is used
-// directly, and an unset value falls back through the same env chain the
-// built-in documents before failing.
 async function resolveAccessToken(
   accessToken: NonNullable<LinearChannelConfig["credentials"]>["accessToken"],
 ): Promise<string> {
@@ -171,12 +135,6 @@ function verifyWebhookTimestamp(rawBody: string, maxSkewMs: number): void {
   }
 }
 
-// Port of `verifyLinearRequest` (same file as above, also not exported from
-// the barrel). Uses `signLinearWebhookBody` - the one piece of the real
-// signing/verification pair that *is* public - to recompute the expected
-// HMAC and compare it against the `Linear-Signature` header exactly as the
-// built-in verifier does, then re-checks the same `webhookTimestamp` skew
-// window (default 60s, matching the built-in's unconfigurable default).
 async function verifyInboundSignature(
   req: Request,
   credentials: LinearChannelConfig["credentials"],
@@ -214,17 +172,6 @@ async function verifyInbound(
     return null;
   }
 }
-
-// --- Inbound image attachment ------------------------------------------------
-// Port of `attachLinearInboundImages` and its private pieces
-// (`eve/dist/src/public/channels/linear/inbound-images.js`, added to the
-// built-in in eve 0.27.3, not exported from the barrel - see the file
-// banner). Authenticated `uploads.linear.app` images referenced from inbound
-// Agent Session markdown become multimodal file parts; untrusted, failed, or
-// non-image references keep their original markdown text. Ported faithfully:
-// a manual-redirect 3xx counts as failure, failed references keep their
-// `![...](...)` text (the slice cursor only advances past successes), and a
-// message that becomes empty text returns file parts alone.
 
 interface LinearUploadImageReference {
   readonly altText: string;
@@ -468,16 +415,6 @@ export async function resolveReceiveSession(
   );
 }
 
-// --- Default event handlers -------------------------------------------------
-// Port of `createDefaultEvents` (`eve/dist/src/public/channels/linear/defaults.js`,
-// also not exported from the barrel - see the file banner above). Two small
-// error-formatting helpers there (`extractErrorId`, `formatErrorHint`) come
-// from eve's *internal* logging module with no public equivalent at all;
-// `errorId`/`errorHint` below reimplement their pure formatting logic
-// directly against the public `TurnFailedStreamEvent`/`SessionFailedStreamEvent`
-// `data` shape, so the only user-visible difference is not worth calling out
-// beyond this comment.
-
 const truncateForDisplay = (value: string, max = 160): string =>
   value.length <= max ? value : `${value.slice(0, max - 1).trimEnd()}…`;
 
@@ -520,12 +457,6 @@ const actionLabel = (action: any): string =>
 
 // biome-ignore lint/suspicious/noExplicitAny: see actionLabel
 const actionParameter = (action: any): string => {
-  // A subagent-call's `description` is the built-in `agent` tool's static
-  // description ("Delegate a focused subtask to a fresh copy of yourself..."),
-  // and the chip posted here stays frozen while the parent turn is parked on
-  // the child - so prefer the delegation packet's first line, which leads
-  // with `issue: <identifier> - <title>` (see instructions.md) and actually
-  // says what was delegated.
   if (action.kind === "subagent-call" && typeof action.input === "object") {
     const message = action.input?.message;
     if (typeof message === "string") {
@@ -589,17 +520,6 @@ function postActivity(
   });
 }
 
-// --- Agent Plan sync (HAR-22) ------------------------------------------------
-// Linear's Agent Plan preview (technology preview - see
-// https://linear.app/developers/agent-interaction#agent-plans) renders a
-// session-level checklist from `AgentSession.plan`, a full-replacement JSON
-// array of `{content, status}` maintained via `agentSessionUpdate`. eve's own
-// `todo` framework tool (already enabled by default - see
-// `eve/dist/src/runtime/framework-tools/todo.js`) already gives this agent a
-// durable per-session task list; this just mirrors that list into Linear's
-// plan on every `action.result` for the `todo` tool so the checklist shows up
-// natively in the Linear UI instead of only in chat activity.
-
 const TODO_STATUS_TO_LINEAR_PLAN_STATUS: Record<
   string,
   "pending" | "inProgress" | "completed" | "canceled"
@@ -615,10 +535,6 @@ interface LinearPlanEntry {
   readonly status: "pending" | "inProgress" | "completed" | "canceled";
 }
 
-// The todo tool's output shape (`{ counts, todos: [{content, priority,
-// status}] }`) is internal to eve (`runtime/framework-tools/todo.js`), not
-// part of its public API surface, so this reads it defensively off the
-// untyped action-result JSON instead of importing an internal type.
 export function planFromTodoToolOutput(
   output: unknown,
 ): readonly LinearPlanEntry[] | null {
@@ -651,38 +567,13 @@ const syncAgentPlanFromTodoTool: NonNullable<
   const plan = planFromTodoToolOutput(result.output);
   if (plan === null || plan.length === 0) return;
   await channel.linear.updateSession({
-    // Linear's `AgentSessionUpdateInput.plan` GraphQL field is the `JSONObject`
-    // scalar, which Linear's own Agent Plans docs show fed a bare JSON array
-    // (`plan: [{content, status}, ...]`); eve's local `LinearAgentSessionUpdateInput`
-    // type narrows that to a keyed `JsonObject`, so this casts around eve's
-    // stricter type rather than the actual wire contract.
     plan: plan as unknown as LinearAgentSessionUpdateInput["plan"],
   });
 };
 
-// --- Connection authorization -------------------------------------------------
-// Intentional ADDITION over the built-in defaults (not part of the faithful
-// port): eve's Linear `createDefaultEvents` implements no `authorization.*`
-// handlers - unlike its Slack/Teams counterparts - so when a user-scoped
-// `connect(...)` connection needs OAuth, eve parks the turn and the event is
-// dropped: nothing is posted to the Agent Session and it looks stalled
-// forever. Linear's agent protocol has a native `auth` signal for exactly
-// this (https://linear.app/developers/agent-signals#auth): an `elicitation`
-// activity with `signal: "auth"` + `signalMetadata.url` renders a "Link
-// account" button. eve re-emits a delegated child's authorization events
-// unchanged through the root session's channel, so these handlers cover
-// nested subagents too.
-
-// Mirror of Slack's `formatConnectionDisplayName` fallback: title-case the
-// connection scope name ("linear" -> "Linear") when the challenge carries no
-// displayName.
 const connectionDisplayName = (name: string): string =>
   name.replace(/[-_/]+/gu, " ").replace(/\b\p{L}/gu, (c) => c.toUpperCase());
 
-// The default Linear channel auth principal (`defaultLinearAuth`) sets
-// `authenticator: "linear-agent-webhook"` and `subject` to the triggering
-// Linear user id (or "unknown"). Passing that id as `signalMetadata.userId`
-// lets Linear show the "Link account" button to that user specifically.
 const linearUserIdFromAuthContext = (
   auth: {
     readonly authenticator: string;
@@ -717,13 +608,13 @@ function createLinearDefaultEvents(options: {
       const pending = state.pendingToolCallMessage;
       state.pendingToolCallMessage = null;
       if (pending) {
+        // Durable, not ephemeral - see HAR-68.
         await postActivity(
           channel,
           options,
           { body: pending, type: "thought" },
-          { ephemeral: true },
+          {},
         );
-        return;
       }
       if (data.actions.length === 0) return;
       if (data.actions.length > 1) {
@@ -772,16 +663,24 @@ function createLinearDefaultEvents(options: {
       );
     },
     async "message.completed"(data, channel) {
+      const message = data.message
+        ? stripLeadingProseHeader(data.message)
+        : null;
       if (data.finishReason === "tool-calls") {
-        channel.state.pendingToolCallMessage = data.message
-          ? (firstNonEmptyLine(data.message) ?? null)
-          : null;
+        // Keep the full narration, not just its first line (HAR-78). This
+        // text is often the substantive content - e.g. a scoping proposal
+        // enumerating the tickets about to be created - immediately ahead of
+        // an `ask_question` confirmation. Once HAR-68 made it durable, a
+        // one-line summary permanently discarded the rest instead of merely
+        // flashing past; the human approving the gate never saw the
+        // structure they were asked to confirm.
+        channel.state.pendingToolCallMessage = message;
         return;
       }
       channel.state.pendingToolCallMessage = null;
-      if (data.message) {
+      if (message) {
         await postActivity(channel, options, {
-          body: data.message,
+          body: message,
           type: "response",
         });
       }
@@ -798,11 +697,7 @@ function createLinearDefaultEvents(options: {
         ].join("\n"),
         type: "error",
       });
-      // Intentional addition over the faithful port (harness-owned issue
-      // lifecycle): an unrecoverably failed session leaves its issue Blocked
-      // so it never sits falsely In Progress. `turn.failed` is deliberately
-      // untouched - a failed turn is recoverable. Skipped silently when the
-      // team has no state named like "Blocked".
+
       if (channel.state.issueId != null) {
         await advanceIssueState({
           credentials: options.credentials,
@@ -835,8 +730,6 @@ function createLinearDefaultEvents(options: {
       ].join("\n");
       const url = challenge?.url;
       if (url === undefined) {
-        // No URL (device/push-to-approve flows): the instructions are the
-        // whole affordance, and Linear's "auth" signal needs a link target.
         await postActivity(channel, options, { body, type: "elicitation" });
         return;
       }
@@ -859,8 +752,6 @@ function createLinearDefaultEvents(options: {
       const displayName =
         data.authorization?.displayName ?? connectionDisplayName(data.name);
       if (data.outcome === "authorized") {
-        // A newer agent-initiated activity also dismisses Linear's ephemeral
-        // auth UI, per Linear's agent-signals docs.
         await postActivity(
           channel,
           options,
@@ -876,10 +767,8 @@ function createLinearDefaultEvents(options: {
       });
     },
     async "action.result"(data, channel, ctx) {
-      // Existing behavior: sync agent plan from todo tool.
       await syncAgentPlanFromTodoTool(data, channel, ctx);
 
-      // New behavior: promote completed tool-call / subagent-call ephemeral chips to durable.
       if (
         data.result.kind !== "tool-result" &&
         data.result.kind !== "subagent-result"
@@ -888,9 +777,7 @@ function createLinearDefaultEvents(options: {
       const state = pendingState(channel);
       const pending = state.pendingActionsByCallId?.[data.result.callId];
       if (!pending) return;
-      // Consume the entry (immutable delete). The `pending` check above
-      // tells us the callId exists, but `pendingActionsByCallId` itself may
-      // be absent on states persisted before this field was added.
+
       const { [data.result.callId]: _, ...rest } =
         state.pendingActionsByCallId ?? {};
       state.pendingActionsByCallId = rest;
@@ -910,6 +797,9 @@ function createLinearDefaultEvents(options: {
           rawResult = "";
         }
       }
+      // Durable (HAR-45's audit record): Linear replaces an ephemeral
+      // activity with whatever posts next, ephemeral or not, so the durable
+      // thought above already stops it from being clobbered (HAR-68).
       await postActivity(
         channel,
         options,
@@ -919,26 +809,11 @@ function createLinearDefaultEvents(options: {
           parameter: pending.parameter,
           result: truncate(rawResult, MAX_ACTIVITY_TEXT_LENGTH),
         },
-        {}, // No ephemeral -> durable
+        {},
       );
     },
   };
 }
-
-// --- Duplicate-session guard ---------------------------------------------
-// One live Agent Session per issue. Linear happily creates a second session
-// on an issue that already has one live (assigning the agent as delegate
-// while a handoff session runs is exactly how HAR-26 got two sessions, two
-// sandboxes, and two coding children on the same work). Sessions the agent
-// created itself (creator == app user, i.e. the `handoff` tool) are exempt:
-// the tool already pre-checks at creation, and guarding them here would
-// decline every self-continuation successor, whose predecessor is still
-// live when the successor's `created` webhook arrives. The `!= null` check
-// is load-bearing - both ids are optional on the webhook ref, and
-// `undefined === undefined` would exempt everything. Oldest-createdAt wins
-// so two near-simultaneous sessions cannot both decline each other, and
-// every failure path (missing issueId, GraphQL error) fails open: a flaky
-// pre-check must never leave a legitimate session silently undispatched.
 
 const agentCredentials = connectLinearCredentials("linear/ts-rogue-eve");
 
@@ -962,9 +837,7 @@ export const guardedOnAgentSession: NonNullable<
   } catch {
     return base;
   }
-  // `live` is sorted oldest first; only sessions strictly older than this
-  // one block it. If this session is missing from the query (replication
-  // lag), treat it as newest - every live session blocks.
+
   const selfIndex = live.findIndex((candidate) => candidate.id === session.id);
   const blocker = (selfIndex === -1 ? live : live.slice(0, selfIndex)).find(
     (candidate) => candidate.id !== session.id,
@@ -977,12 +850,6 @@ export const guardedOnAgentSession: NonNullable<
   return null;
 };
 
-// THE FIRST BEHAVIOR CHANGE vs. the built-in `linearChannel()`: cancel any
-// turn already running on this session before dispatching the new message,
-// instead of letting the new message fold into the next turn. `cancel()` is
-// a documented no-op ("no_active_turn") when nothing is running, so calling
-// it unconditionally for both `created` and `prompted` actions is correct
-// and needs no message-intent classification.
 async function dispatchAgentSession(input: {
   readonly cancel: CancelFn;
   readonly config: LinearChannelConfig;
@@ -1010,12 +877,6 @@ async function dispatchAgentSession(input: {
     session: event.agentSession,
   };
 
-  // Hand-rolled addition (HAR-39): eve parses `agentActivity.signal` off the
-  // wire but implements no automatic handling of Linear's `stop` human-to-agent
-  // signal (https://linear.app/developers/agent-signals#stop). When the signal
-  // is present, cancel the in-flight turn and post a durable response activity
-  // confirming disengagement without ever dispatching a new turn to the model
-  // or running the issue-lifecycle sync.
   if (event.action === "prompted" && event.agentActivity?.signal === "stop") {
     await cancel({ continuationToken });
     await ctx.linear.createActivity({
@@ -1047,7 +908,6 @@ async function dispatchAgentSession(input: {
 
   await cancel({ continuationToken });
 
-  // Attached after cancel() so a slow image fetch can never delay steering.
   const message = await attachLinearInboundImages({
     content: messageFromLinearAgentSessionEvent(event),
     credentials: config.credentials,
@@ -1070,13 +930,6 @@ async function dispatchAgentSession(input: {
     },
   );
 
-  // Intentional addition (harness-owned issue lifecycle): a freshly created
-  // session moves its issue - and an unstarted parent - to In Progress.
-  // After `send` so state sync never delays dispatch; awaited so the
-  // `waitUntil`-tracked promise keeps it alive. created-only: a `prompted`
-  // event always follows a created one that already synced, and the sync is
-  // forward-only and idempotent anyway. A guard-declined duplicate never
-  // reaches here (`onAgentSession` returned null above).
   if (event.action === "created") {
     const issueId = event.agentSession.issueId ?? event.agentSession.issue?.id;
     if (issueId != null) {
@@ -1105,8 +958,6 @@ function linearChannel(config: LinearChannelConfig = {}): LinearChannel {
     LinearReceiveTarget,
     LinearInstrumentationMetadata
   >({
-    // Same instrumentation label the built-in passes; without it stateful
-    // channels report the generic "defineChannel" kind.
     kindHint: "linear",
     state: initialLinearState(),
     metadata(state) {
@@ -1118,8 +969,7 @@ function linearChannel(config: LinearChannelConfig = {}): LinearChannel {
         organizationId: state.organizationId ?? null,
       };
     },
-    // eve 0.27 widened the factory to context(state, session); the one-param
-    // form stays assignable and the built-in ignores the session handle too.
+
     context(state) {
       return {
         linear: buildLinearHandle({

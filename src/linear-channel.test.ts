@@ -1,11 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 
-// This module hand-rolls eve's built-in `linearChannel()` via `defineChannel`
-// so the agent-session dispatch path can reach `cancel()` before `send()`.
-// Mirrors the mocking pattern in `src/child-relay.test.ts`: stub the eve
-// building blocks, import the real module under test, and drive its route
-// handler / exported helpers directly.
-
 const { order, cancelMock, sendMock, waitUntilTasks, webhookVerifier } =
   vi.hoisted(() => ({
     order: [] as string[],
@@ -18,14 +12,10 @@ const { order, cancelMock, sendMock, waitUntilTasks, webhookVerifier } =
       return {};
     }),
     waitUntilTasks: [] as Promise<unknown>[],
-    // Bypasses signature verification for the happy-path tests (the signature
-    // math itself is exercised by eve's own tests via `signLinearWebhookBody`).
+
     webhookVerifier: vi.fn(async () => true),
   }));
 
-// Harness-owned issue lifecycle: mocked so dispatch tests can assert the
-// transition calls without the module's own GraphQL traffic muddying the
-// `callLinearGraphQL` assertions (the guard's live-session query).
 const { advanceIssueStateMock } = vi.hoisted(() => ({
   advanceIssueStateMock: vi.fn(async () => {
     order.push("advance");
@@ -49,9 +39,6 @@ vi.mock("eve/channels", () => ({
 }));
 
 vi.mock("eve/channels/linear", () => ({
-  // The duplicate-session guard's live-session pre-check (via
-  // `agent/lib/live-sessions`). Defaults to "no sessions on the issue" so
-  // the dispatch tests below exercise the pass-through path.
   callLinearGraphQL: vi.fn(async () => ({})),
   createLinearAgentActivity: vi.fn(async () => ({ id: "a", success: true })),
   createLinearAgentSessionOnComment: vi.fn(async () => ({ id: "sess-new" })),
@@ -299,10 +286,6 @@ describe("duplicate created-session guard", () => {
     vi.mocked(createLinearAgentActivity).mockClear();
   };
 
-  // listLiveAgentSessions now excludes sessions idle past STALE_SESSION_MS, so a
-  // blocking mock session needs a recent "last active" signal to count as live.
-  // Expressed relative to Date.now() for determinism without pinning the clock;
-  // createdAt stays whatever the test sets, as it only drives oldest-wins order.
   const liveSessions = (nodes: readonly unknown[]) => ({
     issue: {
       agentSessions: {
@@ -364,9 +347,9 @@ describe("duplicate created-session guard", () => {
         {
           id: "sess-0",
           status: "active",
-          createdAt: "2026-07-25T10:00:00.000Z", // older than the newcomer sess-1
+          createdAt: "2026-07-25T10:00:00.000Z",
           url: "https://linear.app/sess-0",
-          // Silent well past STALE_SESSION_MS, so it no longer blocks.
+
           activities: {
             nodes: [
               { updatedAt: new Date(Date.now() - 60 * 60_000).toISOString() },
@@ -497,7 +480,7 @@ describe("issue lifecycle sync on dispatch", () => {
               status: "active",
               createdAt: "2026-07-25T10:00:00.000Z",
               url: null,
-              // Recent activity so it counts as live and still blocks sess-1.
+
               activities: {
                 nodes: [
                   { updatedAt: new Date(Date.now() - 60_000).toISOString() },
@@ -599,9 +582,6 @@ describe("actions.requested ephemeral render", () => {
   };
 
   it("labels a subagent-call with the delegation packet's lead line, not the static tool description", async () => {
-    // The static `agent` tool description froze the ephemeral chip on
-    // meaningless text for entire child runs; the packet's first line names
-    // the delegated issue.
     const activity = await postAction({
       kind: "subagent-call",
       name: "agent",
@@ -645,15 +625,205 @@ describe("actions.requested ephemeral render", () => {
   });
 });
 
+describe("actions.requested prose durability (HAR-68)", () => {
+  const fireActionsRequested = async (
+    actions: unknown[],
+    pendingToolCallMessage: string | null,
+  ) => {
+    vi.mocked(createLinearAgentActivity).mockClear();
+    const state: Record<string, unknown> = {
+      agentSessionId: "sess-1",
+      pendingToolCallMessage,
+    };
+    // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handler directly
+    await (channel as any).events["actions.requested"]({ actions }, { state });
+    return {
+      calls: vi
+        .mocked(createLinearAgentActivity)
+        .mock.calls.map((call) => call[0].activity),
+      state,
+    };
+  };
+  const bashAction = {
+    kind: "tool-call",
+    callId: "c1",
+    toolName: "bash",
+    input: { command: "git status" },
+  };
+
+  it("posts prose buffered ahead of a tool call as a durable thought, not an ephemeral one", async () => {
+    const { calls } = await fireActionsRequested(
+      [bashAction],
+      "Let me check the current git status.",
+    );
+    expect(calls[0]).toMatchObject({
+      content: {
+        body: "Let me check the current git status.",
+        type: "thought",
+      },
+    });
+    expect(calls[0]?.ephemeral).not.toBe(true);
+  });
+
+  it("still posts the ephemeral action chip for the tool call that followed the prose", async () => {
+    const { calls, state } = await fireActionsRequested(
+      [bashAction],
+      "Let me check the current git status.",
+    );
+    expect(calls).toHaveLength(2);
+    expect(calls[1]).toMatchObject({
+      content: { action: "Bash", parameter: "git status", type: "action" },
+      ephemeral: true,
+    });
+    expect(state.pendingActionsByCallId).toMatchObject({
+      c1: { action: "Bash", parameter: "git status" },
+    });
+  });
+
+  it("posts only the ephemeral action chip when there is no buffered prose", async () => {
+    const { calls } = await fireActionsRequested([bashAction], null);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.content).toMatchObject({ type: "action" });
+  });
+});
+
+describe("message.completed narration buffering (HAR-78)", () => {
+  const fireMessageCompleted = async (data: {
+    message: string | null;
+    finishReason: string;
+  }) => {
+    const state: Record<string, unknown> = {
+      agentSessionId: "sess-1",
+      pendingToolCallMessage: null,
+    };
+    // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handler directly
+    await (channel as any).events["message.completed"](data, { state });
+    return state;
+  };
+
+  it("buffers the full multi-line narration ahead of a tool call, not just its first line", async () => {
+    const proposal = [
+      'Create the "Skill Trees" project with these 5 sequenced tickets:',
+      "1. Skill tree data model",
+      "2. Skill points & node state",
+      "3. Skill tree UI",
+      "4. Battle skill menu",
+      "5. Starter trees for Warrior/Rogue/Wizard",
+    ].join("\n");
+
+    const state = await fireMessageCompleted({
+      message: proposal,
+      finishReason: "tool-calls",
+    });
+
+    expect(state.pendingToolCallMessage).toBe(proposal);
+  });
+
+  it("clears the buffer and posts nothing when the tool-call narration is empty", async () => {
+    const state = await fireMessageCompleted({
+      message: null,
+      finishReason: "tool-calls",
+    });
+
+    expect(state.pendingToolCallMessage).toBeNull();
+  });
+
+  it("still posts a terminal reply in full and clears the buffer", async () => {
+    vi.mocked(createLinearAgentActivity).mockClear();
+    const state = await fireMessageCompleted({
+      message: "Done. Five tickets created.",
+      finishReason: "stop",
+    });
+
+    expect(state.pendingToolCallMessage).toBeNull();
+    const activity = vi.mocked(createLinearAgentActivity).mock.calls[0]?.[0]
+      .activity;
+    expect(activity?.content).toMatchObject({
+      body: "Done. Five tickets created.",
+      type: "response",
+    });
+  });
+});
+
+describe("ask_question confirmation gate stays self-contained (HAR-78)", () => {
+  it("keeps the full proposal visible ahead of a terse ask_question prompt, in order", async () => {
+    vi.mocked(createLinearAgentActivity).mockClear();
+    vi.mocked(renderLinearInputRequests).mockReturnValueOnce(
+      "Create it as described?\n\n1. Yes, create it as described\n2. Don't do this",
+    );
+    vi.mocked(linearInputRequestSignal).mockReturnValueOnce({
+      signal: "select",
+      signalMetadata: {
+        options: [{ label: "Yes, create it as described", value: "approve" }],
+      },
+    });
+
+    const proposal = [
+      'Create the "Skill Trees" project with these 5 sequenced tickets:',
+      "1. Skill tree data model",
+      "2. Skill points & node state",
+      "3. Skill tree UI",
+      "4. Battle skill menu",
+      "5. Starter trees for Warrior/Rogue/Wizard",
+    ].join("\n");
+    const askQuestionAction = {
+      kind: "tool-call",
+      callId: "c1",
+      toolName: "ask_question",
+      input: { prompt: "Create it as described?" },
+    };
+    const state: Record<string, unknown> = {
+      agentSessionId: "sess-1",
+      pendingToolCallMessage: null,
+    };
+
+    // The model narrates the full proposal, then calls `ask_question` with
+    // only a short recap - the same shape as the reported ENG-26 session.
+    // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handlers directly
+    await (channel as any).events["message.completed"](
+      { message: proposal, finishReason: "tool-calls" },
+      { state },
+    );
+    // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handlers directly
+    await (channel as any).events["actions.requested"](
+      { actions: [askQuestionAction] },
+      { state },
+    );
+    // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handlers directly
+    await (channel as any).events["input.requested"](
+      {
+        requests: [
+          {
+            requestId: "req-1",
+            prompt: "Create it as described?",
+            options: [{ id: "approve", label: "Yes, create it as described" }],
+          },
+        ],
+      },
+      { state },
+    );
+
+    const posted = vi
+      .mocked(createLinearAgentActivity)
+      .mock.calls.map((call) => call[0].activity.content);
+
+    // The full ticket-by-ticket proposal must be posted as its own durable
+    // activity before the terse elicitation - Linear folds narration into a
+    // preceding tool call's collapsed activity, so the elicitation prompt
+    // alone is not enough for a reviewer to see what they are approving.
+    const thoughtIndex = posted.findIndex(
+      (content) => content.type === "thought" && content.body === proposal,
+    );
+    const elicitationIndex = posted.findIndex(
+      (content) => content.type === "elicitation",
+    );
+    expect(thoughtIndex).toBeGreaterThanOrEqual(0);
+    expect(elicitationIndex).toBeGreaterThan(thoughtIndex);
+  });
+});
+
 describe("input.requested elicitation (HAR-17)", () => {
   it("posts a clean elicitation body with Linear's native select signal, not a hidden tracking marker", async () => {
-    // HAR-17: eve's Linear channel used to track which pending request a
-    // reply answered by appending a base64 `<!-- eve-input:... -->` blob
-    // into the same visible message body it rendered. Since eve 0.27 the
-    // runtime matches replies to pending requests itself, so
-    // `renderLinearInputRequests` renders clean prompt/option text and the
-    // tracking metadata (via `linearInputRequestSignal`) rides Linear's own
-    // `signal`/`signalMetadata` activity fields instead of the body.
     vi.mocked(createLinearAgentActivity).mockClear();
     vi.mocked(renderLinearInputRequests).mockReturnValueOnce(
       "Approve this breakdown?\n\n1. Approve\n2. Revise",
@@ -1031,7 +1201,7 @@ describe("action.result plan sync", () => {
   });
 });
 
-describe("action.result durable chip promotion (HAR-45)", () => {
+describe("action.result durable chip promotion (HAR-45, preserved through HAR-68)", () => {
   const fireActionResult = async (
     data: unknown,
     pendingActionsByCallId: Record<string, unknown> = {},
@@ -1073,7 +1243,7 @@ describe("action.result durable chip promotion (HAR-45)", () => {
       // The stashed action/parameter are reused verbatim; only the result is
       // now a readable summary instead of raw JSON (bash output has no exitCode
       // here, so it reads as "done" plus the stdout line count).
-      result: "done · 1 line",
+      result: "✓ done · 1 line",
     });
   });
 
@@ -1140,10 +1310,8 @@ describe("action.result durable chip promotion (HAR-45)", () => {
       },
     );
 
-    // First call should post the durable activity
     expect(createLinearAgentActivity).toHaveBeenCalledTimes(1);
 
-    // Fire again with the same (now-consumed) callId
     // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handler directly
     await (channel as any).events["action.result"](
       {
@@ -1159,21 +1327,16 @@ describe("action.result durable chip promotion (HAR-45)", () => {
         linear: { updateSession: vi.fn() },
         state: {
           agentSessionId: "sess-1",
-          // The entry was consumed after the first call, so this is empty now
+
           pendingActionsByCallId: {},
         },
       },
     );
 
-    // Only one activity posted total (entry was consumed after first)
     expect(createLinearAgentActivity).toHaveBeenCalledTimes(1);
   });
 
-  // --- HAR-48: subagent-call / subagent-result durable promotion ---
-
   it("promotes a tracked subagent-call to durable on subagent-result", async () => {
-    // Simulate an actions.requested that stashed a pending entry for a
-    // subagent-call, then the matching action.result fires.
     await fireActionResult(
       {
         status: "completed",
@@ -1278,10 +1441,6 @@ describe("action.result durable chip promotion (HAR-45)", () => {
 });
 
 describe("authorization events surface the OAuth challenge", () => {
-  // eve parks the turn on `authorization.required` for a user-scoped
-  // `connect(...)` connection. Without these handlers the event is dropped
-  // and the Agent Session stalls with no login prompt - the exact symptom
-  // of a Linear-delegated task hanging forever.
   const linearUserAuth = {
     attributes: {},
     authenticator: "linear-agent-webhook",

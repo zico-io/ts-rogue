@@ -11,7 +11,6 @@ import {
   TEXELS_PER_TILE,
 } from "./dungeonRaycast";
 
-/** A `width`x`height` room: floor everywhere, walls on the border. */
 function buildRoomLayout(width: number, height: number): DungeonLayout {
   const tiles: DungeonTile[][] = Array.from({ length: height }, (_, y) =>
     Array.from({ length: width }, (_, x) => ({
@@ -28,6 +27,7 @@ function buildState(
 ): DungeonState {
   return {
     dungeonId: "dungeon-0",
+    theme: "crypt",
     floor: 1,
     layout,
     player,
@@ -50,20 +50,16 @@ describe("castWallColumns", () => {
       width: 36,
       height: 100,
     });
-    expect(columns).toHaveLength(9); // 36 / RAY_STRIP_PX(4) = 9
+    expect(columns).toHaveLength(9);
   });
 
   it("hits the north wall at the expected perpendicular distance facing north", () => {
-    // 5x5 room, walls at the border; camera at the center tile (2,2) facing
-    // north hits the wall at y=0, whose near face sits at real y=0.5 (tiles
-    // are centered on their integer index - see the module doc comment).
-    // Distance from y=2 is 2 - 0.5 = 1.5.
     const ds = buildState(buildRoomLayout(5, 5), { x: 2, y: 2 });
     const columns = castWallColumns(ds, pose(2, 2, 0), {
       width: 36,
       height: 100,
     });
-    const center = columns[4]; // width/RAY_STRIP_PX=9 columns; index 4 has cameraX===0 exactly
+    const center = columns[4];
     expect(center.distance).toBeCloseTo(1.5, 5);
     expect(center.side).toBe("ns");
   });
@@ -124,7 +120,7 @@ describe("castWallColumns", () => {
 describe("castBillboards", () => {
   it("projects a feature directly ahead to the screen's horizontal center", () => {
     const layout = buildRoomLayout(5, 5);
-    // Mutate the north-of-player floor tile to carry a chest.
+
     const tiles = layout.tiles.map((row) => row.map((tile) => ({ ...tile })));
     tiles[1][2] = { wall: false, feature: "chest" };
     const mutatedLayout: DungeonLayout = { ...layout, tiles };
@@ -141,10 +137,6 @@ describe("castBillboards", () => {
   });
 
   it("culls a feature occluded by a nearer wall in the same direction", () => {
-    // 1-wide east-west corridor: floor at y=1, x=1..5, walled at x=3 (a dead
-    // end) with a chest placed past the wall at x=5. Facing east from (1,1),
-    // the ray hits the x=3 wall (perp distance 1.0) well before the chest's
-    // depth (~4), so the chest must be culled.
     const width = 7;
     const height = 3;
     const tiles: DungeonTile[][] = Array.from({ length: height }, (_, y) =>

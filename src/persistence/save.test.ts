@@ -150,7 +150,7 @@ describe("save round-trip with loot and equipment", () => {
 describe("deserialize backfills classId for older saves (ROG-17)", () => {
   it("defaults a party member without classId to warrior", () => {
     const modern = newGame(42);
-    // Simulate a pre-ROG-17 save: strip classId from the party member.
+
     const older = {
       ...modern,
       party: [{ ...modern.party[0], classId: undefined }],
@@ -175,5 +175,21 @@ describe("deserialize upgrades plain-string log lines (pre-ROG-31)", () => {
       { text: "old line", kind: "system" },
       { text: "Started new game with seed 42", kind: "quest" },
     ]);
+  });
+});
+
+describe("deserialize backfills clearedAt for older saves (ROG-91)", () => {
+  it("defaults a save without clearedAt to an empty record", () => {
+    const modern = newGame(42);
+    const older: Record<string, unknown> = { ...modern };
+    delete older.clearedAt;
+    const restored = deserialize(JSON.stringify(older));
+    expect(restored.clearedAt).toEqual({});
+  });
+
+  it("preserves an existing clearedAt through a round-trip", () => {
+    const state = { ...newGame(42), clearedAt: { "sunken-crypt": 5 } };
+    const restored = deserialize(serialize(state));
+    expect(restored.clearedAt).toEqual({ "sunken-crypt": 5 });
   });
 });

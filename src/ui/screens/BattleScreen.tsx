@@ -9,7 +9,10 @@ import {
 } from "../../engine/combat/resolution";
 import { classSkills, type SkillDef } from "../../engine/combat/skills";
 import type { BattleState } from "../../engine/combat/types";
-import { healAmount, isHealItem } from "../../engine/loot/consumables";
+import {
+  battleItemEffectLabel,
+  isUsableBattleItem,
+} from "../../engine/loot/consumables";
 import type { GameEvent, GameState } from "../../engine/state/types";
 import { MessageLog } from "../components/MessageLog";
 import { Screen, useScreenContent } from "../components/Screen";
@@ -23,7 +26,12 @@ import {
   reduceBattleUi,
   resolveBattleIntent,
 } from "./battle/interaction";
-import { type PackedEnemies, packEnemyColumns } from "./battle/render";
+import {
+  type EffectBadge,
+  effectBadges,
+  type PackedEnemies,
+  packEnemyColumns,
+} from "./battle/render";
 
 export interface BattleScreenProps {
   state: GameState;
@@ -32,21 +40,9 @@ export interface BattleScreenProps {
 
 const ENEMY_GAP = 4;
 const LAYOUT_GAP = 2;
-/** Max width of the right-hand battle log panel; shrinks on narrow panes. */
+
 const BATTLE_LOG_MAX_WIDTH = 36;
 
-/**
- * Battle scene (PROJECT_PLAN Phase 4, ROG-10). First-person framing: the
- * enemy ASCII art faces the viewer while the party is represented by the
- * hero's stats, Wizardry/Dragon Quest style. Everything is driven from
- * `state.battleState` plus `state.party`/`state.inventory`; key presses only
- * dispatch the pure battle events. A player command resolves a whole round in
- * the reducer, so after each dispatch the battle either continues (back to the
- * action menu) or the scene changes and this screen unmounts. The mode/cursor
- * state machine and its transitions live in the pure `reduceBattleUi`
- * (ROG-45); this component only normalizes Ink's input, resolves an intent,
- * applies the result, and dispatches whatever engine event the effect maps to.
- */
 export function BattleScreen({ state, dispatch }: BattleScreenProps) {
   const [battleUi, setBattleUi] = useState<BattleUiState>(
     INITIAL_BATTLE_UI_STATE,
@@ -58,7 +54,9 @@ export function BattleScreen({ state, dispatch }: BattleScreenProps) {
   const knownSkills = classSkills(actor.classId);
 
   const aliveEnemies = bs ? bs.enemies.filter((enemy) => enemy.hp > 0) : [];
-  const healItems = state.inventory.filter((entry) => isHealItem(entry.itemId));
+  const usableItems = state.inventory.filter((entry) =>
+    isUsableBattleItem(entry.itemId),
+  );
 
   useInput((input, key) => {
     if (bs?.status !== "ongoing" || !bs?.awaitingCommand) return;
@@ -73,7 +71,7 @@ export function BattleScreen({ state, dispatch }: BattleScreenProps) {
       actorMp: actor.mp,
       knownSkills,
       aliveEnemyIds: aliveEnemies.map((enemy) => enemy.id),
-      healItemIds: healItems.map((entry) => entry.itemId),
+      usableItemIds: usableItems.map((entry) => entry.itemId),
     });
 
     switch (result.effect?.type) {
@@ -121,7 +119,7 @@ export function BattleScreen({ state, dispatch }: BattleScreenProps) {
     <Screen
       state={state}
       title="Battle"
-      hint={hintFor(battleUi.mode, healItems.length)}
+      hint={hintFor(battleUi.mode, usableItems.length)}
       showLog={false}
     >
       <BattleBody
@@ -129,7 +127,7 @@ export function BattleScreen({ state, dispatch }: BattleScreenProps) {
         bs={bs}
         actor={actor}
         aliveEnemies={aliveEnemies}
-        healItems={healItems}
+        usableItems={usableItems}
         mode={battleUi.mode}
         actionCursor={battleUi.actionCursor}
         skillCursor={battleUi.skillCursor}
@@ -146,7 +144,7 @@ interface BattleBodyProps {
   bs: BattleState;
   actor: GameState["party"][number];
   aliveEnemies: BattleState["enemies"];
-  healItems: GameState["inventory"];
+  usableItems: GameState["inventory"];
   mode: BattleMode;
   actionCursor: number;
   skillCursor: number;
@@ -160,7 +158,7 @@ function BattleBody({
   bs,
   actor,
   aliveEnemies,
-  healItems,
+  usableItems,
   mode,
   actionCursor,
   skillCursor,
@@ -172,7 +170,7 @@ function BattleBody({
 
   const logWidth = Math.min(BATTLE_LOG_MAX_WIDTH, Math.floor(width * 0.4));
   const viewportWidth = Math.max(1, width - logWidth - LAYOUT_GAP);
-  // The framed viewport sits above the hero stat and turn-order lines.
+
   const viewportHeight = Math.max(1, height - 2);
 
   const packed = packEnemyColumns(
@@ -188,8 +186,7 @@ function BattleBody({
 
   return (
     <Box flexDirection="row" gap={LAYOUT_GAP} height={height}>
-      {/* Left column: a framed battle viewport sized only from the pane; the
-          command menu floats over it, out of flow, so it never reflows. */}
+      {}
       <Box flexDirection="column" width={viewportWidth}>
         <Box
           height={viewportHeight}
@@ -202,8 +199,7 @@ function BattleBody({
             <EnemyField packed={packed} />
           </Box>
 
-          {/* Floating command window, anchored bottom-left over the viewport
-              and titled with the acting member: these actions are theirs. */}
+          {}
           <Box
             position="absolute"
             bottom={0}
@@ -216,6 +212,7 @@ function BattleBody({
             <Text bold color={theme.accent}>
               {actor.name}
             </Text>
+            <StatusBadgeRow badges={effectBadges(actor.effects)} />
             <ActionMenu
               mode={mode}
               actions={ACTIONS}
@@ -223,7 +220,7 @@ function BattleBody({
               skills={skills}
               skillCursor={skillCursor}
               heroMp={actor.mp}
-              healItems={healItems}
+              usableItems={usableItems}
               itemCursor={itemCursor}
             />
           </Box>
@@ -238,7 +235,7 @@ function BattleBody({
         </Text>
       </Box>
 
-      {/* Battle log, pinned to the right of the combat layout. */}
+      {}
       <Box flexDirection="column" width={logWidth}>
         <Text color={theme.textMuted}>Battle Log</Text>
         <MessageLog
@@ -274,10 +271,24 @@ function EnemyField({ packed }: { packed: PackedEnemies }) {
                   {col.nameLine}
                 </Text>
                 <Text color={color}>{col.hpLine}</Text>
+                <StatusBadgeRow badges={col.badges} />
               </Box>
             );
           })}
         </Box>
+      ))}
+    </Box>
+  );
+}
+
+function StatusBadgeRow({ badges }: { badges: readonly EffectBadge[] }) {
+  if (badges.length === 0) return null;
+  return (
+    <Box flexDirection="row" gap={1}>
+      {badges.map((badge) => (
+        <Text key={badge.id} color={theme.statusEffect[badge.id]}>
+          {badge.label}
+        </Text>
       ))}
     </Box>
   );
@@ -290,7 +301,7 @@ interface ActionMenuProps {
   skills: readonly SkillDef[];
   skillCursor: number;
   heroMp: number;
-  healItems: GameState["inventory"];
+  usableItems: GameState["inventory"];
   itemCursor: number;
 }
 
@@ -301,7 +312,7 @@ function ActionMenu({
   skills,
   skillCursor,
   heroMp,
-  healItems,
+  usableItems,
   itemCursor,
 }: ActionMenuProps) {
   if (mode === "skill") {
@@ -330,7 +341,7 @@ function ActionMenu({
   }
 
   if (mode === "item") {
-    if (healItems.length === 0) {
+    if (usableItems.length === 0) {
       return (
         <Box flexDirection="column">
           <Text color={theme.textFaint}>(no usable items)</Text>
@@ -339,14 +350,14 @@ function ActionMenu({
     }
     return (
       <Box flexDirection="column">
-        {healItems.map((entry, index) => (
+        {usableItems.map((entry, index) => (
           <Text
             color={index === itemCursor ? theme.accent : undefined}
             key={entry.itemId}
           >
             {index === itemCursor ? "> " : "  "}
             {findShopItem(entry.itemId)?.name ?? entry.itemId} x{entry.quantity}{" "}
-            - heal {healAmount(entry.itemId)}
+            - {battleItemEffectLabel(entry.itemId)}
           </Text>
         ))}
       </Box>
@@ -376,7 +387,6 @@ function ActionMenu({
   );
 }
 
-/** Map initiative combatant ids to display names for the turn-order line. */
 function initiativeNames(
   battle: BattleState,
   party: GameState["party"],
@@ -389,14 +399,14 @@ function initiativeNames(
   });
 }
 
-function hintFor(mode: BattleMode, healItemCount: number): string {
+function hintFor(mode: BattleMode, usableItemCount: number): string {
   switch (mode) {
     case "action":
       return "Up/Down to choose, Enter to confirm.";
     case "skill":
       return "Up/Down to choose a skill, Enter to cast, Esc to go back.";
     case "item":
-      return healItemCount === 0
+      return usableItemCount === 0
         ? "No usable items - Esc to go back."
         : "Up/Down to choose an item, Enter to use, Esc to go back.";
     case "target":

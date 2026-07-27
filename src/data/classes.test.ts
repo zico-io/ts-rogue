@@ -126,15 +126,19 @@ describe("classSkills", () => {
     expect(classSkills("warrior").map((s) => s.id)).toEqual([
       "cleave",
       "second-wind",
+      "skewer",
     ]);
     expect(classSkills("rogue").map((s) => s.id)).toEqual([
       "backstab",
       "pinpoint",
+      "scattershot",
     ]);
     expect(classSkills("wizard").map((s) => s.id)).toEqual([
       "flame",
       "heal",
       "frost",
+      "hailstorm",
+      "meteor",
     ]);
   });
 
@@ -158,7 +162,7 @@ describe("classSkills", () => {
     expect(backstab?.stat).toBe("agi");
     const frost = classSkills("wizard").find((s) => s.id === "frost");
     expect(frost?.stat).toBe("int");
-    // Legacy Flame/Heal omit stat and default to int.
+
     const flame = classSkills("wizard").find((s) => s.id === "flame");
     expect(flame?.stat).toBeUndefined();
   });

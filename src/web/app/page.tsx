@@ -1,6 +1,5 @@
 import { GamePortal } from "./GamePortal";
 
-/** Static controls legend below the portal (furniture; the game owns real input). */
 const CONTROLS: ReadonlyArray<{ keys: string; label: string }> = [
   { keys: "↑ ↓ ← →", label: "move" },
   { keys: "Enter", label: "select" },

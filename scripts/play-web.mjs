@@ -1,22 +1,4 @@
 #!/usr/bin/env node
-// Drive the real WEB game (PixiJS on a WebGL canvas, served by the Next.js dev
-// server) so an agent can see and refine the browser UI like a user. The web
-// analogue of scripts/play.sh: same seed+keylog repro and key-token vocabulary,
-// but a canvas can't be text-scraped, so "frame" becomes a real PNG screenshot
-// from a headless browser instead of `tmux capture-pane`.
-//
-//   node scripts/play-web.mjs start [seed] [w] [h] [--dev]  boot next dev, reset run
-//   node scripts/play-web.mjs key <tokens...>               record keystrokes
-//   node scripts/play-web.mjs shot [out.png]                screenshot the game
-//   node scripts/play-web.mjs stop                          stop the dev server
-//   node scripts/play-web.mjs --selftest                    check the key map
-//
-// The Next.js dev server is the only persistent process. Each `shot` launches
-// chromium fresh, opens /?seed=<seed>&fresh, replays the recorded keys (game
-// state is deterministic from seed+keys via the shared engine), captures, and
-// exits - no browser daemon to leak in a sandbox.
-// ponytail: replay-from-scratch per shot; if per-shot latency ever bites, hold a
-// persistent page open behind a local IPC server (see scripts/play.sh's tmux daemon).
 
 import { spawn } from "node:child_process";
 import fs from "node:fs";
@@ -29,15 +11,23 @@ const KEYLOG = path.join(ROOT, ".play-web-keys.log");
 const STATE = path.join(ROOT, ".play-web.json");
 const FRAMES = path.join(ROOT, ".play-web-frames");
 const PORT = 5173;
-// Bind and reach the dev server on explicit IPv4 (passed to `next dev -H`), so a
-// 127.0.0.1 readiness probe always matches where the server actually listens.
+
 const HOST = "127.0.0.1";
 const URL_BASE = `http://${HOST}:${PORT}`;
 
-// tmux names special keys; the web renderer reads KeyboardEvent.key. Map the
-// play.sh token vocabulary onto Playwright key names so the same `key Up Enter 3`
-// works under either renderer. Anything not here (letters, digits, `>`, backtick)
-// is a literal character Playwright presses directly.
+// A shot captured at the session's full 1280x800 viewport as a PNG runs
+// ~250KB, which is ~100K tokens once base64-embedded as Markdown text.
+// That's the only way a caller without filesystem access to this sandbox
+// (the playtester subagent, for example) can receive the image, and that
+// single shot was enough on its own to trip Eve's session token budget
+// (HAR-77). Capturing at a smaller viewport and as JPEG by default cuts a
+// shot to well under a tenth of that size using Playwright's own screenshot
+// options, with no extra dependency and no meaningful loss of legibility for
+// pixel art. `shot --full` (or an explicit `.png` path) opts back into a
+// lossless capture at the session's actual configured viewport.
+const SHOT_WIDTH_PX = 640;
+const SHOT_HEIGHT_PX = 400;
+
 const KEY_MAP = {
   Up: "ArrowUp",
   Down: "ArrowDown",
@@ -101,17 +91,20 @@ async function cmdStart(args) {
     console.log(`dev server already up on :${PORT} (seed=${seed}); now: shot`);
     return;
   }
-  // Run `next dev` directly (not `pnpm web:dev`, whose arg forwarding mangles
-  // flags), scoped to the src/web workspace package on an explicit
-  // host+port. `pnpm --filter <pkg> exec` (not a bare `pnpm exec`) is
-  // required here: root's own package.json does not depend on `next` (only
-  // src/web's does), so a bare `pnpm exec next` run from ROOT fails to
-  // resolve the `next` binary at all - `--filter` switches pnpm's exec cwd
-  // to src/web first, where `next` is actually installed. Detached process
-  // group so `stop` can kill next + its child compilers.
+
   const child = spawn(
     "pnpm",
-    ["--filter", "@ts-rogue/web", "exec", "next", "dev", "-H", HOST, "-p", String(PORT)],
+    [
+      "--filter",
+      "@ts-rogue/web",
+      "exec",
+      "next",
+      "dev",
+      "-H",
+      HOST,
+      "-p",
+      String(PORT),
+    ],
     { cwd: ROOT, detached: true, stdio: "ignore" },
   );
   child.unref();
@@ -132,7 +125,7 @@ function cmdKey(tokens) {
     console.error("usage: node scripts/play-web.mjs key <tokens...>");
     process.exit(1);
   }
-  // Mirror play.sh: append the repro sequence, one call per line.
+
   fs.appendFileSync(KEYLOG, `${tokens.join(" ")}\n`);
 }
 
@@ -141,13 +134,17 @@ async function cmdShot(args) {
     console.error("no web session; run: node scripts/play-web.mjs start");
     process.exit(1);
   }
+  const full = args.includes("--full");
+  const positional = args.filter((a) => !a.startsWith("--"));
   const { chromium } = await import("playwright");
   const state = readState();
   const seed = state.seed ?? 1;
-  const width = state.width ?? 1280;
-  const height = state.height ?? 800;
+  const sessionWidth = state.width ?? 1280;
+  const sessionHeight = state.height ?? 800;
+  const width = full ? sessionWidth : Math.min(sessionWidth, SHOT_WIDTH_PX);
+  const height = full ? sessionHeight : Math.min(sessionHeight, SHOT_HEIGHT_PX);
   const outPath = path.resolve(
-    args[0] ?? path.join(FRAMES, "frame.png"),
+    positional[0] ?? path.join(FRAMES, full ? "frame.png" : "frame.jpg"),
   );
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
 
@@ -156,9 +153,7 @@ async function cmdShot(args) {
   try {
     const page = await browser.newPage({ viewport: { width, height } });
     await page.goto(`${URL_BASE}/${query}`, { waitUntil: "load" });
-    // GamePortal mounts app.canvas into #portal only after the client-side
-    // dynamic import of bootGame and its async atlas load; the Next dev server
-    // also compiles the route on first request, so allow a generous timeout.
+
     await page.waitForSelector("#portal canvas", { timeout: 45000 });
     await sleep(500);
 
@@ -169,10 +164,13 @@ async function cmdShot(args) {
       .filter(Boolean);
     for (const token of tokens) {
       await page.keyboard.press(toPlaywrightKey(token));
-      await sleep(120); // let renderCurrent() + any scene transition settle
+      await sleep(120);
     }
     await sleep(500);
-    await page.screenshot({ path: outPath });
+    const asPng = path.extname(outPath).toLowerCase() === ".png";
+    await page.screenshot(
+      asPng ? { path: outPath } : { path: outPath, type: "jpeg", quality: 80 },
+    );
     console.log(outPath);
   } finally {
     await browser.close();
@@ -186,13 +184,11 @@ function cmdStop() {
     return;
   }
   try {
-    process.kill(-vitePid); // negative pid: kill the detached process group
+    process.kill(-vitePid);
   } catch {
     try {
       process.kill(vitePid);
-    } catch {
-      // already gone
-    }
+    } catch {}
   }
   fs.rmSync(STATE, { force: true });
   console.log("stopped");

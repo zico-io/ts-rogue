@@ -13,7 +13,7 @@ const attackSkill: SkillDef = {
   name: "Flame",
   mpCost: 3,
   kind: "attack",
-  target: "enemy",
+  target: "single",
   power: 5,
 };
 
@@ -32,7 +32,7 @@ function ctx(overrides: Partial<BattleUiContext> = {}): BattleUiContext {
     actorMp: 10,
     knownSkills: [attackSkill, healSkill],
     aliveEnemyIds: ["goblin", "slime"],
-    healItemIds: ["potion", "hi-potion"],
+    usableItemIds: ["potion", "hi-potion"],
     ...overrides,
   };
 }
@@ -208,12 +208,12 @@ describe("reduceBattleUi - item mode", () => {
     const result = reduceBattleUi(
       itemState(),
       { kind: "menuDown" },
-      ctx({ healItemIds: [] }),
+      ctx({ usableItemIds: [] }),
     );
     expect(result.state).toEqual(itemState());
   });
 
-  it("wraps itemCursor over healItemIds.length", () => {
+  it("wraps itemCursor over usableItemIds.length", () => {
     const up = reduceBattleUi(
       itemState({ itemCursor: 0 }),
       { kind: "menuUp" },
@@ -256,7 +256,7 @@ describe("reduceBattleUi - target mode", () => {
       ctx({ aliveEnemyIds: [] }),
     );
     expect(result.state.mode).toBe("action");
-    // Only mode changes; cursors are left as-is, matching the original closure.
+
     expect(result.state.targetCursor).toBe(1);
   });
 

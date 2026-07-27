@@ -1,16 +1,7 @@
-/**
- * Shared consumable-item logic (ENG-4). Hoisted out of `combat/resolution.ts`
- * - where it was battle-only - so field consumable use (the inventory
- * screen's consumables section, usable in the village/overworld/dungeon)
- * and battle's `item` command share one heal table and one
- * decrement-a-stack helper instead of two copies drifting apart. Battle's
- * item flow is unchanged: it still only allows heal items and still targets
- * the acting party member.
- */
-
+import type { StatusEffectId } from "../combat/statusEffects";
+import { findStatusEffect } from "../combat/statusEffects";
 import type { InventoryItem } from "../entities/party";
 
-/** Consumable items that restore HP, and how much. */
 export const HEAL_ITEMS: Readonly<Record<string, number>> = {
   potion: 30,
   "hi-potion": 99,
@@ -24,7 +15,41 @@ export function healAmount(itemId: string): number {
   return HEAL_ITEMS[itemId] ?? 0;
 }
 
-/** Decrements one unit of `itemId` from `inventory`, dropping the stack at zero. */
+// Cure items remove specific status effect instances rather than healing HP.
+// Antidote cures poison; Thermal Salts cure the temperature-extreme duo
+// (burn/chilled) in one use rather than shipping two single-purpose items.
+export const CURE_ITEMS: Readonly<Record<string, readonly StatusEffectId[]>> = {
+  antidote: ["poison"],
+  "thermal-salts": ["burn", "chilled"],
+};
+
+export function isCureItem(itemId: string): boolean {
+  return itemId in CURE_ITEMS;
+}
+
+export function curedEffects(itemId: string): readonly StatusEffectId[] {
+  return CURE_ITEMS[itemId] ?? [];
+}
+
+export function isUsableBattleItem(itemId: string): boolean {
+  return isHealItem(itemId) || isCureItem(itemId);
+}
+
+// Shared label for the battle Item menu: heal items show the HP restored,
+// cure items list the status(es) they remove.
+export function battleItemEffectLabel(itemId: string): string {
+  const heal = healAmount(itemId);
+  if (heal > 0) return `heal ${heal}`;
+  const cures = curedEffects(itemId);
+  if (cures.length > 0) {
+    const names = cures
+      .map((effectId) => findStatusEffect(effectId)?.name ?? effectId)
+      .join(" & ");
+    return `cures ${names}`;
+  }
+  return "";
+}
+
 export function consumeItem(
   inventory: readonly InventoryItem[],
   itemId: string,

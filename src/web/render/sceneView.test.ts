@@ -30,7 +30,6 @@ interface FakeFactory extends DrawFactory {
   createTextCalls: number;
 }
 
-/** Minimal fake `DrawFactory`, mirroring how `scenes.test.ts` fakes `SceneView` without real Pixi. */
 function fakeFactory(): FakeFactory {
   const rects: FakeRect[] = [];
   const texts: FakeText[] = [];
@@ -119,7 +118,7 @@ describe("SceneChromeView", () => {
     view.render(damaged, SIZE, { title: "Village" });
     expect(factory.createRectCalls).toBe(rectsAfterFirst);
     expect(factory.createTextCalls).toBe(textsAfterFirst);
-    // the reused HP-value text handle was updated, not thrown away
+
     const hpValueText = factory.texts.find((t) =>
       t.setText.mock.calls.some(
         (call) =>
@@ -134,8 +133,7 @@ describe("SceneChromeView", () => {
     const view = new SceneChromeView(factory);
     const state = newGame(1);
     view.render(state, SIZE, { title: "Village" });
-    // border rect + panel background rect + title divider rect + (background, fill) per member for HP and MP
-    // = 3 + party.length * 4
+
     expect(factory.rects.length).toBe(3 + state.party.length * 4);
   });
 
@@ -148,7 +146,7 @@ describe("SceneChromeView", () => {
       party: [{ ...state.party[0], hp: state.party[0].maxHp / 2 }],
     };
     view.render(halfHp, SIZE, { title: "Village" });
-    // rects order: [border, panel-background, title-divider, hp-bg, hp-fill, mp-bg, mp-fill]
+
     const hpBgWidth = factory.rects[3].setSize.mock.calls.at(-1)?.[0] as number;
     const hpFillWidth = factory.rects[4].setSize.mock.calls.at(
       -1,
@@ -171,7 +169,7 @@ describe("SceneChromeView", () => {
     const view = new SceneChromeView(factory);
     const state = newGame(1);
     view.render(state, SIZE, { title: "Village" });
-    // rects order: [border, panel-background, title-divider, hp-bg, hp-fill, ...]
+
     const [, , , hpBackground, hpFill] = factory.rects;
     expect(hpBackground.options.bevel).toBe(true);
     expect(hpBackground.options.gloss).not.toBe(true);
@@ -183,7 +181,7 @@ describe("SceneChromeView", () => {
     const factory = fakeFactory();
     const view = new SceneChromeView(factory);
     const state = newGame(1);
-    // small canvas -> few maxLines, so a couple more messages push old ones out
+
     const small = { width: 40 * UNIT_PX, height: 10 * UNIT_PX };
     const withLogs = {
       ...state,
@@ -214,8 +212,7 @@ describe("SceneChromeView", () => {
     const factory = fakeFactory();
     const view = new SceneChromeView(factory);
     const state = newGame(1);
-    // SIZE is tall enough that all 4 lines stay within maxLines (unlike the
-    // scroll-out test above's small canvas), so both ends are still visible.
+
     const withLogs = {
       ...state,
       log: Array.from({ length: 4 }, (_, i) => entry(`line ${i}`, "system")),
@@ -239,6 +236,6 @@ describe("SceneChromeView", () => {
     const view = new SceneChromeView(factory);
     const state = { ...newGame(1), party: [] };
     view.render(state, SIZE, { title: "Village" });
-    expect(factory.rects.length).toBe(3); // border + panel background + title divider only
+    expect(factory.rects.length).toBe(3);
   });
 });

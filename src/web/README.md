@@ -190,22 +190,35 @@ keyed by frame name. `main.ts` looks sprites up by name, e.g.
    loadAtlas(); new Sprite(sheet.textures["<name>"])`, and set
    `texture.source.scaleMode = "nearest"` before scaling it up.
 
-### Multi-cell textures (ENG-8)
+### Multi-cell textures (ENG-8) and the 2x2 village footprint (ENG-7)
 
 A `TILE_SOURCES` entry can declare `multiCell: { wide, high }` to keep its
 natural multi-cell size instead of the default single-8x8-cell squish -
 `scripts/build-atlas.ts` packs it at `wide*8 x high*8` pixels rather than
 resizing it down to one cell. `sources.ts`'s `footprintOf`/`footprintCells`
 enumerate the covered `(col, row)` cells, and `overworldView.ts`'s
-`drawFootprint` places one sprite per covered grid cell, each showing only
-its own sub-region of the source texture (`pixiOverworldDrawFactory.ts`'s
-`setTexture(name, region)`, via Pixi's `Texture.frame`) - so the whole
-texture reads as one continuous image across its footprint instead of a
-single squished-and-rescaled sprite or tiled repeats of a 1x1 frame. This is
-the enabling capability only: no live overworld tile uses a multi-cell
-footprint yet (`multiCellFixture` is a debug-only demo, shown via `?dev`);
-actually placing a multi-tile landmark on the map (e.g. a 2x2 village) is a
-follow-up (ENG-7).
+`drawFootprint`/`landmarkRegion` place one sprite per covered grid cell, each
+showing only its own sub-region of the source texture
+(`pixiOverworldDrawFactory.ts`'s `setTexture(name, region)`, via Pixi's
+`Texture.frame`) - so the whole texture reads as one continuous image across
+its footprint instead of a single squished-and-rescaled sprite or tiled
+repeats of a 1x1 frame. `multiCellFixture` remains a debug-only demo (shown
+via `?dev`) exercising the same mechanism.
+
+The village is the first live user: `village` declares `multiCell: { wide: 2,
+high: 2 }`, and the shared map data (`engine/world/landmarks.ts`) places its
+whole 2x2 footprint at generation time - `map.village` is the footprint's
+top-left anchor cell, and every covered cell is painted with the `village`
+tile so movement, passability, and the village-entry trigger in
+`engine/state/store.ts` all work unchanged from any of the four cells.
+`overworldView.ts`'s `landmarkRegion` maps each covered cell back to its
+`(col, row)` sub-region so the four sprites tile into one contiguous
+building; the ground-shadow and pulse halo only draw once, anchored at the
+footprint's top-left cell and sized to the whole footprint, so a multi-tile
+landmark reads as one prop instead of one per covered cell. The Ink TUI
+(`ui/screens/overworld/render.ts`) mirrors this with `glyphAt`, rendering the
+footprint as four distinct ASCII glyphs (a peaked roof over a walled door and
+window) instead of a repeated `H`.
 
 ### Overworld terrain auto-tile stand-in (ROG-73)
 
@@ -225,10 +238,12 @@ tile instead:
   with that count (`clusterScale`): an isolated tile draws smaller, a dense
   cluster draws larger and with real extra rock detail, not just a blurrier
   upscale.
-- A **village**/**dungeonEntrance** landmark gets a small per-instance size
-  variation (`landmarkScale`, hashed from its tile coordinate - never
-  `Math.random`, so a given map always renders identically) instead of every
-  instance drawing at the same size.
+- A **dungeonEntrance** landmark (still single-cell) gets a small
+  per-instance size variation (`landmarkScale`, hashed from its tile
+  coordinate - never `Math.random`, so a given map always renders
+  identically) instead of every instance drawing at the same size. The
+  **village**'s 2x2 footprint draws at a fixed 1:1 scale instead so its four
+  sprite regions stay pixel-aligned and contiguous (see ENG-7 above).
 
 The vendored Minifantasy Tiny Overworld packs (ROG-68) don't ship a
 documented bitmask autotile blob table for cross-biome edges - the pack does
@@ -237,6 +252,34 @@ between arbitrary biome pairs have no legend and aren't safely hand-croppable
 without a way to visually verify the result, so it isn't vendored here. A
 real shore/corner bitmask tileset is a follow-up once that's needed; this
 ships with the sheets already vendored instead.
+
+### Overworld tile selection and grass clutter (WEB-6)
+
+Reviewer feedback on ROG-65 was that the overworld still read noticeably
+worse than the Tiny Overworld reference set. Auditing every `TILE_SOURCES`
+crop pixel-by-pixel (exhaustive per-pixel purity search over
+`forgotten_plains.png`/`overworld_props.png`, not eyeballing) found two
+crops that were quietly hurting legibility rather than a missing feature:
+`grass` clipped a neighboring rock formation's gray shading into every
+tile, and `water` was only ~62% water pixels (the rest muddy shoreline
+bleed from the sheet's small illustrated ponds, which aren't a tileable
+swatch). Both now point at the cleanest fully-opaque single-color regions
+found in the same sheets - `water`'s crop is an 8x4 strip the atlas's
+existing nearest-neighbor resize doubles into a full 8x8 tile rather than
+including any land-bleed row.
+
+Grass tiles also get sparse, deterministic ground clutter -
+`grassDecoration(x, y)` in `overworldVariants.ts` picks one of four small
+self-contained icons (`grassTuft`, `grassFlowerYellow`, `grassFlowerPink`,
+`grassPebble`, cropped from the same `overworld_props.png` sheet the tree
+comes from) for a hash-selected ~16% of grass cells, drawn as an extra small
+sprite on top of the base tile in `OverworldSceneView.drawViewport` - so a
+field of grass reads as more than one repeated tile without touching the
+camera/viewport math or the biome/token model. A genuine diagonal
+water/land auto-tile corner set was found already present on
+`forgotten_plains.png` (see `assets/README.md`) but correctly orienting all
+eight directional pieces needs the same visual-verification step ROG-73
+punted `Biomes_Merging_Tiles` on, so it's deferred rather than guessed at.
 
 ### Overworld scene atmosphere (ROG-65)
 
@@ -344,7 +387,7 @@ is the thin real-Pixi adapter.
   colors (split at mid-screen), not per-pixel raycast/textured - the
   original Wolfenstein 3D's own approach, and still satisfies "reuse
   `DUNGEON_RAMPS` for distance fog/tinting" since walls carry the real
-  per-column depth tint (`dungeonRamp(ds.dungeonId)`, same convention as the
+  per-column depth tint (`dungeonRamp(ds.theme)`, same convention as the
   TUI). There is no move/turn tween - `poseFromState(ds)` renders directly
   every call; the issue explicitly allows instant movement for v1 since Pixi
   has no soft-real-time requirement here.
@@ -366,6 +409,61 @@ browser atlas yet).
 Regenerate the same way as any other atlas change: `pnpm tsx
 scripts/build-atlas.ts`, then commit the rewritten `public/atlas/atlas.png`
 + `atlas.json`.
+
+## Effects & particles (WEB-7)
+
+`render/particles.ts`'s `ParticleField` is the one shared "hand-rolled
+emitter over Pixi's `ParticleContainer`" ART_DIRECTION.md §6 calls for: a
+pooled, capacity-capped set of particles with a `tick(deltaMs)` that moves,
+gravity-accelerates, fades, and destroys expired ones behind a tiny
+`ParticleDrawFactory` (`createParticle(): ParticleHandle`) - framework-free
+and unit-tested (`particles.test.ts`) without any real WebGL, matching the
+issue's verify step. `render/pixiParticleDrawFactory.ts`'s
+`createPixiParticleDrawFactory` is the one real-Pixi adapter, backing each
+particle with a `pixi.js` `Particle` on a shared `ParticleContainer` (every
+particle reuses `Texture.WHITE`, tinted and scaled per particle - no new
+dependency). `bootGame.ts` gives `battleView`/`dungeonView` each their own
+`ParticleContainer`, layered above the rest of that scene's content via a
+high `zIndex` (`sortableChildren`) rather than draw order, so effects always
+read on top.
+
+Same principle as the existing HP-delta damage numbers: **every effect is
+derived from a state delta observed across renders, never a new
+`GameEvent`.**
+
+- **Battle** (`BattleSceneView`) watches `state.log` for a new `"damage"`
+  entry carrying an `element` tag - the same tag the message log already
+  colors lines by (`theme.element`) - and pairs it with the next enemy HP
+  drop to spawn a colored burst at the hit point: a narrow forward arc of
+  sparks for `physical` (melee), a full radial burst for
+  `fire`/`ice`/`lightning`/`poison` (spells), sized/timed the same but
+  colored from the palette. A rising HP on the active party member (a heal)
+  spawns `heal`-colored sparkles instead, no log parsing needed. The struck
+  enemy's art also gets a brief small position-shake timed to the existing
+  hit-flash window.
+- **Dungeon** (`DungeonSceneView`) drifts a small pool of dust
+  motes/embers (roughly 1 ember per 3 motes) up through the frame every
+  `tick`, colored from the current `dungeonRamp`'s near band (motes) or
+  `theme.warn` (embers); `render()` just records the latest viewport size and
+  ramp color for the next `tick` to spawn against.
+
+Both are **additive and gated on `prefers-reduced-motion`**:
+`setReducedMotion(true)` immediately clears live particles and stops new ones
+from spawning (bursts, sparkles, ambient fields, and the hit-shake), while
+damage numerals, name/HP text, and hit-flash tint - all pre-existing,
+core-legibility features - keep rendering. `bootGame.ts`'s existing
+`prefers-reduced-motion` listener (already wired to `OverworldSceneView`)
+now also drives `battleView`/`dungeonView`.
+
+**Keyed effects are procedural today, not yet sprite sheets.** The issue's
+other track - playing pre-animated Minifantasy sheets (*Spell Effects I/II*,
+*Magic And Sorcery*, *Magic Weapons And Effects*) via a frame ticker - needs
+those sheets vendored first (see `assets/README.md`); only tile/prop/UI/
+battler sheets have been imported so far. The particle bursts above stand in
+behind the same `BattleDrawFactory`/`DungeonDrawFactory` seam, so swapping in
+real animated frames later is a factory change, not a view rewrite - the same
+"asset arrives later, seam already correct" pattern ROG-64 used for the
+windowskin.
 
 ## Title, village, and game-over (ROG-52)
 
@@ -560,3 +658,35 @@ preview is installed under its own name, `@typescript/native-preview` (the
 checker of record, and the whole app - chrome included - is normal `.tsx`.
 `next.config.mjs` is plain JS only so Next never has to transpile a `.ts` config
 with whichever compiler is active.
+
+## Harness data-access routes (HAR-50)
+
+`app/api/harness/sessions/route.ts` and `app/api/harness/sessions/[id]/route.ts`
+are plain Next.js route handlers - server-only, sharing this app's single
+Vercel deployment (not part of the `/eve/v1/*` agent surface). They read the
+Vercel Workflow run tags eve writes on every session/turn/subagent run
+(`$eve.root`, `$eve.parent`, `$eve.type`, ...; see
+`node_modules/eve/docs/guides/instrumentation.md#workflow-run-tags`) through
+`POST /v2/observability/query`, the same Vercel operation
+`agent/connections/vercel-api.ts` allows - reimplemented as a direct
+server-side `fetch` (`lib/harness/vercelObservability.ts`) rather than
+imported, since that connection compiles into the agent's tool-calling
+surface, not into this Next app.
+
+Both routes deny every caller with a 401 (`lib/harness/authz.ts`) until HAR-54
+lands a real superadmin check derived from Auth.js sessions - `VERCEL_TOKEN`
+never reaches an unauthorized caller because the gate runs before any Vercel
+call. Behind the gate, `lib/harness/sessions.ts` queries recent runs, maps
+rows to `HarnessRunRecord`s (`lib/harness/runRecords.ts`), and groups them
+into a session list or one session's subagent tree
+(`lib/harness/grouping.ts`). A query failure - including a `402` when the
+team lacks Observability Plus, which is the current state for this project's
+Vercel team - degrades to `{ unavailable: true, reason }` instead of a 500.
+
+`$eve.*` names a run's parent and root but never its own id, and grouped
+queries collapse rows sharing every grouped dimension, so the subagent tree
+is two levels (the root session's own turns, aggregated, plus one node per
+distinct subagent role) rather than an arbitrary-depth run graph. The exact
+`groupBy`/response shape is unverified against live tagged data pending
+Observability Plus; see the code comments in `lib/harness/eveTags.ts` and
+`lib/harness/vercelObservability.ts` before changing them.

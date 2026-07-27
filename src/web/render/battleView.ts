@@ -1,32 +1,12 @@
-/**
- * Pixi counterpart of `src/ui/screens/BattleScreen.tsx` +
- * `src/ui/screens/battle/{render,interaction}.ts` (ROG-51). Reuses the TUI's
- * pure `packEnemyColumns` layout helper and `BattleUiState` state machine
- * unmodified - the machine itself is already driven by
- * `BrowserKeyboardManager`'s `handleBattle` (ROG-45); this module only
- * changes how a battle looks (a keyed sprite/rect per enemy instead of
- * ASCII art, real `Text` menus instead of Ink boxes).
- *
- * Framework-free (no `pixi.js` import) behind a small `BattleDrawFactory`
- * interface, following `overworldView.ts`/`sceneView.ts`'s split so this is
- * unit-testable with a fake factory (see `battleView.test.ts`); the real
- * Pixi adapter lives in `pixiBattleDrawFactory.ts`.
- *
- * Turn feedback (floating damage numbers, a brief tint flash) is derived
- * entirely from HP deltas observed across successive `render()` calls, kept
- * as view-local instance state (`lastHp`/`floaters`/`flashes`) - the engine
- * has no floating-combat-text concept and must not grow one, since reducers
- * stay pure and `GameState` stays serializable. Aging/removing floaters and
- * reverting a flash is driven by `tick(deltaMS)`, which callers wire to a
- * Pixi `Ticker` once (see `main.ts`); it is deliberately just a linear alpha
- * fade plus a timed tint revert, not a general animation system.
- */
-
 import { findShopItem } from "../../data/shops";
 import { classSkills, type SkillDef } from "../../engine/combat/skills";
+import type { Element } from "../../engine/combat/statusEffects";
 import type { BattleEnemy, BattleState } from "../../engine/combat/types";
 import type { PartyMember } from "../../engine/entities/party";
-import { healAmount, isHealItem } from "../../engine/loot/consumables";
+import {
+  battleItemEffectLabel,
+  isUsableBattleItem,
+} from "../../engine/loot/consumables";
 import type { GameState } from "../../engine/state/types";
 import {
   ACTIONS,
@@ -35,34 +15,25 @@ import {
 } from "../../ui/screens/battle/interaction";
 import { packEnemyColumns } from "../../ui/screens/battle/render";
 import { theme, toPixiColor } from "../../ui/theme";
+import { ParticleField, type ParticleHandle } from "./particles";
 
-/** A positioned, destroyable draw primitive; every handle kind extends this. */
 export interface DrawHandle {
   setPosition(x: number, y: number): void;
   destroy(): void;
 }
 
-/**
- * A positioned, texture-backed enemy sprite. `setSize` gives the real Pixi
- * adapter the square art box (see `artPxFor`) to fit the sprite's native
- * texture into, preserving aspect ratio - the three battler PNGs have
- * wildly different native sizes (`battlers.ts`), so the box, not the
- * texture's own pixel dimensions, is what stays consistent (ROG-63).
- */
 export interface BattleSpriteHandle extends DrawHandle {
   setTexture(name: string): void;
   setSize(width: number, height: number): void;
-  /** `0xffffff` (no tint) leaves the texture's own colors untouched. */
+
   setTint(color: number): void;
 }
 
-/** A solid rectangle - the sprite fallback, and the selection highlight. */
 export interface BattleRectHandle extends DrawHandle {
   setSize(width: number, height: number): void;
   setColor(color: number): void;
 }
 
-/** A run of text; `width` is the rendered pixel width, used to size menu/header rows. */
 export interface BattleTextHandle extends DrawHandle {
   setText(text: string): void;
   setColor(color: number): void;
@@ -70,34 +41,24 @@ export interface BattleTextHandle extends DrawHandle {
   readonly width: number;
 }
 
-/** Renderer boundary this view draws through. */
 export interface BattleDrawFactory {
-  /** True when `name` is a real atlas frame; battles never break on a missing sprite (see module doc). */
   hasTexture(name: string): boolean;
   createSprite(): BattleSpriteHandle;
   createRect(): BattleRectHandle;
   createText(initialText: string): BattleTextHandle;
+  createParticle(): ParticleHandle;
 }
 
-/** Pixel size of the region the view has to work with. */
 export interface PixelSize {
   width: number;
   height: number;
 }
 
-/**
- * Lower/upper bound on the square art box each enemy's sprite/rect is drawn
- * into. Battlers are their own scale class from the 8x8 tile atlas (loaded
- * individually by `battlers.ts`, see `pixiBattleDrawFactory.ts`'s module
- * doc), so this is just a slot size for the battle layout, not tied to any
- * tile pitch.
- */
 const MIN_ART_PX = 72;
 const MAX_ART_PX = 144;
-/** Art box scales with the available battle-content height, not width - the menu strip below it is a fixed height, so height is the scarcer dimension (ROG-66: a bigger canvas should mean a bigger stage, not the same fixed-size icons adrift in more empty space). */
+
 const ART_HEIGHT_RATIO = 0.3;
 
-/** Derives the enemy art box size from the battle content area's pixel size. */
 export function artPxFor(pixelSize: PixelSize): number {
   return Math.max(
     MIN_ART_PX,
@@ -110,20 +71,49 @@ const ROW_GAP_PX = 16;
 const NAME_ROW_PX = 18;
 const HP_ROW_PX = 16;
 const FIELD_PADDING_PX = 16;
-/** Extra margin around the selected enemy's art for the target-mode highlight rect. */
+
 const HIGHLIGHT_PAD_PX = 6;
 
 const MENU_ROW_HEIGHT_PX = 18;
 const MENU_PADDING_PX = 8;
-/** Parked off-canvas so an unselected highlight rect never draws over anything. */
+
 const HIGHLIGHT_PARK_Y = -10_000;
 
-/** Floating damage-number lifetime and drift/flash timing (see module doc - deliberately minimal). */
 const FLOATER_LIFE_MS = 700;
 const FLOATER_DRIFT_PX_PER_MS = 0.04;
 const FLASH_MS = 150;
 
-/** One in-flight floating damage number. */
+// Effects (WEB-7). Keyed effects are procedural particle bursts today, not
+// yet the pre-animated Minifantasy sprite sheets ART_DIRECTION.md §6 calls
+// for - those sheets aren't vendored (see assets/README.md) - but they sit
+// behind the same BattleDrawFactory seam, so swapping in real frames later
+// is a factory change, not a view rewrite.
+const BURST_PARTICLE_CAP = 48;
+
+const SPELL_BURST_COUNT = 10;
+const SPELL_BURST_SPEED_PX_PER_MS = 0.12;
+const SPELL_BURST_LIFE_MS = 420;
+const SPELL_BURST_SIZE_PX = 4;
+const SPELL_BURST_GRAVITY = 0.00015;
+
+const MELEE_SPARK_COUNT = 5;
+const MELEE_SPARK_SPEED_PX_PER_MS = 0.16;
+const MELEE_SPARK_LIFE_MS = 220;
+const MELEE_SPARK_SIZE_PX = 3;
+// A narrow forward-facing arc reads as a slash rather than an explosion.
+const MELEE_ARC_RADIANS = Math.PI / 2;
+
+const HEAL_SPARK_COUNT = 5;
+const HEAL_SPARK_RISE_PX_PER_MS = 0.05;
+const HEAL_SPARK_LIFE_MS = 550;
+const HEAL_SPARK_SIZE_PX = 3;
+const HEAL_SPARK_SPREAD_PX = 24;
+
+const SHAKE_MAGNITUDE_PX = 3;
+const SHAKE_FREQUENCY = 0.9;
+
+const TAU = Math.PI * 2;
+
 interface Floater {
   handle: BattleTextHandle;
   x: number;
@@ -131,35 +121,32 @@ interface Floater {
   elapsed: number;
 }
 
-/** An enemy's art draw object - either a real sprite or the tinted-rect fallback. */
 type ArtHandle =
   | { kind: "sprite"; handle: BattleSpriteHandle }
   | { kind: "rect"; handle: BattleRectHandle };
 
-/** Selection/defeat/own-color priority, copied from `BattleScreen.tsx`'s `EnemyField`. */
 function enemyDisplayColor(enemy: BattleEnemy, selected: boolean): string {
   if (enemy.hp <= 0) return theme.textFaint;
   if (selected) return theme.accent;
   return enemy.color ?? theme.text;
 }
 
-/**
- * Draws the enemy field (sprites/fallback rects + name/HP plates), a
- * target-mode selection highlight, the action/skill/item/target command
- * menu, and HP-delta-derived floating damage numbers / tint flashes.
- */
 export class BattleSceneView {
   private readonly artHandles = new Map<string, ArtHandle>();
   private readonly nameHandles = new Map<string, BattleTextHandle>();
   private readonly hpHandles = new Map<string, BattleTextHandle>();
   private readonly normalTint = new Map<string, number>();
-  /** Elapsed ms since a flash started, per combatant id; entry removed once reverted. */
+
   private readonly flashes = new Map<string, number>();
-  /** Last-seen HP per combatant id (enemies plus the currently displayed party member). */
+
   private readonly lastHp = new Map<string, number>();
   private floaters: Floater[] = [];
 
-  /** Current enemy art box size, recomputed from `pixelSize` at the top of every `render()` (ROG-66). */
+  private readonly bursts: ParticleField;
+  private reducedMotion = false;
+  private logCursor: number | undefined;
+  private pendingElement: Element | undefined;
+
   private artPx = MIN_ART_PX;
 
   private targetHighlight: BattleRectHandle | undefined;
@@ -167,9 +154,10 @@ export class BattleSceneView {
   private actorStatus: BattleTextHandle | undefined;
   private menuLines: BattleTextHandle[] = [];
 
-  constructor(private readonly factory: BattleDrawFactory) {}
+  constructor(private readonly factory: BattleDrawFactory) {
+    this.bursts = new ParticleField(factory, BURST_PARTICLE_CAP);
+  }
 
-  /** Renders one frame from `state.battleState` and the live `battleUi` focus state (`keyboardManager.getState().battle`). */
   render(
     state: GameState,
     pixelSize: PixelSize,
@@ -178,24 +166,25 @@ export class BattleSceneView {
     const bs = state.battleState;
     if (state.scene !== "battle" || !bs) return;
 
+    this.capturePendingElement(state.log);
+
     this.artPx = artPxFor(pixelSize);
 
     const actor: PartyMember =
       state.party.find((member) => member.id === bs.activeMemberId) ??
       state.party[0];
     const knownSkills = classSkills(actor.classId);
-    const healItems = state.inventory.filter((entryItem) =>
-      isHealItem(entryItem.itemId),
+    const usableItems = state.inventory.filter((entryItem) =>
+      isUsableBattleItem(entryItem.itemId),
     );
 
-    const menuRows = buildMenuRows(battleUi, actor, knownSkills, healItems);
+    const menuRows = buildMenuRows(battleUi, actor, knownSkills, usableItems);
 
     this.drawEnemies(bs, battleUi, pixelSize);
     this.drawActorStatus(actor, pixelSize, menuRows.length);
     this.drawMenu(menuRows, actor, pixelSize);
   }
 
-  /** Ages/removes floating damage numbers and reverts any expired tint flash. Wire to a Pixi `Ticker` (see `main.ts`). */
   tick(deltaMS: number): void {
     const survivors: Floater[] = [];
     for (const floater of this.floaters) {
@@ -224,6 +213,99 @@ export class BattleSceneView {
         this.flashes.set(id, next);
       }
     }
+
+    this.bursts.tick(deltaMS);
+  }
+
+  /** Numerals, name/HP text, and hit-flash tint stay - only the additive
+   * particle effects and hit-shake are removed, per ART_DIRECTION.md §6's
+   * "additive and prefers-reduced-motion-gated" guardrail. */
+  setReducedMotion(reduced: boolean): void {
+    this.reducedMotion = reduced;
+    if (reduced) this.bursts.clear();
+  }
+
+  private capturePendingElement(log: GameState["log"]): void {
+    if (this.logCursor === undefined) {
+      // First render: don't react to log history from before this view
+      // existed (e.g. resuming a save mid-battle).
+      this.logCursor = log.length;
+      this.pendingElement = undefined;
+      return;
+    }
+    this.pendingElement =
+      log.length > this.logCursor
+        ? log
+            .slice(this.logCursor)
+            .find((line) => line.kind === "damage" && line.element)?.element
+        : undefined;
+    this.logCursor = log.length;
+  }
+
+  private consumePendingElement(): Element {
+    const element = this.pendingElement ?? "physical";
+    this.pendingElement = undefined;
+    return element;
+  }
+
+  private spawnHitBurst(x: number, y: number, element: Element): void {
+    if (this.reducedMotion) return;
+    const color = toPixiColor(theme.element[element]);
+    if (element === "physical") {
+      for (let i = 0; i < MELEE_SPARK_COUNT; i++) {
+        const angle =
+          -MELEE_ARC_RADIANS / 2 +
+          (i / Math.max(1, MELEE_SPARK_COUNT - 1)) * MELEE_ARC_RADIANS;
+        this.bursts.spawn({
+          x,
+          y,
+          vx: Math.cos(angle) * MELEE_SPARK_SPEED_PX_PER_MS,
+          vy: Math.sin(angle) * MELEE_SPARK_SPEED_PX_PER_MS,
+          size: MELEE_SPARK_SIZE_PX,
+          color,
+          lifeMs: MELEE_SPARK_LIFE_MS,
+        });
+      }
+      return;
+    }
+    for (let i = 0; i < SPELL_BURST_COUNT; i++) {
+      const angle = (i / SPELL_BURST_COUNT) * TAU;
+      this.bursts.spawn({
+        x,
+        y,
+        vx: Math.cos(angle) * SPELL_BURST_SPEED_PX_PER_MS,
+        vy: Math.sin(angle) * SPELL_BURST_SPEED_PX_PER_MS,
+        gravity: SPELL_BURST_GRAVITY,
+        size: SPELL_BURST_SIZE_PX,
+        color,
+        lifeMs: SPELL_BURST_LIFE_MS,
+      });
+    }
+  }
+
+  private spawnHealSparkle(x: number, y: number): void {
+    if (this.reducedMotion) return;
+    const color = toPixiColor(theme.heal);
+    for (let i = 0; i < HEAL_SPARK_COUNT; i++) {
+      const spread =
+        (i / Math.max(1, HEAL_SPARK_COUNT - 1) - 0.5) * HEAL_SPARK_SPREAD_PX;
+      this.bursts.spawn({
+        x: x + spread,
+        y,
+        vy: -HEAL_SPARK_RISE_PX_PER_MS,
+        size: HEAL_SPARK_SIZE_PX,
+        color,
+        lifeMs: HEAL_SPARK_LIFE_MS,
+      });
+    }
+  }
+
+  private shakeOffset(id: string): number {
+    if (this.reducedMotion) return 0;
+    const elapsed = this.flashes.get(id);
+    if (elapsed === undefined) return 0;
+    const decay = 1 - elapsed / FLASH_MS;
+    return Math.sin(elapsed * SHAKE_FREQUENCY) * SHAKE_MAGNITUDE_PX * decay;
   }
 
   private applyTint(id: string, color: number): void {
@@ -233,16 +315,30 @@ export class BattleSceneView {
     else art.handle.setColor(color);
   }
 
-  /** Records `hp` for `id` and, if it dropped since the last render, spawns a floater and starts a flash. */
-  private checkDamage(id: string, hp: number, x: number, y: number): void {
+  private checkDamage(
+    id: string,
+    hp: number,
+    x: number,
+    y: number,
+    kind: "enemy" | "actor",
+  ): void {
     const prev = this.lastHp.get(id);
-    if (prev !== undefined && hp < prev) {
-      const handle = this.factory.createText("");
-      handle.setText(`-${prev - hp}`);
-      handle.setColor(toPixiColor(theme.danger));
-      handle.setPosition(x, y);
-      this.floaters.push({ handle, x, y, elapsed: 0 });
-      this.flashes.set(id, 0);
+    if (prev !== undefined) {
+      if (hp < prev) {
+        const handle = this.factory.createText("");
+        handle.setText(`-${prev - hp}`);
+        handle.setColor(toPixiColor(theme.danger));
+        handle.setPosition(x, y);
+        this.floaters.push({ handle, x, y, elapsed: 0 });
+        this.flashes.set(id, 0);
+        this.spawnHitBurst(
+          x,
+          y,
+          kind === "enemy" ? this.consumePendingElement() : "physical",
+        );
+      } else if (hp > prev && kind === "actor") {
+        this.spawnHealSparkle(x, y);
+      }
     }
     this.lastHp.set(id, hp);
   }
@@ -266,10 +362,6 @@ export class BattleSceneView {
       },
     );
 
-    // Center the packed field horizontally in the available width instead of
-    // always hugging the left edge (ROG-66) - with only one or two enemies
-    // the field is much narrower than a big canvas, and a left-anchored
-    // field just moves the empty void from "everywhere" to "the right side".
     const startX = Math.max(
       FIELD_PADDING_PX,
       (pixelSize.width - packed.fieldWidth) / 2,
@@ -301,7 +393,7 @@ export class BattleSceneView {
     x: number,
     y: number,
   ): void {
-    this.checkDamage(enemy.id, enemy.hp, x + this.artPx / 2, y);
+    this.checkDamage(enemy.id, enemy.hp, x + this.artPx / 2, y, "enemy");
 
     const baseColor = toPixiColor(enemyDisplayColor(enemy, selected));
     this.normalTint.set(enemy.id, baseColor);
@@ -330,7 +422,6 @@ export class BattleSceneView {
     hp.setPosition(x, y + this.artPx + NAME_ROW_PX);
   }
 
-  /** Draws a real sprite when the atlas has one for `enemy.sprite`, else a tinted placeholder rect the same size. */
   private drawEnemyArt(
     enemy: BattleEnemy,
     x: number,
@@ -354,7 +445,8 @@ export class BattleSceneView {
       this.artHandles.set(enemy.id, entry);
     }
 
-    entry.handle.setPosition(x, y);
+    const shakeX = this.shakeOffset(enemy.id);
+    entry.handle.setPosition(x + shakeX, y);
     if (entry.kind === "sprite") {
       entry.handle.setTexture(enemy.sprite as string);
       entry.handle.setSize(this.artPx, this.artPx);
@@ -381,7 +473,6 @@ export class BattleSceneView {
     }
   }
 
-  /** Positions the reusable highlight rect behind the selected enemy, or parks it off-canvas when nothing is selected. */
   private updateSelectionHighlight(
     selected: { x: number; y: number } | undefined,
   ): void {
@@ -401,14 +492,12 @@ export class BattleSceneView {
     this.targetHighlight.setColor(toPixiColor(theme.accent));
   }
 
-  /** Pixel y of the menu's top row (header row), anchoring both the menu and the actor status line above it. */
   private menuTopY(pixelSize: PixelSize, rowCount: number): number {
     return (
       pixelSize.height - (rowCount + 1) * MENU_ROW_HEIGHT_PX - MENU_PADDING_PX
     );
   }
 
-  /** Draws the acting party member's nameplate/HP line, and tracks their HP for damage floaters. */
   private drawActorStatus(
     actor: PartyMember,
     pixelSize: PixelSize,
@@ -417,7 +506,7 @@ export class BattleSceneView {
     const x = FIELD_PADDING_PX;
     const y = this.menuTopY(pixelSize, menuRowCount) - MENU_ROW_HEIGHT_PX;
 
-    this.checkDamage(actor.id, actor.hp, x + 40, y);
+    this.checkDamage(actor.id, actor.hp, x + 40, y, "actor");
 
     const tint = this.flashes.has(actor.id)
       ? toPixiColor(theme.danger)
@@ -432,7 +521,6 @@ export class BattleSceneView {
     this.actorStatus.setPosition(x, y);
   }
 
-  /** Destroys and recreates the menu's header + row text, matching `main.ts`'s existing precedent for small, infrequently-updated menus. */
   private drawMenu(
     rows: MenuRow[],
     actor: PartyMember,
@@ -464,12 +552,11 @@ interface MenuRow {
   color: number;
 }
 
-/** Builds the command menu's text rows for the current mode, mirroring `BattleScreen.tsx`'s `ActionMenu` exactly. */
 function buildMenuRows(
   battleUi: BattleUiState,
   actor: PartyMember,
   knownSkills: readonly SkillDef[],
-  healItems: GameState["inventory"],
+  usableItems: GameState["inventory"],
 ): MenuRow[] {
   const mode: BattleMode = battleUi.mode;
 
@@ -490,16 +577,16 @@ function buildMenuRows(
   }
 
   if (mode === "item") {
-    if (healItems.length === 0) {
+    if (usableItems.length === 0) {
       return [
         { text: "(no usable items)", color: toPixiColor(theme.textFaint) },
       ];
     }
-    return healItems.map((item, index) => {
+    return usableItems.map((item, index) => {
       const selected = index === battleUi.itemCursor;
       const name = findShopItem(item.itemId)?.name ?? item.itemId;
       return {
-        text: `${selected ? "> " : "  "}${name} x${item.quantity} - heal ${healAmount(item.itemId)}`,
+        text: `${selected ? "> " : "  "}${name} x${item.quantity} - ${battleItemEffectLabel(item.itemId)}`,
         color: selected ? toPixiColor(theme.accent) : toPixiColor(theme.text),
       };
     });

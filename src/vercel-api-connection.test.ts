@@ -5,12 +5,7 @@ import {
   vercelApiApproval,
 } from "../agent/connections/vercel-api";
 
-// The approval policy is the only remaining home of the read-only guard the
-// deleted `vercel_sandboxes` tool enforced in code: `resume: true` on
-// GET /v2/sandboxes/{name} mutates (new instance from snapshot).
 describe("vercelApiApproval", () => {
-  // Only toolName/toolInput matter to the policy; the SessionContext fields
-  // it never reads are not faked.
   const call = (toolName: string, toolInput?: Record<string, unknown>) =>
     vercelApiApproval({
       toolName,

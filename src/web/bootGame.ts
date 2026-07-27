@@ -1,4 +1,4 @@
-import { Application, Container, Text } from "pixi.js";
+import { Application, Container, type ParticleContainer, Text } from "pixi.js";
 import { CLASSES } from "../data/classes";
 import { SHOP_ITEMS, sellPriceFor } from "../data/shops";
 import { atkFrom, defFrom, spdFrom } from "../engine/combat/resolution";
@@ -53,15 +53,15 @@ import { createPixiBattleDrawFactory } from "./render/pixiBattleDrawFactory";
 import { createPixiDrawFactory } from "./render/pixiDrawFactory";
 import { createPixiDungeonDrawFactory } from "./render/pixiDungeonDrawFactory";
 import { createPixiOverworldDrawFactory } from "./render/pixiOverworldDrawFactory";
+import { createEffectParticleContainer } from "./render/pixiParticleDrawFactory";
 import { type ContentRect, SceneChromeView } from "./render/sceneView";
 import { SCENE_ORDER, SceneSwitcher, type SceneView } from "./scenes";
 
 const MIN_WIDTH = 480;
 const MIN_HEIGHT = 320;
-/** No settings persistence in the browser yet, so New Game always defaults to this name. */
+
 const DEFAULT_HERO_NAME = "Hero";
 
-/** Base font/line-height/margin the menu-plumbing views (title, game over, village) were tuned at, and the portal's default CSS width (`.portalFrame` in `app/globals.css`) that scale is anchored to. */
 const MENU_BASE_FONT_PX = 14;
 const MENU_BASE_LOGO_FONT_PX = 16;
 const MENU_BASE_LINE_HEIGHT_PX = 18;
@@ -69,18 +69,9 @@ const MENU_BASE_LOGO_LINE_HEIGHT_PX = 20;
 const MENU_BASE_MARGIN_PX = 24;
 const MENU_BASE_VILLAGE_MARGIN_PX = 8;
 const MENU_BASELINE_WIDTH_PX = 960;
-/** Cap on how far menu text scales up on a much bigger canvas - modest, not a doubling, so long lines (e.g. control hints) keep fitting comfortably. */
+
 const MENU_SCALE_MAX = 1.8;
 
-/**
- * Font/line-height/margin for the menu-plumbing views (title, game over,
- * village overview/building text - see "Title, village, and game-over"
- * below), derived from the available pixel size instead of hardcoded
- * literals (ROG-66). Below `MENU_BASELINE_WIDTH_PX` this reproduces the
- * original fixed sizing exactly (`scale` clamps to 1); above it, text/margins
- * grow so a much bigger canvas doesn't leave the same small text pinned in
- * one corner of a proportionally huge void.
- */
 interface MenuLayout {
   fontSize: number;
   logoFontSize: number;
@@ -105,17 +96,6 @@ function menuLayout(pixelSize: { width: number; height: number }): MenuLayout {
   };
 }
 
-/**
- * Boots the PixiJS renderer into `mount` (the Next.js chrome's portal
- * container, ROG-54) and returns a {@link BootHandle} whose `dispose()` tears
- * the whole thing back down - Pixi app, every `window` listener, and the
- * portal-scoped overlays - so React can mount/unmount it (including dev
- * StrictMode's deliberate double-invoke) without leaking a second running
- * game. Everything below was `main.ts`'s module top level under the old Vite
- * entry; the only behavioral change is that the canvas, crash overlay,
- * dev-console overlay, and minimum-size notice are all scoped to `mount`
- * instead of the whole viewport.
- */
 export interface BootHandle {
   dispose(): void;
 }
@@ -124,8 +104,6 @@ export async function bootGame(
   mount: HTMLElement,
   flags: BootFlags,
 ): Promise<BootHandle> {
-  // Every `window` listener and teardown step registers here so `dispose()`
-  // can undo them all in one pass.
   const disposers: Array<() => void> = [];
   function on<K extends keyof WindowEventMap>(
     type: K,
@@ -135,14 +113,8 @@ export async function bootGame(
     disposers.push(() => window.removeEventListener(type, handler));
   }
 
-  // The overlays below position themselves `absolute; inset: 0` so they fill
-  // the portal rather than the page; guarantee a positioned ancestor for that
-  // to resolve against even if the chrome's CSS ever stops setting it.
   if (!mount.style.position) mount.style.position = "relative";
 
-  // Portal-scoped minimum-size notice (replaces the old Vite entry's fixed,
-  // full-viewport `#min-size-overlay`): shown when the portal itself - not the
-  // window - is smaller than the game's minimum playable size.
   const overlay = document.createElement("div");
   Object.assign(overlay.style, {
     position: "absolute",
@@ -160,7 +132,6 @@ export async function bootGame(
   });
   mount.appendChild(overlay);
 
-  /** Replaces the canvas mount with a minimal plain-text crash overlay. */
   function showCrash(context: string, error: unknown): void {
     mount.innerHTML = "";
     const message = error instanceof Error ? error.message : String(error);
@@ -173,15 +144,6 @@ export async function bootGame(
     mount.appendChild(box);
   }
 
-  /**
-   * Loads the single IndexedDB save slot (ROG-46), mirroring `app.tsx`'s
-   * `fresh ? undefined : loadGame()` - `?fresh` bypasses the load entirely so
-   * a session always starts from a known state. There is no `store`/incident
-   * pipeline yet at this point in boot, so a corrupt/unreadable save is
-   * logged and treated as "no save" rather than crashing the whole app; only
-   * `GameStore`'s own constructor failing below still shows the plain-text
-   * `showCrash` overlay.
-   */
   async function loadInitialSave(): Promise<GameState | undefined> {
     if (flags.fresh) return undefined;
     try {
@@ -193,7 +155,7 @@ export async function bootGame(
   }
 
   const savedGame = await loadInitialSave();
-  /** Drives the title menu's Continue entry; flipped by a successful Church save and by the auto-clear on game over below. */
+
   let hasSave = savedGame !== undefined;
 
   let store: GameStore;
@@ -204,18 +166,6 @@ export async function bootGame(
     throw error;
   }
 
-  /**
-   * The current fatal incident, if any (ROG-48). Set from `store`'s own
-   * `subscribeIncidents` (reducer/invariant failures the store already
-   * catches internally) below, and by every `store.reportFailure` call this
-   * module makes directly for failures the store can't see itself (atlas/
-   * view setup, `window.onerror`, `unhandledrejection`). `renderCurrent`
-   * checks it first and, like the terminal's `if (fatal) return <CrashScreen
-   * />`, skips every other render while it's set - the crash overlay itself
-   * is shown synchronously from the `subscribeIncidents` callback, not from
-   * `renderCurrent`, so it appears immediately even if rendering itself is
-   * what's broken.
-   */
   let fatalIncident: GameIncident | undefined;
   const crashOverlay = new CrashOverlayView(mount, () =>
     window.location.reload(),
@@ -226,11 +176,6 @@ export async function bootGame(
     crashOverlay.show(incident);
   });
 
-  // Catches renderer failures `store.dispatch`/the try/catches below can't see
-  // themselves - e.g. a throw inside a Pixi ticker callback or a DOM event
-  // handler - and routes them through the same incident pipeline instead of a
-  // blank tab. Wired here (store exists, nothing else has run yet) so every
-  // later failure, including during Pixi/atlas setup, is covered.
   on("error", (event) => {
     store.reportFailure(
       "uncaught-exception",
@@ -245,58 +190,28 @@ export async function bootGame(
   const app = new Application();
   await app.init({
     resizeTo: mount,
-    // The void behind every scene (ROG-63) - `theme.background`, not a raw
-    // literal, so it stays the single source of truth `SceneChromeView`'s
-    // own interior fill (`sceneView.ts`) matches.
+
     backgroundColor: theme.background,
     antialias: true,
-    // Render the canvas's backing buffer at the device pixel ratio (falling
-    // back to 1 if it's ever missing, e.g. a mocked `window`) and let Pixi
-    // keep the CSS size matched via `autoDensity` - without this, HiDPI
-    // screens render at 1x CSS pixels and the browser blurs the upscale
-    // (ROG-63).
+
     resolution: window.devicePixelRatio || 1,
     autoDensity: true,
   });
   mount.appendChild(app.canvas);
 
-  // Whole-frame palette-lock grade (ROG-67 art direction §2.4/WEB-1) - applied
-  // once to the stage so it covers every scene uniformly, including the
-  // Aekashics battler sprites the Minifantasy-only atlas grade in
-  // `scripts/build-atlas.ts` never touches. See `render/colorGrade.ts`.
   app.stage.filters = createPaletteGrade();
 
-  // HUD bitmap pixel font (ROG-64) - installed before any scene chrome is
-  // built below so `createPixiDrawFactory`'s `createText` picks it up from
-  // the first render instead of flashing the monospace fallback in.
   await loadHudFont();
 
-  // `resizeTo: mount` only re-measures on a *window* `resize` event (see
-  // Pixi's `ResizePlugin`) - it never observes `mount` itself, so a portal
-  // that changes size for any other reason (the `.portalFrame`'s CSS
-  // `aspect-ratio` settling after layout, the min-size notice's own effect
-  // on the surrounding flex layout, a container query) leaves the canvas
-  // stuck at its last window-resize size instead of filling the portal
-  // (ROG-63). A `ResizeObserver` on `mount` keeps the renderer honest
-  // regardless of *why* the portal's box changed; `renderer.resize()` emits
-  // the same `"resize"` event `resizeTo` would, so the redraw/min-size wiring
-  // below stays a single listener.
   const portalResizeObserver = new ResizeObserver(() => {
     app.renderer.resize(mount.clientWidth, mount.clientHeight);
   });
   portalResizeObserver.observe(mount);
   disposers.push(() => portalResizeObserver.disconnect());
 
-  /**
-   * Which of the Ink terminal renderer's three top-level phases (see
-   * `app.tsx`) the browser is showing. `GameStore.state.scene` only decides
-   * which *playing* scene is active; title and game-over sit outside that,
-   * exactly as they do in `app.tsx` (`started`/`flags.gameOver`).
-   */
   type Phase = "title" | "playing";
   let phase: Phase = "title";
 
-  /** The title flow's own local UI state; mirrors the one `app.tsx` owns in `useState`. */
   let titleUi: TitleUiState = {
     view: "menu",
     menuCursor: 0,
@@ -305,7 +220,6 @@ export async function bootGame(
     nameInput: "",
   };
 
-  /** Resets the title flow back to its landing menu (boot, and after quitting from play). */
   function resetTitleUi(): void {
     titleUi = {
       view: "menu",
@@ -316,35 +230,24 @@ export async function bootGame(
     };
   }
 
-  /** Returns to the title screen. Bound as `BrowserKeyboardManager`'s `onQuit`. */
   function quitToTitle(): void {
     phase = "title";
     resetTitleUi();
   }
 
-  /** Title-cases a scene id for the chrome panel's title, e.g. "village" -> "Village". */
   function sceneTitle(scene: Scene): string {
     return scene.charAt(0).toUpperCase() + scene.slice(1);
   }
 
-  /**
-   * One scene's container plus the label-driven view `SceneSwitcher` uses, and
-   * the ROG-47 HUD chrome drawn around its content. `chrome` is the Pixi
-   * interpreter for the shared `buildChrome` tree (`src/ui/scene/chrome.ts`);
-   * `contentContainer` is the scene's content region, repositioned to the
-   * chrome's computed content rect on every render - the Pixi analog of
-   * `useScreenContent` sizing a scene's viewport from the frame chrome.
-   */
   interface SceneEntry {
     container: Container;
     contentContainer: Container;
     chrome: SceneChromeView;
     view: SceneView;
-    /** The generic placeholder label `SceneSwitcher` writes `describeState` into. */
+
     label: Text;
   }
 
-  /** Builds one scene's container, chrome view, and the label-driven view `SceneSwitcher` uses. */
   function buildSceneEntry(scene: Scene): SceneEntry {
     const container = new Container();
     container.visible = false;
@@ -392,25 +295,14 @@ export async function bootGame(
   ) as Record<Scene, SceneView>;
   const switcher = new SceneSwitcher(views);
 
-  // Real village content (below) replaces the village scene's generic
-  // placeholder label; hide it so it doesn't draw underneath that content.
-  // The other three scenes keep their placeholder (ROG-49/50/51 own real
-  // rendering for those).
   entries.village.label.visible = false;
 
-  // Real overworld content (tilemap/minimap/meter, below) replaces its
-  // generic placeholder label the same way village's does.
   entries.overworld.label.visible = false;
 
-  // Real battle content (sprites/menus, below) replaces its generic
-  // placeholder label the same way village's/overworld's does.
   entries.battle.label.visible = false;
 
-  // Real dungeon content (raycast scene, below) replaces its generic
-  // placeholder label the same way the other three scenes' do.
   entries.dungeon.label.visible = false;
 
-  /** Each scene's content-region rect from the most recent `renderChrome()`, in pixels. */
   const contentRects = Object.fromEntries(
     SCENE_ORDER.map((scene) => [
       scene,
@@ -418,15 +310,6 @@ export async function bootGame(
     ]),
   ) as Record<Scene, ContentRect>;
 
-  /**
-   * Rebuilds every scene's HUD chrome (frame, party bar, message log) at the
-   * canvas's current size and repositions each scene's content container to
-   * the chrome's computed content rect, so a resize or a dispatch that
-   * changes HP/MP/log always redraws the frame around up-to-date content.
-   * Stashes each scene's content rect in `contentRects` so per-scene content
-   * renderers (e.g. `renderOverworldContent`) know how much pixel space they
-   * have without recomputing the chrome themselves.
-   */
   function renderChrome(state: GameState): void {
     const size = { width: app.screen.width, height: app.screen.height };
     for (const scene of SCENE_ORDER) {
@@ -439,12 +322,10 @@ export async function bootGame(
     }
   }
 
-  /** Target number of overworld viewport columns at the default portal width, used to derive a tile size that scales with the available space instead of a fixed pixel constant (ROG-66). */
   const OVERWORLD_TARGET_COLS = 22;
   const OVERWORLD_MIN_TILE_PX = 20;
   const OVERWORLD_MAX_TILE_PX = 40;
 
-  /** Pixel size of one main-viewport overworld tile, scaled off the available viewport width; the minimap draws smaller than this regardless (see `overworldView.ts`). */
   function overworldTilePx(availableWidth: number): number {
     return Math.max(
       OVERWORLD_MIN_TILE_PX,
@@ -456,17 +337,17 @@ export async function bootGame(
   }
 
   let overworldView: OverworldSceneView | undefined;
+  let battleView: BattleSceneView | undefined;
+  let dungeonView: DungeonSceneView | undefined;
 
-  // Reduced-motion (ROG-65): the overworld's ambient drift (leaf/firefly
-  // particles) and marker-pulse/water-shimmer breathing all freeze when the
-  // OS requests reduced motion - checked once here (the DOM API the
-  // framework-free `OverworldSceneView` never touches) and kept live via the
-  // media query's own `change` event.
   const reducedMotionQuery = window.matchMedia(
     "(prefers-reduced-motion: reduce)",
   );
-  const applyReducedMotion = (reduced: boolean) =>
+  const applyReducedMotion = (reduced: boolean) => {
     overworldView?.setReducedMotion(reduced);
+    battleView?.setReducedMotion(reduced);
+    dungeonView?.setReducedMotion(reduced);
+  };
   const handleReducedMotionChange = (event: MediaQueryListEvent) =>
     applyReducedMotion(event.matches);
   reducedMotionQuery.addEventListener("change", handleReducedMotionChange);
@@ -474,7 +355,18 @@ export async function bootGame(
     reducedMotionQuery.removeEventListener("change", handleReducedMotionChange),
   );
 
-  /** Loads the atlas (safe to call again; see `loadAtlas`'s doc comment) and builds the overworld's Pixi draw factory/view. */
+  // Effect particles (WEB-7) render above everything else added to a scene's
+  // content container - sprites, text, HUD bits added over the run - via a
+  // high zIndex rather than draw order, so they never get buried under a
+  // later-added handle.
+  function attachEffectParticleLayer(container: Container): ParticleContainer {
+    container.sortableChildren = true;
+    const layer = createEffectParticleContainer();
+    layer.zIndex = 1000;
+    container.addChild(layer);
+    return layer;
+  }
+
   async function setupOverworldView(): Promise<void> {
     const sheet = await loadAtlas();
     const factory = createPixiOverworldDrawFactory(
@@ -489,42 +381,42 @@ export async function bootGame(
   } catch (error) {
     store.reportFailure("overworld-view", error, true);
   }
-  // Ages the overworld's marker-pulse/water-shimmer alpha and ambient
-  // leaf/firefly particle drift every real animation frame (ROG-65), the
-  // same shape as `battleView.ts`'s `tick`; a no-op before the view exists.
+
   app.ticker.add((ticker) => overworldView?.tick(ticker.deltaMS));
 
-  let battleView: BattleSceneView | undefined;
-
-  /** Loads the atlas (safe to call again; see `loadAtlas`'s doc comment) and builds the battle scene's Pixi draw factory/view. */
   async function setupBattleView(): Promise<void> {
     const textures = await loadBattlerTextures();
+    const particles = attachEffectParticleLayer(
+      entries.battle.contentContainer,
+    );
     const factory = createPixiBattleDrawFactory(
       entries.battle.contentContainer,
       textures,
+      particles,
     );
     battleView = new BattleSceneView(factory);
+    applyReducedMotion(reducedMotionQuery.matches);
   }
   try {
     await setupBattleView();
   } catch (error) {
     store.reportFailure("battle-view", error, true);
   }
-  // Ages/removes floating damage numbers and reverts tint flashes every real
-  // animation frame (see `battleView.ts`'s module doc); a no-op before the
-  // view exists (while `setupBattleView` is still loading the atlas).
+
   app.ticker.add((ticker) => battleView?.tick(ticker.deltaMS));
 
-  let dungeonView: DungeonSceneView | undefined;
-
-  /** Loads the atlas (safe to call again; see `loadAtlas`'s doc comment) and builds the dungeon scene's Pixi draw factory/view (ROG-50). */
   async function setupDungeonView(): Promise<void> {
     const sheet = await loadAtlas();
+    const particles = attachEffectParticleLayer(
+      entries.dungeon.contentContainer,
+    );
     const factory = createPixiDungeonDrawFactory(
       entries.dungeon.contentContainer,
       sheet,
+      particles,
     );
     dungeonView = new DungeonSceneView(factory);
+    applyReducedMotion(reducedMotionQuery.matches);
   }
   try {
     await setupDungeonView();
@@ -532,10 +424,11 @@ export async function bootGame(
     store.reportFailure("dungeon-view", error, true);
   }
 
+  app.ticker.add((ticker) => dungeonView?.tick(ticker.deltaMS));
+
   let cachedOverworldMap: OverworldMap | undefined;
   let cachedOverworldSeed: number | undefined;
 
-  /** `generateOverworldMap` is a pure function of `state.seed` (see `overworld.ts`); memoized so a per-render call stays cheap. */
   function overworldMapFor(state: GameState): OverworldMap {
     if (cachedOverworldMap && cachedOverworldSeed === state.seed) {
       return cachedOverworldMap;
@@ -545,30 +438,15 @@ export async function bootGame(
     return cachedOverworldMap;
   }
 
-  // ---------------------------------------------------------------------------
-  // Title, game-over, and village-content rendering
-  //
-  // These three views are all "menu plumbing" (ROG-52): none of them go
-  // through the ROG-47 chrome tree (`buildChrome`/`SceneChromeView`) - title
-  // and game-over aren't `GameStore` scenes at all, and the village's building
-  // sub-views are content *inside* the village scene's existing chrome, not a
-  // new chrome of their own. Each one destroys and recreates its Text children
-  // on every render instead of a keyed diff, matching this issue's framing:
-  // small, infrequently-updated menus, not a hot path worth a new abstraction.
-  // ---------------------------------------------------------------------------
-
-  /** One line of plain Pixi text; `color` defaults to `theme.text`. */
   interface Line {
     text: string;
     color?: number;
   }
 
-  /** Destroys every child of `container`, so repeated renders don't leak Text/Graphics objects. */
   function clearContainer(container: Container): void {
     for (const child of container.removeChildren()) child.destroy();
   }
 
-  /** Draws `lines` stacked vertically from `(x, y)`; returns the y position after the last line. */
   function drawLines(
     container: Container,
     lines: readonly Line[],
@@ -599,7 +477,6 @@ export async function bootGame(
   titleContainer.visible = false;
   app.stage.addChild(titleContainer);
 
-  /** Draws the title menu: logo, then whichever of menu/class/mode/name is active. */
   function renderTitle(): void {
     clearContainer(titleContainer);
     const layout = menuLayout({
@@ -607,14 +484,6 @@ export async function bootGame(
       height: app.screen.height,
     });
 
-    // JRPG windowskin panel (ROG-72), the same beveled-navy-fill-inside-an-
-    // amber-frame treatment `SceneChromeView.render()` gives every in-game
-    // scene, so the title screen stops being bare text on a plain black
-    // canvas. Built fresh every render like the rest of this "menu plumbing"
-    // (see the file-level comment above `drawLines`) rather than a cached
-    // `RectHandle`, since `clearContainer` already destroys these Graphics
-    // along with the Text each call. Drawn before any text below so the
-    // panel sits behind it in the container's child order.
     const panelFactory = createPixiDrawFactory(titleContainer);
     const panelBorder = panelFactory.createRect();
     panelBorder.setPosition(0, 0);
@@ -697,8 +566,7 @@ export async function bootGame(
         break;
       }
       default: {
-        // "menu" (the browser has no SettingsScreen, so "settings" never shows).
-        const options = mainMenuOptions(false);
+        const options = mainMenuOptions(hasSave);
         for (const [index, option] of options.entries()) {
           const selected = index === titleUi.menuCursor;
           lines.push({
@@ -723,7 +591,6 @@ export async function bootGame(
     );
   }
 
-  /** Applies a title-phase key press: normalize, resolve/reduce, apply the effect. */
   function handleTitleKeyDown(event: KeyboardEvent): void {
     const keyName = normalizeBrowserKey(event);
     if (!keyName) return;
@@ -741,9 +608,7 @@ export async function bootGame(
       case "startNewGame":
         store.dispatch({
           type: "NewGame",
-          // Honor the boot `?seed` so a run started from the title is reproducible
-          // (the play-web harness replays this flow); `flags.seed` already defaults
-          // to a clock value when no `?seed` is given, so play stays random by default.
+
           seed: flags.seed,
           classId: result.effect.classId,
           permadeath: result.effect.permadeath,
@@ -752,21 +617,15 @@ export async function bootGame(
         phase = "playing";
         break;
       case "continueGame":
-        // `store` was already constructed from the loaded save at boot
-        // (ROG-46), so there is nothing left to load here - just leave the
-        // title flow the same way `app.tsx`'s `setStarted(true)` does.
         phase = "playing";
         break;
       case "openSettings":
-        // No browser SettingsScreen. Stashed, matching `keyboard.ts`'s
-        // existing stash pattern, until one exists.
         store.dispatch({
           type: "Log",
           message: "Settings aren't available in the browser yet",
         });
         break;
       case "quit":
-        // No OS process to exit in the browser; stay on the title menu.
         store.dispatch({
           type: "Log",
           message: "Quit isn't available in the browser yet",
@@ -781,7 +640,6 @@ export async function bootGame(
   gameOverContainer.visible = false;
   app.stage.addChild(gameOverContainer);
 
-  /** Draws the game-over view: banner, one-line summary, and the restart/quit hint. */
   function renderGameOverView(): void {
     clearContainer(gameOverContainer);
     const layout = menuLayout({
@@ -824,7 +682,6 @@ export async function bootGame(
     );
   }
 
-  /** Applies a game-over-phase key press: Enter starts a new run, quit returns to the title. */
   function handleGameOverKeyDown(event: KeyboardEvent, state: GameState): void {
     const keyName = normalizeBrowserKey(event);
     if (!keyName) return;
@@ -843,7 +700,6 @@ export async function bootGame(
     }
   }
 
-  /** Compact signed stat delta line for the store's backpack compare panel (mirrors `StoreView.tsx`'s `deltaLine`). */
   function deltaLine(delta: {
     str: number;
     agi: number;
@@ -861,7 +717,6 @@ export async function bootGame(
     return parts.length === 0 ? "no stat change" : parts.join(" ");
   }
 
-  /** Village overview: party/gold summary plus the building/overworld picker. */
   function buildVillageOverviewLines(
     state: GameState,
     overview: OverviewUiState,
@@ -891,7 +746,6 @@ export async function bootGame(
     return lines;
   }
 
-  /** Inn sub-view: rest cost preview. */
   function buildInnLines(state: GameState): Line[] {
     const cost = state.party.length * INN_COST_PER_MEMBER;
     return [
@@ -906,7 +760,6 @@ export async function bootGame(
     ];
   }
 
-  /** Church sub-view: save copy (saving itself is stashed - browser persistence is ROG-46). */
   function buildChurchLines(): Line[] {
     return [
       { text: "Save your progress here. Saves load automatically on boot." },
@@ -918,7 +771,6 @@ export async function bootGame(
     ];
   }
 
-  /** Store sub-view: shop catalog or the selected member's backpack/equipment. */
   function buildStoreLines(state: GameState, storeUi: StoreUiState): Line[] {
     const clampedMemberIndex = Math.min(
       storeUi.memberIndex,
@@ -1001,7 +853,6 @@ export async function bootGame(
     return lines;
   }
 
-  /** Tavern sub-view: recruit pool or the current party's dismiss list. */
   function buildTavernLines(state: GameState, tavernUi: TavernUiState): Line[] {
     const lines: Line[] = [
       {
@@ -1063,7 +914,6 @@ export async function bootGame(
   const villageContentContainer = new Container();
   entries.village.contentContainer.addChild(villageContentContainer);
 
-  /** Draws the village scene's real content: overview or whichever building has focus. */
   function renderVillageContent(state: GameState): void {
     if (state.scene !== "village") return;
     clearContainer(villageContentContainer);
@@ -1088,11 +938,6 @@ export async function bootGame(
         break;
     }
 
-    // Scale text/margins to the village content rect, and vertically center
-    // the block when it's shorter than the available height instead of
-    // always pinning it flush at the top - on a much bigger canvas than a
-    // terminal's, a handful of short menu lines otherwise leaves most of the
-    // content region an unbalanced void below them (ROG-66).
     const rect = contentRects.village;
     const layout = menuLayout(rect);
     const blockHeight = lines.length * layout.lineHeight;
@@ -1110,15 +955,6 @@ export async function bootGame(
   zoomContainer.visible = false;
   app.stage.addChild(zoomContainer);
 
-  /**
-   * Draws the fast-travel picker (ENG-1) as a full overlay on top of
-   * whatever scene is showing, gated on the keyboard manager's
-   * `zoom.open` flag exactly like `devConsoleOverlay` gates on
-   * `devConsole.isOpen()`. Reuses the village overview's bordered-panel +
-   * `drawLines` chrome (see `renderTitle`'s panel) instead of inventing new
-   * visuals, and lists every waypoint `world/waypoints.ts`'s
-   * `activatedWaypointList` reports for the current save.
-   */
   function renderZoomOverlay(state: GameState): void {
     const zoom = keyboardManager.getState().zoom;
     zoomContainer.visible = zoom.open;
@@ -1175,19 +1011,6 @@ export async function bootGame(
     });
   }
 
-  /**
-   * Draws the overworld scene's real content: sprite tilemap camera viewport,
-   * minimap, and encounter meter (ROG-49). Mirrors `renderVillageContent`'s
-   * guard/shape, but delegates the actual drawing to `OverworldSceneView`
-   * (framework-free, unit-tested in `overworldView.test.ts`) instead of
-   * building `Text` lines directly.
-   *
-   * In `--dev`/`?dev` builds only, also passes a fixed multi-cell debug
-   * fixture (ENG-8) so the underlying texture-mapping capability - a
-   * texture spanning more than one grid cell, drawn as one continuous
-   * image instead of tiled 1x1 repeats - is visible in the running game
-   * ahead of ENG-7 wiring a real multi-tile landmark onto the map.
-   */
   function renderOverworldContent(state: GameState): void {
     if (state.scene !== "overworld") return;
     if (!overworldView) return;
@@ -1204,18 +1027,6 @@ export async function bootGame(
     );
   }
 
-  /**
-   * Draws the battle scene's real content: enemy sprites/fallback rects with
-   * name/HP plates, the target-mode selection highlight, the action/skill/
-   * item/target command menu, and HP-delta-derived floating damage numbers
-   * (ROG-51). Mirrors `renderOverworldContent`'s guard/shape, delegating to
-   * `BattleSceneView` (framework-free, unit-tested in `battleView.test.ts`).
-   * Menu/cursor state is read from `keyboardManager.getState().battle`, the
-   * same `BrowserKeyboardManager` focus state `renderVillageContent` already
-   * reads for the village's building focus - `handleBattle` (ROG-45) already
-   * reduces this state machine and dispatches the resulting battle events, so
-   * this function only needs to draw it.
-   */
   function renderBattleContent(state: GameState): void {
     if (state.scene !== "battle") return;
     if (!battleView) return;
@@ -1227,15 +1038,6 @@ export async function bootGame(
     );
   }
 
-  /**
-   * Draws the dungeon scene's real content: the textured-raycast first-person
-   * view (walls/floor/ceiling/billboards), a graphical minimap corner, and a
-   * facing/status readout (ROG-50). Mirrors `renderOverworldContent`'s guard/
-   * shape, delegating to `DungeonSceneView` (framework-free, unit-tested in
-   * `dungeonView.test.ts`). ENG-1 threads the keyboard manager's
-   * `dungeon.confirmingExit` through so the evac confirm prompt renders in
-   * the same status line the facing readout uses.
-   */
   function renderDungeonContent(state: GameState): void {
     if (state.scene !== "dungeon") return;
     if (!dungeonView) return;
@@ -1248,17 +1050,6 @@ export async function bootGame(
     );
   }
 
-  /**
-   * Redraws whatever should be visible for the current `phase`/game-over/scene
-   * state. Called both from `store.subscribe` (a `GameStore` dispatch) and at
-   * the end of every keydown, since local-only UI state (menu cursors, which
-   * village building has focus, title flow transitions) doesn't dispatch a
-   * `GameEvent` and would otherwise never redraw. Bails out first when
-   * `fatalIncident` is set (ROG-48) - the crash overlay is already showing
-   * itself (see the `subscribeIncidents` callback above), so there is nothing
-   * else to draw, exactly like the terminal's `if (fatal) return
-   * <CrashScreen/>` short-circuit in `app.tsx`.
-   */
   function renderCurrent(): void {
     if (fatalIncident) return;
     const state = store.getState();
@@ -1298,30 +1089,10 @@ export async function bootGame(
     }
   }
 
-  /**
-   * Keyboard input manager with scene focus routing (ROG-45). Scene hotkeys
-   * (1-4) and quit go through the same `globalInput` keymap `app.tsx` uses;
-   * everything else routes to whichever scene - and, inside the village,
-   * whichever sub-view - currently has focus, via the exact same
-   * `interaction.ts` modules the Ink screens use. `onQuit` (ROG-52) returns
-   * to the browser's own title screen, since there is no OS process for
-   * "quit" to exit here. Declared before the first `renderCurrent()` call
-   * below, since `renderVillageContent` reads its state. The dev-console
-   * toggle key is intercepted before it ever reaches this manager (see the
-   * keydown listener at the bottom of this module), so its own
-   * `toggleConsole` handling only fires when no browser dev console exists
-   * (i.e. `--dev`/`?dev` wasn't set).
-   */
   const keyboardManager = new BrowserKeyboardManager(store, quitToTitle, () => {
     hasSave = true;
   });
 
-  /**
-   * Browser dev console (ROG-48): gated on `--dev`/`?dev`, exactly like the
-   * terminal's `devConsoleEnabled`. `undefined` when disabled, so every
-   * dev-console branch below is a no-op in a normal build - the backtick key
-   * falls through to `keyboardManager`'s existing stash in that case.
-   */
   const devConsole = flags.dev
     ? new BrowserDevConsole(store, {
         crash: (message) =>
@@ -1332,14 +1103,6 @@ export async function bootGame(
     ? new DevConsoleOverlayView(mount)
     : undefined;
 
-  /**
-   * Clears the browser save once the game is over, matching `app.tsx`'s
-   * `useEffect(() => { if (gameOver) ... clearSave() }, [gameOver])` - so the
-   * next boot (or title "New Game") starts a fresh run instead of reloading
-   * the dead game-over state. `store.subscribe` fires on every dispatch, so
-   * `clearedForGameOver` guards against re-clearing (and re-flipping
-   * `hasSave`) on every subsequent redraw while still on the game-over screen.
-   */
   let clearedForGameOver = false;
   store.subscribe(() => {
     const gameOver = store.getState().flags?.gameOver ?? false;
@@ -1363,10 +1126,7 @@ export async function bootGame(
       ? `Portal too small - the window needs room for at least a ${MIN_WIDTH}x${MIN_HEIGHT}px portal (current: ${width}x${height})`
       : "";
   }
-  // `renderer.resize()` emits `"resize"` whether it's `resizeTo`'s own
-  // window-resize handler or the `ResizeObserver` above that triggers it;
-  // drive both the redraw and the min-size notice from this one listener,
-  // with a window `resize` kept as a belt-and-braces fallback.
+
   app.renderer.on("resize", () => {
     renderCurrent();
     updateMinSizeOverlay();
@@ -1375,16 +1135,6 @@ export async function bootGame(
   renderCurrent();
   updateMinSizeOverlay();
 
-  /**
-   * Routes every keydown to the dev console (if open, or being opened/closed
-   * by backtick), then the phase currently showing (title, game-over, or the
-   * normal scene-focus routing), then always redraws - see `renderCurrent`'s
-   * doc comment for why a redraw is needed even when no `GameEvent` was
-   * dispatched. A fatal incident (ROG-48) blocks every branch below, matching
-   * the terminal's `isActive: !fatal` on each of its `useInput` hooks -
-   * there's nothing to route input to once the crash overlay is showing; its
-   * only interactive element is its own Restart button.
-   */
   on("keydown", (event) => {
     if (devConsole) {
       const keyName = normalizeBrowserKey(event);
@@ -1415,11 +1165,6 @@ export async function bootGame(
 
   return {
     dispose() {
-      // Drop every window listener first (so no keydown/resize/error fires
-      // against a half-torn-down game), then destroy the Pixi app + WebGL
-      // context and its canvas, then clear whatever DOM we appended to the
-      // portal (the overlays and the min-size notice). After this the portal
-      // is empty and inert, ready for a fresh bootGame() on the next mount.
       for (const dispose of disposers) dispose();
       app.destroy(true, { children: true });
       mount.replaceChildren();

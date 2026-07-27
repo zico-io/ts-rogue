@@ -1,12 +1,4 @@
 #!/usr/bin/env bash
-# Last-resort recovery for HAR-5-style push outages: bundles commits on the
-# current branch that are not yet on origin into a patch file, so the work
-# survives even if this sandbox is discarded before GitHub push access
-# returns. Attach the resulting file to the Linear issue, then on a resumed
-# session apply it with `git am <patch>` before pushing normally.
-#
-# Usage: scripts/backup-unpushed-work.sh <issue-id>
-#   e.g. scripts/backup-unpushed-work.sh HAR-5
 set -euo pipefail
 
 ISSUE_ID="${1:?usage: scripts/backup-unpushed-work.sh <issue-id>}"

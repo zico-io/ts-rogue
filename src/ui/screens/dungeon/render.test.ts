@@ -22,7 +22,6 @@ import {
 const VP = { width: 60, height: 20 };
 const TAU = 2 * Math.PI;
 
-/** A cell is a Braille glyph (U+2800–U+28FF), i.e. drawn wireframe. */
 function isBraille(ch: string): boolean {
   const code = ch.charCodeAt(0);
   return code >= 0x2800 && code <= 0x28ff;
@@ -56,7 +55,6 @@ describe("renderDungeonView", () => {
   });
 
   it("draws a facing wall as long horizontal rails spanning the view", () => {
-    // Full wall row two steps ahead: its top/bottom rails cross the frame.
     const layout = buildLayout([
       "#######",
       "#######",
@@ -71,8 +69,6 @@ describe("renderDungeonView", () => {
   });
 
   it("keeps the vanishing region open down a long corridor", () => {
-    // Corridor longer than MAX_DEPTH: the side rails converge toward the
-    // center but the vanishing cells themselves stay dark (no back wall).
     const corridor = Array.from({ length: 11 }, (_, y) =>
       y === 0 ? "###" : "#.#",
     );
@@ -94,11 +90,11 @@ describe("renderDungeonView", () => {
     const closedRows = at(closed);
     const openRows = at(open);
     const half = VP.width / 2;
-    // The doorway is on the left: the left half must change...
+
     expect(openRows.map((r) => r.slice(0, half))).not.toEqual(
       closedRows.map((r) => r.slice(0, half)),
     );
-    // ...and the untouched right wall must render identically.
+
     expect(openRows.map((r) => r.slice(half))).toEqual(
       closedRows.map((r) => r.slice(half)),
     );
@@ -128,8 +124,6 @@ describe("renderDungeonView", () => {
   });
 
   it("dithers far wall faces denser than near ones (depth shading)", () => {
-    // One isolated pillar in a big open room; the same screen-center region
-    // is strictly inside the pillar's face both near and far.
     const floor = Array.from({ length: 17 }, () => ".".repeat(17));
     const withPillar = floor.map((row, y) =>
       y === 7 ? `${row.slice(0, 8)}#${row.slice(9)}` : row,
@@ -142,10 +136,10 @@ describe("renderDungeonView", () => {
       );
       return dotCount(rows.slice(9, 11).map((r) => r.slice(28, 32)));
     };
-    const near = centerFill(9); // pillar 2 tiles ahead
-    const far = centerFill(12); // pillar 5 tiles ahead
-    expect(near).toBeGreaterThan(0); // some fill even up close
-    expect(far).toBeGreaterThan(near * 2); // distance darkens the surface
+    const near = centerFill(9);
+    const far = centerFill(12);
+    expect(near).toBeGreaterThan(0);
+    expect(far).toBeGreaterThan(near * 2);
   });
 
   it("run rows join to exactly the plain string render", () => {
@@ -157,7 +151,6 @@ describe("renderDungeonView", () => {
   });
 
   it("assigns a nearer pillar a higher depth band than a farther one", () => {
-    // Same pillar rig as the dither test above.
     const floor = Array.from({ length: 17 }, () => ".".repeat(17));
     const withPillar = floor.map((row, y) =>
       y === 7 ? `${row.slice(0, 8)}#${row.slice(9)}` : row,
@@ -199,9 +192,9 @@ describe("renderDungeonView", () => {
     const empty = at(".");
     for (const feature of ["C", ">", "B"] as const) {
       const rows = at(feature);
-      expect(rows).not.toEqual(empty); // prop visible two tiles ahead
+      expect(rows).not.toEqual(empty);
       for (const ch of rows.join("")) {
-        expect(ch === " " || isBraille(ch)).toBe(true); // drawn, not lettered
+        expect(ch === " " || isBraille(ch)).toBe(true);
       }
     }
   });
@@ -265,7 +258,7 @@ describe("camera poses", () => {
     const west = { x: 0, y: 0, angle: (3 * Math.PI) / 2 };
     const north = { x: 0, y: 0, angle: 0 };
     const mid = lerpPose(west, north, 0.5);
-    expect(mid.angle).toBeCloseTo((7 * Math.PI) / 4); // through NW, not SE
+    expect(mid.angle).toBeCloseTo((7 * Math.PI) / 4);
     const end = ((lerpPose(west, north, 1).angle % TAU) + TAU) % TAU;
     expect(end).toBeCloseTo(0);
   });
@@ -294,9 +287,9 @@ describe("renderMinimap", () => {
     const cy = Math.floor(MINIMAP_HEIGHT / 2);
     expect(rows[cy][cx]).toBe(FACING_GLYPH[ds.facing]);
     const all = rows.join("");
-    expect(all).toContain("#"); // walls
-    expect(all).toContain("."); // floor
-    expect(all).toContain(" "); // unexplored (window is larger than the FOV)
+    expect(all).toContain("#");
+    expect(all).toContain(".");
+    expect(all).toContain(" ");
   });
 
   it("leaves unexplored tiles blank and clamps the window at the map edge", () => {
@@ -308,7 +301,7 @@ describe("renderMinimap", () => {
       explored: ds.layout.tiles.map((row) => row.map(() => true)),
     };
     const rows = renderMinimap(cornered);
-    expect(rows[0][0]).toBe(FACING_GLYPH.east); // player clamped to top-left
+    expect(rows[0][0]).toBe(FACING_GLYPH.east);
   });
 
   it("glyphs chests, stairs, and the boss marker on explored tiles", () => {
@@ -328,7 +321,6 @@ describe("renderMinimap", () => {
   });
 });
 
-/** Longest contiguous run of Braille chars in a row (wall-rail detector). */
 function brailleRun(row: string): number {
   let best = 0;
   let run = 0;
@@ -339,7 +331,6 @@ function brailleRun(row: string): number {
   return best;
 }
 
-/** Total lit Braille dots across a string-grid region. */
 function dotCount(rows: string[]): number {
   let total = 0;
   for (const row of rows) {
@@ -357,7 +348,6 @@ function dotCount(rows: string[]): number {
   return total;
 }
 
-/** Build a DungeonLayout from ASCII rows: `#` wall, `.` floor, `C`/`>`/`B` features. */
 function buildLayout(rows: string[]): DungeonLayout {
   const height = rows.length;
   const width = rows[0].length;
@@ -378,7 +368,6 @@ function buildLayout(rows: string[]): DungeonLayout {
   return { width, height, tiles, entrance: { x: 0, y: 0 } };
 }
 
-/** Build a DungeonState for render tests; defaults to fully explored. */
 function buildState(
   layout: DungeonLayout,
   player: Point,
@@ -389,6 +378,7 @@ function buildState(
     explored ?? layout.tiles.map((row) => row.map((tile) => !tile.wall));
   return {
     dungeonId: "test",
+    theme: "crypt",
     floor: 1,
     layout,
     player,

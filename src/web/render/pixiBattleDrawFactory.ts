@@ -1,52 +1,39 @@
-/**
- * Real Pixi implementation of `battleView.ts`'s `BattleDrawFactory`. Thin
- * adapter only, mirroring `pixiOverworldDrawFactory.ts`'s split - all layout,
- * keying, and turn-feedback logic lives in `BattleSceneView`, which never
- * imports `pixi.js` so it stays unit-testable without a WebGL/canvas context
- * (see `battleView.test.ts`). One factory is bound to a single Pixi
- * `Container` and looks enemy sprite textures up by name from a preloaded
- * map of individual battler textures (`battlers.ts`'s `loadBattlerTextures()`)
- * - battlers are a separate scale class from the 8x8 tile atlas (ROG-68), not
- * packed atlas frames.
- */
-
-import { Graphics, Sprite, Text, type Texture } from "pixi.js";
+import {
+  Graphics,
+  type ParticleContainer,
+  Sprite,
+  Text,
+  type Texture,
+} from "pixi.js";
 import type {
   BattleDrawFactory,
   BattleRectHandle,
   BattleSpriteHandle,
   BattleTextHandle,
 } from "./battleView";
+import type { ParticleHandle } from "./particles";
+import { createPixiParticleDrawFactory } from "./pixiParticleDrawFactory";
 
-/** Builds a `BattleDrawFactory` whose sprites/rects/text are all children of `container`. */
 export function createPixiBattleDrawFactory(
   container: { addChild(child: Sprite | Graphics | Text): void },
   textures: Record<string, Texture>,
+  particleContainer: ParticleContainer,
 ): BattleDrawFactory {
+  const particles = createPixiParticleDrawFactory(particleContainer);
   return {
     hasTexture(name: string): boolean {
       return name in textures;
     },
     createSprite(): BattleSpriteHandle {
       const sprite = new Sprite();
-      // Battlers are drawn centered in their art box (see `setSize` below),
-      // so anchor at the sprite's own center rather than Pixi's default
-      // top-left - `boxX`/`boxY`/`boxWidth`/`boxHeight` below track the box
-      // `battleView.ts` positions/sizes us into.
+
       sprite.anchor.set(0.5);
       container.addChild(sprite);
       let boxX = 0;
       let boxY = 0;
       let boxWidth = 0;
       let boxHeight = 0;
-      /**
-       * Fits the sprite's native texture into the current box, preserving
-       * aspect ratio (no stretch), and centers the result inside it - the
-       * three battler PNGs have wildly different native sizes and aspect
-       * ratios (`dungeon-guardian` 470x614, `goblin` 161x166, `slime`
-       * 104x60), so this is the only place that can compute a fit, since
-       * `battleView.ts` never sees a texture's native pixel size (ROG-63).
-       */
+
       const layout = () => {
         sprite.position.set(boxX + boxWidth / 2, boxY + boxHeight / 2);
         const nativeWidth = sprite.texture.width;
@@ -63,8 +50,7 @@ export function createPixiBattleDrawFactory(
           boxWidth / nativeWidth,
           boxHeight / nativeHeight,
         );
-        // Round to whole device pixels so nearest-neighbor sampling doesn't
-        // straddle texel boundaries unevenly.
+
         sprite.width = Math.round(nativeWidth * scale);
         sprite.height = Math.round(nativeHeight * scale);
       };
@@ -78,8 +64,7 @@ export function createPixiBattleDrawFactory(
           const texture = textures[name];
           if (sprite.texture !== texture) {
             sprite.texture = texture;
-            // `loadBattlerTextures` already sets this; defensive no-op here,
-            // matching the other draw factories' pattern.
+
             sprite.texture.source.scaleMode = "nearest";
           }
           layout();
@@ -151,6 +136,9 @@ export function createPixiBattleDrawFactory(
           text.destroy();
         },
       };
+    },
+    createParticle(): ParticleHandle {
+      return particles.createParticle();
     },
   };
 }

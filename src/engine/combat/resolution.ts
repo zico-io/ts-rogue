@@ -1,64 +1,23 @@
-/**
- * Turn-based combat resolution (PROJECT_PLAN Phase 4, ROG-10; multi-member
- * party in ROG-20).
- *
- * All randomness routes through the seeded `Rng` wrapper and the consumed
- * state is persisted back onto `GameState.rngState`, so a seed plus an event
- * history always reproduces the same battle. Resolution is pure: nothing
- * mutates the input state. The store's battle event cases are thin wrappers
- * around `resolveBattleEvent`; the three encounter trigger points call
- * `startBattle`.
- *
- * Pause-per-actor round model: at battle start a single initiative order is
- * rolled from the living party members plus the enemy group, and that fixed
- * order is reused every round. One dispatch resolves exactly one command from
- * the party member whose turn it is (`BattleState.activeMemberId`); after that
- * command resolves, `advanceRound` walks forward through the initiative order
- * auto-resolving every enemy attack (spread across a random living party
- * member each time) and skipping KO'd party members, until either the next
- * living party member comes up - the battle pauses again, awaiting their
- * command - or the whole party is down (`lost`). This lets several party
- * members each take their own action turn without changing the "one command
- * per dispatch" UI contract. Blocked actions (insufficient MP, no usable item,
- * no living target) are fully side-effect-free: they return the state
- * untouched and consume no RNG, so replays stay deterministic even if the UI
- * hands in a disallowed command.
- *
- * Phase 6 (ROG-12) adds death handling: a `lost` battle either revives the
- * party at the village with a gold penalty (default) or ends the run with a
- * terminal game-over flag (permadeath). A boss victory also marks the dungeon
- * cleared so the player knows it is safe to leave.
- *
- * ENG-21: skill elements are now carried through resolution output (log text)
- * and status effects from `skill.applies` / monster `attackApplies` are rolled
- * on hit and attached to the target as `EffectInstance` objects.
- *
- * ENG-22: status effects tick at the start of each afflicted actor's turn
- * (poison/burn deal damage, durations decrement, expired effects are removed)
- * and are cleared from all battle actors when the battle ends.
- *
- * ENG-23: status effects that skip a turn (stun, frozen) or have a shocked
- * stun-lite skip prevent the afflicted actor from acting; shocked also makes
- * the target take bonus damage. Non-damaging effects now also expire (duration
- * decrements every turn). Effects with an `initiativePenalty` (slow, chilled)
- * reorder the initiative array at the end of each dispatch via a positional-
- * shift proxy (not a full SPD recompute).
- */
-
 import { DEFAULT_CLASS_ID, findClass } from "../../data/classes";
+import { type DungeonDef, dungeonDefFor } from "../../data/dungeons";
 import { findMonster, MONSTERS, type MonsterDef } from "../../data/monsters";
 import { findShopItem } from "../../data/shops";
 import type { InventoryItem, PartyMember } from "../entities/party";
-import { consumeItem, healAmount, isHealItem } from "../loot/consumables";
+import {
+  consumeItem,
+  curedEffects,
+  healAmount,
+  isUsableBattleItem,
+} from "../loot/consumables";
 import { effectiveStats } from "../loot/equipment";
 import { FIELD_BACKPACK_CAP } from "../loot/inventory";
-import { describeItem } from "../loot/items";
 import {
   applyLootPickupWithFilter,
   buildLootFilterContext,
+  lootLogEntries,
   queueLootTriage,
 } from "../loot/pickup";
-import { rollVictoryLoot } from "../loot/resolution";
+import { rollVictoryLoot, weightedPick } from "../loot/resolution";
 import type { ItemInstance } from "../loot/types";
 import { Rng, type RngState } from "../rng/rng";
 import {
@@ -72,7 +31,12 @@ import {
   generateOverworldMap,
 } from "../world/overworld";
 import type { DungeonState, WorldState } from "../world/types";
-import { findSkill, type SkillDef } from "./skills";
+import {
+  findSkill,
+  resolveSkillList,
+  type SkillDef,
+  type SkillTarget,
+} from "./skills";
 import type {
   AppliedEffect,
   EffectInstance,
@@ -86,71 +50,58 @@ import type {
   BattleState,
   BattleStatus,
   CoreStats,
+  EnemyRow,
 } from "./types";
 
-/* -------------------------------------------------------------------------- */
-/* Tunable constants                                                          */
-/* -------------------------------------------------------------------------- */
-
-/** Base hit chance before the speed delta is applied. */
 export const HIT_BASE = 0.9;
-/** Hit chance shifts by this much per point of speed advantage. */
+
 export const HIT_SPD_FACTOR = 0.02;
 export const HIT_MIN = 0.2;
 export const HIT_MAX = 0.99;
-/** Chance a connecting hit becomes a crit. */
+
 export const CRIT_CHANCE = 0.08;
-/** Crit damage multiplier. */
+
 export const CRIT_MULTIPLIER = 1.5;
-/** Damage variance range as a multiplier of (atk - def). */
+
 export const DAMAGE_VARIANCE_MIN = 0.85;
 export const DAMAGE_VARIANCE_MAX = 1.15;
-/** A defending combatant takes this fraction of incoming damage. */
+
 export const DEFEND_DAMAGE_FACTOR = 0.5;
-/** Initiative roll = spd + rng.next() * spread; ties break by combatant order. */
+
 export const INITIATIVE_SPREAD = 8;
-/** Base flee chance before the speed delta is applied. */
+
+// Classic Wizardry-style formation: only the first FRONT_ROW_SIZE enemies
+// in an encounter stand in front; the rest form the back row (ENG-29).
+export const FRONT_ROW_SIZE = 2;
+export const DEFAULT_ROW: EnemyRow = "front";
+
 export const FLEE_BASE = 0.55;
 export const FLEE_SPD_FACTOR = 0.03;
 export const FLEE_MIN = 0.1;
 export const FLEE_MAX = 0.9;
 
-/** Level-up curve: xp needed to advance from `level` to `level + 1`. */
 export const XP_BASE = 10;
 export const XP_GROWTH = 1.5;
 
-/** Damage multiplier when the target has a `damageVulnerable` effect (ENG-23). */
 export const SHOCKED_VULNERABLE_MULTIPLIER = 1.5;
 
-/**
- * A pending initiative-order reorder triggered by an effect with
- * `initiativePenalty` (slow, chilled) landing on `id`. Collected during a
- * dispatch and folded onto the stored initiative order at the end (ENG-23).
- */
-export interface PendingReorder {
+interface PendingReorder {
   id: string;
   penalty: number;
 }
-
-/* -------------------------------------------------------------------------- */
-/* Derived stats                                                              */
-/* -------------------------------------------------------------------------- */
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
-/** Attack power from strength. */
 export function deriveAtk(stats: CoreStats): number {
   return stats.str;
 }
 
-/** Defense from vitality (halved, rounded down). */
 export function deriveDef(stats: CoreStats): number {
   return Math.floor(stats.vit / 2);
 }
 
-/** Speed from agility, which drives initiative and hit/flee adjustments. */
 export function deriveSpd(stats: CoreStats): number {
   return stats.agi;
 }
@@ -167,20 +118,10 @@ export function spdFrom(member: PartyMember): number {
   return deriveSpd(effectiveStats(member));
 }
 
-/**
- * The core stat a skill scales off. Older skills omit `stat` and default to
- * `int`, so prior Flame/Heal behavior is unchanged; class skills declare the
- * stat they scale with (Warrior Cleave uses str, Rogue Backstab uses agi).
- */
 export function skillStatValue(skill: SkillDef, stats: CoreStats): number {
   return stats[skill.stat ?? "int"];
 }
 
-/* -------------------------------------------------------------------------- */
-/* Hit / crit / damage                                                        */
-/* -------------------------------------------------------------------------- */
-
-/** Hit chance for an attacker vs a defender, clamped to [HIT_MIN, HIT_MAX]. */
 export function hitChance(atkStats: CoreStats, defStats: CoreStats): number {
   return clamp(
     HIT_BASE + (deriveSpd(atkStats) - deriveSpd(defStats)) * HIT_SPD_FACTOR,
@@ -189,10 +130,6 @@ export function hitChance(atkStats: CoreStats, defStats: CoreStats): number {
   );
 }
 
-/**
- * Final damage for a connecting hit, given the crit flag and the variance roll
- * in [0, 1). Pure and RNG-free so the damage formula can be asserted exactly.
- */
 export function computeDamage(
   crit: boolean,
   variance: number,
@@ -218,11 +155,6 @@ export interface AttackResult {
   damage: number;
 }
 
-/**
- * Resolve one attack through the seeded RNG. Consumes one roll on a miss, and
- * three (hit, crit, variance) on a connect - so a miss never advances the
- * generator past the rolls a hit would have used, keeping outcomes stable.
- */
 export function resolveAttack(
   rng: Rng,
   atkStats: CoreStats,
@@ -248,7 +180,6 @@ export function resolveAttack(
   };
 }
 
-/** Flee chance vs the fastest living enemy, clamped to [FLEE_MIN, FLEE_MAX]. */
 export function fleeChance(heroSpd: number, fastestEnemySpd: number): number {
   return clamp(
     FLEE_BASE + (heroSpd - fastestEnemySpd) * FLEE_SPD_FACTOR,
@@ -257,11 +188,6 @@ export function fleeChance(heroSpd: number, fastestEnemySpd: number): number {
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/* Level-up curve                                                             */
-/* -------------------------------------------------------------------------- */
-
-/** XP required to advance from `level` to `level + 1` (exponential). */
 export function xpToNext(level: number): number {
   return Math.floor(XP_BASE * XP_GROWTH ** level);
 }
@@ -271,12 +197,6 @@ export interface GrantXpResult {
   leveledUp: boolean;
 }
 
-/**
- * Add `amount` XP to `member`, leveling up as many times as the threshold
- * allows. Each level-up raises maxHp/maxMp and each stat by the hero's class
- * growth and restores HP/MP to full. `member.xp` holds progress toward the
- * next level, with the remainder carried across each level-up. Pure.
- */
 export function grantXp(member: PartyMember, amount: number): GrantXpResult {
   let level = member.level;
   let xp = member.xp + amount;
@@ -309,17 +229,6 @@ export function grantXp(member: PartyMember, amount: number): GrantXpResult {
   return { member: updated, leveledUp };
 }
 
-/* -------------------------------------------------------------------------- */
-/* Initiative, enemy groups, battle setup                                     */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Roll a fixed initiative order for the living party members plus the enemy
- * group. Each combatant rolls `spd + rng.next() * spread`; ties break by a
- * fixed order (party members first in their party order, then enemies by
- * spawn index) so the order is fully determined by the seed without relying
- * on sort stability.
- */
 export function rollInitiative(
   rng: Rng,
   party: readonly PartyMember[],
@@ -344,8 +253,11 @@ export function rollInitiative(
   return entries.map((entry) => entry.id);
 }
 
-/** Spawn one enemy instance from a monster definition. */
-function makeEnemy(def: MonsterDef, instance: number): BattleEnemy {
+function makeEnemy(
+  def: MonsterDef,
+  instance: number,
+  row: EnemyRow = DEFAULT_ROW,
+): BattleEnemy {
   return {
     id: `${def.id}-${instance}`,
     defId: def.id,
@@ -358,25 +270,33 @@ function makeEnemy(def: MonsterDef, instance: number): BattleEnemy {
     sprite: def.sprite,
     xp: def.xp,
     gold: def.gold,
+    row,
   };
 }
 
-/**
- * Pick the enemy group for an encounter. A boss encounter is always a single
- * dungeon guardian; a wandering encounter rolls a count (growing with floor)
- * and picks each member from the monsters eligible for that floor. All
- * randomness uses the seeded `rng` so the group is deterministic from the seed.
- */
+// Rolls one monster from a dungeon def's weighted palette (excludes the boss,
+// which spawns separately from bossId).
+function paletteMonster(rng: Rng, dungeonDef: DungeonDef): MonsterDef {
+  const pick = weightedPick(rng, dungeonDef.palette);
+  const monster = findMonster(pick.monsterId);
+  if (!monster)
+    throw new Error(
+      `${dungeonDef.id}: palette monster "${pick.monsterId}" missing from data`,
+    );
+  return monster;
+}
+
 export function pickEnemyGroup(
   rng: Rng,
   kind: "wandering" | "boss",
   floor: number,
+  dungeonDef?: DungeonDef,
 ): BattleEnemy[] {
   if (kind === "boss") {
-    const guardian = findMonster("dungeon-guardian");
-    if (!guardian)
-      throw new Error("dungeon-guardian monster missing from data");
-    return [makeEnemy(guardian, 1)];
+    const bossId = dungeonDef?.bossId ?? "dungeon-guardian";
+    const boss = findMonster(bossId);
+    if (!boss) throw new Error(`${bossId} monster missing from data`);
+    return [makeEnemy(boss, 1)];
   }
   const eligible = MONSTERS.filter(
     (monster) => monster.minFloor <= floor && monster.id !== "dungeon-guardian",
@@ -384,30 +304,28 @@ export function pickEnemyGroup(
   const count = rng.int(1, Math.min(3, 1 + floor));
   const enemies: BattleEnemy[] = [];
   for (let i = 0; i < count; i++) {
-    enemies.push(makeEnemy(rng.pick(eligible), i + 1));
+    const row: EnemyRow = i < FRONT_ROW_SIZE ? "front" : "back";
+    const monster = dungeonDef
+      ? paletteMonster(rng, dungeonDef)
+      : rng.pick(eligible);
+    enemies.push(makeEnemy(monster, i + 1, row));
   }
   return enemies;
 }
 
-/**
- * Build a fresh `BattleState`: pick the enemy group, roll initiative from the
- * living party members, and mark the battle ongoing and awaiting the first
- * living party member's command. The `rng` is advanced in place; the caller
- * persists `rng.getState()` onto the state.
- */
 export function startBattle(
   rng: Rng,
   party: readonly PartyMember[],
   kind: "wandering" | "boss",
   floor: number,
   returnScene: Scene,
+  dungeonDef?: DungeonDef,
 ): BattleState {
   const living = party.filter((member) => member.hp > 0);
-  const enemies = pickEnemyGroup(rng, kind, floor);
+  const enemies = pickEnemyGroup(rng, kind, floor, dungeonDef);
   const initiative = rollInitiative(rng, living, enemies);
   const livingIds = new Set(living.map((member) => member.id));
-  // A dungeon/overworld encounter can never start with a fully-KO'd party, so
-  // this always finds a member; the fallbacks are defensive only.
+
   const activeMemberId =
     initiative.find((id) => livingIds.has(id)) ?? living[0]?.id ?? party[0].id;
   return {
@@ -421,14 +339,6 @@ export function startBattle(
   };
 }
 
-/* -------------------------------------------------------------------------- */
-/* Battle items                                                               */
-/* -------------------------------------------------------------------------- */
-
-/* -------------------------------------------------------------------------- */
-/* Round resolution                                                           */
-/* -------------------------------------------------------------------------- */
-
 type Command =
   | { kind: "attack"; targetId: string }
   | { kind: "skill"; skillId: string; targetId: string }
@@ -440,8 +350,275 @@ function allDead(enemies: readonly BattleEnemy[]): boolean {
   return enemies.every((enemy) => enemy.hp <= 0);
 }
 
-function firstAlive(enemies: readonly BattleEnemy[]): BattleEnemy | undefined {
-  return enemies.find((enemy) => enemy.hp > 0);
+function findAliveEnemy(
+  enemies: readonly BattleEnemy[],
+  id: string,
+): BattleEnemy | undefined {
+  return enemies.find((enemy) => enemy.id === id && enemy.hp > 0);
+}
+
+function enemyRow(enemy: BattleEnemy): EnemyRow {
+  return enemy.row ?? DEFAULT_ROW;
+}
+
+// Melee reachability rule (ENG-29): the front row must fall before the back
+// row is targetable by a basic attack. Skills always ignore this rule -
+// see resolveShapeTargets/castOffensiveSkill (ENG-28) for shape-aware
+// skill targeting.
+export function isMeleeTargetable(
+  enemies: readonly BattleEnemy[],
+  target: BattleEnemy,
+): boolean {
+  if (enemyRow(target) === "front") return true;
+  return !enemies.some((enemy) => enemy.hp > 0 && enemyRow(enemy) === "front");
+}
+
+function firstMeleeTarget(
+  enemies: readonly BattleEnemy[],
+): BattleEnemy | undefined {
+  return enemies.find(
+    (enemy) => enemy.hp > 0 && isMeleeTargetable(enemies, enemy),
+  );
+}
+
+interface FormationSlot {
+  id: string;
+  hp: number;
+  row?: EnemyRow;
+}
+
+// Shared shape for anything that can carry a status effect list - both
+// BattleEnemy and PartyMember satisfy this structurally, which lets the
+// effect-lifecycle helpers below (and castOffensiveSkill/castHealSkill)
+// operate on either side without a BattleEnemy | PartyMember union.
+interface EffectCarrier {
+  id: string;
+  name: string;
+  hp: number;
+  effects?: EffectInstance[];
+}
+
+function slotRow<T extends FormationSlot>(slot: T): EnemyRow {
+  return slot.row ?? DEFAULT_ROW;
+}
+
+function slotsInRow<T extends FormationSlot>(
+  pool: readonly T[],
+  row: EnemyRow,
+): T[] {
+  return pool.filter((slot) => slotRow(slot) === row);
+}
+
+function livingInRow<T extends FormationSlot>(
+  pool: readonly T[],
+  row: EnemyRow,
+): T[] {
+  return slotsInRow(pool, row).filter((slot) => slot.hp > 0);
+}
+
+// Column pierce (ENG-28): hits whichever entity occupies the anchor's lane
+// (its position within its own row) in the front row and the back row
+// alike, ignoring isMeleeTargetable's reachability rule entirely - a bolt
+// or blast passes clean through the front rank. A side with no row data
+// (the party, per ENG-29) puts everyone in the default front row, so a
+// column cast against it degenerates to just the anchor.
+function laneTargets<T extends FormationSlot>(
+  pool: readonly T[],
+  anchor: T,
+): T[] {
+  const laneIndex = slotsInRow(pool, slotRow(anchor)).indexOf(anchor);
+  const targets: T[] = [];
+  for (const row of ["front", "back"] as const) {
+    const candidate = slotsInRow(pool, row)[laneIndex];
+    if (candidate && candidate.hp > 0) targets.push(candidate);
+  }
+  return targets;
+}
+
+function pickWithoutReplacement<T>(
+  rng: Rng,
+  items: readonly T[],
+  count: number,
+): T[] {
+  const pool = [...items];
+  const picked: T[] = [];
+  for (let i = 0; i < count && pool.length > 0; i++) {
+    const index = rng.int(0, pool.length - 1);
+    picked.push(...pool.splice(index, 1));
+  }
+  return picked;
+}
+
+// Shape resolution (ENG-28): expands a SkillDef's target shape into the
+// concrete list of live entities it hits. One resolver serves both sides of
+// a cast - a party member casting at `enemies`, or a monster casting at
+// `party` - by handing it whichever pool is the shape's side. `anchorId`
+// picks the row/lane/single target when it resolves to a living pool
+// member; otherwise it falls back to the pool's first living member (the
+// UI still sends the caster's own id for every non-"single" shape today -
+// real multi-target picking is TER-3, tracked separately).
+function resolveShapeTargets<T extends FormationSlot>(
+  shape: SkillTarget,
+  pool: readonly T[],
+  anchorId: string,
+  rng: Rng,
+  hitCount: number | undefined,
+): T[] {
+  const explicit = pool.find((slot) => slot.id === anchorId && slot.hp > 0);
+  const anchor = explicit ?? pool.find((slot) => slot.hp > 0);
+
+  switch (shape) {
+    case "single":
+    case "self":
+    case "ally":
+      return anchor ? [anchor] : [];
+    case "row":
+      return anchor ? livingInRow(pool, slotRow(anchor)) : [];
+    case "column":
+      return anchor ? laneTargets(pool, anchor) : [];
+    case "allEnemies":
+    case "allAllies":
+      return pool.filter((slot) => slot.hp > 0);
+    case "randomN": {
+      const living = pool.filter((slot) => slot.hp > 0);
+      const count = Math.min(Math.max(1, hitCount ?? 1), living.length);
+      return pickWithoutReplacement(rng, living, count);
+    }
+  }
+}
+
+// Skill damage rolls a crit and a variance factor per target, same shape as
+// a basic attack's resolveAttack, but scales off the skill's own power/stat
+// instead of atk-minus-def: skills bypass the defender's DEF entirely, the
+// pre-ENG-28 single-target formula extended to per-target multi-hit shapes.
+export function computeSkillDamage(
+  skill: SkillDef,
+  crit: boolean,
+  variance: number,
+  atkStats: CoreStats,
+  defenderDefending: boolean,
+): number {
+  let damage = Math.floor(
+    (skill.power + skillStatValue(skill, atkStats)) *
+      (DAMAGE_VARIANCE_MIN +
+        variance * (DAMAGE_VARIANCE_MAX - DAMAGE_VARIANCE_MIN)),
+  );
+  if (crit) damage = Math.floor(damage * CRIT_MULTIPLIER);
+  if (defenderDefending) damage = Math.floor(damage * DEFEND_DAMAGE_FACTOR);
+  return Math.max(1, damage);
+}
+
+export interface SkillHitResult {
+  crit: boolean;
+  damage: number;
+}
+
+export function resolveSkillHit(
+  rng: Rng,
+  skill: SkillDef,
+  atkStats: CoreStats,
+  defenderDefending: boolean,
+): SkillHitResult {
+  const crit = rng.next() < CRIT_CHANCE;
+  const variance = rng.next();
+  return {
+    crit,
+    damage: computeSkillDamage(
+      skill,
+      crit,
+      variance,
+      atkStats,
+      defenderDefending,
+    ),
+  };
+}
+
+// Applies an attack-kind skill to each already-resolved target in turn -
+// one independent crit/damage/status roll per target, not a single roll
+// broadcast to every target (ENG-28). Used by both a party member's
+// BattleSkill command and a monster's advanceRound turn.
+function castOffensiveSkill<T extends EffectCarrier>(
+  skill: SkillDef,
+  casterName: string,
+  casterStats: CoreStats,
+  targets: readonly T[],
+  isDefending: (target: T) => boolean,
+  rng: Rng,
+  logs: LogEntry[],
+  pendingReorders: PendingReorder[],
+): void {
+  const elementTag = formatElementTag(skill.element);
+  for (const target of targets) {
+    if (target.hp <= 0) continue;
+    const { crit, damage } = resolveSkillHit(
+      rng,
+      skill,
+      casterStats,
+      isDefending(target),
+    );
+    const finalDamage = applyVulnerability(target, damage);
+    target.hp = Math.max(0, target.hp - finalDamage);
+    logs.push(
+      entry(
+        `${casterName} casts ${skill.name} on ${target.name} for ${finalDamage}${elementTag}${crit ? " - crit!" : ""}!`,
+        "damage",
+        { element: skill.element ?? "physical" },
+      ),
+    );
+    if (target.hp === 0)
+      logs.push(entry(`${target.name} is defeated!`, "damage"));
+    rollAppliesEffects(target, skill.applies, rng, logs, pendingReorders);
+  }
+}
+
+// Applies a heal-kind skill to each resolved (ally-side) target in turn.
+// Only ever called with the party pool: heal-kind shapes always target the
+// caster's own side, and only party members cast heal-kind skills today
+// (chooseMonsterSkill filters monsters to attack-kind skills only).
+function castHealSkill(
+  skill: SkillDef,
+  casterName: string,
+  casterStats: CoreStats,
+  targets: readonly PartyMember[],
+  logs: LogEntry[],
+): void {
+  const heal = skill.power + skillStatValue(skill, casterStats);
+  for (const target of targets) {
+    target.hp = Math.min(target.maxHp, target.hp + heal);
+    const targetPhrase = target.name === casterName ? "" : ` on ${target.name}`;
+    logs.push(
+      entry(
+        `${casterName} casts ${skill.name}${targetPhrase} and recovers ${heal} HP.`,
+      ),
+    );
+    // Heal-cleanse decision (documented in src/engine/combat/skills.ts):
+    // every Heal-kind skill also scrubs the healed target's own status
+    // effects, rewarding the MP spend with a full reset that a
+    // single-status cure item does not offer.
+    const cleansed = cleanseAllEffects(target);
+    if (cleansed.length > 0) {
+      logs.push(
+        entry(`${target.name} is cleansed of ${describeCured(cleansed)}!`),
+      );
+    }
+  }
+}
+
+// Monster ability use (ENG-28): a monster with an attack-kind skill in its
+// list always casts one (uniformly chosen when it has several) instead of
+// a basic attack, through the same castOffensiveSkill/resolveShapeTargets
+// path a party member's BattleSkill command uses.
+function chooseMonsterSkill(
+  enemy: BattleEnemy,
+  rng: Rng,
+): SkillDef | undefined {
+  const monsterDef = findMonster(enemy.defId);
+  if (!monsterDef?.skills || monsterDef.skills.length === 0) return undefined;
+  const attackSkills = resolveSkillList(monsterDef.skills).filter(
+    (skill) => skill.kind === "attack",
+  );
+  if (attackSkills.length === 0) return undefined;
+  return rng.pick(attackSkills);
 }
 
 function clearEncounter(ds: DungeonState | null): DungeonState | null {
@@ -460,15 +637,22 @@ function validateCommand(
   enemies: readonly BattleEnemy[],
 ): boolean {
   switch (command.kind) {
-    case "attack":
-      return enemies.some((enemy) => enemy.hp > 0);
+    case "attack": {
+      const explicitTarget = findAliveEnemy(enemies, command.targetId);
+      if (explicitTarget) return isMeleeTargetable(enemies, explicitTarget);
+      return enemies.some(
+        (enemy) => enemy.hp > 0 && isMeleeTargetable(enemies, enemy),
+      );
+    }
     case "skill": {
       const skill = findSkill(command.skillId);
       return !!skill && actor.mp >= skill.mpCost;
     }
     case "item": {
       const owned = inventory.find((entry) => entry.itemId === command.itemId);
-      return !!owned && owned.quantity > 0 && isHealItem(command.itemId);
+      return (
+        !!owned && owned.quantity > 0 && isUsableBattleItem(command.itemId)
+      );
     }
     case "defend":
       return true;
@@ -483,14 +667,24 @@ interface MemberActionResult {
   fled: boolean;
 }
 
-/** Push an `EffectInstance` onto `target.effects`, lazy-initialising if needed. */
 function applyEffect(
-  target: BattleEnemy | PartyMember,
+  target: EffectCarrier,
   effectId: StatusEffectId,
   duration: number,
   potency: number,
 ): void {
   target.effects = target.effects ?? [];
+  // Reapplying an active effect refreshes it in place rather than stacking a
+  // second, independently ticking instance of the same status.
+  const existing = target.effects.find(
+    (effect) => effect.effectId === effectId,
+  );
+  if (existing) {
+    existing.duration = duration;
+    existing.initialDuration = duration;
+    existing.potency = potency;
+    return;
+  }
   target.effects.push({
     effectId,
     duration,
@@ -499,14 +693,47 @@ function applyEffect(
   });
 }
 
-/** Render a hit's element as a log suffix, or "" for a plain physical hit. */
+// Cure items and Heal-cleanse (see the "skill" case below) both remove
+// effect instances outright rather than ticking them out naturally.
+function removeEffects(
+  target: EffectCarrier,
+  effectIds: readonly StatusEffectId[],
+): StatusEffectId[] {
+  if (!target.effects || target.effects.length === 0) return [];
+  const removed: StatusEffectId[] = [];
+  const remaining = target.effects.filter((effect) => {
+    if (!effectIds.includes(effect.effectId)) return true;
+    removed.push(effect.effectId);
+    return false;
+  });
+  if (remaining.length > 0) {
+    target.effects = remaining;
+  } else {
+    delete target.effects;
+  }
+  return removed;
+}
+
+function cleanseAllEffects(target: EffectCarrier): StatusEffectId[] {
+  if (!target.effects || target.effects.length === 0) return [];
+  return removeEffects(
+    target,
+    target.effects.map((effect) => effect.effectId),
+  );
+}
+
+function describeCured(cured: readonly StatusEffectId[]): string {
+  return cured
+    .map((effectId) => findStatusEffect(effectId)?.name ?? effectId)
+    .join(" and ");
+}
+
 function formatElementTag(element: Element | undefined): string {
   return element && element !== "physical" ? ` (${element})` : "";
 }
 
-/** Roll each `applies` entry against `rng` and attach any that succeed. */
 function rollAppliesEffects(
-  target: BattleEnemy | PartyMember,
+  target: EffectCarrier,
   applies: readonly AppliedEffect[] | undefined,
   rng: Rng,
   logs: LogEntry[],
@@ -526,39 +753,31 @@ function rollAppliesEffects(
   }
 }
 
-/**
- * Tick one effect instance on an actor: log the tick, decrement duration,
- * log expiry, and signal whether the effect should be removed.
- * Damage must already have been applied by the caller.
- */
 function tickSingleEffect(
   effect: EffectInstance,
   effectName: string,
   damage: number,
   actorName: string,
   logs: LogEntry[],
+  element: Element | undefined,
 ): EffectInstance | null {
   logs.push(
-    entry(`${actorName} takes ${damage} ${effectName} damage!`, "damage"),
+    entry(`${actorName} takes ${damage} ${effectName} damage!`, "damage", {
+      element,
+    }),
   );
 
   const nextDuration = effect.duration - 1;
 
   if (nextDuration <= 0) {
     logs.push(entry(`${effectName} wears off of ${actorName}.`, "system"));
-    return null; // Signal removal.
+    return null;
   }
 
   return { ...effect, duration: nextDuration };
 }
 
-/**
- * Tick all effects on a battle actor (party member or enemy).
- * Called at the start of the actor's turn. Deals damage for poison/burn,
- * decrements durations for all effects, removes expired effects, and logs
- * everything.
- */
-function tickEffects(actor: BattleEnemy | PartyMember, logs: LogEntry[]): void {
+function tickEffects(actor: EffectCarrier, logs: LogEntry[]): void {
   if (!actor.effects || actor.effects.length === 0) return;
 
   const remaining: EffectInstance[] = [];
@@ -566,21 +785,18 @@ function tickEffects(actor: BattleEnemy | PartyMember, logs: LogEntry[]): void {
     const def = findStatusEffect(effect.effectId);
 
     if (def?.damagePerTurn) {
-      // Damaging effect: deal damage, then decrement/expire.
       const { amount, frontLoaded } = def.damagePerTurn;
       let damage: number;
+      // Damage uses the pre-decrement duration so an expiring effect still ticks.
       if (frontLoaded && effect.initialDuration && effect.initialDuration > 0) {
-        // Front-loaded curve: proportional to remaining duration / initial duration.
         damage = Math.max(
           1,
           Math.round((amount * effect.duration) / effect.initialDuration),
         );
       } else {
-        // Flat damage per tick.
         damage = Math.max(1, amount);
       }
 
-      // Apply damage before checking expiry (so the final tick still deals damage).
       actor.hp = Math.max(0, actor.hp - damage);
 
       const result = tickSingleEffect(
@@ -589,37 +805,33 @@ function tickEffects(actor: BattleEnemy | PartyMember, logs: LogEntry[]): void {
         damage,
         actor.name,
         logs,
+        def.element,
       );
       if (result !== null) {
         remaining.push(result);
       }
     } else {
-      // Non-damaging effect: just decrement duration and remove if expired.
       const nextDuration = effect.duration - 1;
       if (nextDuration <= 0) {
         const name = def?.name ?? effect.effectId;
         logs.push(entry(`${name} wears off of ${actor.name}.`, "system"));
-        // Don't push - effect expired.
       } else {
         remaining.push({ ...effect, duration: nextDuration });
       }
     }
   }
-  actor.effects = remaining.length > 0 ? remaining : undefined;
+  if (remaining.length > 0) {
+    actor.effects = remaining;
+  } else {
+    // Delete rather than assign `undefined`: GameState must stay strictly
+    // JSON-serializable, and an explicit `undefined` property value fails
+    // that check even though the key would be dropped on stringify.
+    delete actor.effects;
+  }
 }
 
-/**
- * Check whether a living actor has a status effect that prevents them from
- * acting this turn. Returns true if the turn should be skipped.
- *
- * Two kinds of skip:
- * 1. skipsTurn (stun, frozen) - unconditional skip, logs the effect name.
- * 2. skipChance (shocked) - stun-lite: roll the effect's skipChance; on
- *    success, skip and log. Data-driven via StatusEffectDef.skipChance so a
- *    future effect can declare the same partial-skip behavior.
- */
 function shouldSkipTurn(
-  actor: BattleEnemy | PartyMember,
+  actor: EffectCarrier,
   rng: Rng,
   logs: LogEntry[],
 ): boolean {
@@ -648,15 +860,7 @@ function shouldSkipTurn(
   return false;
 }
 
-/**
- * If the target has an active effect with `damageVulnerable` (e.g. shocked),
- * multiply incoming damage by SHOCKED_VULNERABLE_MULTIPLIER (rounded up).
- * Returns the original `damage` unchanged if no vulnerability is active.
- */
-function applyVulnerability(
-  target: BattleEnemy | PartyMember,
-  damage: number,
-): number {
+function applyVulnerability(target: EffectCarrier, damage: number): number {
   if (!target.effects) return damage;
   for (const effect of target.effects) {
     const def = findStatusEffect(effect.effectId);
@@ -667,12 +871,6 @@ function applyVulnerability(
   return damage;
 }
 
-/**
- * Positional-shift proxy for a full initiative re-roll (ENG-23). Moves the
- * combatant identified by `id` `penalty` positions later in the order,
- * clamping to the end of the array. This is NOT a physically-accurate SPD
- * recompute - it is a simpler ceiling that is sufficient for slow/chilled.
- */
 export function applyInitiativePenalty(
   order: readonly string[],
   id: string,
@@ -688,18 +886,10 @@ export function applyInitiativePenalty(
   return copy;
 }
 
-/**
- * Execute the player's chosen command for `actor`. `actor` is a reference into
- * the mutable `party` working array, so mutating `actor.hp`/`actor.mp`
- * directly updates the array (the same pattern used for `enemies` mutation in
- * this file). Enemy elements in `enemies` are working copies and are mutated
- * in place. Consumes RNG only for random outcomes (attack rolls, spell
- * variance, the flee attempt).
- */
 function applyMemberCommand(
   command: Command,
   actor: PartyMember,
-  _party: PartyMember[],
+  party: PartyMember[],
   enemies: BattleEnemy[],
   rng: Rng,
   logs: LogEntry[],
@@ -712,9 +902,11 @@ function applyMemberCommand(
 
   switch (command.kind) {
     case "attack": {
+      const explicitTarget = findAliveEnemy(enemies, command.targetId);
       const target =
-        enemies.find((e) => e.id === command.targetId && e.hp > 0) ??
-        firstAlive(enemies);
+        explicitTarget && isMeleeTargetable(enemies, explicitTarget)
+          ? explicitTarget
+          : firstMeleeTarget(enemies);
       if (target) {
         const result = resolveAttack(rng, actorStats, target.stats, false);
         if (!result.hit) {
@@ -728,6 +920,7 @@ function applyMemberCommand(
             entry(
               `${actor.name} hits ${target.name} for ${finalDamage}${result.crit ? " - crit!" : ""}`,
               "damage",
+              { element: "physical" },
             ),
           );
           if (target.hp === 0)
@@ -744,52 +937,57 @@ function applyMemberCommand(
       }
       actor.mp -= skill.mpCost;
       if (skill.kind === "attack") {
-        const target =
-          enemies.find((e) => e.id === command.targetId && e.hp > 0) ??
-          firstAlive(enemies);
-        if (target) {
-          const variance = rng.next();
-          const damage = Math.max(
-            1,
-            Math.floor(
-              (skill.power + skillStatValue(skill, actorStats)) *
-                (DAMAGE_VARIANCE_MIN +
-                  variance * (DAMAGE_VARIANCE_MAX - DAMAGE_VARIANCE_MIN)),
-            ),
-          );
-          const finalDamage = applyVulnerability(target, damage);
-          target.hp = Math.max(0, target.hp - finalDamage);
-
-          const elementTag = formatElementTag(skill.element);
-          logs.push(
-            entry(
-              `${actor.name} casts ${skill.name} on ${target.name} for ${finalDamage}${elementTag}!`,
-              "damage",
-            ),
-          );
-          if (target.hp === 0)
-            logs.push(entry(`${target.name} is defeated!`, "damage"));
-
-          rollAppliesEffects(target, skill.applies, rng, logs, pendingReorders);
-        }
-      } else {
-        // Heal skills always target the caster (self). Ally targeting is
-        // ROG-32 skill-system scope, not added here.
-        const heal = skill.power + skillStatValue(skill, actorStats);
-        actor.hp = Math.min(actor.maxHp, actor.hp + heal);
-        logs.push(
-          entry(`${actor.name} casts ${skill.name} and recovers ${heal} HP.`),
+        const targets = resolveShapeTargets(
+          skill.target,
+          enemies,
+          command.targetId,
+          rng,
+          skill.hitCount,
         );
+        castOffensiveSkill(
+          skill,
+          actor.name,
+          actorStats,
+          targets,
+          () => false,
+          rng,
+          logs,
+          pendingReorders,
+        );
+      } else {
+        const targets = resolveShapeTargets(
+          skill.target,
+          party,
+          command.targetId,
+          rng,
+          skill.hitCount,
+        );
+        castHealSkill(skill, actor.name, actorStats, targets, logs);
       }
       break;
     }
     case "item": {
       const heal = healAmount(command.itemId);
+      const cures = curedEffects(command.itemId);
+      const name = findShopItem(command.itemId)?.name ?? command.itemId;
       if (heal > 0) {
         actor.hp = Math.min(actor.maxHp, actor.hp + heal);
         itemUsed = command.itemId;
-        const name = findShopItem(command.itemId)?.name ?? command.itemId;
         logs.push(entry(`${actor.name} uses ${name} and recovers ${heal} HP.`));
+      } else if (cures.length > 0) {
+        itemUsed = command.itemId;
+        const removed = removeEffects(actor, cures);
+        if (removed.length > 0) {
+          logs.push(
+            entry(
+              `${actor.name} uses ${name} and is cured of ${describeCured(removed)}!`,
+            ),
+          );
+        } else {
+          logs.push(
+            entry(`${actor.name} uses ${name}, but there was nothing to cure.`),
+          );
+        }
       } else {
         logs.push(
           entry(`${actor.name} uses ${command.itemId}... nothing happens.`),
@@ -826,29 +1024,6 @@ interface AdvanceResult {
   nextActorId: string | null;
 }
 
-/**
- * Walk forward through `initiative` (wrapping around, since the same fixed
- * order is reused every round) starting right after `fromIndex`, performing
- * enemy auto-attacks and skipping KO'd party members / dead enemies, until
- * either the next living party member comes up (pause) or the whole party is
- * down (lost). Enemies auto-attack a randomly chosen living party member each
- * time they come up, spreading damage across the party. `party` and `enemies`
- * are mutable working copies; HP is mutated in place.
- *
- * ENG-21: enemy attacks now read the monster's `attackElement` and
- * `attackApplies` from the definition and apply status effects on hit.
- *
- * ENG-22: at the start of each actor's turn (party member or enemy), their
- * active status effects with `damagePerTurn` (poison, burn) tick: damage is
- * applied, duration decremented, and expired effects removed and logged.
- *
- * ENG-23: at the start of each actor's turn, all effects (including non-
- * damaging ones) decrement duration and expire. Actors with skipsTurn effects
- * (stun, frozen) or who fail a shocked stun-lite check skip their action
- * entirely. Enemies skip their attack; party members are not paused for a
- * command. Damage from any source is multiplied by the vulnerability
- * multiplier when the target has a `damageVulnerable` effect (shocked).
- */
 function advanceRound(
   initiative: readonly string[],
   fromIndex: number,
@@ -866,9 +1041,8 @@ function advanceRound(
     const member = party.find((m) => m.id === id);
     if (member) {
       if (member.hp > 0) {
-        // Tick effects at the start of this party member's turn.
         tickEffects(member, logs);
-        // Skip turn if stunned, frozen, or shocked seizes up.
+
         if (shouldSkipTurn(member, rng, logs)) {
           continue;
         }
@@ -880,57 +1054,74 @@ function advanceRound(
     const enemy = enemies.find((e) => e.id === id);
     if (!enemy || enemy.hp <= 0) continue;
 
-    // Tick effects on the enemy at the start of its turn.
     tickEffects(enemy, logs);
 
-    // Skip turn if stunned, frozen, or shocked seizes up.
     if (shouldSkipTurn(enemy, rng, logs)) {
       continue;
     }
 
     const living = party.filter((m) => m.hp > 0);
     if (living.length === 0) return { status: "lost", nextActorId: null };
-    const target = rng.pick(living);
-    const attack = resolveAttack(
-      rng,
-      enemy.stats,
-      effectiveStats(target),
-      defendingIds.has(target.id),
-    );
 
-    // Look up the monster definition for element and applies data.
-    const monsterDef = findMonster(enemy.defId);
-    const attackElement = monsterDef?.attackElement;
-    const attackApplies = monsterDef?.attackApplies;
-
-    if (!attack.hit) {
-      logs.push(
-        entry(`${enemy.name} attacks ${target.name} but misses!`, "damage"),
+    const skill = chooseMonsterSkill(enemy, rng);
+    if (skill) {
+      const anchor = rng.pick(living);
+      const targets = resolveShapeTargets(
+        skill.target,
+        party,
+        anchor.id,
+        rng,
+        skill.hitCount,
+      );
+      castOffensiveSkill(
+        skill,
+        enemy.name,
+        enemy.stats,
+        targets,
+        (target) => defendingIds.has(target.id),
+        rng,
+        logs,
+        pendingReorders,
       );
     } else {
-      const finalDamage = applyVulnerability(target, attack.damage);
-      target.hp = Math.max(0, target.hp - finalDamage);
-
-      const elementTag = formatElementTag(attackElement);
-      logs.push(
-        entry(
-          `${enemy.name} hits ${target.name} for ${finalDamage}${elementTag}${attack.crit ? " - crit!" : ""}`,
-          "damage",
-        ),
+      const target = rng.pick(living);
+      const attack = resolveAttack(
+        rng,
+        enemy.stats,
+        effectiveStats(target),
+        defendingIds.has(target.id),
       );
 
-      rollAppliesEffects(target, attackApplies, rng, logs, pendingReorders);
+      const monsterDef = findMonster(enemy.defId);
+      const attackElement = monsterDef?.attackElement;
+      const attackApplies = monsterDef?.attackApplies;
 
-      if (party.every((m) => m.hp <= 0)) {
-        return { status: "lost", nextActorId: null };
+      if (!attack.hit) {
+        logs.push(
+          entry(`${enemy.name} attacks ${target.name} but misses!`, "damage"),
+        );
+      } else {
+        const finalDamage = applyVulnerability(target, attack.damage);
+        target.hp = Math.max(0, target.hp - finalDamage);
+
+        const elementTag = formatElementTag(attackElement);
+        logs.push(
+          entry(
+            `${enemy.name} hits ${target.name} for ${finalDamage}${elementTag}${attack.crit ? " - crit!" : ""}`,
+            "damage",
+            { element: attackElement ?? "physical" },
+          ),
+        );
+
+        rollAppliesEffects(target, attackApplies, rng, logs, pendingReorders);
       }
+    }
+
+    if (party.every((m) => m.hp <= 0)) {
+      return { status: "lost", nextActorId: null };
     }
   }
 
-  // If the full round was walked and no party member paused (all were stunned,
-  // frozen, shocked, or KO'd), return the first living member if any survive.
-  // They will be re-checked for skip effects at the start of their next turn
-  // on the next dispatch. If no one lives, the party is lost.
   const firstAliveMember = party.find((m) => m.hp > 0);
   if (firstAliveMember) {
     return { status: "ongoing", nextActorId: firstAliveMember.id };
@@ -938,32 +1129,18 @@ function advanceRound(
   return { status: "lost", nextActorId: null };
 }
 
-/**
- * Clear all battle-scoped status effects from every actor (party members and
- * enemies). Called by all three battle finalizers when the battle ends.
- */
 function clearBattleEffects(
   party: PartyMember[],
   enemies: BattleEnemy[],
 ): void {
   for (const member of party) {
-    member.effects = undefined;
+    delete member.effects;
   }
   for (const enemy of enemies) {
-    enemy.effects = undefined;
+    delete enemy.effects;
   }
 }
 
-/**
- * Apply victory: award XP/gold to every living member, level them up, clear
- * the battle and the dungeon encounter flag, and return to the battle's prior
- * scene. A boss victory also marks the dungeon cleared (Phase 6, ROG-12) so
- * the player can leave knowing the dungeon is done. KO'd members are left
- * as-is (no XP split math; full award to all living members per ROG-20 scope).
- * ENG-18: also runs the auto-dismantle filter on victory loot, converting
- * filtered-out items to gold immediately.
- * ENG-22: clears all status effects from battle actors.
- */
 function finalizeWon(
   state: GameState,
   bs: BattleState,
@@ -978,8 +1155,7 @@ function finalizeWon(
   clearBattleEffects(party, enemies);
   const xpGain = enemies.reduce((sum, e) => sum + e.xp, 0);
   const goldGain = enemies.reduce((sum, e) => sum + e.gold, 0);
-  // Check for a boss victory before clearing the encounter flag so the
-  // dungeon can be marked cleared.
+
   const wasBossVictory = state.dungeonState?.encounter?.kind === "boss";
   const levelUpLogs: LogEntry[] = [];
   const finalParty = party.map((member) => {
@@ -1005,8 +1181,7 @@ function finalizeWon(
       entry("The dungeon guardian falls. The dungeon is cleared!", "quest"),
     );
   }
-  // ENG-18: route victory loot through the auto-dismantle filter before the
-  // cap-aware pickup pipeline.
+
   const filterContext = buildLootFilterContext(
     state.party,
     state.dungeonState?.floor ?? null,
@@ -1022,10 +1197,10 @@ function finalizeWon(
     state.pendingLootTriage,
     pickup.queued,
   );
-  // Loot log lines: only kept items (dismantled items are already converted to gold).
-  const lootLogs = pickup.outcome.kept.map((item) =>
-    entry(`Looted ${describeItem(item)}!`, "loot"),
-  );
+  // Loot log lines (ENG-20): kept items rendered with their rarity color,
+  // plus a dismantle summary when the filter discarded anything. Shared with
+  // `openChest`'s pickup site via `lootLogEntries`.
+  const lootOutcomeLogs = lootLogEntries(pickup.outcome);
   const triageLogs = pickup.queued.length
     ? [
         entry(
@@ -1042,6 +1217,17 @@ function finalizeWon(
     clearedDungeon && wasBossVictory
       ? { ...clearedDungeon, cleared: true }
       : clearedDungeon;
+  // Persistent clear record, keyed by the def's real id so it survives the
+  // ROG-90 entrance remap. Distinct from dungeonState.cleared above, which
+  // only tracks the current session's run. `state.log.length` stands in for
+  // a turn counter: it's already deterministic and monotonic per playthrough.
+  const clearedAt =
+    wasBossVictory && state.dungeonState
+      ? {
+          ...state.clearedAt,
+          [dungeonDefFor(state.dungeonState.dungeonId).id]: state.log.length,
+        }
+      : state.clearedAt;
   return {
     ...state,
     rngState,
@@ -1054,32 +1240,27 @@ function finalizeWon(
     lastLootOutcome: pickup.outcome,
     pendingLootTriage,
     dungeonState,
+    clearedAt,
     battleState: null,
-    log: [...state.log, ...finalLogs, ...lootLogs, ...triageLogs],
+    log: [...state.log, ...finalLogs, ...lootOutcomeLogs, ...triageLogs],
   };
 }
 
-/**
- * Apply defeat (Phase 6, ROG-12 death handling). In permadeath mode the run
- * ends: the terminal `gameOver` flag is set so the UI shows a game-over screen
- * and clears the save. In the default mode the party is revived at the village
- * with 1 HP and loses half their gold (floored); the dungeon run is discarded
- * and the run continues. The penalty math is deterministic (no RNG) so the
- * run stays reproducible from the seed. The scene is left unchanged in
- * permadeath mode because the UI checks `gameOver` before routing by scene.
- * ENG-22: clears all status effects from battle actors.
- */
 function finalizeLost(
   state: GameState,
   logs: LogEntry[],
   rngState: RngState,
   itemUsed: string | null,
 ): GameState {
-  // Clear effects on the party (enemies are discarded so only party matters).
-  const clearedParty = state.party.map((member) => ({
-    ...member,
-    effects: undefined,
-  }));
+  // Rest-destructure to omit `effects` entirely rather than assigning it
+  // `undefined`: GameState must stay strictly JSON-serializable, and an
+  // explicit `undefined` property value fails that check. (tickEffects and
+  // clearBattleEffects instead `delete` the key because they already hold a
+  // mutable local copy to mutate in place; this map builds a fresh object
+  // per member, so the single-expression omission is the simpler fit here.)
+  const clearedParty = state.party.map(
+    ({ effects: _effects, ...cleared }) => cleared,
+  );
   const inventory = itemUsed
     ? consumeItem(state.inventory, itemUsed)
     : state.inventory;
@@ -1127,7 +1308,6 @@ function finalizeLost(
   };
 }
 
-/** Apply a successful flee: clear the battle and return to the prior scene. */
 function finalizeFled(
   state: GameState,
   bs: BattleState,
@@ -1152,11 +1332,6 @@ function finalizeFled(
   };
 }
 
-/**
- * Resolve one party member's command, auto-advance through any intervening
- * enemy turns, then finalize victory, defeat, flee, or the next
- * awaiting-command state. Pure: returns a new `GameState`.
- */
 export function resolveBattleEvent(
   state: GameState,
   event: BattleEvent,
@@ -1188,8 +1363,6 @@ export function resolveBattleEvent(
   if (!validateCommand(command, actor, state.inventory, bs.enemies))
     return state;
 
-  // Defensive: a battle somehow left with all enemies dead resolves as a win
-  // without consuming RNG.
   if (allDead(bs.enemies)) {
     return finalizeWon(
       state,
@@ -1211,9 +1384,8 @@ export function resolveBattleEvent(
   const logs: LogEntry[] = [];
   const pendingReorders: PendingReorder[] = [];
 
-  // party is a positional clone of state.party; index to actor's clone.
   const actorCopy = party[state.party.indexOf(actor)];
-  // A fresh turn: defend must be re-chosen each round to persist the stance.
+
   defendingIds.delete(actorCopy.id);
   const result = applyMemberCommand(
     command,
@@ -1251,7 +1423,18 @@ export function resolveBattleEvent(
   let loot: ItemInstance[] = [];
   let nextItemId = state.nextItemId;
   if (status === "won") {
-    const result = rollVictoryLoot(rng, enemies, state.nextItemId);
+    const dungeonContext = state.dungeonState
+      ? {
+          dungeonId: state.dungeonState.dungeonId,
+          floor: state.dungeonState.floor,
+        }
+      : undefined;
+    const result = rollVictoryLoot(
+      rng,
+      enemies,
+      state.nextItemId,
+      dungeonContext,
+    );
     loot = result.items;
     nextItemId = result.nextId;
   }
@@ -1277,18 +1460,14 @@ export function resolveBattleEvent(
     return finalizeFled(state, bs, party, logs, rngState, itemUsed);
   }
 
-  // Round paused with the battle still ongoing: await the next actor's command.
-  // advanceRound yields a null nextActorId only with "lost" (handled above).
   if (nextActorId === null)
     throw new Error("ongoing battle resolved without a next actor");
   const inventory = itemUsed
     ? consumeItem(state.inventory, itemUsed)
     : state.inventory;
 
-  // Apply pending initiative reorders from status effects applied this
-  // dispatch. The in-progress round's traversal used the original
-  // `bs.initiative`; only the next dispatch sees the adjusted order.
   let finalInitiative = bs.initiative;
+  // Reorders affect the next dispatch, never the round already being traversed.
   for (const reorder of pendingReorders) {
     finalInitiative = applyInitiativePenalty(
       finalInitiative,

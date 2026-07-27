@@ -1,15 +1,4 @@
-/**
- * Pure rendering helpers for the overworld screen: tile glyphs, the
- * camera-follow viewport, and the downsampled minimap. No Ink/React import
- * here so this stays trivially unit-testable; `OverworldScreen.tsx` is the
- * thin Ink wrapper around it.
- *
- * The viewport and minimap both scale to the terminal size the screen passes
- * in: the viewport window grows or shrinks (clamped to the map), and the
- * minimap downsamples more (a larger scale) when its pane is narrow so it
- * always fits without clipping.
- */
-
+import { LANDMARK_FOOTPRINTS } from "../../../engine/world/landmarks";
 import {
   MINIMAP_SCALE,
   VIEWPORT_HEIGHT,
@@ -26,26 +15,23 @@ export interface TileGlyph {
 
 export interface Cell extends TileGlyph {
   key: string;
-  /** World tile coordinate (viewport) or downsampled block coordinate (minimap). */
+
   x: number;
   y: number;
-  /** Tile-sheet frame name for the browser (Pixi) renderer; the terminal ignores it. */
+
   tile?: TileName;
 }
 
-/** Integer viewport dimensions in tiles. */
 export interface Viewport {
   width: number;
   height: number;
 }
 
-/** Options for sizing the minimap. */
 export interface MinimapOptions {
-  /** Fixed downsample scale (tiles per minimap cell); overrides the bounds. */
   scale?: number;
-  /** Max minimap width in cells; the scale grows to fit within this. */
+
   maxWidth?: number;
-  /** Max minimap height in cells; the scale grows to fit within this. */
+
   maxHeight?: number;
 }
 
@@ -60,11 +46,37 @@ const TILE_GLYPHS: Record<Tile, TileGlyph> = {
 
 export const PLAYER_GLYPH: TileGlyph = { char: "@", color: theme.biome.player };
 
+// The village's 2x2 footprint reads as one small settlement - a peaked roof
+// over a wall with a door and a window - instead of four repeated glyphs.
+const VILLAGE_FOOTPRINT_GLYPHS: readonly (readonly TileGlyph[])[] = [
+  [
+    { char: "/", color: theme.biome.village },
+    { char: "\\", color: theme.biome.village },
+  ],
+  [
+    { char: "H", color: theme.biome.village },
+    { char: "n", color: theme.biome.village },
+  ],
+];
+
 export function glyphFor(tile: Tile): TileGlyph {
   return TILE_GLYPHS[tile];
 }
 
-/** Clamp a viewport dimension to `[1, mapSize]`, defaulting to `fallback`. */
+/** Glyph for a specific map cell, resolving multi-tile landmark footprints. */
+export function glyphAt(map: OverworldMap, point: Point): TileGlyph {
+  const tile = map.tiles[point.y][point.x];
+  if (tile === "village") {
+    const footprint = LANDMARK_FOOTPRINTS.village;
+    const dx = point.x - map.village.x;
+    const dy = point.y - map.village.y;
+    if (dx >= 0 && dx < footprint.width && dy >= 0 && dy < footprint.height) {
+      return VILLAGE_FOOTPRINT_GLYPHS[dy][dx];
+    }
+  }
+  return glyphFor(tile);
+}
+
 function resolveDim(
   value: number | undefined,
   mapSize: number,
@@ -74,7 +86,6 @@ function resolveDim(
   return Math.max(1, Math.min(Math.floor(value), mapSize));
 }
 
-/** Clamp a viewport origin so `[origin, origin + size)` stays inside `[0, mapSize)`, centered on `focus`. */
 export function cameraOrigin(
   focus: number,
   viewportSize: number,
@@ -84,7 +95,6 @@ export function cameraOrigin(
   return Math.max(0, Math.min(centered, Math.max(0, mapSize - viewportSize)));
 }
 
-/** Camera-follow viewport around the player, as rows of renderable cells. */
 export function buildViewportRows(
   map: OverworldMap,
   player: Point,
@@ -99,7 +109,7 @@ export function buildViewportRows(
     const row: Cell[] = [];
     for (let x = originX; x < originX + width; x++) {
       const isPlayer = x === player.x && y === player.y;
-      const glyph = isPlayer ? PLAYER_GLYPH : glyphFor(map.tiles[y][x]);
+      const glyph = isPlayer ? PLAYER_GLYPH : glyphAt(map, { x, y });
       const tile = isPlayer ? "player" : map.tiles[y][x];
       row.push({ ...glyph, key: `${x},${y}`, x, y, tile });
     }
@@ -108,7 +118,6 @@ export function buildViewportRows(
   return rows;
 }
 
-/** Village/dungeon entrance tiles win over plain terrain within a downsampled block. */
 function sampleBlock(
   map: OverworldMap,
   blockX: number,
@@ -130,11 +139,6 @@ function sampleBlock(
   return waypoint ?? terrain;
 }
 
-/**
- * Pick the smallest downsample scale (largest minimap) that fits the bounds,
- * starting from {@link MINIMAP_SCALE} and growing only when the default would
- * not fit. An explicit `scale` wins; with no bounds the default scale is used.
- */
 function resolveMinimapScale(
   map: OverworldMap,
   options?: MinimapOptions,
@@ -156,7 +160,6 @@ function resolveMinimapScale(
   return maxScale;
 }
 
-/** Whole-map overview downsampled by the resolved scale, with the player marked. */
 export function buildMinimapRows(
   map: OverworldMap,
   player: Point,
@@ -184,7 +187,6 @@ export function buildMinimapRows(
   return rows;
 }
 
-/** Renders the encounter meter as a fixed-width text bar, e.g. `[####......] 42%`. */
 export function formatEncounterMeter(
   meter: number,
   threshold: number,

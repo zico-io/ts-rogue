@@ -1,20 +1,5 @@
-/**
- * Browser focus-stack keyboard manager (ROG-45). Wires the DOM `keydown`
- * event to the exact same renderer-agnostic `Keymap`/`resolveXIntent`/
- * `reduceXUi` modules the Ink terminal renderer uses under
- * `src/ui/screens/**` and `src/ui/scene/globalInput` - no keymap or reducer
- * logic is duplicated here, only wiring: normalize the browser key,
- * resolve/reduce against whichever scene (and, for the village, sub-view)
- * currently has focus, apply the effect as a `store.dispatch`, and persist
- * any local UI state (cursor position, mode, etc.) for the next key press.
- *
- * Real per-scene rendering (and therefore visible focus) lands in ROG-49
- * through ROG-52; this module's state is real and drives key resolution
- * correctly today even though nothing on screen reflects it yet.
- */
-
 import { classSkills } from "../../engine/combat/skills";
-import { isHealItem } from "../../engine/loot/consumables";
+import { isUsableBattleItem } from "../../engine/loot/consumables";
 import type { GameStore } from "../../engine/state/store";
 import { generateOverworldMap } from "../../engine/world/overworld";
 import { activatedWaypointList } from "../../engine/world/waypoints";
@@ -66,7 +51,6 @@ import {
   normalizeBrowserKey,
 } from "./normalizeBrowserKey";
 
-/** The village's own internal focus: which building/sub-view owns input. */
 export interface VillageFocusState {
   building: VillageBuilding | null;
   overview: OverviewUiState;
@@ -74,7 +58,6 @@ export interface VillageFocusState {
   tavern: TavernUiState;
 }
 
-/** The fast-travel picker's own focus: whether it's open and its cursor (ENG-1). */
 export interface ZoomFocusState {
   open: boolean;
   ui: ZoomUiState;
@@ -82,7 +65,6 @@ export interface ZoomFocusState {
 
 const INITIAL_ZOOM_FOCUS: ZoomFocusState = { open: false, ui: { cursor: 0 } };
 
-/** The whole focus stack's state: one slot per scene, plus the village's sub-view and the Zoom picker overlay. */
 export interface KeyboardManagerState {
   overworld: OverworldUiState;
   dungeon: DungeonUiState;
@@ -108,20 +90,14 @@ export function createInitialKeyboardManagerState(): KeyboardManagerState {
   };
 }
 
-/**
- * Owns the browser focus stack and routes normalized key presses to the
- * scene (and village sub-view) currently in focus. `handleKeyDown` is the
- * only entry point `main.ts` needs; `getState` exists for tests and future
- * rendering to read the current focus without re-deriving it.
- */
 export class BrowserKeyboardManager {
   private state: KeyboardManagerState = createInitialKeyboardManagerState();
 
   constructor(
     private readonly store: GameStore,
-    /** Fired on the quit key while playing (ROG-52 wires this to the browser's title flow). */
+
     private readonly onQuit: () => void,
-    /** Fired after a successful Church save (ROG-46), so `main.ts` can flip its `hasSave` flag for the title screen's Continue entry. Optional so existing callers/tests are unaffected. */
+
     private readonly onSaved?: () => void,
   ) {}
 
@@ -133,9 +109,6 @@ export class BrowserKeyboardManager {
     const keyName = normalizeBrowserKey(event);
     if (!keyName) return;
 
-    // The Zoom picker overlay owns input while open, the same way the Ink
-    // renderer's `zoomOpen` gates its scene-switching `useInput` hook - so
-    // digits/z (and everything else) don't leak through to the scene below.
     if (this.state.zoom.open) {
       this.handleZoom(keyName);
       return;
@@ -171,8 +144,6 @@ export class BrowserKeyboardManager {
         this.store.dispatch({ type: "ChangeScene", scene: intent.scene });
         break;
       case "toggleConsole":
-        // TODO(ROG-48): browser dev console. Stashed, matching main.ts's
-        // `--dev` flag stash, until that console exists.
         console.info(
           "ts-rogue: dev-console toggle key pressed (no browser dev console yet)",
         );
@@ -188,7 +159,6 @@ export class BrowserKeyboardManager {
     }
   }
 
-  /** Opens the Zoom picker from the overworld/village only (ENG-1: evac first inside a dungeon/battle). */
   private tryOpenZoom(): void {
     const scene = this.store.getState().scene;
     if (scene !== "village" && scene !== "overworld") return;
@@ -292,8 +262,8 @@ export class BrowserKeyboardManager {
       aliveEnemyIds: bs.enemies
         .filter((enemy) => enemy.hp > 0)
         .map((enemy) => enemy.id),
-      healItemIds: state.inventory
-        .filter((entry) => isHealItem(entry.itemId))
+      usableItemIds: state.inventory
+        .filter((entry) => isUsableBattleItem(entry.itemId))
         .map((entry) => entry.itemId),
     });
 
@@ -350,7 +320,6 @@ export class BrowserKeyboardManager {
     }
   }
 
-  /** Returns to the village overview, resetting the sub-view that just lost focus. */
   private backToOverview(reset: Partial<VillageFocusState> = {}): void {
     this.state = {
       ...this.state,
@@ -371,10 +340,7 @@ export class BrowserKeyboardManager {
           overview: result.state,
         },
       };
-      // The recruit pool is empty on an old save (or after hiring everyone);
-      // roll a fresh one on entry so the tavern is never bare, mirroring
-      // `TavernView.tsx`'s on-mount effect (there is no mount hook here, so
-      // the transition into the building is the equivalent moment).
+
       if (
         result.effect.building === "tavern" &&
         this.store.getState().recruits.length === 0
@@ -405,11 +371,6 @@ export class BrowserKeyboardManager {
     if (!intent) return;
     const effect = reduceChurchUi(intent);
     if (effect?.type === "save") {
-      // Real IndexedDB persistence (ROG-46), mirroring `ChurchView.tsx`'s
-      // terminal sqlite save. `saveGame` is async (IndexedDB has no sync
-      // API, unlike `node:sqlite`), so this fires the write and dispatches
-      // the resulting `Log` line once it settles instead of blocking key
-      // handling - matching "press Enter to save" not stalling the UI.
       const state = this.store.getState();
       saveGame(state)
         .then(() => {

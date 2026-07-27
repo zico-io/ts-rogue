@@ -6,7 +6,6 @@ import type { GameState } from "../state/types";
 import { createStartingHero, MAX_PARTY } from "./party";
 import { generateRecruits, recruitCost } from "./recruits";
 
-/** Fill the party up to `size` with dummy members (hero at index 0 preserved). */
 function partyOf(base: GameState, size: number): GameState {
   const extra = Array.from({ length: size - 1 }, (_, i) =>
     createStartingHero("warrior", `member-${i + 2}`, `Dummy${i + 2}`),
@@ -29,7 +28,7 @@ describe("generateRecruits", () => {
     for (const r of recruits) {
       expect(r.level).toBeGreaterThanOrEqual(heroLevel - 1);
       expect(r.level).toBeLessThanOrEqual(heroLevel + 1);
-      // Stats came from class + growth, so a leveled recruit beats a level-1 one.
+
       expect(r.maxHp).toBeGreaterThan(0);
     }
   });

@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
+import { DUNGEONS } from "../../data/dungeons";
+import { footprintCells, LANDMARK_FOOTPRINTS } from "./landmarks";
 import {
   biomeDanger,
+  chebyshev,
   generateOverworldMap,
   isPassable,
   tileAt,
 } from "./overworld";
+import { dungeonWaypointId, storyDungeonForEntrance } from "./waypoints";
 
 describe("generateOverworldMap", () => {
   it("is a pure function of the seed: identical seed -> identical map", () => {
@@ -28,6 +32,67 @@ describe("generateOverworldMap", () => {
         expect(isPassable(tileAt(map, neighbor))).toBe(true);
       }
     }
+  });
+
+  it("occupies the village's full 2x2 footprint, anchored at map.village (ENG-7)", () => {
+    for (const seed of [1, 2, 3, 42, 999]) {
+      const map = generateOverworldMap(seed);
+      const cells = footprintCells(map.village, LANDMARK_FOOTPRINTS.village);
+      expect(cells).toHaveLength(4);
+      for (const cell of cells) {
+        expect(tileAt(map, cell)).toBe("village");
+      }
+    }
+  });
+
+  it("keeps landmark footprints from overlapping each other (ENG-7)", () => {
+    for (const seed of [1, 2, 3, 42, 999]) {
+      const map = generateOverworldMap(seed);
+      const villageCells = new Set(
+        footprintCells(map.village, LANDMARK_FOOTPRINTS.village).map(
+          (c) => `${c.x},${c.y}`,
+        ),
+      );
+      for (const entrance of map.dungeonEntrances) {
+        expect(villageCells.has(`${entrance.x},${entrance.y}`)).toBe(false);
+      }
+    }
+  });
+
+  it("orders entrances near-to-far so entrance index maps to ascending story dungeon tier (ROG-90)", () => {
+    for (const seed of [1, 2, 3, 42, 999]) {
+      const map = generateOverworldMap(seed);
+      const distances = map.dungeonEntrances.map((entrance) =>
+        chebyshev(map.village, entrance),
+      );
+      for (let i = 1; i < distances.length; i++) {
+        expect(distances[i]).toBeGreaterThanOrEqual(distances[i - 1]);
+      }
+
+      const tiers = map.dungeonEntrances.map(
+        (_, index) => storyDungeonForEntrance(index)?.tier,
+      );
+      for (let i = 1; i < tiers.length; i++) {
+        const previousTier = tiers[i - 1];
+        if (previousTier === undefined) {
+          throw new Error(`entrance ${i - 1} has no story dungeon tier`);
+        }
+        expect(tiers[i]).toBeGreaterThan(previousTier);
+      }
+    }
+  });
+
+  it("assigns every entrance a distinct story dungeon id deterministically for a fixed seed (ROG-90)", () => {
+    const a = generateOverworldMap(7);
+    const b = generateOverworldMap(7);
+    expect(a.dungeonEntrances).toEqual(b.dungeonEntrances);
+
+    const ids = a.dungeonEntrances.map((_, index) => dungeonWaypointId(index));
+    const expectedIds = [...DUNGEONS]
+      .sort((x, y) => x.tier - y.tier)
+      .map((dungeon) => dungeon.id);
+    expect(ids).toEqual(expectedIds);
+    expect(new Set(ids).size).toBe(ids.length);
   });
 
   it("places dungeon entrances only where the village can walk to them", () => {
@@ -61,7 +126,6 @@ describe("biomeDanger", () => {
   });
 });
 
-/** BFS reachability helper, kept test-local so it doesn't leak into the engine API. */
 function isReachable(
   map: ReturnType<typeof generateOverworldMap>,
   from: { x: number; y: number },

@@ -28,6 +28,7 @@ function buildState(
 ): DungeonState {
   return {
     dungeonId: "dungeon-0",
+    theme: "crypt",
     floor: 1,
     layout,
     player,
@@ -39,7 +40,6 @@ function buildState(
   };
 }
 
-/** A no-op draw handle recording nothing but satisfying the interfaces; counts creations/destructions via the factory below. */
 function fakeRect(): RectHandle {
   return {
     setPosition() {},
@@ -94,6 +94,8 @@ interface Counts {
   columnDestroys: number;
   billboards: number;
   billboardDestroys: number;
+  particles: number;
+  particleDestroys: number;
 }
 
 function createFakeFactory(): { factory: DungeonDrawFactory; counts: Counts } {
@@ -104,8 +106,22 @@ function createFakeFactory(): { factory: DungeonDrawFactory; counts: Counts } {
     columnDestroys: 0,
     billboards: 0,
     billboardDestroys: 0,
+    particles: 0,
+    particleDestroys: 0,
   };
   const factory: DungeonDrawFactory = {
+    createParticle() {
+      counts.particles++;
+      return {
+        setPosition() {},
+        setSize() {},
+        setColor() {},
+        setAlpha() {},
+        destroy: () => {
+          counts.particleDestroys++;
+        },
+      };
+    },
     createRect() {
       counts.rects++;
       const handle = fakeRect();
@@ -164,8 +180,8 @@ describe("DungeonSceneView", () => {
     expect(afterFirst).toBeGreaterThan(0);
 
     view.render(ds, { width: 200, height: 150 });
-    expect(counts.columns).toBe(afterFirst); // no new column sprites created
-    expect(counts.columnDestroys).toBe(0); // and none destroyed - same viewport size
+    expect(counts.columns).toBe(afterFirst);
+    expect(counts.columnDestroys).toBe(0);
   });
 
   it("prunes stale wall-column handles when the viewport shrinks", () => {
@@ -177,7 +193,7 @@ describe("DungeonSceneView", () => {
     const wide = counts.columns;
     view.render(ds, { width: 40, height: 150 });
     expect(counts.columnDestroys).toBeGreaterThan(0);
-    expect(counts.columns).toBe(wide); // no new columns needed, only pruning
+    expect(counts.columns).toBe(wide);
   });
 
   it("draws a billboard for an in-view chest and prunes it once out of range", () => {
@@ -193,8 +209,6 @@ describe("DungeonSceneView", () => {
     view.render(facingChest, { width: 200, height: 150 });
     expect(counts.billboards).toBe(1);
 
-    // Facing away (south) puts the chest behind the camera - it should be
-    // culled and its handle pruned.
     const facingAway: DungeonState = { ...facingChest, facing: "south" };
     view.render(facingAway, { width: 200, height: 150 });
     expect(counts.billboardDestroys).toBe(1);
@@ -260,5 +274,47 @@ describe("DungeonSceneView", () => {
     view.render(ds, { width: 100, height: 100 }, true);
 
     expect(seenTexts.at(-1)).toBe("Evac to the entrance? [y/n]");
+  });
+
+  it("spawns ambient dust motes/embers up to the cap once ticked after a render", () => {
+    const { factory, counts } = createFakeFactory();
+    const view = new DungeonSceneView(factory);
+    const ds = buildState(buildRoomLayout(9, 9), { x: 4, y: 4 });
+
+    view.render(ds, { width: 200, height: 150 });
+    expect(counts.particles).toBe(0);
+
+    view.tick(16);
+    expect(counts.particles).toBeGreaterThan(0);
+
+    const afterFirstTick = counts.particles;
+    view.tick(16);
+    // Already at the cap - ticking again shouldn't spawn more.
+    expect(counts.particles).toBe(afterFirstTick);
+  });
+
+  it("does not spawn motes before the first render (no viewport size yet)", () => {
+    const { factory, counts } = createFakeFactory();
+    const view = new DungeonSceneView(factory);
+
+    expect(() => view.tick(16)).not.toThrow();
+    expect(counts.particles).toBe(0);
+  });
+
+  it("clears motes and stops spawning once reduced motion is enabled", () => {
+    const { factory, counts } = createFakeFactory();
+    const view = new DungeonSceneView(factory);
+    const ds = buildState(buildRoomLayout(9, 9), { x: 4, y: 4 });
+
+    view.render(ds, { width: 200, height: 150 });
+    view.tick(16);
+    const spawned = counts.particles;
+    expect(spawned).toBeGreaterThan(0);
+
+    view.setReducedMotion(true);
+    expect(counts.particleDestroys).toBe(spawned);
+
+    view.tick(16);
+    expect(counts.particles).toBe(spawned);
   });
 });

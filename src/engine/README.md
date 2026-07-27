@@ -43,7 +43,12 @@ loot before returning to the originating scene.
 - Warrior, Rogue, and Wizard classes define starting stats, per-level growth,
   and known skills through the `CLASSES` data table.
 - The overworld contains passable biomes, a village, reachable dungeon
-  entrances, and a seeded encounter meter.
+  entrances, and a seeded encounter meter. The village occupies a 2x2
+  footprint (`world/landmarks.ts`); `map.village` is its top-left anchor
+  cell, every covered cell carries the `village` tile so movement and the
+  village-entry trigger work from any of the four cells, and generation
+  rejects a footprint that would overlap impassable terrain or another
+  landmark.
 - Fast travel: evac leaves any dungeon (outside battle) for the overworld on
   the entrance tile without touching dungeon progress, and zoom teleports
   between landmarks (village, dungeon entrances) already visited this run.
@@ -51,7 +56,30 @@ loot before returning to the originating scene.
 - Dungeons contain deterministic rooms, corridors, chests, stairs, wandering
   encounters, and a boss floor.
 - Battles support Attack, Skill, Item, Defend, and Flee actions in a fixed
-  initiative order for each round.
+  initiative order for each round. Skills and monster attacks carry an
+  element and may apply status effects (poison, burn, stun, slow, wet, oiled,
+  chilled, frozen, shocked); effects tick at the start of the afflicted
+  actor's turn and are cleared entirely when battle ends. Antidote cures
+  poison and Thermal Salts cure burn/chilled; every Heal-kind skill also
+  cleanses the caster's own status effects on cast (see the comment on
+  `SkillKind` in `combat/skills.ts` for the full Heal-cleanse rationale).
+- Enemies stand in a front or back formation row (`BattleEnemy.row`,
+  `pickEnemyGroup`'s `FRONT_ROW_SIZE`); the party stays a flat line. A basic
+  attack cannot reach a back-row enemy while any front-row enemy is still
+  alive (`isMeleeTargetable` in `combat/resolution.ts`); skills always ignore
+  this rule and reach any row directly.
+- A `SkillDef`'s `target` shape (`single`, `row`, `column`, `allEnemies`,
+  `randomN`, `self`, `ally`, `allAllies`) expands into a concrete target list
+  through `resolveShapeTargets` in `combat/resolution.ts` - the one resolver
+  both a party member's `BattleSkill` command and a monster's `advanceRound`
+  turn use. `row` hits every living enemy sharing the anchor's row, `column`
+  pierces the anchor's lane in both rows, `allEnemies`/`allAllies` hit
+  everyone living on that side, and `randomN` hits `hitCount` distinct living
+  targets chosen without replacement. Every resolved target rolls its own
+  crit, damage, and status-application independently - never one roll
+  broadcast to the whole group. A monster with an attack-kind skill in its
+  `MonsterDef.skills` list always casts one (see the Dungeon Guardian's
+  Cleave/Meteor) instead of a basic attack.
 - Loot combines item bases, rarity, prefixes, suffixes, and optional
   monster-specific implicit properties.
 - Village events cover resting, buying, selling, and equipment; saving stays at

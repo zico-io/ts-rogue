@@ -1,15 +1,3 @@
-/**
- * Loot-triage overlay input handling (ENG-5, workstream 3 of the ENG-2
- * inventory epic). Mirrors the normalize-input / resolve-intent / pure-
- * reduce / dispatch-effect pattern every other screen uses (closest
- * template: `screens/inventory/interaction.ts`). `choose` offers swap
- * (dismantle a carried item to make room) or dismantle the drop directly;
- * `swapPick` lets the player pick which carried item to dismantle before
- * confirming. There is deliberately no "do nothing" exit from either mode -
- * the queued drop is always resolved one way or the other so nothing is
- * ever silently lost.
- */
-
 import type { ItemInstance } from "../../../engine/loot/types";
 import type { Intent, Keymap, KeyName } from "../../scene/input";
 
@@ -50,7 +38,6 @@ const swapPickKeymap: Keymap = {
   escape: { kind: "cancel" },
 };
 
-/** Resolves the `Intent` for a key press on the loot-triage overlay, given its current mode. */
 export function resolveLootTriageIntent(
   mode: LootTriageMode,
   key: KeyName,
@@ -58,7 +45,6 @@ export function resolveLootTriageIntent(
   return mode === "choose" ? chooseKeymap[key] : swapPickKeymap[key];
 }
 
-/** Pure transition function for the loot-triage overlay's choose/swapPick modes. */
 export function reduceLootTriageUi(
   state: LootTriageUiState,
   intent: Intent,
@@ -74,7 +60,6 @@ export function reduceLootTriageUi(
     return { state };
   }
 
-  // mode === "swapPick"
   if (intent.kind === "cancel") {
     return { state: { mode: "choose", carriedCursor: 0 } };
   }

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
+import type { DungeonDef } from "../../data/dungeons";
 import { createStartingHero, type PartyMember } from "../entities/party";
 import { Rng } from "../rng/rng";
-import { newGame, reduce } from "../state/store";
+import { GameStore, newGame, reduce } from "../state/store";
 import type { GameEvent, GameState, Scene } from "../state/types";
 import { createInitialDungeonState } from "../world/dungeon";
 import { generateOverworldMap } from "../world/overworld";
@@ -9,13 +10,16 @@ import {
   applyInitiativePenalty,
   atkFrom,
   computeDamage,
+  DEFAULT_ROW,
   defFrom,
   deriveAtk,
   deriveDef,
   deriveSpd,
+  FRONT_ROW_SIZE,
   fleeChance,
   grantXp,
   hitChance,
+  isMeleeTargetable,
   pickEnemyGroup,
   resolveAttack,
   rollInitiative,
@@ -24,7 +28,7 @@ import {
   startBattle,
   xpToNext,
 } from "./resolution";
-import type { BattleEnemy, BattleState } from "./types";
+import type { BattleEnemy, BattleState, EnemyRow } from "./types";
 
 const HERO_STATS = { str: 5, agi: 5, vit: 5, int: 5 };
 const SLIME_STATS = { str: 4, agi: 3, vit: 4, int: 1 };
@@ -37,8 +41,20 @@ function makeEnemy(
   stats: { str: number; agi: number; vit: number; int: number },
   xp: number,
   gold: number,
+  row: EnemyRow = DEFAULT_ROW,
 ): BattleEnemy {
-  return { id, defId, name, hp, maxHp: hp, stats, ascii: ["x"], xp, gold };
+  return {
+    id,
+    defId,
+    name,
+    hp,
+    maxHp: hp,
+    stats,
+    ascii: ["x"],
+    xp,
+    gold,
+    row,
+  };
 }
 
 function battleVs(
@@ -57,7 +73,6 @@ function battleVs(
   };
 }
 
-/** Build a GameState that is mid-battle against `enemy`, on dungeon floor 1. */
 function stateInBattle(
   seed: number,
   enemy: BattleEnemy,
@@ -72,6 +87,38 @@ function stateInBattle(
     party: [hero],
     dungeonState: { ...ds, encounter: { kind: "wandering", floor: 1 } },
     battleState: battleVs(enemy),
+  };
+}
+
+function battleVsMany(
+  enemies: BattleEnemy[],
+  activeMemberId = "hero-1",
+): BattleState {
+  return {
+    enemies,
+    status: "ongoing",
+    initiative: ["hero-1", ...enemies.map((enemy) => enemy.id)],
+    awaitingCommand: true,
+    returnScene: "dungeon",
+    activeMemberId,
+    defendingIds: [],
+  };
+}
+
+function stateWithEnemies(
+  seed: number,
+  enemies: BattleEnemy[],
+  heroOverride: Partial<PartyMember> = {},
+): GameState {
+  const base = newGame(seed);
+  const hero = { ...base.party[0], ...heroOverride };
+  const ds = createInitialDungeonState(seed, "dungeon-0", 1);
+  return {
+    ...base,
+    scene: "battle",
+    party: [hero],
+    dungeonState: { ...ds, encounter: { kind: "wandering", floor: 1 } },
+    battleState: battleVsMany(enemies, hero.id),
   };
 }
 
@@ -118,19 +165,16 @@ describe("computeDamage", () => {
   const def = SLIME_STATS;
 
   it("applies the variance roll and floors at 1", () => {
-    // base = 5 - 2 = 3; variance 0 -> floor(3 * 0.85) = 2
     expect(computeDamage(false, 0, atk, def, false)).toBe(2);
-    // variance 1 -> floor(3 * 1.15) = 3
+
     expect(computeDamage(false, 1, atk, def, false)).toBe(3);
   });
 
   it("multiplies by the crit multiplier on a crit", () => {
-    // floor(3 * 0.85) = 2, then floor(2 * 1.5) = 3
     expect(computeDamage(true, 0, atk, def, false)).toBe(3);
   });
 
   it("halves damage when the defender is defending", () => {
-    // floor(3 * 0.85) = 2, then floor(2 * 0.5) = 1
     expect(computeDamage(false, 0, atk, def, true)).toBe(1);
   });
 
@@ -263,6 +307,281 @@ describe("pickEnemyGroup", () => {
     const runOnce = () => pickEnemyGroup(new Rng(777), "wandering", 3);
     expect(runOnce()).toEqual(runOnce());
   });
+
+  it("places the first FRONT_ROW_SIZE enemies in front and overflows the rest to the back row (ENG-29)", () => {
+    let sawBackRow = false;
+    for (let seed = 1; seed <= 2000; seed++) {
+      const group = pickEnemyGroup(new Rng(seed), "wandering", 3);
+      group.forEach((enemy, index) => {
+        const expectedRow = index < FRONT_ROW_SIZE ? "front" : "back";
+        expect(enemy.row).toBe(expectedRow);
+        if (enemy.row === "back") sawBackRow = true;
+      });
+    }
+    expect(sawBackRow).toBe(true);
+  });
+});
+
+describe("pickEnemyGroup (ROG-89: def-aware dungeons)", () => {
+  const goblinBossDef: DungeonDef = {
+    id: "test-goblin-den",
+    name: "Test Goblin Den",
+    theme: "cave",
+    tier: 1,
+    floorCount: 2,
+    palette: [{ monsterId: "goblin", weight: 1 }],
+    bossId: "goblin",
+    floorBands: [{ minFloor: 1, maxFloor: 2, lootTableRef: "tier-1" }],
+    recommendedLevel: 1,
+    story: true,
+  };
+
+  const weightedDef: DungeonDef = {
+    ...goblinBossDef,
+    id: "test-weighted",
+    palette: [
+      { monsterId: "slime", weight: 3 },
+      { monsterId: "goblin", weight: 1 },
+    ],
+  };
+
+  it("spawns the def's bossId instead of the hardcoded dungeon-guardian", () => {
+    const group = pickEnemyGroup(new Rng(1234), "boss", 2, goblinBossDef);
+    expect(group).toHaveLength(1);
+    expect(group[0].defId).toBe("goblin");
+  });
+
+  it("falls back to dungeon-guardian when no def is given (overworld encounters)", () => {
+    const group = pickEnemyGroup(new Rng(1234), "boss", 2);
+    expect(group[0].defId).toBe("dungeon-guardian");
+  });
+
+  it("rolls wandering enemies from the def's palette, not the flat minFloor filter", () => {
+    for (let seed = 1; seed <= 20; seed++) {
+      const group = pickEnemyGroup(
+        new Rng(seed),
+        "wandering",
+        1,
+        goblinBossDef,
+      );
+      for (const enemy of group) expect(enemy.defId).toBe("goblin");
+    }
+  });
+
+  it("weights the palette roll reproducibly for a fixed seed", () => {
+    const rollOnce = () =>
+      Array.from({ length: 50 }, (_, i) =>
+        pickEnemyGroup(new Rng(9000 + i), "wandering", 3, weightedDef).map(
+          (enemy) => enemy.defId,
+        ),
+      );
+    expect(rollOnce()).toEqual(rollOnce());
+
+    const seen = new Set(rollOnce().flat());
+    expect(seen.has("slime")).toBe(true);
+    expect(seen.has("goblin")).toBe(true);
+  });
+});
+
+describe("ENG-29 melee reachability: front row must fall before back row is targetable", () => {
+  it("rejects a basic attack aimed at a living back-row enemy while the front row survives, and opens it once the front row clears", () => {
+    const front = makeEnemy(
+      "goblin-front",
+      "slime",
+      "Front Slime",
+      6,
+      SLIME_STATS,
+      5,
+      3,
+      "front",
+    );
+    const back = makeEnemy(
+      "slime-back",
+      "slime",
+      "Back Slime",
+      999,
+      SLIME_STATS,
+      5,
+      3,
+      "back",
+    );
+    expect(isMeleeTargetable([front, back], back)).toBe(false);
+    expect(isMeleeTargetable([front, back], front)).toBe(true);
+
+    let state = stateWithEnemies(1234, [front, back]);
+    const rejected = reduce(state, {
+      type: "BattleAttack",
+      targetId: "slime-back",
+    });
+    expect(rejected).toBe(state);
+
+    for (
+      let i = 0;
+      i < 50 &&
+      state.battleState?.status === "ongoing" &&
+      (state.battleState.enemies.find((e) => e.id === "goblin-front")?.hp ??
+        0) > 0;
+      i++
+    ) {
+      state = reduce(state, { type: "BattleAttack", targetId: "goblin-front" });
+    }
+    expect(
+      state.battleState?.enemies.find((e) => e.id === "goblin-front")?.hp,
+    ).toBe(0);
+    expect(isMeleeTargetable(state.battleState?.enemies ?? [], back)).toBe(
+      true,
+    );
+
+    const after = reduce(state, {
+      type: "BattleAttack",
+      targetId: "slime-back",
+    });
+    expect(after).not.toBe(state);
+    const backAfter = after.battleState?.enemies.find(
+      (e) => e.id === "slime-back",
+    );
+    expect(backAfter?.hp).toBeLessThan(999);
+  });
+});
+
+describe("ENG-28 shape resolution & per-target rolls", () => {
+  const front = (id: string, hp = 999) =>
+    makeEnemy(id, "slime", id.toUpperCase(), hp, SLIME_STATS, 5, 3, "front");
+  const back = (id: string, hp = 999) =>
+    makeEnemy(id, "slime", id.toUpperCase(), hp, SLIME_STATS, 5, 3, "back");
+
+  it("a row skill (hailstorm) damages exactly the living enemies in its row and no others, with independent per-target damage and status rolls", () => {
+    const wizard = createStartingHero("wizard", "hero-1", "Wizard");
+    const f1 = front("f1");
+    const f2 = front("f2");
+    const b1 = back("b1");
+    const state = stateWithEnemies(1, [f1, f2, b1], wizard);
+
+    const after = reduce(state, {
+      type: "BattleSkill",
+      skillId: "hailstorm",
+      targetId: "f1",
+    });
+
+    const enemies = after.battleState?.enemies ?? [];
+    const f1After = enemies.find((e) => e.id === "f1");
+    const f2After = enemies.find((e) => e.id === "f2");
+    const b1After = enemies.find((e) => e.id === "b1");
+
+    expect(f1After?.hp).toBeLessThan(999);
+    expect(f2After?.hp).toBeLessThan(999);
+    expect(b1After?.hp).toBe(999);
+
+    // Same seed, same skill, two front-row targets: the damage differs and
+    // only one of the two picked up "wet" - each target rolled its own
+    // crit/damage/status independently rather than one roll broadcast to
+    // the whole row.
+    expect(f1After?.hp).not.toBe(f2After?.hp);
+    const f1Wet = f1After?.effects?.some((e) => e.effectId === "wet");
+    const f2Wet = f2After?.effects?.some((e) => e.effectId === "wet");
+    expect(f1Wet).not.toBe(f2Wet);
+  });
+
+  it("a column skill (skewer) hits one enemy per row along the anchor's lane and leaves the other lane untouched", () => {
+    const f1 = front("f1");
+    const f2 = front("f2");
+    const b1 = back("b1");
+    const b2 = back("b2");
+    const state = stateWithEnemies(1, [f1, f2, b1, b2]);
+
+    const after = reduce(state, {
+      type: "BattleSkill",
+      skillId: "skewer",
+      targetId: "f2",
+    });
+
+    const enemies = after.battleState?.enemies ?? [];
+    expect(enemies.find((e) => e.id === "f1")?.hp).toBe(999);
+    expect(enemies.find((e) => e.id === "b1")?.hp).toBe(999);
+    expect(enemies.find((e) => e.id === "f2")?.hp).toBeLessThan(999);
+    expect(enemies.find((e) => e.id === "b2")?.hp).toBeLessThan(999);
+  });
+
+  it("a blast skill (meteor) damages every living enemy and skips the already-dead one", () => {
+    const wizard = createStartingHero("wizard", "hero-1", "Wizard");
+    const e1 = front("e1");
+    const e2 = front("e2");
+    const e3 = back("e3");
+    const dead = back("dead1", 0);
+    const state = stateWithEnemies(1, [e1, e2, e3, dead], wizard);
+
+    const after = reduce(state, {
+      type: "BattleSkill",
+      skillId: "meteor",
+      targetId: "e1",
+    });
+
+    const enemies = after.battleState?.enemies ?? [];
+    expect(enemies.find((e) => e.id === "e1")?.hp).toBeLessThan(999);
+    expect(enemies.find((e) => e.id === "e2")?.hp).toBeLessThan(999);
+    expect(enemies.find((e) => e.id === "e3")?.hp).toBeLessThan(999);
+    expect(enemies.find((e) => e.id === "dead1")?.hp).toBe(0);
+
+    // Independent per-target damage rolls: three targets, three different
+    // damage totals from the same cast.
+    const damages = new Set(
+      ["e1", "e2", "e3"].map(
+        (id) => 999 - (enemies.find((e) => e.id === id)?.hp ?? 999),
+      ),
+    );
+    expect(damages.size).toBe(3);
+  });
+
+  it("a randomN skill (scattershot) hits hitCount distinct living targets, each rolled independently", () => {
+    const rogue = createStartingHero("rogue", "hero-1", "Rogue");
+    const e1 = front("e1");
+    const e2 = front("e2");
+    const e3 = back("e3");
+    const state = stateWithEnemies(1, [e1, e2, e3], rogue);
+
+    const after = reduce(state, {
+      type: "BattleSkill",
+      skillId: "scattershot",
+      targetId: "e1",
+    });
+
+    const hitLines = after.log.filter((l) => l.text.includes("Scattershot"));
+    expect(hitLines).toHaveLength(3);
+
+    const enemies = after.battleState?.enemies ?? [];
+    for (const id of ["e1", "e2", "e3"]) {
+      expect(enemies.find((e) => e.id === id)?.hp).toBeLessThan(999);
+    }
+  });
+
+  it("a monster with a multi-target skill (Meteor) casts it against the whole party through the same resolver advanceRound uses", () => {
+    const memberA = createStartingHero("warrior", "member-a", "Aria");
+    const memberB = createStartingHero("warrior", "member-b", "Boro");
+    const guardian = makeEnemy(
+      "guardian-1",
+      "dungeon-guardian",
+      "Guardian",
+      999,
+      { str: 12, agi: 5, vit: 14, int: 2 },
+      80,
+      120,
+    );
+    // Seed 2 is a fixed fixture: on member-a's and member-b's first
+    // defends, the guardian's turn picks its "meteor" (allEnemies) skill
+    // over its single-target "cleave" and hits both party members in the
+    // same cast.
+    const state = stateInMultiBattle(2, [memberA, memberB], guardian);
+
+    let after = reduce(state, { type: "BattleDefend" });
+    expect(after.battleState).not.toBeNull();
+    after = reduce(after, { type: "BattleDefend" });
+
+    expect(after.log.some((l) => l.text.includes("Meteor"))).toBe(true);
+    const aAfter = after.party.find((m) => m.id === memberA.id);
+    const bAfter = after.party.find((m) => m.id === memberB.id);
+    expect(aAfter?.hp).toBeLessThan(memberA.hp);
+    expect(bAfter?.hp).toBeLessThan(memberB.hp);
+  });
 });
 
 describe("startBattle", () => {
@@ -339,7 +658,6 @@ describe("BattleFlee", () => {
 
 describe("full win scenario", () => {
   it("casts a winning spell, levels up, and returns to the dungeon", () => {
-    // A weak 3-HP enemy that yields enough XP to cross several level thresholds.
     const rich = makeEnemy(
       "rich-1",
       "slime",
@@ -359,7 +677,7 @@ describe("full win scenario", () => {
     expect(after.scene).toBe("dungeon");
     expect(after.battleState).toBeNull();
     expect(after.dungeonState?.encounter).toBeNull();
-    // 80 XP: 15 -> L2, 22 -> L3, 33 -> L4, leaving 10 below the 50 threshold.
+
     expect(after.party[0].level).toBe(4);
     expect(after.party[0].xp).toBe(10);
     expect(after.party[0].maxHp).toBe(48);
@@ -394,10 +712,10 @@ describe("full lose scenario", () => {
     expect(after.scene).toBe("village");
     expect(after.battleState).toBeNull();
     expect(after.dungeonState).toBeNull();
-    // Phase 6 death handling: revive at 1 HP, 0 MP, half gold lost (floored).
+
     expect(after.party[0].hp).toBe(1);
     expect(after.party[0].mp).toBe(0);
-    expect(after.gold).toBe(25); // 50 starting gold - floor(50 / 2)
+    expect(after.gold).toBe(25);
     expect(after.flags.gameOver).toBe(false);
     const map = generateOverworldMap(1234);
     expect(after.worldState.player).toEqual(map.village);
@@ -447,11 +765,6 @@ describe("determinism and serializability", () => {
   });
 });
 
-/* -------------------------------------------------------------------------- */
-/* Multi-member party (ROG-20)                                                */
-/* -------------------------------------------------------------------------- */
-
-/** Build a GameState mid-battle against a fixed `enemy` for a given party. */
 function stateInMultiBattle(
   seed: number,
   members: PartyMember[],
@@ -507,7 +820,7 @@ describe("multi-member party (ROG-20)", () => {
   it("both members get a turn in a round: the active member advances to the other after one dispatch", () => {
     const memberA = member("member-a", "Aria");
     const memberB = member("member-b", "Boro");
-    // Very tough so a single hit never kills it and the round keeps going.
+
     const slime = makeEnemy(
       "slime-1",
       "slime",
@@ -527,7 +840,7 @@ describe("multi-member party (ROG-20)", () => {
     });
     expect(after.battleState?.status).toBe("ongoing");
     expect(after.battleState?.activeMemberId).toBe(otherId);
-    // Both members are still present, carried forward with their current HP/MP.
+
     expect(after.party.map((m) => m.id).sort()).toEqual(
       [memberA.id, memberB.id].sort(),
     );
@@ -555,8 +868,7 @@ describe("multi-member party (ROG-20)", () => {
       s = reduce(s, { type: "BattleAttack", targetId: "slime-1" });
       expect(s.battleState?.activeMemberId).not.toBe(koMember.id);
     }
-    // The KO'd member was never targeted, so their HP never moved off zero.
-    // If the battle ended (memberA died from poison ticks), revival set them to 1 HP.
+
     if (s.battleState?.status === "ongoing") {
       expect(s.party.find((m) => m.id === koMember.id)?.hp).toBe(0);
     }
@@ -585,7 +897,7 @@ describe("multi-member party (ROG-20)", () => {
       }
     }
     expect(sawOneDownWhileOngoing).toBe(true);
-    // Once both are down, the battle resolves to defeat (revived at the village).
+
     expect(s.scene).toBe("village");
     expect(s.battleState).toBeNull();
     expect(s.party.every((m) => m.hp === 1 && m.mp === 0)).toBe(true);
@@ -622,8 +934,6 @@ describe("multi-member party (ROG-20)", () => {
     const slime = makeEnemy("slime-1", "slime", "Slime", 30, SLIME_STATS, 5, 3);
     let fled: GameState | null = null;
     for (let seed = 1; seed <= 200 && !fled; seed++) {
-      // A huge speed edge pushes flee chance to its clamped max, and puts
-      // this member first in initiative almost every seed.
       const fastA = {
         ...member("member-a", "Aria"),
         stats: { str: 5, agi: 999, vit: 5, int: 5 },
@@ -640,14 +950,8 @@ describe("multi-member party (ROG-20)", () => {
   });
 });
 
-/* -------------------------------------------------------------------------- */
-/* ENG-21: Status effect application & element on hit                        */
-/* -------------------------------------------------------------------------- */
-
 describe("ENG-21 status effects and element on hit", () => {
   it("a monster attack with attackApplies attaches poison on a successful roll", () => {
-    // Seed 1 with a slime enemy: after the hero defends (no RNG consumed),
-    // the slime attacks and the RNG sequence produces a hit + poison proc.
     const slime = makeEnemy("slime-1", "slime", "Slime", 12, SLIME_STATS, 5, 5);
     const state = stateInBattle(1, slime);
     const after = reduce(state, { type: "BattleDefend" });
@@ -661,7 +965,6 @@ describe("ENG-21 status effects and element on hit", () => {
   });
 
   it("a water-flavored skill (frost) applies wet on the target", () => {
-    // Wizard has frost (element: "ice", applies wet on hit).
     const wizard = createStartingHero("wizard", "hero-1", "Wizard");
     const fatSlime = makeEnemy(
       "slime-1",
@@ -672,7 +975,7 @@ describe("ENG-21 status effects and element on hit", () => {
       5,
       5,
     );
-    // Seed 2 produces a successful wet application.
+
     const state = stateInBattle(2, fatSlime, wizard);
     const after = reduce(state, {
       type: "BattleSkill",
@@ -680,17 +983,13 @@ describe("ENG-21 status effects and element on hit", () => {
       targetId: "slime-1",
     });
 
-    // The slime should survive and have the wet effect.
     const enemy = after.battleState?.enemies[0];
     expect(enemy).toBeDefined();
     expect(enemy?.hp).toBeGreaterThan(0);
     const effects = enemy?.effects ?? [];
     const wet = effects.find((e) => e.effectId === "wet");
     expect(wet).toBeDefined();
-    // Applied at duration 3, then ticked once more this same dispatch when
-    // advanceRound reaches the slime's own turn before pausing on the hero
-    // again (ENG-23 generalized tickEffects to decrement every effect, not
-    // just damaging ones) - same pattern as the poison test above.
+
     expect(wet?.duration).toBe(2);
     expect(wet?.potency).toBe(1);
   });
@@ -707,35 +1006,31 @@ describe("ENG-21 status effects and element on hit", () => {
     );
     const state = stateInBattle(1, slime);
 
-    // Flame has element: "fire" (set in skills.ts ENG-21).
     const flameState = reduce(state, {
       type: "BattleSkill",
       skillId: "flame",
       targetId: "slime-1",
     });
 
-    // The log for the flame attack should contain "(fire)".
     const fireHits = flameState.log.filter((l) => l.text.includes("(fire)"));
     expect(fireHits.length).toBeGreaterThanOrEqual(1);
     expect(fireHits[0].kind).toBe("damage");
+    expect(fireHits[0].element).toBe("fire");
 
-    // A basic attack (physical, no element tag) should NOT have "(fire)".
     const basicState = reduce(stateInBattle(1, slime), {
       type: "BattleAttack",
       targetId: "slime-1",
     });
     const fireInBasic = basicState.log.filter((l) => l.text.includes("(fire)"));
     expect(fireInBasic.length).toBe(0);
+
+    const basicHit = basicState.log.find((l) => l.text.includes("hits"));
+    expect(basicHit?.element).toBe("physical");
   });
 });
 
-/* -------------------------------------------------------------------------- */
-/* ENG-22: Status effect ticking & battle-end clear                          */
-/* -------------------------------------------------------------------------- */
-
 describe("ENG-22 status effect ticking", () => {
   it("poison ticks flat 3 damage per turn, decrements duration, and expires", () => {
-    // Manually attach a poison effect to the hero to control the test precisely.
     const slime = makeEnemy(
       "slime-1",
       "slime",
@@ -748,7 +1043,6 @@ describe("ENG-22 status effect ticking", () => {
     const hero = { ...createStartingHero(), hp: 30, mp: 99 };
     let state = stateInBattle(42, slime, hero);
 
-    // Attach poison with duration 3, initialDuration 3, potency 1.
     state = {
       ...state,
       party: [
@@ -766,24 +1060,22 @@ describe("ENG-22 status effect ticking", () => {
       ],
     };
 
-    // Dispatch one defend per round. With initiative [hero, slime], each
-    // dispatch triggers the hero's defend (no RNG consumed), then advanceRound
-    // wraps around and ticks the hero's poison at the start of their next turn.
-
-    // Round 1 tick: damage 3 (flat), duration 3 -> 2
     state = reduce(state, { type: "BattleDefend" });
     const poison1 = state.party[0].effects?.find(
       (e) => e.effectId === "poison",
     );
     expect(poison1).toBeDefined();
     expect(poison1?.duration).toBe(2);
-    // Hero took at least 3 poison damage (plus potentially slime attack damage).
+
     expect(state.party[0].hp).toBeLessThanOrEqual(27);
     expect(
       state.log.some((l) => l.text.includes("takes 3 Poison damage")),
     ).toBe(true);
+    const poisonTick = state.log.find((l) =>
+      l.text.includes("takes 3 Poison damage"),
+    );
+    expect(poisonTick?.element).toBe("poison");
 
-    // Round 2 tick: damage 3, duration 2 -> 1
     state = reduce(state, { type: "BattleDefend" });
     const poison2 = state.party[0].effects?.find(
       (e) => e.effectId === "poison",
@@ -791,7 +1083,6 @@ describe("ENG-22 status effect ticking", () => {
     expect(poison2).toBeDefined();
     expect(poison2?.duration).toBe(1);
 
-    // Round 3 tick: damage 3, duration 1 -> 0 (expires)
     state = reduce(state, { type: "BattleDefend" });
     const poison3 = state.party[0].effects?.find(
       (e) => e.effectId === "poison",
@@ -803,8 +1094,6 @@ describe("ENG-22 status effect ticking", () => {
   });
 
   it("burn deals front-loaded decreasing damage each tick", () => {
-    // Attach a burn effect to the slime enemy. Use Defend so the hero deals
-    // no attack damage, isolating the burn tick damage on the slime.
     const toughSlime = makeEnemy(
       "slime-1",
       "slime",
@@ -817,7 +1106,6 @@ describe("ENG-22 status effect ticking", () => {
     const hero = { ...createStartingHero(), mp: 99 };
     let state = stateInBattle(99, toughSlime, hero);
 
-    // Attach burn with duration 3, initialDuration 3, potency 1 to the slime.
     state = {
       ...state,
       battleState: {
@@ -838,13 +1126,8 @@ describe("ENG-22 status effect ticking", () => {
       },
     };
 
-    // Burn amount=5, frontLoaded: damage curve = round(5 * remaining/initial)
-    // Tick 1 (duration 3): round(5 * 3/3) = 5
-    // Tick 2 (duration 2): round(5 * 2/3) = 3
-    // Tick 3 (duration 1): round(5 * 1/3) = 2
     const initialHp = 999;
 
-    // Round 1: hero defends (no RNG consumed), slime turn ticks burn (damage 5)
     state = reduce(state, { type: "BattleDefend" });
     const slimeAfter1 = state.battleState!.enemies[0];
     const burn1 = slimeAfter1.effects?.find((e) => e.effectId === "burn");
@@ -852,7 +1135,6 @@ describe("ENG-22 status effect ticking", () => {
     expect(burn1!.duration).toBe(2);
     expect(initialHp - slimeAfter1.hp).toBe(5);
 
-    // Round 2: hero defends, slime turn ticks burn (damage 3)
     state = reduce(state, { type: "BattleDefend" });
     const slimeAfter2 = state.battleState!.enemies[0];
     const burn2 = slimeAfter2.effects?.find((e) => e.effectId === "burn");
@@ -862,12 +1144,11 @@ describe("ENG-22 status effect ticking", () => {
       initialHp - slimeAfter2.hp - (initialHp - slimeAfter1.hp);
     expect(tick2Damage).toBe(3);
 
-    // Round 3: hero defends, slime turn ticks burn (damage 2, expires)
     state = reduce(state, { type: "BattleDefend" });
     const slimeAfter3 = state.battleState!.enemies[0];
     const burn3 = slimeAfter3.effects?.find((e) => e.effectId === "burn");
     expect(burn3).toBeUndefined();
-    expect(initialHp - slimeAfter3.hp).toBe(10); // 5 + 3 + 2
+    expect(initialHp - slimeAfter3.hp).toBe(10);
     expect(
       state.log.some((l) => l.text.includes("Burn wears off of Slime")),
     ).toBe(true);
@@ -876,7 +1157,6 @@ describe("ENG-22 status effect ticking", () => {
 
 describe("ENG-22 effects cleared on battle end", () => {
   function poisonsState(seed: number): GameState {
-    // Set up a battle where the hero has poison and the slime has burn.
     const slime = makeEnemy(
       "slime-1",
       "slime",
@@ -923,7 +1203,6 @@ describe("ENG-22 effects cleared on battle end", () => {
   }
 
   it("clears all effects on victory", () => {
-    // Use a wizard for high INT so flame can kill in one hit.
     const wizard = createStartingHero("wizard", "hero-1", "Wizard");
     const punySlime = makeEnemy(
       "slime-1",
@@ -935,7 +1214,7 @@ describe("ENG-22 effects cleared on battle end", () => {
       3,
     );
     let state = stateInBattle(1, punySlime, wizard);
-    // Attach effects.
+
     state = {
       ...state,
       party: [
@@ -979,7 +1258,6 @@ describe("ENG-22 effects cleared on battle end", () => {
   });
 
   it("clears all effects on defeat", () => {
-    // Hero with 1 HP so they die on the first enemy attack.
     const weakHero = { ...createStartingHero(), hp: 1, mp: 99 };
     const slime = makeEnemy(
       "slime-1",
@@ -1015,7 +1293,7 @@ describe("ENG-22 effects cleared on battle end", () => {
 
   it("clears all effects on flee", () => {
     const state = poisonsState(42);
-    // Flee with an overwhelming speed advantage.
+
     const fastState = {
       ...state,
       party: [
@@ -1030,26 +1308,24 @@ describe("ENG-22 effects cleared on battle end", () => {
     expect(after.party[0].effects).toBeUndefined();
   });
 });
-/* -------------------------------------------------------------------------- */
-/* ENG-23: Turn-loop skip & initiative reorder for status effects            */
-/* -------------------------------------------------------------------------- */
+
 describe("ENG-23 applyInitiativePenalty", () => {
   it("moves a combatant later by the penalty positions (clamped to end)", () => {
     const order = ["A", "B", "C", "D"];
-    // B moves 3 positions later -> [A, C, D, B]
+
     expect(applyInitiativePenalty(order, "B", 3)).toEqual(["A", "C", "D", "B"]);
-    // B moves 0 positions -> unchanged
+
     expect(applyInitiativePenalty(order, "B", 0)).toEqual(["A", "B", "C", "D"]);
-    // B moves 99 positions -> clamped to end
+
     expect(applyInitiativePenalty(order, "B", 99)).toEqual([
       "A",
       "C",
       "D",
       "B",
     ]);
-    // Unknown id returns a copy of the original order
+
     expect(applyInitiativePenalty(order, "X", 2)).toEqual(["A", "B", "C", "D"]);
-    // Last element moved further back stays at end
+
     expect(applyInitiativePenalty(order, "D", 1)).toEqual(["A", "B", "C", "D"]);
   });
 });
@@ -1066,7 +1342,7 @@ describe("ENG-23 turn skip", () => {
     );
     const hero = { ...createStartingHero(), hp: 30, mp: 99 };
     let state = stateInBattle(42, slime, hero);
-    // Attach stun to the hero with duration 2.
+
     state = {
       ...state,
       party: [
@@ -1083,17 +1359,10 @@ describe("ENG-23 turn skip", () => {
         },
       ],
     };
-    // First dispatch: hero defends (command resolves normally), advanceRound
-    // runs slime's turn. Round wraps back to hero: tickEffects ticks stun
-    // (duration 2 -> 1), shouldSkipTurn sees skipsTurn, logs skip, continues
-    // past hero to slime again. Then wraps to hero again: tickEffects ticks
-    // stun (duration 1 -> 0, expires), hero is no longer skipped, pause.
+
     state = reduce(state, { type: "BattleDefend" });
     expect(state.battleState?.status).toBe("ongoing");
-    // The skip log should be present, and the hero should not have taken
-    // damage from slime attacks (since stunned hero was skipped past before
-    // the slime attacked, the slime got no extra turns). Wait - actually
-    // the slime does get its normal turn. Let's just check the skip log.
+
     expect(
       state.log.some(
         (l) => l.text.includes("is stun") && l.text.includes("can't move"),
@@ -1112,7 +1381,7 @@ describe("ENG-23 turn skip", () => {
     );
     const hero = { ...createStartingHero(), hp: 30, mp: 99 };
     let state = stateInBattle(42, slime, hero);
-    // Attach stun to the slime.
+
     state = {
       ...state,
       battleState: {
@@ -1132,9 +1401,7 @@ describe("ENG-23 turn skip", () => {
         ],
       },
     };
-    // Hero attacks. After resolve, advanceRound: slime's turn, tickEffects
-    // ticks stun (2 -> 1), shouldSkipTurn returns true, skip logged, no
-    // attack. Round wraps to hero, pause for command.
+
     const after = reduce(state, {
       type: "BattleAttack",
       targetId: "slime-1",
@@ -1148,14 +1415,12 @@ describe("ENG-23 turn skip", () => {
           l.text.includes("can't move"),
       ),
     ).toBe(true);
-    // Hero should not have taken damage from slime's skipped attack.
+
     expect(after.party[0].hp).toBe(30);
   });
 });
 describe("ENG-23 shocked stun-lite and damage vulnerability", () => {
   it("multiplies incoming damage by SHOCKED_VULNERABLE_MULTIPLIER", () => {
-    // Same seed/hero/slime for both runs so hit/crit/variance rolls match;
-    // the only difference is the shocked effect on the target.
     const buildSlime = () =>
       makeEnemy(
         "slime-1",
@@ -1206,8 +1471,6 @@ describe("ENG-23 shocked stun-lite and damage vulnerability", () => {
     );
   });
   it("a shocked actor's stun-lite check can skip their turn", () => {
-    // Seed 1 with a fixed loop of defends deterministically triggers the
-    // shocked skip roll (shocked's skipChance = 0.5) at least once.
     const slime = makeEnemy(
       "slime-1",
       "slime",
@@ -1244,5 +1507,384 @@ describe("ENG-23 shocked stun-lite and damage vulnerability", () => {
       }
     }
     expect(sawSkip).toBe(true);
+  });
+});
+
+describe("ENG-25 status-effect clearing stays GameState-serializable", () => {
+  function poisonedSoloState(seed: number, enemyHp: number): GameState {
+    const slime = makeEnemy(
+      "slime-1",
+      "slime",
+      "Slime",
+      enemyHp,
+      SLIME_STATS,
+      5,
+      5,
+    );
+    const hero = { ...createStartingHero(), hp: 20 };
+    const base = stateInBattle(seed, slime, hero);
+    return {
+      ...base,
+      party: [
+        {
+          ...base.party[0],
+          effects: [
+            {
+              effectId: "poison" as const,
+              duration: 1,
+              potency: 1,
+              initialDuration: 1,
+            },
+          ],
+        },
+      ],
+    };
+  }
+
+  // Drives `state` through `store.dispatch` via `drive`, then asserts the
+  // dispatch raised no serialization incident and the resulting party's
+  // effects key was actually removed (not merely falsy).
+  function expectEffectsDroppedAfter(
+    state: GameState,
+    drive: (store: GameStore) => GameState,
+  ): GameState {
+    const store = new GameStore(state);
+    const incidents: unknown[] = [];
+    store.subscribeIncidents((incident) => incidents.push(incident));
+
+    const after = drive(store);
+
+    expect(incidents).toEqual([]);
+    expect("effects" in after.party[0]).toBe(false);
+    return after;
+  }
+
+  it("a battle won while an actor carries an effect raises no incident and drops the effects key entirely", () => {
+    const state = poisonedSoloState(1, 1);
+    const target = state.battleState?.enemies[0];
+    if (!target) throw new Error("expected a battle target");
+
+    const after = expectEffectsDroppedAfter(state, (store) =>
+      store.dispatch({ type: "BattleAttack", targetId: target.id }),
+    );
+
+    expect(after.battleState).toBeNull();
+  });
+
+  it("an effect ticking to expiry mid-battle raises no incident and drops the effects key entirely", () => {
+    const state = poisonedSoloState(2, 999);
+
+    const after = expectEffectsDroppedAfter(state, (store) =>
+      store.dispatch({ type: "BattleDefend" }),
+    );
+
+    expect(after.battleState?.status).toBe("ongoing");
+    expect(
+      after.log.some((l) => l.text.includes("Poison wears off of Hero")),
+    ).toBe(true);
+  });
+
+  it("fleeing while an actor carries an effect raises no incident and drops the effects key entirely", () => {
+    const base = poisonedSoloState(3, 999);
+    const state: GameState = {
+      ...base,
+      party: [
+        {
+          ...base.party[0],
+          stats: { str: 99, agi: 999, vit: 99, int: 99 },
+        },
+      ],
+    };
+
+    const after = expectEffectsDroppedAfter(state, (store) => {
+      let result = store.getState();
+      for (
+        let attempt = 0;
+        attempt < 10 && result.battleState !== null;
+        attempt++
+      ) {
+        result = store.dispatch({ type: "BattleFlee" });
+      }
+      return result;
+    });
+
+    expect(after.battleState).toBeNull();
+  });
+
+  it("losing a battle while an actor carries an effect raises no incident and drops the effects key entirely", () => {
+    const strongSlime = makeEnemy(
+      "slime-1",
+      "slime",
+      "Slime",
+      999,
+      { str: 40, agi: 20, vit: 20, int: 1 },
+      5,
+      5,
+    );
+    const weakHero = { ...createStartingHero(), hp: 1 };
+    const base = stateInBattle(4, strongSlime, weakHero);
+    const state: GameState = {
+      ...base,
+      party: [
+        {
+          ...base.party[0],
+          effects: [
+            {
+              effectId: "poison" as const,
+              duration: 3,
+              potency: 1,
+              initialDuration: 3,
+            },
+          ],
+        },
+      ],
+    };
+
+    const after = expectEffectsDroppedAfter(state, (store) =>
+      store.dispatch({ type: "BattleDefend" }),
+    );
+
+    expect(after.battleState).toBeNull();
+  });
+});
+
+describe("ENG-25 reapplying an active effect refreshes it instead of stacking", () => {
+  // Seed 2 is a fixed fixture, found once offline: with this seed frost's
+  // wet-apply roll (chance 0.5) succeeds on both the first and second cast
+  // against this target. Hardcoded rather than searched at test time so the
+  // assertion is a direct, cheap check against a known-deterministic seed
+  // instead of an opaque, repeated re-simulation.
+  const REFRESH_DEMO_SEED = 2;
+
+  it("casting frost twice in a row on an already-wet target keeps a single wet instance and refreshes its duration", () => {
+    const wizard = createStartingHero("wizard", "hero-1", "Wizard");
+    const fatSlime = makeEnemy(
+      "slime-1",
+      "slime",
+      "Slime",
+      999,
+      SLIME_STATS,
+      5,
+      5,
+    );
+    const first = reduce(stateInBattle(REFRESH_DEMO_SEED, fatSlime, wizard), {
+      type: "BattleSkill",
+      skillId: "frost",
+      targetId: "slime-1",
+    });
+    const firstWet = first.battleState?.enemies[0].effects?.find(
+      (e) => e.effectId === "wet",
+    );
+    expect(firstWet).toBeDefined();
+    expect(first.battleState?.activeMemberId).toBe("hero-1");
+
+    // A freshly (re)applied effect still ticks once more later in the same
+    // round (the enemy's own turn immediately follows the hero's cast), so
+    // the refreshed instance surfaces as duration 2 (3, ticked once) rather
+    // than 3.
+    const second = reduce(first, {
+      type: "BattleSkill",
+      skillId: "frost",
+      targetId: "slime-1",
+    });
+    const wetInstances = (second.battleState?.enemies[0].effects ?? []).filter(
+      (e) => e.effectId === "wet",
+    );
+    expect(wetInstances).toHaveLength(1);
+    expect(wetInstances[0].duration).toBe(2);
+    expect(wetInstances[0].initialDuration).toBe(3);
+  });
+});
+
+describe("ENG-12 status cures", () => {
+  // defId deliberately does not match a MONSTERS entry, so findMonster
+  // returns undefined and the enemy's counter-attack never rolls
+  // attackApplies (e.g. the real slime's 30% poison-on-hit) - keeping these
+  // cure/cleanse assertions free of an unrelated, randomly reapplied status.
+  const dummy = () =>
+    makeEnemy("dummy-1", "training-dummy", "Dummy", 999, SLIME_STATS, 5, 3);
+
+  it("using an Antidote on a poisoned party member removes the poison status and is consumed", () => {
+    const hero = { ...createStartingHero(), hp: 30, mp: 0 };
+    let state = stateInBattle(7, dummy(), hero);
+    state = {
+      ...state,
+      inventory: [{ itemId: "antidote", quantity: 1 }],
+      party: [
+        {
+          ...state.party[0],
+          effects: [
+            {
+              effectId: "poison" as const,
+              duration: 3,
+              potency: 1,
+              initialDuration: 3,
+            },
+          ],
+        },
+      ],
+    };
+
+    const after = reduce(state, {
+      type: "BattleItem",
+      itemId: "antidote",
+      targetId: "hero-1",
+    });
+
+    expect(after).not.toBe(state);
+    expect(after.party[0].effects).toBeUndefined();
+    expect(after.inventory).toEqual([]);
+    expect(after.log.some((l) => l.text.includes("cured of Poison"))).toBe(
+      true,
+    );
+  });
+
+  it("the burn/chill cure item removes both burn and chilled without touching unrelated effects", () => {
+    const hero = { ...createStartingHero(), hp: 30, mp: 0 };
+    let state = stateInBattle(7, dummy(), hero);
+    state = {
+      ...state,
+      inventory: [{ itemId: "thermal-salts", quantity: 1 }],
+      party: [
+        {
+          ...state.party[0],
+          effects: [
+            {
+              effectId: "burn" as const,
+              duration: 2,
+              potency: 1,
+              initialDuration: 2,
+            },
+            { effectId: "chilled" as const, duration: 2, potency: 1 },
+            { effectId: "slow" as const, duration: 2, potency: 1 },
+          ],
+        },
+      ],
+    };
+
+    const after = reduce(state, {
+      type: "BattleItem",
+      itemId: "thermal-salts",
+      targetId: "hero-1",
+    });
+
+    expect(after).not.toBe(state);
+    const remaining = after.party[0].effects ?? [];
+    expect(remaining.map((e) => e.effectId)).toEqual(["slow"]);
+    expect(after.inventory).toEqual([]);
+    expect(
+      after.log.some((l) => l.text.includes("cured of Burn and Chilled")),
+    ).toBe(true);
+  });
+
+  it("a cure item with nothing to cure is still consumed and logs no effect", () => {
+    const hero = { ...createStartingHero(), hp: 30, mp: 0 };
+    const state = {
+      ...stateInBattle(7, dummy(), hero),
+      inventory: [{ itemId: "antidote", quantity: 1 }],
+    };
+
+    const after = reduce(state, {
+      type: "BattleItem",
+      itemId: "antidote",
+      targetId: "hero-1",
+    });
+
+    expect(after.inventory).toEqual([]);
+    expect(after.log.some((l) => l.text.includes("nothing to cure"))).toBe(
+      true,
+    );
+  });
+
+  it("Heal-kind skills cleanse the caster's status effects along with restoring HP (documented Heal-cleanse decision)", () => {
+    const hero = { ...createStartingHero(), hp: 5, mp: 99 };
+    let state = stateInBattle(7, dummy(), hero);
+    state = {
+      ...state,
+      party: [
+        {
+          ...state.party[0],
+          effects: [
+            {
+              effectId: "poison" as const,
+              duration: 2,
+              potency: 1,
+              initialDuration: 2,
+            },
+            { effectId: "slow" as const, duration: 2, potency: 1 },
+          ],
+        },
+      ],
+    };
+
+    const after = reduce(state, {
+      type: "BattleSkill",
+      skillId: "heal",
+      targetId: "hero-1",
+    });
+
+    expect(after.party[0].hp).toBeGreaterThan(5);
+    expect(after.party[0].effects).toBeUndefined();
+    expect(
+      after.log.some((l) => l.text.includes("cleansed of Poison and Slow")),
+    ).toBe(true);
+  });
+});
+
+describe("ENG-20 loot toast (finalizeWon)", () => {
+  // Dungeon Guardian has tier-3 loot table (dropChance=1), guaranteeing drops.
+  function bossEnemy(id = "guardian-1"): ReturnType<typeof makeEnemy> {
+    return makeEnemy(
+      id,
+      "dungeon-guardian",
+      "Guardian",
+      1,
+      SLIME_STATS,
+      80,
+      120,
+    );
+  }
+
+  it("kept item log entries carry the item rarity on victory (seed 1)", () => {
+    // Seed 1 yields 2 kept items (unique war-blade + unique guardian-greatsword).
+    const state = stateInBattle(1, bossEnemy());
+    const after = reduce(state, {
+      type: "BattleAttack",
+      targetId: "guardian-1",
+    });
+    const lootLines = after.log.filter((l) => l.text.startsWith("Looted "));
+    expect(lootLines.length).toBeGreaterThanOrEqual(1);
+    for (const line of lootLines) {
+      expect(line.kind).toBe("loot");
+      expect(line.rarity).toBeDefined();
+      expect(["common", "magic", "rare", "unique"]).toContain(line.rarity);
+    }
+  });
+
+  it("dismantle summary line appears with correct count and gold (seed 10)", () => {
+    // Seed 10 yields 1 common war-blade + 1 unique guardian-signet.
+    // Filter { 1: "magic" } dismantles the common war-blade.
+    const boss = bossEnemy();
+    let state = stateInBattle(10, boss);
+    state = reduce(state, {
+      type: "SetLootFilter",
+      rules: { minRarityByTier: { 1: "magic" }, keepAffixStats: [] },
+    });
+    const goldBefore = state.gold;
+    const after = reduce(state, {
+      type: "BattleAttack",
+      targetId: "guardian-1",
+    });
+    const dismantleLine = after.log.find((l) =>
+      l.text.startsWith("Dismantled "),
+    );
+    expect(dismantleLine).toBeDefined();
+    expect(dismantleLine?.text).toMatch(/^Dismantled \d+ item\(s\) -> \d+g$/);
+    expect(dismantleLine?.kind).toBe("loot");
+    expect(after.lastLootOutcome?.dismantled.length).toBeGreaterThan(0);
+    expect(dismantleLine?.text).toContain(
+      `${after.lastLootOutcome?.goldGained}g`,
+    );
+    expect(after.gold).toBeGreaterThan(goldBefore);
   });
 });

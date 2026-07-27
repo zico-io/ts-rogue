@@ -1,31 +1,7 @@
-/**
- * Pixi counterpart of `src/ui/screens/dungeon/render.ts` + `DungeonScreen.tsx`
- * (ROG-50). Draws the classic textured-raycaster geometry `dungeonRaycast.ts`
- * computes - flat depth-tinted ceiling/floor, per-column wall strips sampled
- * from the wall texture's texel-cropped sub-textures, and chest/stairs/boss
- * billboards - plus a graphical minimap corner overlay (reusing the TUI's own
- * pure `renderMinimap` glyph rows) and a one-line status readout.
- *
- * Framework-free (no `pixi.js` import) behind a small `DungeonDrawFactory`
- * interface, following `overworldView.ts`/`battleView.ts`'s split so this is
- * unit-testable with a fake factory (see `dungeonView.test.ts`); the real
- * Pixi adapter lives in `pixiDungeonDrawFactory.ts`. Draw objects are kept in
- * maps keyed by column index / cell coordinate / minimap cell and reused
- * across `render()` calls, matching the other tilemap-style views.
- *
- * v1 scope (ROG-50): no move/turn tween - renders `poseFromState(ds)`
- * directly every call, the issue explicitly allows instant movement for v1.
- * Floor/ceiling are flat depth-independent colors, not raycast/textured -
- * the original Wolfenstein 3D's own approach, and still satisfies "reuse
- * `DUNGEON_RAMPS` for distance fog/tinting" since walls carry the real
- * per-column depth tint. Billboard occlusion is the single center-column
- * distance test `dungeonRaycast.ts` already applies - no per-pixel clipping,
- * matching the TUI renderer's own painter's-algorithm-level fidelity.
- */
-
 import type { DungeonFacing, DungeonState } from "../../engine/world/types";
 import { poseFromState, renderMinimap } from "../../ui/screens/dungeon/render";
 import { dungeonRamp, theme, toPixiColor } from "../../ui/theme";
+import { hash01 } from "../../ui/tiles/overworldVariants";
 import {
   type Billboard,
   castBillboards,
@@ -33,30 +9,29 @@ import {
   MAX_DEPTH,
   type WallColumn,
 } from "./dungeonRaycast";
+import { ParticleField, type ParticleHandle } from "./particles";
 import type { DrawHandle, RectHandle, TextHandle } from "./sceneView";
 
-/** A positioned, texel-cropped wall-strip sprite. */
 export interface WallColumnHandle extends DrawHandle {
   setSize(width: number, height: number): void;
-  /** Which of the wall texture's `TEXELS_PER_TILE` vertical slices to show. */
+
   setTexel(texel: number): void;
-  /** `0xffffff` (no tint) leaves the texture's own colors untouched. */
+
   setTint(color: number): void;
 }
 
-/** A positioned, square billboard sprite (top-left origin, matching `RectHandle`). */
 export interface BillboardSpriteHandle extends DrawHandle {
   setSize(size: number): void;
   setTexture(name: string): void;
   setTint(color: number): void;
 }
 
-/** Renderer boundary this view draws through. */
 export interface DungeonDrawFactory {
   createRect(): RectHandle;
   createWallColumn(): WallColumnHandle;
   createBillboardSprite(): BillboardSpriteHandle;
   createText(initialText: string): TextHandle;
+  createParticle(): ParticleHandle;
 }
 
 export interface PixelSize {
@@ -64,24 +39,21 @@ export interface PixelSize {
   height: number;
 }
 
-/** Atlas frame name for each billboarded `DungeonFeature`. */
 const BILLBOARD_TEXTURES = {
   chest: "chest",
   stairsDown: "stairsDown",
   bossMarker: "boss",
 } as const;
 
-/** Minimap cell pixel size and padding - deliberately small, an overview corner, not a second viewport. */
 const MINIMAP_TILE_PX = 6;
 const MINIMAP_PAD_PX = 6;
-/** Gap between the minimap box's top-right corner and the viewport edge. */
+
 const MINIMAP_MARGIN_PX = 8;
-/** The player-facing indicator's size, a fraction of one minimap tile. */
+
 const FACING_MARK_PX = 3;
 
 const STATUS_TEXT_MARGIN_PX = 8;
 
-/** Offset (in minimap tiles) from the player's cell toward its facing, for the small facing-indicator mark. */
 const FACING_OFFSET: Record<DungeonFacing, { dx: number; dy: number }> = {
   north: { dx: 0, dy: -0.35 },
   east: { dx: 0.35, dy: 0 },
@@ -89,7 +61,22 @@ const FACING_OFFSET: Record<DungeonFacing, { dx: number; dy: number }> = {
   west: { dx: -0.35, dy: 0 },
 };
 
-/** Glyph -> minimap cell color for the glyphs `renderMinimap` (`dungeon/render.ts`) emits. `undefined` (blank) draws nothing - unexplored. */
+// Ambient dust motes/embers (WEB-7): a light Pixi particle layer drifting
+// through the torchlight, per ART_DIRECTION.md §6. Every third spawn is a
+// brighter, faster-rising ember (mirrors OverworldSceneView's leaf/firefly
+// split); the rest are dim, slow-drifting dust. No `Math.random` - spawn
+// order is hashed the same way `overworldVariants.ts` hashes tile variety,
+// so a render is always reproducible.
+const MOTE_CAP = 14;
+const MOTE_LIFE_MS_MIN = 3000;
+const MOTE_LIFE_MS_RANGE = 3000;
+const MOTE_DRIFT_PX_PER_MS = 0.006;
+const MOTE_RISE_PX_PER_MS = 0.01;
+const MOTE_SIZE_PX = 2;
+const EMBER_RISE_PX_PER_MS = 0.03;
+const EMBER_SIZE_PX = 1.5;
+const EMBER_EVERY_NTH = 3;
+
 function minimapCellColor(
   glyph: string,
   ramp: readonly string[],
@@ -106,11 +93,10 @@ function minimapCellColor(
     case "B":
       return theme.danger;
     default:
-      return undefined; // blank (unexplored) or a facing glyph (player's own cell, drawn separately)
+      return undefined;
   }
 }
 
-/** Scales a `0xRRGGBB` color's channels by `factor` (0..1), for the flat floor/ceiling shading. */
 function scaleColor(color: number, factor: number): number {
   const r = Math.round(((color >> 16) & 0xff) * factor);
   const g = Math.round(((color >> 8) & 0xff) * factor);
@@ -118,10 +104,6 @@ function scaleColor(color: number, factor: number): number {
   return (r << 16) | (g << 8) | b;
 }
 
-/**
- * Draws the raycast wall/billboard geometry, a flat ceiling/floor, a
- * graphical minimap corner, and a one-line facing/status readout.
- */
 export class DungeonSceneView {
   private ceiling: RectHandle | undefined;
   private floor: RectHandle | undefined;
@@ -133,26 +115,65 @@ export class DungeonSceneView {
   private facingMark: RectHandle | undefined;
   private statusText: TextHandle | undefined;
 
-  constructor(private readonly factory: DungeonDrawFactory) {}
+  private readonly motes: ParticleField;
+  private reducedMotion = false;
+  private moteSeed = 0;
+  private viewportSize: PixelSize = { width: 0, height: 0 };
+  private torchColor = 0xffffff;
 
-  /**
-   * `confirmingExit` (ENG-1) mirrors the Ink `DungeonScreen`'s evac confirm
-   * prompt: when true, the status line shows the "Evac to the entrance?"
-   * prompt instead of the facing/reachedBoss/cleared readout. The keyboard
-   * manager's `dungeon.confirmingExit` (same shared `DungeonUiState` the Ink
-   * screen uses) is the source of truth; this view only draws it.
-   */
+  constructor(private readonly factory: DungeonDrawFactory) {
+    this.motes = new ParticleField(factory, MOTE_CAP);
+  }
+
   render(ds: DungeonState, pixelSize: PixelSize, confirmingExit = false): void {
     const camera = poseFromState(ds);
     const columns = castWallColumns(ds, camera, pixelSize);
     const billboards = castBillboards(ds, camera, pixelSize, columns);
-    const ramp = dungeonRamp(ds.dungeonId);
+    const ramp = dungeonRamp(ds.theme);
 
     this.drawSky(pixelSize, ramp);
     this.drawColumns(columns, ramp);
     this.drawBillboards(billboards, ramp);
     this.drawMinimap(ds, ramp, pixelSize);
     this.drawStatus(ds, pixelSize, confirmingExit);
+
+    this.viewportSize = pixelSize;
+    this.torchColor = toPixiColor(ramp[0]);
+  }
+
+  tick(deltaMs: number): void {
+    this.motes.tick(deltaMs);
+    if (this.reducedMotion) return;
+    const { width, height } = this.viewportSize;
+    if (width <= 0 || height <= 0) return;
+    while (!this.motes.atCapacity) this.spawnMote();
+  }
+
+  setReducedMotion(reduced: boolean): void {
+    this.reducedMotion = reduced;
+    if (reduced) this.motes.clear();
+  }
+
+  private spawnMote(): void {
+    const { width, height } = this.viewportSize;
+    const seed = this.moteSeed++;
+    const isEmber = seed % EMBER_EVERY_NTH === 0;
+    const x = hash01(seed, 11) * width;
+    // Motes/embers rise from the lower half of the frame, roughly torch
+    // height, and drift up past the horizon.
+    const y = height * (0.55 + hash01(seed, 29) * 0.35);
+    const drift = (hash01(seed, 47) - 0.5) * 2 * MOTE_DRIFT_PX_PER_MS;
+    const lifeMs = MOTE_LIFE_MS_MIN + hash01(seed, 61) * MOTE_LIFE_MS_RANGE;
+
+    this.motes.spawn({
+      x,
+      y,
+      vx: drift,
+      vy: isEmber ? -EMBER_RISE_PX_PER_MS : -MOTE_RISE_PX_PER_MS,
+      size: isEmber ? EMBER_SIZE_PX : MOTE_SIZE_PX,
+      color: isEmber ? toPixiColor(theme.warn) : this.torchColor,
+      lifeMs,
+    });
   }
 
   private drawSky(pixelSize: PixelSize, ramp: readonly string[]): void {
@@ -292,7 +313,7 @@ export class DungeonSceneView {
       }
     }
 
-    if (playerCol < 0) return; // player's cell fell outside the windowed minimap - nothing to mark
+    if (playerCol < 0) return;
     const playerX = boxX + MINIMAP_PAD_PX + playerCol * MINIMAP_TILE_PX;
     const playerY = boxY + MINIMAP_PAD_PX + playerRow * MINIMAP_TILE_PX;
 
@@ -343,7 +364,4 @@ export class DungeonSceneView {
   }
 }
 
-// Re-exported for callers that only need the raycaster's own depth cap
-// alongside the view (e.g. tests asserting a feature outside MAX_DEPTH never
-// renders).
 export { MAX_DEPTH };

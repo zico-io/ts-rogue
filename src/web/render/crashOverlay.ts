@@ -1,13 +1,3 @@
-/**
- * Plain-DOM crash overlay (ROG-48): the browser counterpart to the
- * terminal's `CrashScreen.tsx`, replacing `main.ts`'s earlier plain-text
- * `showCrash` stash for every failure after the store exists. A DOM overlay
- * is enough here (see the issue's ponytail note) - this is not a Pixi view,
- * so unlike `render/sceneView.ts` it is not unit-tested against a fake
- * `DrawFactory`; it's thin DOM glue, like `atlas.ts`/`pixiDrawFactory.ts`,
- * and this repo has no jsdom to exercise real `document` APIs in a test.
- */
-
 import type { GameIncident } from "../../engine/state/incidents";
 import { theme } from "../../ui/theme";
 
@@ -19,8 +9,6 @@ export class CrashOverlayView {
   constructor(mount: HTMLElement, onRestart: () => void) {
     this.root = document.createElement("div");
     Object.assign(this.root.style, {
-      // `absolute` (not `fixed`) so the overlay fills the portal mount it is
-      // appended to, not the whole viewport (ROG-54).
       position: "absolute",
       inset: "0",
       display: "none",

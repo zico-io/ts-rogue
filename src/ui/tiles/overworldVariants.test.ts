@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { OverworldMap, Tile } from "../../engine/world/types";
 import {
   clusterScale,
+  GRASS_DECORATIONS,
+  grassDecoration,
   hasShore,
   landmarkScale,
   mountainTexture,
@@ -9,7 +11,6 @@ import {
   shoreSides,
 } from "./overworldVariants";
 
-/** Builds a minimal `OverworldMap` from a row-major grid of single-char tile codes. */
 function mapFrom(rows: string[]): OverworldMap {
   const codes: Record<string, Tile> = {
     g: "grass",
@@ -37,7 +38,7 @@ describe("sameNeighborCount", () => {
 
   it("does not count diagonal neighbors", () => {
     const map = mapFrom(["mgg", "gmg", "ggm"]);
-    // center mountain's diagonal-only mountain neighbors (corners) don't count
+
     expect(sameNeighborCount(map, 1, 1, "mountain")).toBe(0);
   });
 
@@ -67,7 +68,7 @@ describe("clusterScale", () => {
 describe("shoreSides", () => {
   it("flags land-adjacent sides of a water tile", () => {
     const map = mapFrom(["gww", "www", "www"]);
-    // (1,0) water's only land-adjacent orthogonal neighbor is (0,0), to its west.
+
     const sides = shoreSides(map, 1, 0);
     expect(sides).toEqual({
       north: false,
@@ -128,5 +129,45 @@ describe("landmarkScale", () => {
     const scales = new Set<number>();
     for (let x = 0; x < 10; x++) scales.add(landmarkScale(x, 0));
     expect(scales.size).toBeGreaterThan(1);
+  });
+});
+
+describe("grassDecoration", () => {
+  it("is deterministic for the same coordinate", () => {
+    expect(grassDecoration(3, 9)).toBe(grassDecoration(3, 9));
+  });
+
+  it("leaves most grass tiles plain", () => {
+    let decorated = 0;
+    const total = 40 * 40;
+    for (let x = 0; x < 40; x++) {
+      for (let y = 0; y < 40; y++) {
+        if (grassDecoration(x, y) !== undefined) decorated++;
+      }
+    }
+    expect(decorated).toBeGreaterThan(0);
+    expect(decorated / total).toBeLessThan(0.3);
+  });
+
+  it("only ever returns a declared decoration tile", () => {
+    for (let x = 0; x < 40; x++) {
+      for (let y = 0; y < 40; y++) {
+        const decoration = grassDecoration(x, y);
+        if (decoration !== undefined) {
+          expect(GRASS_DECORATIONS).toContain(decoration);
+        }
+      }
+    }
+  });
+
+  it("uses more than one decoration across many tiles", () => {
+    const seen = new Set<string>();
+    for (let x = 0; x < 40; x++) {
+      for (let y = 0; y < 40; y++) {
+        const decoration = grassDecoration(x, y);
+        if (decoration !== undefined) seen.add(decoration);
+      }
+    }
+    expect(seen.size).toBeGreaterThan(1);
   });
 });

@@ -26,22 +26,13 @@ export interface DungeonScreenProps {
 const HINT =
   "Up/W/k: forward | Down/s/j: back | Left/a/h or Right/d/l: turn | o: open chest | > or Enter: descend | <: evac confirm | q: quit";
 
-/** Fixed minimap box chrome: 17 cols + 2 padding + 2 border; 9 rows + 1 label + 2 border. */
 const MINIMAP_BOX_WIDTH = 21;
 const MINIMAP_BOX_HEIGHT = 12;
 const MINIMAP_GAP = 2;
 
-/** Step/turn transitions render this many tween frames over ~100ms. */
 const ANIM_FRAMES = 3;
 const ANIM_FRAME_MS = 33;
 
-/**
- * The camera pose to render: the party's discrete pose, or a short tween
- * toward it after a step/turn. A new move mid-tween restarts the tween from
- * the previous discrete pose (snap-finish), so the view never lags the
- * engine state and input is never blocked. Teleports (descending stairs)
- * snap without animating. Engine state stays discrete; this is UI-only.
- */
 function useCameraPose(ds: DungeonState): CameraPose {
   const target = poseFromState(ds);
   const settled = useRef(target);
@@ -79,18 +70,6 @@ function useCameraPose(ds: DungeonState): CameraPose {
   return anim ? lerpPose(anim.from, anim.to, step / ANIM_FRAMES) : target;
 }
 
-/**
- * First-person dungeon screen (PROJECT_PLAN Phase 3, ROG-9). Renders the
- * perspective-projected FP view (at its pane's native resolution) and a corner
- * minimap from the pure helpers in `dungeon/render`, and turns key presses
- * into the pure dungeon reducer events. Entering / descending / encounters are all handled
- * by the reducer; this component only reads `state.dungeonState` and
- * dispatches. The FP view reflows to the content region the frame provides.
- * Phase 6 (ROG-12) adds the `<` exit key (dispatches `ExitDungeon`) so the
- * dungeon is never a dead-end after clearing a floor or defeating the boss.
- * ENG-1 makes `<` open a confirm prompt first ("Evac to the entrance?
- * [y/n]") instead of exiting immediately.
- */
 export function DungeonScreen({ state, dispatch }: DungeonScreenProps) {
   const [dungeonUi, setDungeonUi] = useState<DungeonUiState>({});
 
@@ -158,15 +137,13 @@ function DungeonBody({
   const { width, height } = useScreenContent();
   const camera = useCameraPose(ds);
 
-  // Content stacks the FP/minimap row above the facing line (with a gap row).
   const mainHeight = Math.max(1, height - 2);
-  // Shrink the minimap box on short panes so it never outgrows the row; its
-  // inner text clips rather than pushing the layout.
+
   const minimapBoxHeight = Math.min(MINIMAP_BOX_HEIGHT, mainHeight);
   const minimapBoxWidth = MINIMAP_BOX_WIDTH;
 
   const fpWidth = Math.max(3, width - minimapBoxWidth - MINIMAP_GAP);
-  // The FP box has a single-cell border, so render into the interior.
+
   const fpRows = renderDungeonViewRuns(
     ds,
     {
@@ -176,8 +153,8 @@ function DungeonBody({
     camera,
   );
   const minimapRows = renderMinimap(ds);
-  // Per-dungeon accent ramp, band 1 (far, dim) .. 4 (near, bright).
-  const ramp = dungeonRamp(ds.dungeonId);
+
+  const ramp = dungeonRamp(ds.theme);
 
   const statusParts = [`Facing ${ds.facing}`];
   if (ds.reachedBoss) statusParts.push("boss room reached");

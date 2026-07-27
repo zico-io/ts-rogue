@@ -1,42 +1,178 @@
-/**
- * Static dungeon content (PROJECT_PLAN Phase 3, ROG-9).
- *
- * Chest loot lives here as deterministic data so the engine stays free of
- * hardcoded content. Chest loot is a pure function of the chest's floor +
- * position so it never consumes engine RNG and a save/reload always agrees.
- * Monster definitions (stats, ASCII art, XP/gold) moved to `./monsters.ts`
- * in Phase 4 (ROG-10), where the combat resolver reads them.
- */
-
 import { findShopItem } from "./shops";
 
-/** What a chest yields when opened. `itemId: null` means gold only. */
 export interface ChestLoot {
   gold: number;
   itemId: string | null;
   quantity: number;
 }
 
-/**
- * Stub loot table: 20-59 gold plus one Potion, deterministic from the chest's
- * floor and grid position. Phase 4+ can vary this per dungeon / floor.
- */
 export function chestLootFor(
   dungeonId: string,
   floor: number,
   x: number,
   y: number,
 ): ChestLoot {
-  // Fold every input into the gold roll so the loot is deterministic from the
-  // chest's identity (dungeon + floor + position) without consuming RNG.
   const dungeonHash = dungeonId.charCodeAt(0) + dungeonId.length;
   const gold = 20 + ((x * 7 + y * 13 + floor * 5 + dungeonHash) % 40);
   return { gold, itemId: "potion", quantity: 1 };
 }
 
-/** Human-readable summary of a chest's contents, for the message log. */
 export function chestLootMessage(loot: ChestLoot): string {
   const item = loot.itemId ? findShopItem(loot.itemId) : undefined;
   const itemPart = item ? ` and ${loot.quantity} ${item.name}` : "";
   return `You open the chest and find ${loot.gold} gold${itemPart}!`;
+}
+
+// A wandering-encounter weight for a monster id from src/data/monsters.ts.
+// Excludes the dungeon's boss, which spawns separately from bossId.
+export interface DungeonPaletteEntry {
+  monsterId: string;
+  weight: number;
+}
+
+// Loot-table ref (see src/data/lootTables.ts) for a contiguous run of floors,
+// so deeper bands within a dungeon can point at richer tables.
+export interface DungeonFloorBand {
+  minFloor: number;
+  maxFloor: number;
+  lootTableRef: string;
+}
+
+export interface DungeonDef {
+  id: string;
+  name: string;
+  theme: string;
+  tier: number;
+  floorCount: number;
+  palette: readonly DungeonPaletteEntry[];
+  bossId: string;
+  floorBands: readonly DungeonFloorBand[];
+  recommendedLevel: number;
+  story: true;
+}
+
+// Placeholder palettes drawn from the current monster roster (src/data/monsters.ts).
+// The bestiary expansion (ROG-30) will give each dungeon a distinct cast.
+export const DUNGEONS: readonly DungeonDef[] = [
+  {
+    id: "sunken-crypt",
+    name: "Sunken Crypt",
+    theme: "crypt",
+    tier: 1,
+    floorCount: 3,
+    palette: [
+      { monsterId: "slime", weight: 3 },
+      { monsterId: "goblin", weight: 1 },
+    ],
+    bossId: "dungeon-guardian",
+    floorBands: [
+      { minFloor: 1, maxFloor: 2, lootTableRef: "tier-1" },
+      { minFloor: 3, maxFloor: 3, lootTableRef: "tier-2" },
+    ],
+    recommendedLevel: 1,
+    story: true,
+  },
+  {
+    id: "howling-cave",
+    name: "Howling Cave",
+    theme: "cave",
+    tier: 2,
+    floorCount: 4,
+    palette: [
+      { monsterId: "goblin", weight: 3 },
+      { monsterId: "slime", weight: 1 },
+    ],
+    bossId: "dungeon-guardian",
+    floorBands: [
+      { minFloor: 1, maxFloor: 2, lootTableRef: "tier-2" },
+      { minFloor: 3, maxFloor: 4, lootTableRef: "tier-3" },
+    ],
+    recommendedLevel: 5,
+    story: true,
+  },
+  {
+    id: "forgotten-ruins",
+    name: "Forgotten Ruins",
+    theme: "ruins",
+    tier: 3,
+    floorCount: 5,
+    palette: [{ monsterId: "goblin", weight: 1 }],
+    bossId: "dungeon-guardian",
+    floorBands: [
+      { minFloor: 1, maxFloor: 3, lootTableRef: "tier-2" },
+      { minFloor: 4, maxFloor: 5, lootTableRef: "tier-3" },
+    ],
+    recommendedLevel: 10,
+    story: true,
+  },
+];
+
+export function findDungeon(id: string): DungeonDef | undefined {
+  return DUNGEONS.find((dungeon) => dungeon.id === id);
+}
+
+// Resolves the def driving a live dungeon run. Falls back to the first story
+// def for a dungeonId that doesn't match one yet -- e.g. the placeholder
+// `dungeon-<entranceIndex>` ids overworld generation assigns until ROG-90
+// wires real entrance-to-dungeon assignment.
+export function dungeonDefFor(dungeonId: string): DungeonDef {
+  return findDungeon(dungeonId) ?? DUNGEONS[0];
+}
+
+// Resolves the floor band covering `floor`, clamping to the nearest band
+// when a floor falls outside the def's declared range.
+export function floorBandFor(def: DungeonDef, floor: number): DungeonFloorBand {
+  const bands = def.floorBands;
+  const match = bands.find(
+    (band) => floor >= band.minFloor && floor <= band.maxFloor,
+  );
+  if (match) return match;
+  return floor < bands[0].minFloor ? bands[0] : bands[bands.length - 1];
+}
+
+// True iff every story dungeon def has a clearedAt entry (the endgame
+// trigger ROG-28 consumes). Pure over the persistent clearedAt record (see
+// GameState.clearedAt), independent of any single session's DungeonState.
+export function allStoryDungeonsCleared(
+  clearedAt: Readonly<Record<string, number>>,
+): boolean {
+  return DUNGEONS.every((dungeon) => !dungeon.story || dungeon.id in clearedAt);
+}
+
+interface DungeonThemeFlavor {
+  enter: string;
+  descend: string;
+}
+
+// Per-theme message-log flavor for dungeon entry/descent (ROG-94). Palette-level
+// copy only, keyed by DungeonDef.theme; not a new content system.
+const THEME_FLAVOR: Record<string, DungeonThemeFlavor> = {
+  crypt: {
+    enter: "Cold, stale air rolls out of the crypt as you step inside.",
+    descend: "You press deeper into the crypt, past shelves of old bone.",
+  },
+  cave: {
+    enter: "Damp rock and dripping echoes greet you as you enter the cave.",
+    descend:
+      "The cave passage narrows, water tracing the walls as you climb down.",
+  },
+  ruins: {
+    enter: "Crumbling pillars and drifting dust mark the ruins' entrance.",
+    descend:
+      "Cracked stairs carry you further into the ruins, stone grinding underfoot.",
+  },
+};
+
+const DEFAULT_THEME_FLAVOR = THEME_FLAVOR.crypt;
+
+function flavorFor(theme: string): DungeonThemeFlavor {
+  return THEME_FLAVOR[theme] ?? DEFAULT_THEME_FLAVOR;
+}
+
+export function dungeonEntryFlavor(theme: string): string {
+  return flavorFor(theme).enter;
+}
+
+export function dungeonDescendFlavor(theme: string, floor: number): string {
+  return `${flavorFor(theme).descend} (floor ${floor})`;
 }

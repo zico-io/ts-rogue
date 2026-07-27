@@ -1,14 +1,5 @@
-/**
- * Pure rendering helpers for the battle screen. No Ink/React import so this
- * stays trivially unit-testable; `BattleScreen.tsx` is the thin Ink wrapper.
- *
- * `packEnemyColumns` lays out the enemy art so it reflows to the available
- * width: enemy columns are greedily packed into rows that fit within the
- * terminal width, wrapping to a new row when the next column would overflow.
- * This keeps multiple enemies side by side on wide terminals and stacks them
- * on narrow ones without clipping or overlap.
- */
-
+import type { EffectInstance } from "../../../engine/combat/statusEffects";
+import { findStatusEffect } from "../../../engine/combat/statusEffects";
 import type { BattleEnemy } from "../../../engine/combat/types";
 
 export interface EnemyColumn {
@@ -17,30 +8,29 @@ export interface EnemyColumn {
   dead: boolean;
   nameLine: string;
   hpLine: string;
+  badges: EffectBadge[];
   width: number;
   height: number;
 }
 
 export interface PackedEnemies {
-  /** Enemy columns grouped into visual rows (left to right, top to bottom). */
   rows: EnemyColumn[][];
-  /** Total terminal rows the field occupies, including gaps between rows. */
+
   fieldHeight: number;
-  /** Width of the widest visual row. */
+
   fieldWidth: number;
 }
 
 export interface PackOptions {
   columns: number;
-  /** Horizontal gap between enemy columns in the same row. */
+
   gap?: number;
-  /** Vertical gap between wrapped rows. */
+
   rowGap?: number;
-  /** Fixed art size in cells (browser sprites) instead of ASCII art. */
+
   artSize?: { width: number; height: number };
 }
 
-/** Name line for an enemy column, with a selection marker and defeat suffix. */
 export function enemyNameLine(
   enemy: BattleEnemy,
   selected: boolean,
@@ -49,12 +39,31 @@ export function enemyNameLine(
   return `${selected ? "> " : "  "}${enemy.name}${dead ? " (defeated)" : ""}`;
 }
 
-/** HP line for an enemy column, e.g. `HP 12/12`. */
 export function enemyHpLine(enemy: BattleEnemy): string {
   return `HP ${enemy.hp}/${enemy.maxHp}`;
 }
 
-/** Widest line in an enemy column (art, name, or HP). */
+export interface EffectBadge {
+  id: EffectInstance["effectId"];
+  label: string;
+}
+
+// Turns an actor's active status effects into badge labels with turns
+// remaining (e.g. "Poison x2"), for BattleScreen to render next to the
+// afflicted party member or enemy.
+export function effectBadges(
+  effects: readonly EffectInstance[] | undefined,
+): EffectBadge[] {
+  if (!effects || effects.length === 0) return [];
+  return effects.map((effect) => {
+    const def = findStatusEffect(effect.effectId);
+    return {
+      id: effect.effectId,
+      label: `${def?.name ?? effect.effectId} x${effect.duration}`,
+    };
+  });
+}
+
 export function enemyColumnWidth(
   enemy: BattleEnemy,
   selected: boolean,
@@ -64,19 +73,23 @@ export function enemyColumnWidth(
   const asciiWidth =
     artWidth ??
     enemy.ascii.reduce((max, line) => Math.max(max, line.length), 0);
+  const badgeWidth = effectBadges(enemy.effects)
+    .map((badge) => badge.label)
+    .join("  ").length;
   return Math.max(
     asciiWidth,
     enemyNameLine(enemy, selected, dead).length,
     enemyHpLine(enemy).length,
+    badgeWidth,
   );
 }
 
-/** Rows an enemy column occupies: art lines plus the name and HP lines. */
 export function enemyColumnHeight(
   enemy: BattleEnemy,
   artHeight?: number,
 ): number {
-  return (artHeight ?? enemy.ascii.length) + 2;
+  const badgeLines = effectBadges(enemy.effects).length > 0 ? 1 : 0;
+  return (artHeight ?? enemy.ascii.length) + 2 + badgeLines;
 }
 
 function rowWidth(row: EnemyColumn[], gap: number): number {
@@ -87,11 +100,6 @@ function rowHeight(row: EnemyColumn[]): number {
   return row.reduce((max, col) => Math.max(max, col.height), 0);
 }
 
-/**
- * Greedily pack enemy columns into rows that fit within `columns`. The
- * `aliveEnemies`/`selectingTarget`/`targetCursor` args mirror the screen so
- * the selection marker lands on the right column.
- */
 export function packEnemyColumns(
   enemies: readonly BattleEnemy[],
   aliveEnemies: readonly BattleEnemy[],
@@ -111,6 +119,7 @@ export function packEnemyColumns(
       dead,
       nameLine: enemyNameLine(enemy, selected, dead),
       hpLine: enemyHpLine(enemy),
+      badges: effectBadges(enemy.effects),
       width: enemyColumnWidth(enemy, selected, dead, artSize?.width),
       height: enemyColumnHeight(enemy, artSize?.height),
     };

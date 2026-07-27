@@ -3,17 +3,27 @@ import {
   connectLinearCredentials,
 } from "@vercel/connect/eve";
 import {
+  type HttpRouteDefinition,
+  POST,
+  type RouteHandlerArgs,
+} from "eve/channels";
+import {
   defaultGitHubAuth,
+  type GitHubChannel,
+  type GitHubChannelCredentials,
   type GitHubChannelEvents,
+  type GitHubChannelState,
   type GitHubComment,
   type GitHubEventContext,
   type GitHubInboundContext,
   type GitHubPullRequestEvent,
   githubChannel,
 } from "eve/channels/github";
+import type { SessionAuthContext } from "eve/context";
 import type { SessionContext } from "eve/tools";
 
 import { advanceIssueState, type IssueStateTarget } from "../lib/issue-state";
+import { stripLeadingProseHeader } from "../lib/prose";
 
 export const isMainMerge = (pullRequest: GitHubPullRequestEvent) => {
   const base = pullRequest.raw.base;
@@ -27,19 +37,10 @@ export const isMainMerge = (pullRequest: GitHubPullRequestEvent) => {
   );
 };
 
-// Every Linear team key whose issues this agent drives. An explicit list, not
-// a generic [A-Z]+-\d+ pattern: PR bodies are scanned too, and a generic match
-// would false-positive on tokens like SHA-256 or ISO-8601.
 export const LINEAR_TEAM_KEYS = ["ROG", "ENG", "HAR", "WEB"] as const;
 
-// Label used to track technical-debt issues filed from unresolved review
-// comments on merged pull requests. Created on demand by the debt-review turn.
 export const DEBT_ISSUE_LABEL = "tech-debt";
 
-// Threshold of open debt issues that triggers automated remediation: when the
-// count of open issues carrying DEBT_ISSUE_LABEL reaches this number, the
-// debt-review turn dispatches the coder subagent to fix all of them in one
-// remediation pull request.
 export const DEBT_REMEDIATION_THRESHOLD = 5;
 
 const LINEAR_REF_PATTERN = new RegExp(
@@ -47,9 +48,6 @@ const LINEAR_REF_PATTERN = new RegExp(
   "i",
 );
 
-// The Linear issue a merged PR closes, taken from the branch, title, or body.
-// ralph mode uses it to advance the enclosing issue group; standalone PRs
-// return null and skip the advance context.
 export const linearRefFromPullRequest = (
   pullRequest: GitHubPullRequestEvent,
 ): string | null => {
@@ -71,24 +69,13 @@ const MAIN_MERGE_SYNCED =
   "A pull request was merged into main. The sandbox checkout has already updated automatically; no manual repository sync is needed.";
 
 const ralphAdvanceContext = (ref: string) =>
-  `The merged pull request closes Linear issue ${ref}. If ${ref} is a sub-issue of a parent issue you are ralphing (an in-progress issue group), advance that group per the "Issue groups" instructions: confirm ${ref} is Done, then hand off every newly ready sub-issue to the agent via Linear. If ${ref} is a standalone issue, no further action is needed.`;
+  `The merged pull request closes Linear issue ${ref}. If it belongs to an active issue group, confirm it is Done and hand off every newly ready sub-issue per the "Issue groups" instructions. If it is standalone, no further action is needed.`;
 
-// Context for a turn woken by review feedback landing on a pull request (see
-// "PR review-feedback turns" in instructions.md for the full contract). Kept
-// short and pointed at that section rather than repeated here, matching how
-// ponytailReviewContext above points back at "PR review turns" instead of
-// inlining its own procedure.
 const REVIEW_FEEDBACK_CONTEXT =
-  'Reviewer feedback landed on this pull request (see the comment above). This is a PR review-feedback turn (see "PR review-feedback turns" in the contract): validate it, then either fix the code or reply - nothing else.';
+  'Reviewer feedback landed on this pull request. Validate it, then either make the focused fix or reply in the thread per "GitHub maintenance turns."';
 
-
-// Context for a merge-wake turn to audit unresolved review-comment threads
-// from the merged PR and file GitHub issues for any still-real debt. See
-// "PR merge debt-review turns" in instructions.md for the full contract.
-// Pointed at that section rather than inlining the procedure, matching the
-// pattern ponytailReviewContext and REVIEW_FEEDBACK_CONTEXT already follow.
 export const debtReviewContext = (prNumber: number): string => {
-  return `A merged pull request (#${prNumber} in zico-io/ts-rogue) may carry unresolved review-comment threads. Audit them per the "PR merge debt-review turns" section in the contract.
+  return `A merged pull request (#${prNumber} in zico-io/ts-rogue) may carry unresolved review-comment threads. Audit them per "GitHub maintenance turns."
 
 Label for debt issues: ${DEBT_ISSUE_LABEL}
 Remediation threshold (open issues before auto-fix): ${DEBT_REMEDIATION_THRESHOLD}
@@ -119,16 +106,6 @@ Query unresolved review threads via GraphQL (only the GraphQL API exposes thread
 const escapeRegExp = (value: string) =>
   value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 
-// Mirrors the @mention check eve's own built-in `onComment` gate uses
-// (`extractGitHubCommentTrigger` in `dist/.../channels/github/inbound.js`),
-// reimplemented here because supplying `onComment` below replaces that
-// built-in gate entirely rather than layering on top of it (see eve's github
-// channel docs), and `eve/channels/github`'s public barrel exports only
-// `defaultGitHubAuth` from that module - not the mention helper itself
-// (confirmed against the package's own `exports` map: `inbound`/`defaults`
-// have no public subpath, only the top-level `./channels/github` entry
-// point). The bot-authored/self-comment loop guard needs no reimplementation
-// here - eve applies that before ever calling `onComment`.
 export const isBotMentioned = (
   body: string,
   botName: string | undefined,
@@ -140,15 +117,6 @@ export const isBotMentioned = (
   );
 };
 
-// A pull-request review comment is a finding - actionable feedback tied to a
-// code location - only the first time it appears in its thread. GitHub fires
-// the same `pull_request_review_comment` webhook for every later reply in
-// that thread too (its raw payload carries `in_reply_to_id` once it is a
-// reply; eve's normalized `GitHubComment` drops that field, so it is read
-// off `comment.raw` directly, the same way `onPullRequest` above reads
-// `pullRequest.raw` for fields the normalized event omits). Replies are
-// conversation about a finding already surfaced, not a new one, so they
-// should not spin up another turn.
 const isNewReviewFinding = (comment: GitHubComment): boolean => {
   const raw = comment.raw as { in_reply_to_id?: unknown };
   return raw.in_reply_to_id === undefined || raw.in_reply_to_id === null;
@@ -158,13 +126,6 @@ export const onComment = (
   ctx: GitHubInboundContext,
   comment: GitHubComment,
 ) => {
-  // Inline pull-request review comments - the shape both a human review and
-  // ponytail's own auto-review (above) post - wake the agent unconditionally
-  // when they are a new finding: feedback left during a review is a request
-  // to act on, not a chat message that needs an explicit @mention to be
-  // seen. A reply within an already-open review thread is not a new finding
-  // and is skipped. Ordinary issue/PR discussion comments keep requiring a
-  // mention, matching eve's built-in behavior.
   if (ctx.conversation.kind === "review_thread") {
     return isNewReviewFinding(comment)
       ? {
@@ -178,15 +139,6 @@ export const onComment = (
     : null;
 };
 
-// GitHub's own comment-body size cap, mirrored here because eve's internal
-// `splitGitHubCommentBody` isn't part of the public `eve/channels/github`
-// API surface (only `defaultGitHubAuth` is exported from that module - see
-// the comment on `isBotMentioned` above for how that was confirmed).
-// ponytail: this is a naive fixed-length split, not the paragraph-aware
-// chunking eve's internal helper does. Ceiling: a reply could break
-// mid-sentence at a chunk boundary. Upgrade path: ask eve to publicize its
-// splitter, or vendor its exact rules, if a reply this large ever ships in
-// practice - ordinary agent replies stay well under this limit.
 const GITHUB_COMMENT_BODY_MAX_LENGTH = 65536;
 
 const splitCommentBody = (body: string): readonly string[] => {
@@ -197,38 +149,17 @@ const splitCommentBody = (body: string): readonly string[] => {
   return chunks;
 };
 
-// Posts a completed assistant message as a GitHub comment, mirroring eve's
-// built-in `message.completed` handler (`postCommentChunks` in
-// `defaults.js`). Declaring this handler in `events` replaces eve's built-in
-// for this key rather than layering on top of it, so it re-implements the same
-// chunk-and-post behavior the default provided.
 export const onMessageCompleted = async (
   data: { finishReason?: string; message: string | null },
   channel: GitHubEventContext,
   _ctx: SessionContext,
 ): Promise<void> => {
   if (data.finishReason === "tool-calls" || !data.message) return;
-  for (const chunk of splitCommentBody(data.message)) {
+  for (const chunk of splitCommentBody(stripLeadingProseHeader(data.message))) {
     await channel.thread.post(chunk);
   }
 };
 
-// --- Connection authorization ----------------------------------------------
-// Port of the Linear channel's authorization surfacing (HAR-31) to this
-// channel (HAR-33): eve's GitHub defaults implement no `authorization.*`
-// handlers either, so when a user-scoped `connect(...)` connection needed
-// OAuth on a GitHub-dispatched turn (a merge wake, a review-feedback turn),
-// eve parked the turn and the event was dropped - no PR comment, no error,
-// a silently stalled turn. GitHub has no native auth signal like Linear's
-// "Link account" elicitation, so the challenge posts as a plain thread
-// comment carrying the authorization link. This is visibility, not the
-// merge-wake fix itself - that is the Linear MCP connection going app-scoped
-// in `connections/linear.ts`.
-
-// Mirror of the Linear channel's fallback: title-case the connection scope
-// name ("linear" -> "Linear") when the challenge carries no displayName.
-// Duplicated (2 lines) rather than imported so this file stays disjoint from
-// channels/linear.ts.
 const connectionDisplayName = (name: string): string =>
   name.replace(/[-_/]+/gu, " ").replace(/\b\p{L}/gu, (c) => c.toUpperCase());
 
@@ -265,11 +196,6 @@ export const onAuthorizationCompleted: NonNullable<
   );
 };
 
-// Harness-owned issue lifecycle (see `lib/issue-state.ts`): which Linear
-// workflow-state transition this pull-request event implies, if any. Pure
-// decision, exported for tests; the async wrapper below performs it.
-// `synchronize` is excluded - state was set at open, and the sync is
-// forward-only so a repeat would be a no-op anyway.
 export const pullRequestStateSync = (
   pullRequest: GitHubPullRequestEvent,
 ): { issueRef: string; target: IssueStateTarget } | null => {
@@ -288,13 +214,6 @@ export const pullRequestStateSync = (
 
 const linearCredentials = connectLinearCredentials("linear/ts-rogue-eve");
 
-// Registered in place of `onPullRequest` below (eve runs the hook under
-// `waitUntil` and accepts an async result, so awaiting here is durable and
-// never blocks the webhook response). The Done sync deliberately completes
-// before the main-merge dispatch decision returns, so the woken ralph-advance
-// turn already observes the merged sub-issue Done when it recomputes
-// readiness. `advanceIssueState` never throws, so a Linear outage can never
-// suppress the review dispatch or the ralph wake.
 const onPullRequestWithStateSync = async (
   context: GitHubInboundContext,
   pullRequest: GitHubPullRequestEvent,
@@ -312,12 +231,7 @@ export const onPullRequest = (
 ) => {
   if (isMainMerge(pullRequest)) {
     const ref = linearRefFromPullRequest(pullRequest);
-    // Every merge to main also wakes a debt-review turn: this context entry
-    // tells the woken turn to audit unresolved review threads and file debt
-    // issues. The webhook handler makes no API call itself - the GraphQL
-    // query runs inside the woken turn (which has gh CLI access). This runs
-    // unconditionally alongside the ralph-advance and main-synced entries
-    // since only the turn can determine whether unresolved threads exist.
+
     return {
       auth: defaultGitHubAuth(context),
       context: [
@@ -331,10 +245,257 @@ export const onPullRequest = (
   return null;
 };
 
-export default githubChannel({
-  credentials: connectGitHubCredentials("github/ts-rogue-eve-github"),
+// --- Coarse pull_request_review webhook events (HAR-49) --------------------
+// eve's githubChannel never dispatches on the `pull_request_review` webhook
+// event, so a bare "Approve"/"Request changes" with no inline comment was
+// silently dropped. This intercepts that one event ahead of eve's route
+// handler and wakes the PR's own turn (same continuation token as
+// `onPullRequest`) with the verdict attached; every other event still flows
+// through eve's real handler unchanged.
+
+// The only two states with a dispatchable verdict (see
+// `pullRequestReviewVerdict`); kept open since GitHub can send others.
+type GitHubPullRequestReviewState =
+  | "approved"
+  | "changes_requested"
+  | (string & {});
+
+// Minimal shape read from a `pull_request_review` webhook payload - only the
+// fields this handler actually uses.
+interface GitHubPullRequestReviewWebhookPayload {
+  readonly action: string;
+  readonly installation?: { readonly id?: number };
+  readonly pull_request: {
+    readonly number: number;
+    readonly base?: { readonly ref?: string; readonly sha?: string };
+    readonly head?: { readonly ref?: string; readonly sha?: string };
+  };
+  readonly repository: {
+    readonly default_branch?: string;
+    readonly id: number;
+    readonly name: string;
+    readonly owner: { readonly login: string };
+  };
+  readonly review: {
+    readonly body: string | null;
+    readonly html_url?: string;
+    readonly state: GitHubPullRequestReviewState;
+    readonly user?: {
+      readonly id?: number;
+      readonly login?: string;
+      readonly type?: string;
+    };
+  };
+  readonly sender?: {
+    readonly id?: number;
+    readonly login?: string;
+    readonly type?: string;
+  };
+}
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null;
+
+// Validates only the fields dereferenced without optional chaining -
+// everything else is read downstream with `??`/`?.`, so a malformed value
+// there just resolves to `undefined`. Returns `null` on a shape mismatch,
+// treated the same as unparseable JSON.
+const parsePullRequestReviewPayload = (
+  value: unknown,
+): GitHubPullRequestReviewWebhookPayload | null => {
+  if (!isPlainObject(value)) return null;
+  const { action, pull_request, repository, review } = value;
+  if (typeof action !== "string") return null;
+  if (!isPlainObject(pull_request) || typeof pull_request.number !== "number") {
+    return null;
+  }
+  if (
+    !isPlainObject(repository) ||
+    typeof repository.id !== "number" ||
+    typeof repository.name !== "string" ||
+    !isPlainObject(repository.owner) ||
+    typeof repository.owner.login !== "string"
+  ) {
+    return null;
+  }
+  if (
+    !isPlainObject(review) ||
+    typeof review.state !== "string" ||
+    (review.body !== null && typeof review.body !== "string")
+  ) {
+    return null;
+  }
+  return value as unknown as GitHubPullRequestReviewWebhookPayload;
+};
+
+// A verdict only exists for a freshly submitted approve/request-changes
+// review; "commented", "edited", and "dismissed" carry none. Exported for
+// tests.
+export const pullRequestReviewVerdict = (
+  payload: Pick<GitHubPullRequestReviewWebhookPayload, "action" | "review">,
+): "approved" | "changes_requested" | null => {
+  if (payload.action !== "submitted") return null;
+  if (payload.review.state === "approved") return "approved";
+  if (payload.review.state === "changes_requested") return "changes_requested";
+  return null;
+};
+
+// Message appended as the woken turn's dispatch context. Exported for tests.
+export const pullRequestReviewVerdictContext = (
+  payload: GitHubPullRequestReviewWebhookPayload,
+  verdict: "approved" | "changes_requested",
+): string => {
+  const verdictLabel =
+    verdict === "approved" ? "Approved" : "Changes requested";
+  const reviewer =
+    payload.review.user?.login ?? payload.sender?.login ?? "someone";
+  const lines = [
+    `A pull request review was submitted with verdict **${verdictLabel}** (this is the review's overall state, separate from any inline comments).`,
+    `Reviewer: @${reviewer}`,
+  ];
+  if (payload.review.body) lines.push("", payload.review.body);
+  if (payload.review.html_url) lines.push("", payload.review.html_url);
+  return lines.join("\n");
+};
+
+// Mirrors eve's internal (non-exported) webhook verification. This repo
+// always configures `connectGitHubCredentials`, which always sets
+// `webhookVerifier`, so only that branch is implemented.
+const verifyGitHubWebhookBody = async (
+  request: Request,
+  credentials: GitHubChannelCredentials,
+): Promise<string> => {
+  const rawBody = await request.text();
+  if (credentials.webhookVerifier === undefined) {
+    throw new Error(
+      "githubChannel: no webhookVerifier configured for pull_request_review verification.",
+    );
+  }
+  const verified = await credentials.webhookVerifier(request, rawBody);
+  if (!verified) {
+    throw new Error(
+      "githubChannel: inbound webhook verifier rejected the request.",
+    );
+  }
+  return typeof verified === "string" ? verified : rawBody;
+};
+
+// Continuation token for the PR's own timeline conversation, matching the
+// one `onPullRequest`'s dispatch resumes.
+const pullRequestConversationToken = (
+  repositoryId: number,
+  pullRequestNumber: number,
+): string => `repo:${repositoryId}:pull:${pullRequestNumber}`;
+
+// Mirrors the `SessionAuthContext` shape eve's `defaultGitHubAuth` builds
+// for a "pull_request" conversation. Built directly rather than through
+// `defaultGitHubAuth` since this raw webhook route has no live
+// `GitHubInboundContext` to hand it.
+const buildPullRequestReviewAuth = (input: {
+  readonly deliveryId: string;
+  readonly installationId: number | undefined;
+  readonly pullRequestNumber: number;
+  readonly repository: { fullName: string; id: number; owner: string };
+  readonly sender: { id: number; login: string; type: string };
+}): SessionAuthContext => ({
+  attributes: {
+    conversation_kind: "pull_request",
+    delivery_id: input.deliveryId,
+    installation_id: String(input.installationId ?? ""),
+    issue_number: "",
+    pull_request_number: String(input.pullRequestNumber),
+    repository: input.repository.fullName,
+    repository_id: String(input.repository.id),
+    user_login: input.sender.login,
+    user_type: input.sender.type,
+  },
+  authenticator: "github-webhook",
+  issuer: `github:${input.repository.owner}`,
+  principalId: `github:${input.sender.id}`,
+  principalType: input.sender.type === "Bot" ? "service" : "user",
+  subject: input.sender.login,
+});
+
+// Handles one verified `pull_request_review` delivery and wakes the PR's
+// own turn when it carries a dispatchable verdict. Exported for tests.
+export const handlePullRequestReviewWebhook = async (
+  request: Request,
+  args: Pick<RouteHandlerArgs<GitHubChannelState>, "send">,
+  credentials: GitHubChannelCredentials,
+): Promise<Response> => {
+  let rawBody: string;
+  try {
+    rawBody = await verifyGitHubWebhookBody(request, credentials);
+  } catch {
+    return new Response("unauthorized", { status: 401 });
+  }
+
+  let parsedJson: unknown;
+  try {
+    parsedJson = JSON.parse(rawBody);
+  } catch {
+    return Response.json({ ignored: true, ok: true });
+  }
+
+  const payload = parsePullRequestReviewPayload(parsedJson);
+  if (payload === null) return Response.json({ ignored: true, ok: true });
+
+  const verdict = pullRequestReviewVerdict(payload);
+  if (verdict === null) return Response.json({ ignored: true, ok: true });
+
+  const owner = payload.repository.owner.login;
+  const repo = payload.repository.name;
+  const repositoryId = payload.repository.id;
+  const pullRequestNumber = payload.pull_request.number;
+  const reviewer = payload.review.user ?? payload.sender;
+
+  const auth = buildPullRequestReviewAuth({
+    deliveryId: request.headers.get("x-github-delivery") ?? crypto.randomUUID(),
+    installationId: payload.installation?.id,
+    pullRequestNumber,
+    repository: { fullName: `${owner}/${repo}`, id: repositoryId, owner },
+    sender: {
+      id: reviewer?.id ?? 0,
+      login: reviewer?.login ?? "unknown",
+      type: reviewer?.type ?? "User",
+    },
+  });
+
+  await args.send(pullRequestReviewVerdictContext(payload, verdict), {
+    auth,
+    continuationToken: pullRequestConversationToken(
+      repositoryId,
+      pullRequestNumber,
+    ),
+    state: {
+      baseRef: payload.pull_request.base?.ref ?? null,
+      baseSha: payload.pull_request.base?.sha ?? null,
+      checkoutPath: null,
+      conversationKind: "pull_request",
+      defaultBranch: payload.repository.default_branch ?? null,
+      headRef: payload.pull_request.head?.ref ?? null,
+      headSha: payload.pull_request.head?.sha ?? null,
+      installationId: payload.installation?.id ?? null,
+      issueNumber: pullRequestNumber,
+      owner,
+      pullRequestNumber,
+      repo,
+      repositoryId,
+      reviewCommentId: null,
+      reviewThreadRootCommentId: null,
+      triggeringCommentId: null,
+      triggeringUserLogin: reviewer?.login ?? null,
+    },
+  });
+
+  return Response.json({ ok: true });
+};
+
+const credentials = connectGitHubCredentials("github/ts-rogue-eve-github");
+
+const baseChannel = githubChannel({
+  credentials,
   events: {
-    // onSession already synced main; skip the channel's default PR-head checkout.
     "turn.started": () => {},
     "message.completed": onMessageCompleted,
     "authorization.required": onAuthorizationRequired,
@@ -343,3 +504,27 @@ export default githubChannel({
   onComment,
   onPullRequest: onPullRequestWithStateSync,
 });
+
+// githubChannel always registers exactly one HTTP POST route; asserted at
+// runtime so a future eve upgrade that changes this fails loudly instead of
+// destructuring `undefined`.
+if (baseChannel.routes.length !== 1) {
+  throw new Error(
+    `githubChannel: expected exactly one route, got ${baseChannel.routes.length}.`,
+  );
+}
+const [baseRoute] = baseChannel.routes as [
+  HttpRouteDefinition<GitHubChannelState>,
+];
+
+export default {
+  ...baseChannel,
+  routes: [
+    POST(baseRoute.path, async (request, args) => {
+      if (request.headers.get("x-github-event") === "pull_request_review") {
+        return handlePullRequestReviewWebhook(request, args, credentials);
+      }
+      return baseRoute.handler(request, args);
+    }),
+  ],
+} satisfies GitHubChannel;

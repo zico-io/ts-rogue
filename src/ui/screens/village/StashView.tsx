@@ -26,18 +26,6 @@ export interface StashViewProps {
   onBack: () => void;
 }
 
-/**
- * Village Stash sub-view (ENG-5): unlimited town storage for generated
- * gear, separate from the field backpack's tunable cap
- * (`FIELD_BACKPACK_CAP`). Two Tab-cycled panes mirror `StoreView`'s
- * shop/pack split - "Backpack" lists `state.items` (sorted with the
- * Inventory screen's `sortPackEntries`, `[d]` to deposit the selected item)
- * and "Stash" lists `state.stash` (`[w]` to withdraw). Unlike the Store,
- * `items`/`stash` are party-shared, not per-member, so there is no member
- * switcher. The mode/cursor/sort state machine lives in the pure
- * `reduceStashUi`; this component only normalizes Ink's input, resolves an
- * intent, applies the result, and dispatches the mapped event.
- */
 export function StashView({ state, dispatch, onBack }: StashViewProps) {
   const [stashUi, setStashUi] = useState<StashUiState>(INITIAL_STASH_UI_STATE);
 

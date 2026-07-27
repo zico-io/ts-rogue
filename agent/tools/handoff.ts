@@ -3,21 +3,16 @@ import {
   callLinearGraphQL,
   createLinearAgentSessionOnComment,
 } from "eve/channels/linear";
-import { defineTool } from "eve/tools";
 import type { ToolContext } from "eve/tools";
+import { defineTool } from "eve/tools";
 import { z } from "zod";
 
 import { formatCheckpointComment } from "../lib/checkpoint";
 import { listLiveAgentSessions } from "../lib/live-sessions";
+import { stripLeadingProseHeader } from "../lib/prose";
 
 const credentials = connectLinearCredentials("linear/ts-rogue-eve");
 
-// The caller's own Linear Agent Session id, read from the dispatch auth
-// attributes `defaultLinearAuth` stamps on every Linear-initiated session
-// (the same channel-to-callback side channel HAR-24's review-only flag rides
-// in `channels/github.ts`). Needed so the self-continuation use of this tool
-// - where the caller's session is live on the very issue being handed off -
-// does not count itself as a duplicate.
 const callerAgentSessionId = (ctx: ToolContext): string | null => {
   const attribute = (ctx.session.auth.current ?? ctx.session.auth.initiator)
     ?.attributes.agent_session_id;
@@ -26,34 +21,6 @@ const callerAgentSessionId = (ctx: ToolContext): string | null => {
     : null;
 };
 
-// Linear's Agent Session creation mutations have no free-text field of their
-// own (`AgentSessionCreateOnIssue`/`AgentSessionCreateOnComment` only take
-// id/link inputs - confirmed by reading the mutation shapes in
-// `node_modules/eve/dist/src/public/channels/linear/api.js`); a session's
-// initial message comes from whatever comment it's anchored to. A comment is
-// therefore the only way to deliver a custom brief into a fresh session, not
-// a side channel this tool invented - every human-initiated Agent Session
-// already starts the same way, from a comment. This header just makes the
-// comment read as deliberate handoff plumbing rather than a stray note. Kept
-// generic (not framed as self-continuation-only) because this tool also seeds
-// a ready sub-issue's fresh session in ralph mode (HAR-15) - the specific
-// framing (why this session is starting, what came before) belongs in the
-// model-authored `brief`, not this fixed header.
-const HANDOFF_COMMENT_HEADER = "**Agent handoff**\n\n---\n\n";
-
-/**
- * Posts a Linear comment and returns its id.
- *
- * Hand-rolled against `callLinearGraphQL` rather than a barrel export:
- * `commentCreate` is not exported from `eve/channels/linear`'s public barrel
- * (confirmed by reading `node_modules/eve/dist/src/public/channels/linear/api.d.ts`
- * and `.js` - only `createLinearAgentActivity`, `createLinearAgentSessionOnComment`,
- * `createLinearAgentSessionOnIssue`, `listLinearAgentSessionActivities`,
- * `updateLinearAgentSession`, and the generic `callLinearGraphQL` transport are
- * exported). This mirrors the exact call shape eve's own built-in mutations use:
- * `query` is a GraphQL string, `queryName` is used only for error reporting, and
- * `variables` wraps the payload in `{ input: {...} }`.
- */
 export const createLinearComment = async (input: {
   readonly issueId: string;
   readonly body: string;
@@ -86,7 +53,7 @@ export const createLinearComment = async (input: {
 
 export default defineTool({
   description:
-    "Hand off to a fresh, empty context window seeded by a `brief`. Two uses: (1) Self-continuation - end the current phase and let the next inbound event resume this SAME Linear issue in a fresh eve session. Pass the current issue's id. Best at a natural pause where an event will wake it (right after opening the PR, so the review/merge webhook runs fresh) - not to keep working right now (eve auto-compacts, so you no longer need to hand off just to avoid a token limit). This posts a context-checkpoint comment (no second Linear session is created) and returns `checkpointed`; end your own turn immediately after calling it. (2) Ralph-mode dependency unlock - a DIFFERENT sub-issue just became ready because its blocker(s) merged. Pass that sub-issue's id and a brief carrying context its own issue packet won't have: what the predecessor(s) shipped (their PR), and any decisions or gotchas that affect its approach. This creates a brand-new Agent Session on that sub-issue and returns `handoffSessionId`. Either way, `brief` must let a fresh agent with zero conversation history proceed without re-reading anything: what the issue asked for, what's done with evidence, what's left, the exact next action. For case (2), if that issue already has another live Agent Session, this tool creates nothing and returns `alreadyLive` with its id and URL - treat it as in flight and never retry.",
+    "Continue a Linear issue in a fresh, empty context window, seeded by a concise `brief` (start with substance, not a heading; say what is done, what remains, and the exact next action). Self-continuation - pass the CURRENT issue's id at a phase boundary (e.g. right after opening the PR, so the review/merge webhook runs fresh): posts a context-checkpoint comment so the next inbound event resumes this SAME Linear session with fresh context, and returns `checkpointed`. You no longer need this to dodge a token limit - eve auto-compacts - so use it for the clean phase break. Ready sub-issue (ralph dependency unlock) - pass a DIFFERENT sub-issue's id whose blocker(s) just merged, with a brief carrying what the predecessor shipped: starts a new Agent Session on it and returns `handoffSessionId`. An already-live session on that sub-issue is returned as `alreadyLive` instead of duplicated. End your own turn immediately after calling this.",
   inputSchema: z.object({
     issueId: z.string().min(1),
     brief: z.string().min(1).max(8000),
@@ -132,7 +99,7 @@ export default defineTool({
     }
     const commentId = await createLinearComment({
       issueId: input.issueId,
-      body: `${HANDOFF_COMMENT_HEADER}${input.brief}`,
+      body: stripLeadingProseHeader(input.brief),
     });
     const session = await createLinearAgentSessionOnComment({
       credentials,
