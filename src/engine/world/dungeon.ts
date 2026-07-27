@@ -1,4 +1,5 @@
 import { RNG, Map as RotMap } from "rot-js";
+import { dungeonDefFor } from "../../data/dungeons";
 import { Rng } from "../rng/rng";
 import type {
   DungeonFacing,
@@ -242,6 +243,7 @@ export function createInitialDungeonState(
   );
   return {
     dungeonId,
+    theme: dungeonDefFor(dungeonId).theme,
     floor,
     layout,
     player: { ...layout.entrance },

@@ -110,3 +110,49 @@ export const DUNGEONS: readonly DungeonDef[] = [
 export function findDungeon(id: string): DungeonDef | undefined {
   return DUNGEONS.find((dungeon) => dungeon.id === id);
 }
+
+// Resolves the def for a live dungeon run. Falls back to the first story def
+// for a placeholder waypoint id (e.g. "dungeon-0") that entrance->dungeon
+// assignment (ROG-90) hasn't mapped to a real DungeonDef yet, so every
+// dungeonId is always resolvable to some theme.
+export function dungeonDefFor(dungeonId: string): DungeonDef {
+  return findDungeon(dungeonId) ?? DUNGEONS[0];
+}
+
+interface DungeonThemeFlavor {
+  enter: string;
+  descend: string;
+}
+
+// Per-theme message-log flavor for dungeon entry/descent (ROG-94). Palette-level
+// copy only, keyed by DungeonDef.theme; not a new content system.
+const THEME_FLAVOR: Record<string, DungeonThemeFlavor> = {
+  crypt: {
+    enter: "Cold, stale air rolls out of the crypt as you step inside.",
+    descend: "You press deeper into the crypt, past shelves of old bone.",
+  },
+  cave: {
+    enter: "Damp rock and dripping echoes greet you as you enter the cave.",
+    descend:
+      "The cave passage narrows, water tracing the walls as you climb down.",
+  },
+  ruins: {
+    enter: "Crumbling pillars and drifting dust mark the ruins' entrance.",
+    descend:
+      "Cracked stairs carry you further into the ruins, stone grinding underfoot.",
+  },
+};
+
+const DEFAULT_THEME_FLAVOR = THEME_FLAVOR.crypt;
+
+function flavorFor(theme: string): DungeonThemeFlavor {
+  return THEME_FLAVOR[theme] ?? DEFAULT_THEME_FLAVOR;
+}
+
+export function dungeonEntryFlavor(theme: string): string {
+  return flavorFor(theme).enter;
+}
+
+export function dungeonDescendFlavor(theme: string, floor: number): string {
+  return `${flavorFor(theme).descend} (floor ${floor})`;
+}

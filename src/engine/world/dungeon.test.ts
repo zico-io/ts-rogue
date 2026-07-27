@@ -100,6 +100,15 @@ describe("createInitialDungeonState", () => {
       createInitialDungeonState(2024, "dungeon-0", 1),
     );
   });
+
+  it("exposes the active dungeon's theme id, falling back to the first story def for an unmapped waypoint id", () => {
+    expect(createInitialDungeonState(1, "dungeon-0", 1).theme).toBe("crypt");
+    expect(createInitialDungeonState(1, "sunken-crypt", 1).theme).toBe("crypt");
+    expect(createInitialDungeonState(1, "howling-cave", 1).theme).toBe("cave");
+    expect(createInitialDungeonState(1, "forgotten-ruins", 1).theme).toBe(
+      "ruins",
+    );
+  });
 });
 
 describe("facing helpers", () => {

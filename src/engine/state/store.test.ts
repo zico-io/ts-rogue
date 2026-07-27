@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { dungeonEntryFlavor } from "../../data/dungeons";
 import { deserialize, serialize } from "../../persistence/save";
 import { atkFrom, startBattle } from "../combat/resolution";
 import type { PartyMember } from "../entities/party";
@@ -291,7 +292,7 @@ describe("game store", () => {
       });
       expect(after.scene).toBe("dungeon");
       expect(after.worldState.player).toEqual(entrance);
-      expect(after.log.at(-1)?.text).toBe("You descend into the dungeon");
+      expect(after.log.at(-1)?.text).toBe(dungeonEntryFlavor("crypt"));
       expect(after.dungeonState).not.toBeNull();
       expect(after.dungeonState?.floor).toBe(1);
       expect(after.dungeonState?.dungeonId).toBe("dungeon-0");
@@ -430,7 +431,7 @@ describe("Dungeon", () => {
       state.dungeonState?.layout.entrance,
     );
     expect(state.dungeonState?.cleared).toBe(false);
-    expect(state.log.at(-1)?.text).toBe("You descend into the dungeon");
+    expect(state.log.at(-1)?.text).toBe(dungeonEntryFlavor("crypt"));
   });
 
   it("TurnDungeon rotates the facing without mutating the previous state or logging", () => {
