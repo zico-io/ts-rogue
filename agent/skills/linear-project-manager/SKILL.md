@@ -21,8 +21,14 @@ the `scoper` specialist, then present one concise preview covering:
 - tickets and meaningful dependencies;
 - dates, lead, or priority only when supplied or clearly inferable.
 
-Wait for approval of that broad write. Small, explicit changes such as adding
-one requested ticket or correcting one field need no extra ceremony.
+Put that content in the question itself, not only in narration written earlier
+in the turn. Linear folds the text leading up to a tool call into that call's
+collapsed activity, so a prompt like "Create it as described?" is the only
+part of a scoping proposal a reviewer is guaranteed to see without expanding
+anything - if the concrete structure (ticket titles, not just a count) lives
+only in prose above it, the approval reads as if it swapped the request for
+something generic (HAR-78). Small, explicit changes such as adding one
+requested ticket or correcting one field need no extra ceremony.
 Begin previews and summaries with the decision or outcome, not a heading or the
 project name already visible in Linear.
 
