@@ -44,6 +44,7 @@ import type {
   BattleState,
   BattleStatus,
   CoreStats,
+  EnemyRow,
 } from "./types";
 
 export const HIT_BASE = 0.9;
@@ -62,6 +63,10 @@ export const DAMAGE_VARIANCE_MAX = 1.15;
 export const DEFEND_DAMAGE_FACTOR = 0.5;
 
 export const INITIATIVE_SPREAD = 8;
+
+// Classic Wizardry-style formation: only the first FRONT_ROW_SIZE enemies
+// in an encounter stand in front; the rest form the back row (ENG-29).
+export const FRONT_ROW_SIZE = 2;
 
 export const FLEE_BASE = 0.55;
 export const FLEE_SPD_FACTOR = 0.03;
@@ -241,7 +246,11 @@ export function rollInitiative(
   return entries.map((entry) => entry.id);
 }
 
-function makeEnemy(def: MonsterDef, instance: number): BattleEnemy {
+function makeEnemy(
+  def: MonsterDef,
+  instance: number,
+  row: EnemyRow = "front",
+): BattleEnemy {
   return {
     id: `${def.id}-${instance}`,
     defId: def.id,
@@ -254,6 +263,7 @@ function makeEnemy(def: MonsterDef, instance: number): BattleEnemy {
     sprite: def.sprite,
     xp: def.xp,
     gold: def.gold,
+    row,
   };
 }
 
@@ -274,7 +284,8 @@ export function pickEnemyGroup(
   const count = rng.int(1, Math.min(3, 1 + floor));
   const enemies: BattleEnemy[] = [];
   for (let i = 0; i < count; i++) {
-    enemies.push(makeEnemy(rng.pick(eligible), i + 1));
+    const row: EnemyRow = i < FRONT_ROW_SIZE ? "front" : "back";
+    enemies.push(makeEnemy(rng.pick(eligible), i + 1, row));
   }
   return enemies;
 }
@@ -319,6 +330,30 @@ function firstAlive(enemies: readonly BattleEnemy[]): BattleEnemy | undefined {
   return enemies.find((enemy) => enemy.hp > 0);
 }
 
+function enemyRow(enemy: BattleEnemy): EnemyRow {
+  return enemy.row ?? "front";
+}
+
+// Melee reachability rule (ENG-29): the front row must fall before the back
+// row is targetable by a basic attack. Ranged/spell skills ignore this and
+// are unaffected - shape-aware skill targeting lands in the follow-up
+// ticket (ENG-28).
+export function isMeleeTargetable(
+  enemies: readonly BattleEnemy[],
+  target: BattleEnemy,
+): boolean {
+  if (enemyRow(target) === "front") return true;
+  return !enemies.some((enemy) => enemy.hp > 0 && enemyRow(enemy) === "front");
+}
+
+function firstMeleeTarget(
+  enemies: readonly BattleEnemy[],
+): BattleEnemy | undefined {
+  return enemies.find(
+    (enemy) => enemy.hp > 0 && isMeleeTargetable(enemies, enemy),
+  );
+}
+
 function clearEncounter(ds: DungeonState | null): DungeonState | null {
   if (!ds?.encounter) return ds;
   return { ...ds, encounter: null };
@@ -335,8 +370,15 @@ function validateCommand(
   enemies: readonly BattleEnemy[],
 ): boolean {
   switch (command.kind) {
-    case "attack":
-      return enemies.some((enemy) => enemy.hp > 0);
+    case "attack": {
+      const explicitTarget = enemies.find(
+        (enemy) => enemy.id === command.targetId && enemy.hp > 0,
+      );
+      if (explicitTarget) return isMeleeTargetable(enemies, explicitTarget);
+      return enemies.some(
+        (enemy) => enemy.hp > 0 && isMeleeTargetable(enemies, enemy),
+      );
+    }
     case "skill": {
       const skill = findSkill(command.skillId);
       return !!skill && actor.mp >= skill.mpCost;
@@ -600,9 +642,13 @@ function applyMemberCommand(
 
   switch (command.kind) {
     case "attack": {
+      const explicitTarget = enemies.find(
+        (e) => e.id === command.targetId && e.hp > 0,
+      );
       const target =
-        enemies.find((e) => e.id === command.targetId && e.hp > 0) ??
-        firstAlive(enemies);
+        explicitTarget && isMeleeTargetable(enemies, explicitTarget)
+          ? explicitTarget
+          : firstMeleeTarget(enemies);
       if (target) {
         const result = resolveAttack(rng, actorStats, target.stats, false);
         if (!result.hit) {
