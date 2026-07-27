@@ -70,6 +70,7 @@ context. Blocking relations in Linear determine readiness.
 | `tools/workflow.ts` | Enables the `Workflow` tool to orchestrate `agent` calls as one durable step |
 | `tools/session_update.ts` | Posts blocked, review, and completion activities |
 | `schedules/eve-version-check.ts` | Checks for Eve upgrades and audits framework workarounds |
+| `schedules/agent-run-analysis.ts` | Daily review of recent Eve/GitHub/Vercel activity that files Harness issues for real findings |
 
 ## Linear and GitHub
 
