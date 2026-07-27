@@ -2,7 +2,21 @@ import { describe, expect, it } from "vitest";
 import { findMonster, MONSTERS } from "../../data/monsters";
 import { classSkills, findSkill, resolveSkillList, SKILLS } from "./skills";
 
-const SELF_TARGET_SKILL_IDS = new Set(["heal", "second-wind"]);
+// Every skill's expected v2 shape (ENG-28 wires each one into a concrete
+// resolveShapeTargets case in resolution.ts).
+const EXPECTED_SKILL_TARGETS: Record<string, string> = {
+  flame: "single",
+  heal: "self",
+  frost: "single",
+  cleave: "single",
+  "second-wind": "self",
+  backstab: "single",
+  pinpoint: "single",
+  hailstorm: "row",
+  skewer: "column",
+  meteor: "allEnemies",
+  scattershot: "randomN",
+};
 
 describe("SkillDef v2 target shape", () => {
   it("round-trips every existing skill through findSkill unchanged", () => {
@@ -11,19 +25,22 @@ describe("SkillDef v2 target shape", () => {
     }
   });
 
-  it("keeps every migrated attack skill on the single-target shape", () => {
+  it("assigns every skill its expected target shape", () => {
+    expect(SKILLS.map((skill) => skill.id).sort()).toEqual(
+      Object.keys(EXPECTED_SKILL_TARGETS).sort(),
+    );
     for (const skill of SKILLS) {
-      if (SELF_TARGET_SKILL_IDS.has(skill.id)) {
-        expect(skill.target).toBe("self");
-      } else {
-        expect(skill.target).toBe("single");
-      }
+      expect(skill.target).toBe(EXPECTED_SKILL_TARGETS[skill.id]);
     }
   });
 
-  it("leaves hitCount unset for every existing skill (single hit, no shape expansion yet)", () => {
+  it("only the randomN skill carries a hitCount, clamping its target count", () => {
     for (const skill of SKILLS) {
-      expect(skill.hitCount).toBeUndefined();
+      if (skill.target === "randomN") {
+        expect(skill.hitCount).toBeGreaterThan(1);
+      } else {
+        expect(skill.hitCount).toBeUndefined();
+      }
     }
   });
 
@@ -32,16 +49,19 @@ describe("SkillDef v2 target shape", () => {
       "flame",
       "heal",
       "frost",
+      "hailstorm",
+      "meteor",
     ]);
   });
 });
 
-describe("MonsterDef skill lists (ENG-30 data model only)", () => {
+describe("MonsterDef skill lists", () => {
   it("lets a monster carry a skill list that resolves through the shared SKILLS table", () => {
     const guardian = findMonster("dungeon-guardian");
-    expect(guardian?.skills).toEqual(["cleave"]);
+    expect(guardian?.skills).toEqual(["cleave", "meteor"]);
     expect(resolveSkillList(guardian?.skills ?? [])).toEqual([
       findSkill("cleave"),
+      findSkill("meteor"),
     ]);
   });
 

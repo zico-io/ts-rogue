@@ -31,7 +31,12 @@ import {
   generateOverworldMap,
 } from "../world/overworld";
 import type { DungeonState, WorldState } from "../world/types";
-import { findSkill, type SkillDef } from "./skills";
+import {
+  findSkill,
+  resolveSkillList,
+  type SkillDef,
+  type SkillTarget,
+} from "./skills";
 import type {
   AppliedEffect,
   EffectInstance,
@@ -345,10 +350,6 @@ function allDead(enemies: readonly BattleEnemy[]): boolean {
   return enemies.every((enemy) => enemy.hp <= 0);
 }
 
-function firstAlive(enemies: readonly BattleEnemy[]): BattleEnemy | undefined {
-  return enemies.find((enemy) => enemy.hp > 0);
-}
-
 function findAliveEnemy(
   enemies: readonly BattleEnemy[],
   id: string,
@@ -361,9 +362,9 @@ function enemyRow(enemy: BattleEnemy): EnemyRow {
 }
 
 // Melee reachability rule (ENG-29): the front row must fall before the back
-// row is targetable by a basic attack. Ranged/spell skills ignore this and
-// are unaffected - shape-aware skill targeting lands in the follow-up
-// ticket (ENG-28).
+// row is targetable by a basic attack. Skills always ignore this rule -
+// see resolveShapeTargets/castOffensiveSkill (ENG-28) for shape-aware
+// skill targeting.
 export function isMeleeTargetable(
   enemies: readonly BattleEnemy[],
   target: BattleEnemy,
@@ -378,6 +379,246 @@ function firstMeleeTarget(
   return enemies.find(
     (enemy) => enemy.hp > 0 && isMeleeTargetable(enemies, enemy),
   );
+}
+
+interface FormationSlot {
+  id: string;
+  hp: number;
+  row?: EnemyRow;
+}
+
+// Shared shape for anything that can carry a status effect list - both
+// BattleEnemy and PartyMember satisfy this structurally, which lets the
+// effect-lifecycle helpers below (and castOffensiveSkill/castHealSkill)
+// operate on either side without a BattleEnemy | PartyMember union.
+interface EffectCarrier {
+  id: string;
+  name: string;
+  hp: number;
+  effects?: EffectInstance[];
+}
+
+function slotRow<T extends FormationSlot>(slot: T): EnemyRow {
+  return slot.row ?? DEFAULT_ROW;
+}
+
+function slotsInRow<T extends FormationSlot>(
+  pool: readonly T[],
+  row: EnemyRow,
+): T[] {
+  return pool.filter((slot) => slotRow(slot) === row);
+}
+
+function livingInRow<T extends FormationSlot>(
+  pool: readonly T[],
+  row: EnemyRow,
+): T[] {
+  return slotsInRow(pool, row).filter((slot) => slot.hp > 0);
+}
+
+// Column pierce (ENG-28): hits whichever entity occupies the anchor's lane
+// (its position within its own row) in the front row and the back row
+// alike, ignoring isMeleeTargetable's reachability rule entirely - a bolt
+// or blast passes clean through the front rank. A side with no row data
+// (the party, per ENG-29) puts everyone in the default front row, so a
+// column cast against it degenerates to just the anchor.
+function laneTargets<T extends FormationSlot>(
+  pool: readonly T[],
+  anchor: T,
+): T[] {
+  const laneIndex = slotsInRow(pool, slotRow(anchor)).indexOf(anchor);
+  const targets: T[] = [];
+  for (const row of ["front", "back"] as const) {
+    const candidate = slotsInRow(pool, row)[laneIndex];
+    if (candidate && candidate.hp > 0) targets.push(candidate);
+  }
+  return targets;
+}
+
+function pickWithoutReplacement<T>(
+  rng: Rng,
+  items: readonly T[],
+  count: number,
+): T[] {
+  const pool = [...items];
+  const picked: T[] = [];
+  for (let i = 0; i < count && pool.length > 0; i++) {
+    const index = rng.int(0, pool.length - 1);
+    picked.push(...pool.splice(index, 1));
+  }
+  return picked;
+}
+
+// Shape resolution (ENG-28): expands a SkillDef's target shape into the
+// concrete list of live entities it hits. One resolver serves both sides of
+// a cast - a party member casting at `enemies`, or a monster casting at
+// `party` - by handing it whichever pool is the shape's side. `anchorId`
+// picks the row/lane/single target when it resolves to a living pool
+// member; otherwise it falls back to the pool's first living member (the
+// UI still sends the caster's own id for every non-"single" shape today -
+// real multi-target picking is TER-3, tracked separately).
+function resolveShapeTargets<T extends FormationSlot>(
+  shape: SkillTarget,
+  pool: readonly T[],
+  anchorId: string,
+  rng: Rng,
+  hitCount: number | undefined,
+): T[] {
+  const explicit = pool.find((slot) => slot.id === anchorId && slot.hp > 0);
+  const anchor = explicit ?? pool.find((slot) => slot.hp > 0);
+
+  switch (shape) {
+    case "single":
+    case "self":
+    case "ally":
+      return anchor ? [anchor] : [];
+    case "row":
+      return anchor ? livingInRow(pool, slotRow(anchor)) : [];
+    case "column":
+      return anchor ? laneTargets(pool, anchor) : [];
+    case "allEnemies":
+    case "allAllies":
+      return pool.filter((slot) => slot.hp > 0);
+    case "randomN": {
+      const living = pool.filter((slot) => slot.hp > 0);
+      const count = Math.min(Math.max(1, hitCount ?? 1), living.length);
+      return pickWithoutReplacement(rng, living, count);
+    }
+  }
+}
+
+// Skill damage rolls a crit and a variance factor per target, same shape as
+// a basic attack's resolveAttack, but scales off the skill's own power/stat
+// instead of atk-minus-def: skills bypass the defender's DEF entirely, the
+// pre-ENG-28 single-target formula extended to per-target multi-hit shapes.
+export function computeSkillDamage(
+  skill: SkillDef,
+  crit: boolean,
+  variance: number,
+  atkStats: CoreStats,
+  defenderDefending: boolean,
+): number {
+  let damage = Math.floor(
+    (skill.power + skillStatValue(skill, atkStats)) *
+      (DAMAGE_VARIANCE_MIN +
+        variance * (DAMAGE_VARIANCE_MAX - DAMAGE_VARIANCE_MIN)),
+  );
+  if (crit) damage = Math.floor(damage * CRIT_MULTIPLIER);
+  if (defenderDefending) damage = Math.floor(damage * DEFEND_DAMAGE_FACTOR);
+  return Math.max(1, damage);
+}
+
+export interface SkillHitResult {
+  crit: boolean;
+  damage: number;
+}
+
+export function resolveSkillHit(
+  rng: Rng,
+  skill: SkillDef,
+  atkStats: CoreStats,
+  defenderDefending: boolean,
+): SkillHitResult {
+  const crit = rng.next() < CRIT_CHANCE;
+  const variance = rng.next();
+  return {
+    crit,
+    damage: computeSkillDamage(
+      skill,
+      crit,
+      variance,
+      atkStats,
+      defenderDefending,
+    ),
+  };
+}
+
+// Applies an attack-kind skill to each already-resolved target in turn -
+// one independent crit/damage/status roll per target, not a single roll
+// broadcast to every target (ENG-28). Used by both a party member's
+// BattleSkill command and a monster's advanceRound turn.
+function castOffensiveSkill<T extends EffectCarrier>(
+  skill: SkillDef,
+  casterName: string,
+  casterStats: CoreStats,
+  targets: readonly T[],
+  isDefending: (target: T) => boolean,
+  rng: Rng,
+  logs: LogEntry[],
+  pendingReorders: PendingReorder[],
+): void {
+  const elementTag = formatElementTag(skill.element);
+  for (const target of targets) {
+    if (target.hp <= 0) continue;
+    const { crit, damage } = resolveSkillHit(
+      rng,
+      skill,
+      casterStats,
+      isDefending(target),
+    );
+    const finalDamage = applyVulnerability(target, damage);
+    target.hp = Math.max(0, target.hp - finalDamage);
+    logs.push(
+      entry(
+        `${casterName} casts ${skill.name} on ${target.name} for ${finalDamage}${elementTag}${crit ? " - crit!" : ""}!`,
+        "damage",
+        { element: skill.element ?? "physical" },
+      ),
+    );
+    if (target.hp === 0)
+      logs.push(entry(`${target.name} is defeated!`, "damage"));
+    rollAppliesEffects(target, skill.applies, rng, logs, pendingReorders);
+  }
+}
+
+// Applies a heal-kind skill to each resolved (ally-side) target in turn.
+// Only ever called with the party pool: heal-kind shapes always target the
+// caster's own side, and only party members cast heal-kind skills today
+// (chooseMonsterSkill filters monsters to attack-kind skills only).
+function castHealSkill(
+  skill: SkillDef,
+  casterName: string,
+  casterStats: CoreStats,
+  targets: readonly PartyMember[],
+  logs: LogEntry[],
+): void {
+  const heal = skill.power + skillStatValue(skill, casterStats);
+  for (const target of targets) {
+    target.hp = Math.min(target.maxHp, target.hp + heal);
+    const targetPhrase = target.name === casterName ? "" : ` on ${target.name}`;
+    logs.push(
+      entry(
+        `${casterName} casts ${skill.name}${targetPhrase} and recovers ${heal} HP.`,
+      ),
+    );
+    // Heal-cleanse decision (documented in src/engine/combat/skills.ts):
+    // every Heal-kind skill also scrubs the healed target's own status
+    // effects, rewarding the MP spend with a full reset that a
+    // single-status cure item does not offer.
+    const cleansed = cleanseAllEffects(target);
+    if (cleansed.length > 0) {
+      logs.push(
+        entry(`${target.name} is cleansed of ${describeCured(cleansed)}!`),
+      );
+    }
+  }
+}
+
+// Monster ability use (ENG-28): a monster with an attack-kind skill in its
+// list always casts one (uniformly chosen when it has several) instead of
+// a basic attack, through the same castOffensiveSkill/resolveShapeTargets
+// path a party member's BattleSkill command uses.
+function chooseMonsterSkill(
+  enemy: BattleEnemy,
+  rng: Rng,
+): SkillDef | undefined {
+  const monsterDef = findMonster(enemy.defId);
+  if (!monsterDef?.skills || monsterDef.skills.length === 0) return undefined;
+  const attackSkills = resolveSkillList(monsterDef.skills).filter(
+    (skill) => skill.kind === "attack",
+  );
+  if (attackSkills.length === 0) return undefined;
+  return rng.pick(attackSkills);
 }
 
 function clearEncounter(ds: DungeonState | null): DungeonState | null {
@@ -427,7 +668,7 @@ interface MemberActionResult {
 }
 
 function applyEffect(
-  target: BattleEnemy | PartyMember,
+  target: EffectCarrier,
   effectId: StatusEffectId,
   duration: number,
   potency: number,
@@ -455,7 +696,7 @@ function applyEffect(
 // Cure items and Heal-cleanse (see the "skill" case below) both remove
 // effect instances outright rather than ticking them out naturally.
 function removeEffects(
-  target: BattleEnemy | PartyMember,
+  target: EffectCarrier,
   effectIds: readonly StatusEffectId[],
 ): StatusEffectId[] {
   if (!target.effects || target.effects.length === 0) return [];
@@ -473,9 +714,7 @@ function removeEffects(
   return removed;
 }
 
-function cleanseAllEffects(
-  target: BattleEnemy | PartyMember,
-): StatusEffectId[] {
+function cleanseAllEffects(target: EffectCarrier): StatusEffectId[] {
   if (!target.effects || target.effects.length === 0) return [];
   return removeEffects(
     target,
@@ -494,7 +733,7 @@ function formatElementTag(element: Element | undefined): string {
 }
 
 function rollAppliesEffects(
-  target: BattleEnemy | PartyMember,
+  target: EffectCarrier,
   applies: readonly AppliedEffect[] | undefined,
   rng: Rng,
   logs: LogEntry[],
@@ -538,7 +777,7 @@ function tickSingleEffect(
   return { ...effect, duration: nextDuration };
 }
 
-function tickEffects(actor: BattleEnemy | PartyMember, logs: LogEntry[]): void {
+function tickEffects(actor: EffectCarrier, logs: LogEntry[]): void {
   if (!actor.effects || actor.effects.length === 0) return;
 
   const remaining: EffectInstance[] = [];
@@ -592,7 +831,7 @@ function tickEffects(actor: BattleEnemy | PartyMember, logs: LogEntry[]): void {
 }
 
 function shouldSkipTurn(
-  actor: BattleEnemy | PartyMember,
+  actor: EffectCarrier,
   rng: Rng,
   logs: LogEntry[],
 ): boolean {
@@ -621,10 +860,7 @@ function shouldSkipTurn(
   return false;
 }
 
-function applyVulnerability(
-  target: BattleEnemy | PartyMember,
-  damage: number,
-): number {
+function applyVulnerability(target: EffectCarrier, damage: number): number {
   if (!target.effects) return damage;
   for (const effect of target.effects) {
     const def = findStatusEffect(effect.effectId);
@@ -653,7 +889,7 @@ export function applyInitiativePenalty(
 function applyMemberCommand(
   command: Command,
   actor: PartyMember,
-  _party: PartyMember[],
+  party: PartyMember[],
   enemies: BattleEnemy[],
   rng: Rng,
   logs: LogEntry[],
@@ -701,51 +937,32 @@ function applyMemberCommand(
       }
       actor.mp -= skill.mpCost;
       if (skill.kind === "attack") {
-        const target =
-          enemies.find((e) => e.id === command.targetId && e.hp > 0) ??
-          firstAlive(enemies);
-        if (target) {
-          const variance = rng.next();
-          const damage = Math.max(
-            1,
-            Math.floor(
-              (skill.power + skillStatValue(skill, actorStats)) *
-                (DAMAGE_VARIANCE_MIN +
-                  variance * (DAMAGE_VARIANCE_MAX - DAMAGE_VARIANCE_MIN)),
-            ),
-          );
-          const finalDamage = applyVulnerability(target, damage);
-          target.hp = Math.max(0, target.hp - finalDamage);
-
-          const elementTag = formatElementTag(skill.element);
-          logs.push(
-            entry(
-              `${actor.name} casts ${skill.name} on ${target.name} for ${finalDamage}${elementTag}!`,
-              "damage",
-              { element: skill.element ?? "physical" },
-            ),
-          );
-          if (target.hp === 0)
-            logs.push(entry(`${target.name} is defeated!`, "damage"));
-
-          rollAppliesEffects(target, skill.applies, rng, logs, pendingReorders);
-        }
-      } else {
-        const heal = skill.power + skillStatValue(skill, actorStats);
-        actor.hp = Math.min(actor.maxHp, actor.hp + heal);
-        logs.push(
-          entry(`${actor.name} casts ${skill.name} and recovers ${heal} HP.`),
+        const targets = resolveShapeTargets(
+          skill.target,
+          enemies,
+          command.targetId,
+          rng,
+          skill.hitCount,
         );
-        // Heal-cleanse decision (documented in src/engine/combat/skills.ts):
-        // every Heal-kind skill also scrubs the caster's own status effects,
-        // rewarding the MP spend with a full reset that a single-status
-        // cure item does not offer.
-        const cleansed = cleanseAllEffects(actor);
-        if (cleansed.length > 0) {
-          logs.push(
-            entry(`${actor.name} is cleansed of ${describeCured(cleansed)}!`),
-          );
-        }
+        castOffensiveSkill(
+          skill,
+          actor.name,
+          actorStats,
+          targets,
+          () => false,
+          rng,
+          logs,
+          pendingReorders,
+        );
+      } else {
+        const targets = resolveShapeTargets(
+          skill.target,
+          party,
+          command.targetId,
+          rng,
+          skill.hitCount,
+        );
+        castHealSkill(skill, actor.name, actorStats, targets, logs);
       }
       break;
     }
@@ -845,40 +1062,63 @@ function advanceRound(
 
     const living = party.filter((m) => m.hp > 0);
     if (living.length === 0) return { status: "lost", nextActorId: null };
-    const target = rng.pick(living);
-    const attack = resolveAttack(
-      rng,
-      enemy.stats,
-      effectiveStats(target),
-      defendingIds.has(target.id),
-    );
 
-    const monsterDef = findMonster(enemy.defId);
-    const attackElement = monsterDef?.attackElement;
-    const attackApplies = monsterDef?.attackApplies;
-
-    if (!attack.hit) {
-      logs.push(
-        entry(`${enemy.name} attacks ${target.name} but misses!`, "damage"),
+    const skill = chooseMonsterSkill(enemy, rng);
+    if (skill) {
+      const anchor = rng.pick(living);
+      const targets = resolveShapeTargets(
+        skill.target,
+        party,
+        anchor.id,
+        rng,
+        skill.hitCount,
+      );
+      castOffensiveSkill(
+        skill,
+        enemy.name,
+        enemy.stats,
+        targets,
+        (target) => defendingIds.has(target.id),
+        rng,
+        logs,
+        pendingReorders,
       );
     } else {
-      const finalDamage = applyVulnerability(target, attack.damage);
-      target.hp = Math.max(0, target.hp - finalDamage);
-
-      const elementTag = formatElementTag(attackElement);
-      logs.push(
-        entry(
-          `${enemy.name} hits ${target.name} for ${finalDamage}${elementTag}${attack.crit ? " - crit!" : ""}`,
-          "damage",
-          { element: attackElement ?? "physical" },
-        ),
+      const target = rng.pick(living);
+      const attack = resolveAttack(
+        rng,
+        enemy.stats,
+        effectiveStats(target),
+        defendingIds.has(target.id),
       );
 
-      rollAppliesEffects(target, attackApplies, rng, logs, pendingReorders);
+      const monsterDef = findMonster(enemy.defId);
+      const attackElement = monsterDef?.attackElement;
+      const attackApplies = monsterDef?.attackApplies;
 
-      if (party.every((m) => m.hp <= 0)) {
-        return { status: "lost", nextActorId: null };
+      if (!attack.hit) {
+        logs.push(
+          entry(`${enemy.name} attacks ${target.name} but misses!`, "damage"),
+        );
+      } else {
+        const finalDamage = applyVulnerability(target, attack.damage);
+        target.hp = Math.max(0, target.hp - finalDamage);
+
+        const elementTag = formatElementTag(attackElement);
+        logs.push(
+          entry(
+            `${enemy.name} hits ${target.name} for ${finalDamage}${elementTag}${attack.crit ? " - crit!" : ""}`,
+            "damage",
+            { element: attackElement ?? "physical" },
+          ),
+        );
+
+        rollAppliesEffects(target, attackApplies, rng, logs, pendingReorders);
       }
+    }
+
+    if (party.every((m) => m.hp <= 0)) {
+      return { status: "lost", nextActorId: null };
     }
   }
 

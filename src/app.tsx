@@ -29,6 +29,7 @@ import { normalizeInkKey } from "./ui/hooks/normalizeInkKey";
 import { useGameState } from "./ui/hooks/useGameState";
 import { resolveGlobalIntent } from "./ui/scene/globalInput";
 import { BattleScreen } from "./ui/screens/BattleScreen";
+import { CharacterSheetScreen } from "./ui/screens/CharacterSheetScreen";
 import { CrashScreen } from "./ui/screens/CrashScreen";
 import { DevConsole } from "./ui/screens/DevConsole";
 import { DungeonScreen } from "./ui/screens/DungeonScreen";
@@ -79,6 +80,7 @@ function App({
   const [consoleOpen, setConsoleOpen] = useState(false);
   const [zoomOpen, setZoomOpen] = useState(false);
   const [inventoryOpen, setInventoryOpen] = useState(false);
+  const [characterSheetOpen, setCharacterSheetOpen] = useState(false);
   const [consoleOutput, setConsoleOutput] = useState<string[]>([]);
   const [fatal, setFatal] = useState<IncidentDisplay | undefined>(() =>
     pipeline.getFatal(),
@@ -173,6 +175,11 @@ function App({
           setInventoryOpen(true);
         }
       }
+      if (intent.kind === "openCharacterSheet") {
+        if (state.scene !== "battle") {
+          setCharacterSheetOpen(true);
+        }
+      }
     },
     {
       isActive:
@@ -182,6 +189,7 @@ function App({
         !gameOver &&
         !zoomOpen &&
         !inventoryOpen &&
+        !characterSheetOpen &&
         !lootTriagePending,
     },
   );
@@ -261,6 +269,13 @@ function App({
       <InventoryScreen
         dispatch={dispatch}
         onClose={() => setInventoryOpen(false)}
+        state={state}
+      />
+    );
+  } else if (characterSheetOpen) {
+    content = (
+      <CharacterSheetScreen
+        onClose={() => setCharacterSheetOpen(false)}
         state={state}
       />
     );
