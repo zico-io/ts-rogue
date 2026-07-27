@@ -663,9 +663,14 @@ function createLinearDefaultEvents(options: {
         ? stripLeadingProseHeader(data.message)
         : null;
       if (data.finishReason === "tool-calls") {
-        channel.state.pendingToolCallMessage = message
-          ? (firstNonEmptyLine(message) ?? null)
-          : null;
+        // Keep the full narration, not just its first line (HAR-78). This
+        // text is often the substantive content - e.g. a scoping proposal
+        // enumerating the tickets about to be created - immediately ahead of
+        // an `ask_question` confirmation. Once HAR-68 made it durable, a
+        // one-line summary permanently discarded the rest instead of merely
+        // flashing past; the human approving the gate never saw the
+        // structure they were asked to confirm.
+        channel.state.pendingToolCallMessage = message;
         return;
       }
       channel.state.pendingToolCallMessage = null;
