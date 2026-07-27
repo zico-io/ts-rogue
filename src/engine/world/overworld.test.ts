@@ -10,13 +10,6 @@ import {
 } from "./overworld";
 import { dungeonWaypointId, storyDungeonForEntrance } from "./waypoints";
 
-// A vitest-native assertion function: fails with the framework's own
-// "expected defined" message on the way to TypeScript narrowing the type
-// to a plain `number` for the caller, so no cast is needed afterward.
-function assertTierDefined(tier: number | undefined): asserts tier is number {
-  expect(tier).toBeDefined();
-}
-
 describe("generateOverworldMap", () => {
   it("is a pure function of the seed: identical seed -> identical map", () => {
     const a = generateOverworldMap(1234);
@@ -81,7 +74,9 @@ describe("generateOverworldMap", () => {
       );
       for (let i = 1; i < tiers.length; i++) {
         const previousTier = tiers[i - 1];
-        assertTierDefined(previousTier);
+        if (previousTier === undefined) {
+          throw new Error(`entrance ${i - 1} has no story dungeon tier`);
+        }
         expect(tiers[i]).toBeGreaterThan(previousTier);
       }
     }
