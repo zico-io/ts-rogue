@@ -101,6 +101,7 @@ export function newGame(seed: number, options?: NewGameOptions): GameState {
     activatedWaypoints: activateWaypoint([], VILLAGE_WAYPOINT_ID),
     worldState: createInitialWorldState(map),
     dungeonState: null,
+    clearedAt: {},
     battleState: null,
     flags: { permadeath: options?.permadeath ?? false, gameOver: false },
     stash: [],

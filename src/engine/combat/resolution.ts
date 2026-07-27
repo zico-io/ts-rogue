@@ -1,5 +1,5 @@
 import { DEFAULT_CLASS_ID, findClass } from "../../data/classes";
-import type { DungeonDef } from "../../data/dungeons";
+import { type DungeonDef, dungeonDefFor } from "../../data/dungeons";
 import { findMonster, MONSTERS, type MonsterDef } from "../../data/monsters";
 import { findShopItem } from "../../data/shops";
 import type { InventoryItem, PartyMember } from "../entities/party";
@@ -977,6 +977,17 @@ function finalizeWon(
     clearedDungeon && wasBossVictory
       ? { ...clearedDungeon, cleared: true }
       : clearedDungeon;
+  // Persistent clear record, keyed by the def's real id so it survives the
+  // ROG-90 entrance remap -- distinct from dungeonState.cleared above, which
+  // only tracks the current session's run. `state.log.length` stands in for
+  // a turn counter: it's already deterministic and monotonic per playthrough.
+  const clearedAt =
+    wasBossVictory && state.dungeonState
+      ? {
+          ...state.clearedAt,
+          [dungeonDefFor(state.dungeonState.dungeonId).id]: state.log.length,
+        }
+      : state.clearedAt;
   return {
     ...state,
     rngState,
@@ -989,6 +1000,7 @@ function finalizeWon(
     lastLootOutcome: pickup.outcome,
     pendingLootTriage,
     dungeonState,
+    clearedAt,
     battleState: null,
     log: [...state.log, ...finalLogs, ...lootOutcomeLogs, ...triageLogs],
   };

@@ -118,3 +118,14 @@ export function findDungeon(id: string): DungeonDef | undefined {
 export function dungeonDefFor(dungeonId: string): DungeonDef {
   return findDungeon(dungeonId) ?? DUNGEONS[0];
 }
+
+// True iff every story dungeon def has a clearedAt entry -- the endgame
+// trigger ROG-28 consumes. Pure over the persistent clearedAt record (see
+// GameState.clearedAt), independent of any single session's DungeonState.
+export function allStoryDungeonsCleared(
+  clearedAt: Readonly<Record<string, number>>,
+): boolean {
+  return DUNGEONS.filter((dungeon) => dungeon.story).every(
+    (dungeon) => dungeon.id in clearedAt,
+  );
+}
