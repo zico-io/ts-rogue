@@ -1,4 +1,5 @@
 import { DEFAULT_CLASS_ID, findClass } from "../../data/classes";
+import type { DungeonDef } from "../../data/dungeons";
 import { findMonster, MONSTERS, type MonsterDef } from "../../data/monsters";
 import { findShopItem } from "../../data/shops";
 import type { InventoryItem, PartyMember } from "../entities/party";
@@ -16,7 +17,7 @@ import {
   lootLogEntries,
   queueLootTriage,
 } from "../loot/pickup";
-import { rollVictoryLoot } from "../loot/resolution";
+import { rollVictoryLoot, weightedPick } from "../loot/resolution";
 import type { ItemInstance } from "../loot/types";
 import { Rng, type RngState } from "../rng/rng";
 import {
@@ -268,16 +269,29 @@ function makeEnemy(
   };
 }
 
+// Rolls one monster from a dungeon def's weighted palette (excludes the boss,
+// which spawns separately from bossId).
+function paletteMonster(rng: Rng, dungeonDef: DungeonDef): MonsterDef {
+  const pick = weightedPick(rng, dungeonDef.palette);
+  const monster = findMonster(pick.monsterId);
+  if (!monster)
+    throw new Error(
+      `${dungeonDef.id}: palette monster "${pick.monsterId}" missing from data`,
+    );
+  return monster;
+}
+
 export function pickEnemyGroup(
   rng: Rng,
   kind: "wandering" | "boss",
   floor: number,
+  dungeonDef?: DungeonDef,
 ): BattleEnemy[] {
   if (kind === "boss") {
-    const guardian = findMonster("dungeon-guardian");
-    if (!guardian)
-      throw new Error("dungeon-guardian monster missing from data");
-    return [makeEnemy(guardian, 1)];
+    const bossId = dungeonDef?.bossId ?? "dungeon-guardian";
+    const boss = findMonster(bossId);
+    if (!boss) throw new Error(`${bossId} monster missing from data`);
+    return [makeEnemy(boss, 1)];
   }
   const eligible = MONSTERS.filter(
     (monster) => monster.minFloor <= floor && monster.id !== "dungeon-guardian",
@@ -286,7 +300,10 @@ export function pickEnemyGroup(
   const enemies: BattleEnemy[] = [];
   for (let i = 0; i < count; i++) {
     const row: EnemyRow = i < FRONT_ROW_SIZE ? "front" : "back";
-    enemies.push(makeEnemy(rng.pick(eligible), i + 1, row));
+    const monster = dungeonDef
+      ? paletteMonster(rng, dungeonDef)
+      : rng.pick(eligible);
+    enemies.push(makeEnemy(monster, i + 1, row));
   }
   return enemies;
 }
@@ -297,9 +314,10 @@ export function startBattle(
   kind: "wandering" | "boss",
   floor: number,
   returnScene: Scene,
+  dungeonDef?: DungeonDef,
 ): BattleState {
   const living = party.filter((member) => member.hp > 0);
-  const enemies = pickEnemyGroup(rng, kind, floor);
+  const enemies = pickEnemyGroup(rng, kind, floor, dungeonDef);
   const initiative = rollInitiative(rng, living, enemies);
   const livingIds = new Set(living.map((member) => member.id));
 

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { DungeonDef } from "../../data/dungeons";
 import { createStartingHero, type PartyMember } from "../entities/party";
 import { Rng } from "../rng/rng";
 import { GameStore, newGame, reduce } from "../state/store";
@@ -313,6 +314,67 @@ describe("pickEnemyGroup", () => {
       });
     }
     expect(sawBackRow).toBe(true);
+  });
+});
+
+describe("pickEnemyGroup (ROG-89: def-aware dungeons)", () => {
+  const goblinBossDef: DungeonDef = {
+    id: "test-goblin-den",
+    name: "Test Goblin Den",
+    theme: "cave",
+    tier: 1,
+    floorCount: 2,
+    palette: [{ monsterId: "goblin", weight: 1 }],
+    bossId: "goblin",
+    floorBands: [{ minFloor: 1, maxFloor: 2, lootTableRef: "tier-1" }],
+    recommendedLevel: 1,
+    story: true,
+  };
+
+  const weightedDef: DungeonDef = {
+    ...goblinBossDef,
+    id: "test-weighted",
+    palette: [
+      { monsterId: "slime", weight: 3 },
+      { monsterId: "goblin", weight: 1 },
+    ],
+  };
+
+  it("spawns the def's bossId instead of the hardcoded dungeon-guardian", () => {
+    const group = pickEnemyGroup(new Rng(1234), "boss", 2, goblinBossDef);
+    expect(group).toHaveLength(1);
+    expect(group[0].defId).toBe("goblin");
+  });
+
+  it("falls back to dungeon-guardian when no def is given (overworld encounters)", () => {
+    const group = pickEnemyGroup(new Rng(1234), "boss", 2);
+    expect(group[0].defId).toBe("dungeon-guardian");
+  });
+
+  it("rolls wandering enemies from the def's palette, not the flat minFloor filter", () => {
+    for (let seed = 1; seed <= 20; seed++) {
+      const group = pickEnemyGroup(
+        new Rng(seed),
+        "wandering",
+        1,
+        goblinBossDef,
+      );
+      for (const enemy of group) expect(enemy.defId).toBe("goblin");
+    }
+  });
+
+  it("weights the palette roll reproducibly for a fixed seed", () => {
+    const rollOnce = () =>
+      Array.from({ length: 50 }, (_, i) =>
+        pickEnemyGroup(new Rng(9000 + i), "wandering", 3, weightedDef).map(
+          (enemy) => enemy.defId,
+        ),
+      );
+    expect(rollOnce()).toEqual(rollOnce());
+
+    const seen = new Set(rollOnce().flat());
+    expect(seen.has("slime")).toBe(true);
+    expect(seen.has("goblin")).toBe(true);
   });
 });
 

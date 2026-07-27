@@ -1,4 +1,5 @@
 import { RNG, Map as RotMap } from "rot-js";
+import { dungeonDefFor } from "../../data/dungeons";
 import { Rng } from "../rng/rng";
 import type {
   DungeonFacing,
@@ -11,8 +12,6 @@ import type {
 
 export const DUNGEON_WIDTH = 28;
 export const DUNGEON_HEIGHT = 20;
-
-export const DUNGEON_FLOORS = 3;
 
 export const FOV_RADIUS = 3;
 
@@ -151,7 +150,8 @@ export function generateDungeonLayout(
   floor: number,
 ): DungeonLayout {
   const fseed = floorSeed(seed, dungeonId, floor);
-  const isBossFloor = floor >= DUNGEON_FLOORS;
+  const floorCount = dungeonDefFor(dungeonId).floorCount;
+  const isBossFloor = floor >= floorCount;
 
   const saved = RNG.getState();
   try {
