@@ -13,7 +13,8 @@ documents.
 ## Before writing
 
 Read the named project and related issues first. If the request would create or
-substantially restructure several records, present one concise preview covering:
+substantially restructure several records, delegate the structural breakdown to
+the `scoper` specialist, then present one concise preview covering:
 
 - project outcome and non-goals;
 - milestones and their exit conditions;

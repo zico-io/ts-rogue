@@ -34,8 +34,10 @@ already render the project, issue, pull request, author, and activity state.
 
 The declared `playtester` subagent is available when independent terminal or web
 verification adds value. The root can also drive the same play scripts directly.
-Automatic ponytail pull-request review runs in GitHub Actions through
-`scripts/ci-review.ts`.
+The declared `scoper` subagent runs a stronger Opus model to break a
+multi-deliverable request into an approvable breakdown; the root keeps the
+approval gate and does every Linear write. Automatic ponytail pull-request review
+runs in GitHub Actions through `scripts/ci-review.ts`.
 
 Parent issues with independently shippable sub-issues use the `handoff` tool.
 Each ready sub-issue receives its own Linear Agent Session and predecessor
@@ -54,6 +56,7 @@ context. Blocking relations in Linear determine readiness.
 | `lib/orientation.ts` | Builds the session's concise `ORIENTATION.md` brief |
 | `skills/` | Optional Eve and Linear project procedures |
 | `subagents/playtester/` | Independent terminal and web acceptance verification |
+| `subagents/scoper/` | Opus-model planner that breaks a multi-deliverable request into an approvable breakdown |
 | `tools/handoff.ts` | Starts an informed successor Agent Session |
 | `tools/session_update.ts` | Posts blocked, review, and completion activities |
 | `schedules/eve-version-check.ts` | Checks for Eve upgrades and audits framework workarounds |
@@ -97,8 +100,9 @@ process environment or repository. Startup tolerates temporary token-mint
 failure, retries in the background, and recovers stranded commits when access
 returns.
 
-The playtester has its own read-only, screenshot-enabled sandbox. Declared
-subagents do not inherit root slots, so its sandbox and prewarm hook are authored
+The playtester has its own read-only, screenshot-enabled sandbox. The scoper has
+its own read-only sandbox so it can inspect code to size work but cannot write or
+push. Declared subagents do not inherit root slots, so each sandbox is authored
 under its own directory.
 
 ## Connections

@@ -19,6 +19,7 @@ export default defineEval({
     );
 
     t.parked();
+    t.calledSubagent("scoper", { count: 1 });
     t.calledSubagent("agent", { count: 0 });
     t.messageIncludes(/fast travel/i);
     t.messageIncludes(/weather/i);
