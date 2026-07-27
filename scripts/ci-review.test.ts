@@ -4,6 +4,7 @@ import {
   filterCommentsToValidLines,
   parseDiffAddedLines,
   parseReview,
+  restrictDiffToPaths,
 } from "./ci-review";
 
 describe("parseDiffAddedLines", () => {
@@ -196,5 +197,82 @@ describe("filterCommentsToValidLines", () => {
       comments,
     );
     expect(filterCommentsToValidLines(comments, fullValidLines)).toEqual([]);
+  });
+});
+
+describe("restrictDiffToPaths", () => {
+  it("keeps only the file blocks whose path is in the allow-list", () => {
+    const diff = [
+      "diff --git a/src/a.ts b/src/a.ts",
+      "index abc..def 100644",
+      "--- a/src/a.ts",
+      "+++ b/src/a.ts",
+      "@@ -1,0 +1,1 @@",
+      "+first file",
+      "diff --git a/src/b.ts b/src/b.ts",
+      "index ghi..jkl 100644",
+      "--- a/src/b.ts",
+      "+++ b/src/b.ts",
+      "@@ -5,0 +6,1 @@",
+      "+second file",
+    ].join("\n");
+
+    const result = restrictDiffToPaths(diff, new Set(["src/b.ts"]));
+
+    expect(result).toContain("src/b.ts");
+    expect(result).not.toContain("src/a.ts");
+  });
+
+  it("regression for HAR-84: a file only touched by a merged-in base branch commit never reaches the model", () => {
+    // A BEFORE_SHA...HEAD_SHA diff can include a file that landed via merging
+    // the base branch into the PR branch (e.g. another PR's changes), rather
+    // than a real PR edit. GitHub's compare view never shows that file, so
+    // filterCommentsToValidLines always drops comments on it - meaning a
+    // review that only found issues there previously posted zero inline
+    // comments while still claiming findings in its summary. Restricting by
+    // the true full-diff path set keeps that file out of the prompt entirely.
+    const fullDiff = [
+      "diff --git a/src/engine/state/store.ts b/src/engine/state/store.ts",
+      "index abc..def 100644",
+      "--- a/src/engine/state/store.ts",
+      "+++ b/src/engine/state/store.ts",
+      "@@ -1,0 +1,1 @@",
+      "+real PR change",
+    ].join("\n");
+
+    const result = restrictDiffToPaths(
+      fullDiff,
+      new Set(["src/engine/state/store.ts", "src/engine/world/types.ts"]),
+    );
+
+    expect(parseDiffAddedLines(result).has("src/engine/world/types.ts")).toBe(
+      false,
+    );
+    expect(result).toContain("src/engine/state/store.ts");
+  });
+
+  it("produces a diff whose valid lines are always a subset of the full diff's", () => {
+    const fullDiff = [
+      "diff --git a/src/engine/state/store.ts b/src/engine/state/store.ts",
+      "index abc..def 100644",
+      "--- a/src/engine/state/store.ts",
+      "+++ b/src/engine/state/store.ts",
+      "@@ -1,0 +1,1 @@",
+      "+real PR change",
+    ].join("\n");
+
+    const restricted = restrictDiffToPaths(
+      fullDiff,
+      new Set(["src/engine/state/store.ts"]),
+    );
+
+    const fullValidLines = parseDiffAddedLines(fullDiff);
+    const restrictedValidLines = parseDiffAddedLines(restricted);
+
+    for (const [path, lines] of restrictedValidLines) {
+      for (const line of lines) {
+        expect(fullValidLines.get(path)?.has(line)).toBe(true);
+      }
+    }
   });
 });
