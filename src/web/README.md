@@ -410,6 +410,61 @@ Regenerate the same way as any other atlas change: `pnpm tsx
 scripts/build-atlas.ts`, then commit the rewritten `public/atlas/atlas.png`
 + `atlas.json`.
 
+## Effects & particles (WEB-7)
+
+`render/particles.ts`'s `ParticleField` is the one shared "hand-rolled
+emitter over Pixi's `ParticleContainer`" ART_DIRECTION.md §6 calls for: a
+pooled, capacity-capped set of particles with a `tick(deltaMs)` that moves,
+gravity-accelerates, fades, and destroys expired ones behind a tiny
+`ParticleDrawFactory` (`createParticle(): ParticleHandle`) - framework-free
+and unit-tested (`particles.test.ts`) without any real WebGL, matching the
+issue's verify step. `render/pixiParticleDrawFactory.ts`'s
+`createPixiParticleDrawFactory` is the one real-Pixi adapter, backing each
+particle with a `pixi.js` `Particle` on a shared `ParticleContainer` (every
+particle reuses `Texture.WHITE`, tinted and scaled per particle - no new
+dependency). `bootGame.ts` gives `battleView`/`dungeonView` each their own
+`ParticleContainer`, layered above the rest of that scene's content via a
+high `zIndex` (`sortableChildren`) rather than draw order, so effects always
+read on top.
+
+Same principle as the existing HP-delta damage numbers: **every effect is
+derived from a state delta observed across renders, never a new
+`GameEvent`.**
+
+- **Battle** (`BattleSceneView`) watches `state.log` for a new `"damage"`
+  entry carrying an `element` tag - the same tag the message log already
+  colors lines by (`theme.element`) - and pairs it with the next enemy HP
+  drop to spawn a colored burst at the hit point: a narrow forward arc of
+  sparks for `physical` (melee), a full radial burst for
+  `fire`/`ice`/`lightning`/`poison` (spells), sized/timed the same but
+  colored from the palette. A rising HP on the active party member (a heal)
+  spawns `heal`-colored sparkles instead, no log parsing needed. The struck
+  enemy's art also gets a brief small position-shake timed to the existing
+  hit-flash window.
+- **Dungeon** (`DungeonSceneView`) drifts a small pool of dust
+  motes/embers (roughly 1 ember per 3 motes) up through the frame every
+  `tick`, colored from the current `dungeonRamp`'s near band (motes) or
+  `theme.warn` (embers); `render()` just records the latest viewport size and
+  ramp color for the next `tick` to spawn against.
+
+Both are **additive and gated on `prefers-reduced-motion`**:
+`setReducedMotion(true)` immediately clears live particles and stops new ones
+from spawning (bursts, sparkles, ambient fields, and the hit-shake), while
+damage numerals, name/HP text, and hit-flash tint - all pre-existing,
+core-legibility features - keep rendering. `bootGame.ts`'s existing
+`prefers-reduced-motion` listener (already wired to `OverworldSceneView`)
+now also drives `battleView`/`dungeonView`.
+
+**Keyed effects are procedural today, not yet sprite sheets.** The issue's
+other track - playing pre-animated Minifantasy sheets (*Spell Effects I/II*,
+*Magic And Sorcery*, *Magic Weapons And Effects*) via a frame ticker - needs
+those sheets vendored first (see `assets/README.md`); only tile/prop/UI/
+battler sheets have been imported so far. The particle bursts above stand in
+behind the same `BattleDrawFactory`/`DungeonDrawFactory` seam, so swapping in
+real animated frames later is a factory change, not a view rewrite - the same
+"asset arrives later, seam already correct" pattern ROG-64 used for the
+windowskin.
+
 ## Title, village, and game-over (ROG-52)
 
 `GameStore.state.scene` only ever holds `village | overworld | dungeon |
