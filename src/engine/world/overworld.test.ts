@@ -74,8 +74,10 @@ describe("generateOverworldMap", () => {
       );
       for (let i = 1; i < tiers.length; i++) {
         const previousTier = tiers[i - 1];
-        expect(previousTier).toBeDefined();
-        expect(tiers[i]).toBeGreaterThan(previousTier as number);
+        if (previousTier === undefined) {
+          throw new Error(`entrance ${i - 1} has no story dungeon tier`);
+        }
+        expect(tiers[i]).toBeGreaterThan(previousTier);
       }
     }
   });
