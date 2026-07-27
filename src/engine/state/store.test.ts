@@ -1732,7 +1732,7 @@ describe("Phase 6: boss victory marks the dungeon cleared", () => {
     );
 
     // Persistent clearedAt (ROG-91) is keyed by the def's real id, not the
-    // raw placeholder entrance id -- distinct from the session cleared flag.
+    // raw placeholder entrance id. Distinct from the session cleared flag.
     const defId = dungeonDefFor("dungeon-0").id;
     expect(state.dungeonState?.dungeonId).toBe("dungeon-0");
     expect(state.clearedAt[defId]).toBeTypeOf("number");

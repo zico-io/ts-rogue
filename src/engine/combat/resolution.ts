@@ -978,7 +978,7 @@ function finalizeWon(
       ? { ...clearedDungeon, cleared: true }
       : clearedDungeon;
   // Persistent clear record, keyed by the def's real id so it survives the
-  // ROG-90 entrance remap -- distinct from dungeonState.cleared above, which
+  // ROG-90 entrance remap. Distinct from dungeonState.cleared above, which
   // only tracks the current session's run. `state.log.length` stands in for
   // a turn counter: it's already deterministic and monotonic per playthrough.
   const clearedAt =
