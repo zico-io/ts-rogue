@@ -113,6 +113,23 @@ const FIREFLY_PX = 5;
 const LEAF_DRIFT_PX_PER_MS = 0.012;
 const FIREFLY_DRIFT_PX_PER_MS = 0.006;
 
+// Every viewport-tracked pool (sprites, shore rects, shadows, pulses,
+// shimmers, decorations, minimap rects) prunes entries no longer seen this
+// frame the same way: destroy anything whose key wasn't touched. This is the
+// one shared implementation of that loop.
+function pruneStale<T>(
+  map: Map<string, T>,
+  seen: Set<string>,
+  handleOf: (value: T) => { destroy(): void },
+): void {
+  for (const [key, value] of map) {
+    if (!seen.has(key)) {
+      handleOf(value).destroy();
+      map.delete(key);
+    }
+  }
+}
+
 export function needsPropShadow(
   tile: Tile | undefined,
   isPlayerMarker: boolean,
@@ -640,57 +657,27 @@ export class OverworldSceneView {
   }
 
   private pruneStaleSprites(seen: Set<string>): void {
-    for (const [key, sprite] of this.viewportSprites) {
-      if (!seen.has(key)) {
-        sprite.destroy();
-        this.viewportSprites.delete(key);
-      }
-    }
+    pruneStale(this.viewportSprites, seen, (sprite) => sprite);
   }
 
   private pruneStaleShoreRects(seen: Set<string>): void {
-    for (const [key, rect] of this.shoreRects) {
-      if (!seen.has(key)) {
-        rect.destroy();
-        this.shoreRects.delete(key);
-      }
-    }
+    pruneStale(this.shoreRects, seen, (rect) => rect);
   }
 
   private pruneStaleShadows(seen: Set<string>): void {
-    for (const [key, shadow] of this.propShadows) {
-      if (!seen.has(key)) {
-        shadow.destroy();
-        this.propShadows.delete(key);
-      }
-    }
+    pruneStale(this.propShadows, seen, (shadow) => shadow);
   }
 
   private pruneStaleMarkerPulses(seen: Set<string>): void {
-    for (const [key, pulse] of this.markerPulses) {
-      if (!seen.has(key)) {
-        pulse.handle.destroy();
-        this.markerPulses.delete(key);
-      }
-    }
+    pruneStale(this.markerPulses, seen, (pulse) => pulse.handle);
   }
 
   private pruneStaleWaterShimmers(seen: Set<string>): void {
-    for (const [key, shimmer] of this.waterShimmers) {
-      if (!seen.has(key)) {
-        shimmer.handle.destroy();
-        this.waterShimmers.delete(key);
-      }
-    }
+    pruneStale(this.waterShimmers, seen, (shimmer) => shimmer.handle);
   }
 
   private pruneStaleDecorations(seen: Set<string>): void {
-    for (const [key, sprite] of this.grassDecorations) {
-      if (!seen.has(key)) {
-        sprite.destroy();
-        this.grassDecorations.delete(key);
-      }
-    }
+    pruneStale(this.grassDecorations, seen, (sprite) => sprite);
   }
 
   private syncAmbientParticles(
@@ -814,12 +801,7 @@ export class OverworldSceneView {
   }
 
   private pruneStaleMinimapRects(seen: Set<string>): void {
-    for (const [key, rect] of this.minimapRects) {
-      if (!seen.has(key)) {
-        rect.destroy();
-        this.minimapRects.delete(key);
-      }
-    }
+    pruneStale(this.minimapRects, seen, (rect) => rect);
   }
 
   private drawMeter(meter: number, width: number, y: number): void {

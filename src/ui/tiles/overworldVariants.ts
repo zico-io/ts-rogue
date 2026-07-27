@@ -78,6 +78,13 @@ export function landmarkScale(x: number, y: number): number {
   return MIN_SCALE + hash01(x, y) * (MAX_SCALE - MIN_SCALE);
 }
 
+// A salted variant of hash01 so independent rolls for the same cell (e.g.
+// "should this decorate" vs "which decoration") don't collapse to the same
+// value, without each call site inlining its own offset arithmetic.
+function saltedHash(x: number, y: number, salt: number): number {
+  return hash01(x * 92821 + salt * 101, y * 31337 + salt * 47);
+}
+
 // Sparse ground clutter for grass tiles (WEB-6): most grass cells stay plain,
 // but a deterministic minority get a small flower/tuft/pebble on top so a
 // field of grass reads as more than one repeated tile.
@@ -91,14 +98,9 @@ export const GRASS_DECORATIONS: readonly TileName[] = [
 const GRASS_DECORATION_DENSITY = 0.16;
 
 export function grassDecoration(x: number, y: number): TileName | undefined {
-  if (hash01(x * 92821 + 101, y * 31337 + 47) >= GRASS_DECORATION_DENSITY) {
-    return undefined;
-  }
-  const index = Math.min(
-    GRASS_DECORATIONS.length - 1,
-    Math.floor(
-      hash01(x * 92821 + 211, y * 31337 + 89) * GRASS_DECORATIONS.length,
-    ),
-  );
+  if (saltedHash(x, y, 1) >= GRASS_DECORATION_DENSITY) return undefined;
+  // hash01 is capped below 1 (max 999/1000), so this index is always in
+  // [0, GRASS_DECORATIONS.length - 1]; no upper clamp needed.
+  const index = Math.floor(saltedHash(x, y, 2) * GRASS_DECORATIONS.length);
   return GRASS_DECORATIONS[index];
 }
