@@ -102,6 +102,7 @@ export function newGame(seed: number, options?: NewGameOptions): GameState {
     activatedWaypoints: activateWaypoint([], VILLAGE_WAYPOINT_ID),
     worldState: createInitialWorldState(map),
     dungeonState: null,
+    clearedAt: {},
     battleState: null,
     flags: { permadeath: options?.permadeath ?? false, gameOver: false },
     stash: [],
@@ -400,7 +401,7 @@ function openChest(state: GameState): GameState {
     : state.inventory;
 
   const rng = new Rng(state.seed, state.rngState);
-  const chest = rollChestLoot(rng, ds.floor, state.nextItemId);
+  const chest = rollChestLoot(rng, ds.floor, state.nextItemId, ds.dungeonId);
 
   const filterContext = buildLootFilterContext(state.party, ds.floor);
   const pickup = applyLootPickupWithFilter(

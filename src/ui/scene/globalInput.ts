@@ -12,6 +12,10 @@ export const globalKeymap: Keymap = {
   "char:z": { kind: "openZoom" },
 
   "char:v": { kind: "openInventory" },
+
+  // Capital C so it does not collide with the village overview's lowercase
+  // `c` (church) shortcut.
+  "char:C": { kind: "openCharacterSheet" },
 };
 
 export function resolveGlobalIntent(key: KeyName): Intent | undefined {

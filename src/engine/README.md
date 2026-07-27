@@ -68,8 +68,20 @@ loot before returning to the originating scene.
 - Enemies stand in a front or back formation row (`BattleEnemy.row`,
   `pickEnemyGroup`'s `FRONT_ROW_SIZE`); the party stays a flat line. A basic
   attack cannot reach a back-row enemy while any front-row enemy is still
-  alive (`isMeleeTargetable` in `combat/resolution.ts`) - skills ignore this
-  for now until shape-aware targeting lands.
+  alive (`isMeleeTargetable` in `combat/resolution.ts`); skills always ignore
+  this rule and reach any row directly.
+- A `SkillDef`'s `target` shape (`single`, `row`, `column`, `allEnemies`,
+  `randomN`, `self`, `ally`, `allAllies`) expands into a concrete target list
+  through `resolveShapeTargets` in `combat/resolution.ts` - the one resolver
+  both a party member's `BattleSkill` command and a monster's `advanceRound`
+  turn use. `row` hits every living enemy sharing the anchor's row, `column`
+  pierces the anchor's lane in both rows, `allEnemies`/`allAllies` hit
+  everyone living on that side, and `randomN` hits `hitCount` distinct living
+  targets chosen without replacement. Every resolved target rolls its own
+  crit, damage, and status-application independently - never one roll
+  broadcast to the whole group. A monster with an attack-kind skill in its
+  `MonsterDef.skills` list always casts one (see the Dungeon Guardian's
+  Cleave/Meteor) instead of a basic attack.
 - Loot combines item bases, rarity, prefixes, suffixes, and optional
   monster-specific implicit properties.
 - Village events cover resting, buying, selling, and equipment; saving stays at

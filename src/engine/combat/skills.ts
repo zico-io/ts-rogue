@@ -9,11 +9,13 @@ import type { CoreStats } from "./types";
 // items (Antidote, Thermal Salts) stay the cheaper, targeted, MP-free option.
 export type SkillKind = "attack" | "heal";
 
-// v2 target shape (ENG-30): describes who a skill can hit, not how it
-// resolves. Only "single" and "self" are read by resolveBattleEvent /
-// applyMemberCommand today - "row" | "column" | "allEnemies" | "randomN" |
-// "ally" | "allAllies" are data-model-only until the follow-up resolution
-// ticket (ENG-28) expands each shape into concrete target lists.
+// v2 target shape: describes who a skill can hit, not how it resolves.
+// resolveShapeTargets in resolution.ts (ENG-28) expands every shape below
+// into a concrete target list - "row" splashes one enemy row, "column"
+// pierces the same lane in both rows, "allEnemies"/"allAllies" hit
+// everyone living on that side, "randomN" hits `hitCount` random living
+// targets, and "self"/"ally"/"allAllies" resolve against the caster's own
+// side instead of the opposing one.
 export type SkillTarget =
   | "single"
   | "row"
@@ -41,9 +43,8 @@ export interface SkillDef {
 
   applies?: AppliedEffect[];
 
-  // Number of separate hits/rolls a single cast makes; also doubles as the
-  // target count for the "randomN" shape. Undefined/1 means today's single
-  // hit. Unread until ENG-28 wires shape resolution.
+  // Target count for the "randomN" shape (picked without replacement, so
+  // it's clamped to however many are alive). Unused by every other shape.
   hitCount?: number;
 }
 
@@ -116,6 +117,52 @@ export const SKILLS: readonly SkillDef[] = [
     power: 9,
     target: "single",
     stat: "agi",
+  },
+
+  // Shape-exercising skills (ENG-28): one skill per non-single shape,
+  // enough to drive it through class content and the shared resolver.
+  {
+    id: "hailstorm",
+    name: "Hailstorm",
+    mpCost: 9,
+    kind: "attack",
+    power: 10,
+    target: "row",
+    stat: "int",
+    element: "ice",
+    applies: [{ effectId: "wet", chance: 0.5, duration: 3 }],
+  },
+
+  {
+    id: "skewer",
+    name: "Skewer",
+    mpCost: 6,
+    kind: "attack",
+    power: 7,
+    target: "column",
+    stat: "str",
+  },
+
+  {
+    id: "meteor",
+    name: "Meteor",
+    mpCost: 12,
+    kind: "attack",
+    power: 9,
+    target: "allEnemies",
+    stat: "int",
+    element: "fire",
+  },
+
+  {
+    id: "scattershot",
+    name: "Scattershot",
+    mpCost: 8,
+    kind: "attack",
+    power: 4,
+    target: "randomN",
+    stat: "agi",
+    hitCount: 3,
   },
 ];
 
