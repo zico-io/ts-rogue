@@ -67,6 +67,7 @@ export const INITIATIVE_SPREAD = 8;
 // Classic Wizardry-style formation: only the first FRONT_ROW_SIZE enemies
 // in an encounter stand in front; the rest form the back row (ENG-29).
 export const FRONT_ROW_SIZE = 2;
+export const DEFAULT_ROW: EnemyRow = "front";
 
 export const FLEE_BASE = 0.55;
 export const FLEE_SPD_FACTOR = 0.03;
@@ -249,7 +250,7 @@ export function rollInitiative(
 function makeEnemy(
   def: MonsterDef,
   instance: number,
-  row: EnemyRow = "front",
+  row: EnemyRow = DEFAULT_ROW,
 ): BattleEnemy {
   return {
     id: `${def.id}-${instance}`,
@@ -330,8 +331,15 @@ function firstAlive(enemies: readonly BattleEnemy[]): BattleEnemy | undefined {
   return enemies.find((enemy) => enemy.hp > 0);
 }
 
+function findAliveEnemy(
+  enemies: readonly BattleEnemy[],
+  id: string,
+): BattleEnemy | undefined {
+  return enemies.find((enemy) => enemy.id === id && enemy.hp > 0);
+}
+
 function enemyRow(enemy: BattleEnemy): EnemyRow {
-  return enemy.row ?? "front";
+  return enemy.row ?? DEFAULT_ROW;
 }
 
 // Melee reachability rule (ENG-29): the front row must fall before the back
@@ -371,9 +379,7 @@ function validateCommand(
 ): boolean {
   switch (command.kind) {
     case "attack": {
-      const explicitTarget = enemies.find(
-        (enemy) => enemy.id === command.targetId && enemy.hp > 0,
-      );
+      const explicitTarget = findAliveEnemy(enemies, command.targetId);
       if (explicitTarget) return isMeleeTargetable(enemies, explicitTarget);
       return enemies.some(
         (enemy) => enemy.hp > 0 && isMeleeTargetable(enemies, enemy),
@@ -642,9 +648,7 @@ function applyMemberCommand(
 
   switch (command.kind) {
     case "attack": {
-      const explicitTarget = enemies.find(
-        (e) => e.id === command.targetId && e.hp > 0,
-      );
+      const explicitTarget = findAliveEnemy(enemies, command.targetId);
       const target =
         explicitTarget && isMeleeTargetable(enemies, explicitTarget)
           ? explicitTarget

@@ -9,6 +9,7 @@ import {
   applyInitiativePenalty,
   atkFrom,
   computeDamage,
+  DEFAULT_ROW,
   defFrom,
   deriveAtk,
   deriveDef,
@@ -39,7 +40,7 @@ function makeEnemy(
   stats: { str: number; agi: number; vit: number; int: number },
   xp: number,
   gold: number,
-  row: EnemyRow = "front",
+  row: EnemyRow = DEFAULT_ROW,
 ): BattleEnemy {
   return {
     id,
