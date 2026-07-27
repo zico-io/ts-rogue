@@ -206,6 +206,11 @@ export function generateOverworldMap(seed: number): OverworldMap {
     dungeonEntrances.push(chosen);
     tiles[chosen.y][chosen.x] = "dungeonEntrance";
   }
+  // Nearest-to-farthest order so entrance index lines up with ascending
+  // story dungeon tier (see dungeonWaypointId in ./waypoints).
+  dungeonEntrances.sort(
+    (a, b) => chebyshev(a, village) - chebyshev(b, village),
+  );
 
   return {
     width,
