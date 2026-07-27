@@ -42,7 +42,7 @@ export async function rememberExecute(
   return await store.put(input);
 }
 
-export const DEFAULT_RECALL_LIMIT = 50;
+const DEFAULT_RECALL_LIMIT = 50;
 
 export const recallInputSchema = z.object({
   category: z

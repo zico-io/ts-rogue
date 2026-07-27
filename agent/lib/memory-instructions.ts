@@ -11,7 +11,7 @@ import { memoryStore } from "./memory-store";
  */
 
 /** Caps how many memories load into context per turn (see `recall` for a filtered view). */
-export const MEMORY_INSTRUCTIONS_LIMIT = 50;
+const MEMORY_INSTRUCTIONS_LIMIT = 50;
 
 /**
  * Builds the memory preamble, or `null` when there is nothing to say.
