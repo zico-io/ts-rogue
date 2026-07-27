@@ -687,6 +687,64 @@ describe("actions.requested prose durability (HAR-68)", () => {
   });
 });
 
+describe("message.completed narration buffering (HAR-78)", () => {
+  const fireMessageCompleted = async (data: {
+    message: string | null;
+    finishReason: string;
+  }) => {
+    const state: Record<string, unknown> = {
+      agentSessionId: "sess-1",
+      pendingToolCallMessage: null,
+    };
+    // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handler directly
+    await (channel as any).events["message.completed"](data, { state });
+    return state;
+  };
+
+  it("buffers the full multi-line narration ahead of a tool call, not just its first line", async () => {
+    const proposal = [
+      'Create the "Skill Trees" project with these 5 sequenced tickets:',
+      "1. Skill tree data model",
+      "2. Skill points & node state",
+      "3. Skill tree UI",
+      "4. Battle skill menu",
+      "5. Starter trees for Warrior/Rogue/Wizard",
+    ].join("\n");
+
+    const state = await fireMessageCompleted({
+      message: proposal,
+      finishReason: "tool-calls",
+    });
+
+    expect(state.pendingToolCallMessage).toBe(proposal);
+  });
+
+  it("clears the buffer and posts nothing when the tool-call narration is empty", async () => {
+    const state = await fireMessageCompleted({
+      message: null,
+      finishReason: "tool-calls",
+    });
+
+    expect(state.pendingToolCallMessage).toBeNull();
+  });
+
+  it("still posts a terminal reply in full and clears the buffer", async () => {
+    vi.mocked(createLinearAgentActivity).mockClear();
+    const state = await fireMessageCompleted({
+      message: "Done. Five tickets created.",
+      finishReason: "stop",
+    });
+
+    expect(state.pendingToolCallMessage).toBeNull();
+    const activity = vi.mocked(createLinearAgentActivity).mock.calls[0]?.[0]
+      .activity;
+    expect(activity?.content).toMatchObject({
+      body: "Done. Five tickets created.",
+      type: "response",
+    });
+  });
+});
+
 describe("input.requested elicitation (HAR-17)", () => {
   it("posts a clean elicitation body with Linear's native select signal, not a hidden tracking marker", async () => {
     vi.mocked(createLinearAgentActivity).mockClear();
