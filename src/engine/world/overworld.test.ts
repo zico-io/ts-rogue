@@ -3,18 +3,12 @@ import { DUNGEONS } from "../../data/dungeons";
 import { footprintCells, LANDMARK_FOOTPRINTS } from "./landmarks";
 import {
   biomeDanger,
+  chebyshev,
   generateOverworldMap,
   isPassable,
   tileAt,
 } from "./overworld";
 import { dungeonWaypointId, storyDungeonForEntrance } from "./waypoints";
-
-function chebyshevDistance(
-  a: { x: number; y: number },
-  b: { x: number; y: number },
-): number {
-  return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
-}
 
 describe("generateOverworldMap", () => {
   it("is a pure function of the seed: identical seed -> identical map", () => {
@@ -69,7 +63,7 @@ describe("generateOverworldMap", () => {
     for (const seed of [1, 2, 3, 42, 999]) {
       const map = generateOverworldMap(seed);
       const distances = map.dungeonEntrances.map((entrance) =>
-        chebyshevDistance(map.village, entrance),
+        chebyshev(map.village, entrance),
       );
       for (let i = 1; i < distances.length; i++) {
         expect(distances[i]).toBeGreaterThanOrEqual(distances[i - 1]);
@@ -79,7 +73,9 @@ describe("generateOverworldMap", () => {
         (_, index) => storyDungeonForEntrance(index)?.tier,
       );
       for (let i = 1; i < tiers.length; i++) {
-        expect(tiers[i]).toBeGreaterThan(tiers[i - 1] as number);
+        const previousTier = tiers[i - 1];
+        expect(previousTier).toBeDefined();
+        expect(tiers[i]).toBeGreaterThan(previousTier as number);
       }
     }
   });
