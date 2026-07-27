@@ -1,5 +1,9 @@
 import { findClass } from "../../data/classes";
-import { chestLootFor, chestLootMessage } from "../../data/dungeons";
+import {
+  chestLootFor,
+  chestLootMessage,
+  dungeonDefFor,
+} from "../../data/dungeons";
 import { findShopItem, sellPriceFor } from "../../data/shops";
 import { resolveBattleEvent, startBattle } from "../combat/resolution";
 import type { InventoryItem, PartyMember } from "../entities/party";
@@ -25,7 +29,6 @@ import { Rng } from "../rng/rng";
 import {
   createInitialDungeonState,
   DUNGEON_ENCOUNTER_CHANCE,
-  DUNGEON_FLOORS,
   FOV_RADIUS,
   forwardDelta,
   isDungeonWall,
@@ -313,7 +316,14 @@ function stepDungeon(state: GameState, direction: StepDirection): GameState {
 
   if (feature === "bossMarker") {
     const rng = new Rng(state.seed, state.rngState);
-    const battle = startBattle(rng, state.party, "boss", ds.floor, "dungeon");
+    const battle = startBattle(
+      rng,
+      state.party,
+      "boss",
+      ds.floor,
+      "dungeon",
+      dungeonDefFor(ds.dungeonId),
+    );
     return {
       ...state,
       scene: "battle",
@@ -341,6 +351,7 @@ function stepDungeon(state: GameState, direction: StepDirection): GameState {
         "wandering",
         ds.floor,
         "dungeon",
+        dungeonDefFor(ds.dungeonId),
       );
       return {
         ...state,
@@ -441,7 +452,7 @@ function descendStairs(state: GameState): GameState {
     };
   }
   const nextFloor = ds.floor + 1;
-  if (nextFloor > DUNGEON_FLOORS) {
+  if (nextFloor > dungeonDefFor(ds.dungeonId).floorCount) {
     return { ...state, log: [...state.log, entry("The stairs lead nowhere")] };
   }
   const next = createInitialDungeonState(state.seed, ds.dungeonId, nextFloor);
