@@ -339,7 +339,9 @@ describe("game store", () => {
         `You descend into ${def?.name} (recommended level ${def?.recommendedLevel})`,
       );
       expect(after.log.at(-1)?.text).toBe(
-        dungeonEntryFlavor(dungeonDefFor(dungeonWaypointId(entranceIndex)).theme),
+        dungeonEntryFlavor(
+          dungeonDefFor(dungeonWaypointId(entranceIndex)).theme,
+        ),
       );
       expect(after.dungeonState?.dungeonId).toBe(
         dungeonWaypointId(entranceIndex),
