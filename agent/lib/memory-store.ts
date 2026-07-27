@@ -41,6 +41,16 @@ const MIGRATIONS = [
   "CREATE INDEX IF NOT EXISTS memories_category_idx ON memories (category)",
 ];
 
+/**
+ * Retention bound (HAR-75): the store keeps at most this many rows. Each row
+ * is at most one 80-char key plus a 4000-char value (bounded by
+ * `rememberInputSchema` in `memory-tools.ts`), so this also caps total store
+ * size at a few megabytes. `put` evicts the least-recently-updated memory
+ * once this cap is exceeded, so the store self-trims instead of growing
+ * unbounded - there is no separate expiry timer to run.
+ */
+const DEFAULT_MAX_MEMORIES = 500;
+
 function rowToMemory(row: Row): Memory {
   const { key, value, category, source, created_at, updated_at } = row;
   if (
@@ -82,6 +92,7 @@ export class LibsqlMemoryStore implements MemoryStore {
   constructor(
     private readonly getClient: MemoryClientFactory = mintMemoryClient,
     private readonly now: MemoryClock = () => new Date().toISOString(),
+    private readonly maxMemories: number = DEFAULT_MAX_MEMORIES,
   ) {}
 
   private async connect(): Promise<Client> {
@@ -121,6 +132,15 @@ export class LibsqlMemoryStore implements MemoryStore {
               source = excluded.source,
               updated_at = excluded.updated_at`,
       args: [memory.key, memory.value, memory.category, memory.source, now, now],
+    });
+    // Retention bound: drop the least-recently-updated rows beyond the cap.
+    // The row just written is always the most recently updated, so it is
+    // never the one evicted.
+    await client.execute({
+      sql: `DELETE FROM memories WHERE key NOT IN (
+              SELECT key FROM memories ORDER BY updated_at DESC LIMIT ?
+            )`,
+      args: [this.maxMemories],
     });
     const result = await client.execute({
       sql: "SELECT * FROM memories WHERE key = ?",

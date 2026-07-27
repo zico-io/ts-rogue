@@ -35,13 +35,25 @@
 
 ## Memory discipline
 
-Curated facts live in `.botfile/memory/`. Read `index.md` first. Keep one topic per file under `domain/` and one tool per file under `tools/`. Every fact ends with inline provenance:
+Two memory stores exist, at different rigor levels for different stakes.
+
+Curated facts live in `.botfile/memory/`, git-committed and PR-reviewed like
+any other code change - this is the shipped-behavior source of truth. Read
+`index.md` first. Keep one topic per file under `domain/` and one tool per
+file under `tools/`. Every fact ends with inline provenance:
 
 ```text
 - <fact> <source: ..., YYYY-MM-DD>
 ```
 
 Canonical entities live in `.botfile/entities/entities.jsonl`, one JSON object per line. Refer to entities by `canonical_id`; add aliases instead of duplicate records.
+
+Eve also has a separate runtime memory store (`remember`/`recall`/`forget`,
+see `agent/README.md`) for low-stakes operational facts - a debugging
+insight, a workaround, an entity-dedup note. It is written autonomously with
+no PR, bounded in size, and never holds credentials or personal data. Nothing
+durable enough to belong in `.botfile/memory/domain/product.md` should live
+there instead; when in doubt, it goes through the reviewed path above.
 
 ## Git, GitHub, and Linear
 

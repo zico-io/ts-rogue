@@ -63,12 +63,16 @@ context. Blocking relations in Linear determine readiness.
 | `sandbox/` and `lib/sandbox.ts` | Vercel Sandbox bootstrap, network policy, token refresh, and recovery |
 | `lib/orientation.ts` | Builds the session's concise `ORIENTATION.md` brief |
 | `lib/memory.ts` | Mints the Vercel Connect credential for Eve's runtime memory store |
-| `lib/memory-store.ts` | libSQL-backed adapter and schema for Eve's runtime memory store (HAR-74 adds its tools) |
+| `lib/memory-store.ts` | libSQL-backed adapter and schema for Eve's runtime memory store, including the retention-cap eviction |
+| `lib/memory-tools.ts` | Validated read/write logic behind `remember`, `recall`, and `forget`, including the category allow-list and credential/PII rejection |
+| `lib/memory-instructions.ts` | Builds the untrusted-JSON memory preamble behind `instructions/memory.ts` |
+| `instructions/memory.ts` | Dynamic, per-turn instructions loading recent memories as untrusted JSON |
 | `skills/` | Optional Eve, Linear project, and README-hygiene procedures |
 | `subagents/playtester/` | Independent terminal and web acceptance verification |
 | `tools/handoff.ts` | Starts an informed successor Agent Session |
 | `tools/workflow.ts` | Enables the `Workflow` tool to orchestrate `agent` calls as one durable step |
 | `tools/session_update.ts` | Posts blocked, review, and completion activities |
+| `tools/remember.ts`, `tools/recall.ts`, `tools/forget.ts` | Autonomous read/write access to the runtime memory store |
 | `schedules/eve-version-check.ts` | Checks for Eve upgrades and audits framework workarounds |
 | `schedules/agent-run-analysis.ts` | Daily review of recent Eve/GitHub/Vercel activity that files Harness issues for real findings |
 
@@ -134,8 +138,25 @@ read for the OpenAPI connection above, and `lib/memory-store.ts` uses it to
 run the `memories` table's schema migration and CRUD through `@libsql/client`.
 The credential never reaches the sandbox, unlike GitHub's, because the memory
 store runs as ordinary application code rather than shell commands the agent
-runs inside its own sandbox. It still has no model-facing tools or dynamic
-instructions of its own (HAR-74).
+runs inside its own sandbox.
+
+`tools/remember.ts`, `tools/recall.ts`, and `tools/forget.ts` give the model
+autonomous read/write access to that store for low-stakes operational facts;
+`instructions/memory.ts` loads up to 50 recent memories on every `turn.started`
+and feeds them back as JSON-encoded, explicitly untrusted stored data, per
+eve's `patterns/multi-tenant-memory.md`. `instructions.md` tells the model what
+belongs there instead of `.botfile/memory/domain/product.md`.
+
+`lib/memory-tools.ts` enforces the store's bounds and provenance rules
+(HAR-75) as input validation, not just prose: `key` is a restricted-charset,
+80-character slug, `value` is capped at 4000 characters, `category` must be
+one of a closed allow-list (`workaround`, `debugging-note`, `entity`), and
+`source` is required on every write. A `remember` call whose key, value, or
+source looks credential- or PII-shaped (API keys, PEM blocks, AWS/GitHub/Slack
+tokens, JWTs, SSNs, labeled `password:`/`secret:` values) is rejected outright
+rather than merely discouraged. `lib/memory-store.ts` bounds total store size
+by evicting the least-recently-updated memory on every write once the store
+holds more than 500 rows, so the table cannot grow unbounded.
 
 See [WORKAROUNDS.md](WORKAROUNDS.md) for framework gaps that must be checked
 when Eve changes.

@@ -16,3 +16,9 @@ missing, report that limitation instead of guessing.
 
 Embed terminal frames in fenced text blocks. Embed web screenshots as base64
 data-image Markdown because the caller cannot access this sandbox's files.
+`shot` already captures a small JPEG by default for cheap embedding (HAR-77);
+match the data URI's MIME type to the printed path's extension (`image/jpeg`
+by default, `image/png` for `--full`). Use the default output as-is; pass
+`--full` only when a criterion genuinely needs full resolution. Take one shot
+per state that needs verifying, and re-shoot only after a key changes the
+state rather than to double-check an unchanged screen.

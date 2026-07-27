@@ -108,7 +108,7 @@
         "h": 8
       }
     },
-    "village": {
+    "grassTuft": {
       "frame": {
         "x": 21,
         "y": 11,
@@ -126,10 +126,82 @@
         "h": 8
       }
     },
-    "dungeonEntrance": {
+    "grassFlowerYellow": {
       "frame": {
         "x": 31,
         "y": 11,
+        "w": 8,
+        "h": 8
+      },
+      "sourceSize": {
+        "w": 8,
+        "h": 8
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 8,
+        "h": 8
+      }
+    },
+    "grassFlowerPink": {
+      "frame": {
+        "x": 1,
+        "y": 21,
+        "w": 8,
+        "h": 8
+      },
+      "sourceSize": {
+        "w": 8,
+        "h": 8
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 8,
+        "h": 8
+      }
+    },
+    "grassPebble": {
+      "frame": {
+        "x": 11,
+        "y": 21,
+        "w": 8,
+        "h": 8
+      },
+      "sourceSize": {
+        "w": 8,
+        "h": 8
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 8,
+        "h": 8
+      }
+    },
+    "village": {
+      "frame": {
+        "x": 21,
+        "y": 21,
+        "w": 16,
+        "h": 16
+      },
+      "sourceSize": {
+        "w": 16,
+        "h": 16
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 16,
+        "h": 16
+      }
+    },
+    "dungeonEntrance": {
+      "frame": {
+        "x": 1,
+        "y": 39,
         "w": 8,
         "h": 8
       },
@@ -146,8 +218,8 @@
     },
     "multiCellFixture": {
       "frame": {
-        "x": 1,
-        "y": 21,
+        "x": 11,
+        "y": 39,
         "w": 16,
         "h": 16
       },
@@ -164,8 +236,8 @@
     },
     "player": {
       "frame": {
-        "x": 19,
-        "y": 21,
+        "x": 29,
+        "y": 39,
         "w": 8,
         "h": 8
       },
@@ -182,8 +254,8 @@
     },
     "wall": {
       "frame": {
-        "x": 29,
-        "y": 21,
+        "x": 1,
+        "y": 57,
         "w": 8,
         "h": 8
       },
@@ -200,8 +272,8 @@
     },
     "floor": {
       "frame": {
-        "x": 1,
-        "y": 39,
+        "x": 11,
+        "y": 57,
         "w": 8,
         "h": 8
       },
@@ -218,8 +290,8 @@
     },
     "chest": {
       "frame": {
-        "x": 11,
-        "y": 39,
+        "x": 21,
+        "y": 57,
         "w": 8,
         "h": 8
       },
@@ -236,8 +308,8 @@
     },
     "stairsDown": {
       "frame": {
-        "x": 21,
-        "y": 39,
+        "x": 31,
+        "y": 57,
         "w": 8,
         "h": 8
       },
@@ -254,8 +326,8 @@
     },
     "boss": {
       "frame": {
-        "x": 31,
-        "y": 39,
+        "x": 1,
+        "y": 67,
         "w": 8,
         "h": 8
       },
@@ -276,7 +348,7 @@
     "format": "RGBA8888",
     "size": {
       "w": 40,
-      "h": 48
+      "h": 76
     },
     "scale": "1"
   }

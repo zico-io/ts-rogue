@@ -253,6 +253,34 @@ without a way to visually verify the result, so it isn't vendored here. A
 real shore/corner bitmask tileset is a follow-up once that's needed; this
 ships with the sheets already vendored instead.
 
+### Overworld tile selection and grass clutter (WEB-6)
+
+Reviewer feedback on ROG-65 was that the overworld still read noticeably
+worse than the Tiny Overworld reference set. Auditing every `TILE_SOURCES`
+crop pixel-by-pixel (exhaustive per-pixel purity search over
+`forgotten_plains.png`/`overworld_props.png`, not eyeballing) found two
+crops that were quietly hurting legibility rather than a missing feature:
+`grass` clipped a neighboring rock formation's gray shading into every
+tile, and `water` was only ~62% water pixels (the rest muddy shoreline
+bleed from the sheet's small illustrated ponds, which aren't a tileable
+swatch). Both now point at the cleanest fully-opaque single-color regions
+found in the same sheets - `water`'s crop is an 8x4 strip the atlas's
+existing nearest-neighbor resize doubles into a full 8x8 tile rather than
+including any land-bleed row.
+
+Grass tiles also get sparse, deterministic ground clutter -
+`grassDecoration(x, y)` in `overworldVariants.ts` picks one of four small
+self-contained icons (`grassTuft`, `grassFlowerYellow`, `grassFlowerPink`,
+`grassPebble`, cropped from the same `overworld_props.png` sheet the tree
+comes from) for a hash-selected ~16% of grass cells, drawn as an extra small
+sprite on top of the base tile in `OverworldSceneView.drawViewport` - so a
+field of grass reads as more than one repeated tile without touching the
+camera/viewport math or the biome/token model. A genuine diagonal
+water/land auto-tile corner set was found already present on
+`forgotten_plains.png` (see `assets/README.md`) but correctly orienting all
+eight directional pieces needs the same visual-verification step ROG-73
+punted `Biomes_Merging_Tiles` on, so it's deferred rather than guessed at.
+
 ### Overworld scene atmosphere (ROG-65)
 
 On top of the tilemap above, `OverworldSceneView` draws a second layer of

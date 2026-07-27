@@ -9,6 +9,8 @@ import {
 import { theme, toPixiColor } from "../../ui/theme";
 import {
   clusterScale,
+  grassDecoration,
+  hash01,
   landmarkScale,
   mountainTexture,
   type Sides,
@@ -103,15 +105,29 @@ const SHIMMER_MIN_ALPHA = 0.15;
 const SHIMMER_MAX_ALPHA = 0.75;
 const SHIMMER_SIZE_RATIO = 0.22;
 
+const DECORATION_SIZE_RATIO = 0.4;
+
 const AMBIENT_POOL_SIZE = 12;
 const LEAF_PX = 9;
 const FIREFLY_PX = 5;
 const LEAF_DRIFT_PX_PER_MS = 0.012;
 const FIREFLY_DRIFT_PX_PER_MS = 0.006;
 
-function hash01(a: number, b: number): number {
-  const h = (Math.imul(a, 2654435761) ^ Math.imul(b, 2246822519)) >>> 0;
-  return (h % 1000) / 1000;
+// Every viewport-tracked pool (sprites, shore rects, shadows, pulses,
+// shimmers, decorations, minimap rects) prunes entries no longer seen this
+// frame the same way: destroy anything whose key wasn't touched. This is the
+// one shared implementation of that loop.
+function pruneStale<T>(
+  map: Map<string, T>,
+  seen: Set<string>,
+  handleOf: (value: T) => { destroy(): void },
+): void {
+  for (const [key, value] of map) {
+    if (!seen.has(key)) {
+      handleOf(value).destroy();
+      map.delete(key);
+    }
+  }
 }
 
 export function needsPropShadow(
@@ -180,6 +196,7 @@ export class OverworldSceneView {
   private readonly propShadows = new Map<string, BlobHandle>();
   private readonly markerPulses = new Map<string, MarkerPulse>();
   private readonly waterShimmers = new Map<string, WaterShimmer>();
+  private readonly grassDecorations = new Map<string, SpriteHandle>();
   private ambientParticles: AmbientParticle[] = [];
   private viewportBounds: Bounds = { x: 0, y: 0, width: 0, height: 0 };
   private elapsed = 0;
@@ -226,6 +243,7 @@ export class OverworldSceneView {
     const seenShadows = new Set<string>();
     const seenPulses = new Set<string>();
     const seenShimmers = new Set<string>();
+    const seenDecorations = new Set<string>();
 
     const viewportAreaWidth = Math.max(1, minimapBoxX - MINIMAP_GAP_PX);
     const viewportCols = Math.max(1, Math.floor(viewportAreaWidth / tilePx));
@@ -254,6 +272,7 @@ export class OverworldSceneView {
       seenShadows,
       seenPulses,
       seenShimmers,
+      seenDecorations,
     );
     if (debugFixture) {
       this.drawFootprint(
@@ -271,6 +290,7 @@ export class OverworldSceneView {
     this.pruneStaleShadows(seenShadows);
     this.pruneStaleMarkerPulses(seenPulses);
     this.pruneStaleWaterShimmers(seenShimmers);
+    this.pruneStaleDecorations(seenDecorations);
 
     this.viewportBounds = {
       x: viewportOffsetX,
@@ -343,6 +363,7 @@ export class OverworldSceneView {
     seenShadows: Set<string>,
     seenPulses: Set<string>,
     seenShimmers: Set<string>,
+    seenDecorations: Set<string>,
   ): { hasLeaves: boolean; hasFireflies: boolean } {
     let hasForest = false;
     let hasGrassOrForest = false;
@@ -474,6 +495,30 @@ export class OverworldSceneView {
             cellX + tilePx * offsetXFrac - shimmerSize / 2,
             cellY + tilePx * offsetYFrac - shimmerSize / 2,
           );
+        }
+
+        if (!isPlayer && terrain === "grass") {
+          const decoration = grassDecoration(cell.x, cell.y);
+          if (decoration) {
+            seenDecorations.add(cell.key);
+            let sprite = this.grassDecorations.get(cell.key);
+            if (!sprite) {
+              sprite = this.factory.createSprite();
+              this.grassDecorations.set(cell.key, sprite);
+            }
+            const decorationSize = tilePx * DECORATION_SIZE_RATIO;
+            const offsetXFrac =
+              0.25 + hash01(cell.x * 47 + 3, cell.y * 61 + 8) * 0.5;
+            const offsetYFrac =
+              0.25 + hash01(cell.x * 71 + 13, cell.y * 89 + 4) * 0.5;
+            sprite.setTexture(decoration);
+            sprite.setTint(0xffffff);
+            sprite.setSize(decorationSize, decorationSize);
+            sprite.setPosition(
+              cellX + tilePx * offsetXFrac - decorationSize / 2,
+              cellY + tilePx * offsetYFrac - decorationSize / 2,
+            );
+          }
         }
 
         this.drawShoreFringe(map, cell, cellX, cellY, tilePx, seenShoreRects);
@@ -612,48 +657,27 @@ export class OverworldSceneView {
   }
 
   private pruneStaleSprites(seen: Set<string>): void {
-    for (const [key, sprite] of this.viewportSprites) {
-      if (!seen.has(key)) {
-        sprite.destroy();
-        this.viewportSprites.delete(key);
-      }
-    }
+    pruneStale(this.viewportSprites, seen, (sprite) => sprite);
   }
 
   private pruneStaleShoreRects(seen: Set<string>): void {
-    for (const [key, rect] of this.shoreRects) {
-      if (!seen.has(key)) {
-        rect.destroy();
-        this.shoreRects.delete(key);
-      }
-    }
+    pruneStale(this.shoreRects, seen, (rect) => rect);
   }
 
   private pruneStaleShadows(seen: Set<string>): void {
-    for (const [key, shadow] of this.propShadows) {
-      if (!seen.has(key)) {
-        shadow.destroy();
-        this.propShadows.delete(key);
-      }
-    }
+    pruneStale(this.propShadows, seen, (shadow) => shadow);
   }
 
   private pruneStaleMarkerPulses(seen: Set<string>): void {
-    for (const [key, pulse] of this.markerPulses) {
-      if (!seen.has(key)) {
-        pulse.handle.destroy();
-        this.markerPulses.delete(key);
-      }
-    }
+    pruneStale(this.markerPulses, seen, (pulse) => pulse.handle);
   }
 
   private pruneStaleWaterShimmers(seen: Set<string>): void {
-    for (const [key, shimmer] of this.waterShimmers) {
-      if (!seen.has(key)) {
-        shimmer.handle.destroy();
-        this.waterShimmers.delete(key);
-      }
-    }
+    pruneStale(this.waterShimmers, seen, (shimmer) => shimmer.handle);
+  }
+
+  private pruneStaleDecorations(seen: Set<string>): void {
+    pruneStale(this.grassDecorations, seen, (sprite) => sprite);
   }
 
   private syncAmbientParticles(
@@ -777,12 +801,7 @@ export class OverworldSceneView {
   }
 
   private pruneStaleMinimapRects(seen: Set<string>): void {
-    for (const [key, rect] of this.minimapRects) {
-      if (!seen.has(key)) {
-        rect.destroy();
-        this.minimapRects.delete(key);
-      }
-    }
+    pruneStale(this.minimapRects, seen, (rect) => rect);
   }
 
   private drawMeter(meter: number, width: number, y: number): void {
