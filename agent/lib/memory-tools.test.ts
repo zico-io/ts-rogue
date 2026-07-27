@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { Memory, MemoryStore } from "./memory-store";
 import {
+  containsSensitiveContent,
   forgetExecute,
   recallExecute,
   recallInputSchema,
@@ -47,6 +48,52 @@ describe("rememberInputSchema", () => {
     });
     expect(result.success).toBe(false);
   });
+
+  it("rejects a category outside the allow-list", () => {
+    const result = rememberInputSchema.safeParse({
+      key: "k",
+      value: "v",
+      category: "wishlist",
+      source: "test",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it.each([
+    ["a GitHub token", "the fix used ghp_abcdefghijklmnopqrstuvwxyz0123456789"],
+    ["an AWS access key ID", "found AKIAABCDEFGHIJKLMNOP in the log"],
+    ["a PEM private key block", "-----BEGIN RSA PRIVATE KEY-----\nMIIB..."],
+    ["a labeled password", "password: hunter2fallback"],
+  ])("rejects a value containing %s", (_label, value) => {
+    const result = rememberInputSchema.safeParse({
+      key: "k",
+      value,
+      category: "workaround",
+      source: "test",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts ordinary prose that merely mentions credentials in the abstract", () => {
+    const result = rememberInputSchema.safeParse({
+      key: "k",
+      value: "Remember: never log the GitHub token, mint it fresh instead.",
+      category: "workaround",
+      source: "test",
+    });
+    expect(result.success).toBe(true);
+  });
+});
+
+describe("containsSensitiveContent", () => {
+  it("flags recognizable secret shapes", () => {
+    expect(containsSensitiveContent("sk-abcdefghijklmnopqrstuvwx")).toBe(true);
+    expect(containsSensitiveContent("my ssn is 123-45-6789")).toBe(true);
+  });
+
+  it("leaves plain text alone", () => {
+    expect(containsSensitiveContent("the sandbox flaked twice before stabilizing")).toBe(false);
+  });
 });
 
 describe("rememberExecute", () => {
@@ -59,7 +106,7 @@ describe("rememberExecute", () => {
       value: "Retried sandbox creation twice before it stabilized.",
       category: "workaround",
       source: "HAR-74 session",
-    };
+    } as const;
 
     await expect(rememberExecute(input, store)).resolves.toEqual(SAMPLE_MEMORY);
     expect(store.put).toHaveBeenCalledWith(input);
@@ -80,6 +127,10 @@ describe("recallExecute", () => {
       store,
     );
     expect(store.list).toHaveBeenCalledWith({ category: "workaround", limit: 5 });
+  });
+
+  it("rejects a category outside the allow-list", () => {
+    expect(recallInputSchema.safeParse({ category: "wishlist" }).success).toBe(false);
   });
 });
 

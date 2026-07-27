@@ -63,8 +63,8 @@ context. Blocking relations in Linear determine readiness.
 | `sandbox/` and `lib/sandbox.ts` | Vercel Sandbox bootstrap, network policy, token refresh, and recovery |
 | `lib/orientation.ts` | Builds the session's concise `ORIENTATION.md` brief |
 | `lib/memory.ts` | Mints the Vercel Connect credential for Eve's runtime memory store |
-| `lib/memory-store.ts` | libSQL-backed adapter and schema for Eve's runtime memory store |
-| `lib/memory-tools.ts` | Validated read/write logic behind `remember`, `recall`, and `forget` |
+| `lib/memory-store.ts` | libSQL-backed adapter and schema for Eve's runtime memory store, including the retention-cap eviction |
+| `lib/memory-tools.ts` | Validated read/write logic behind `remember`, `recall`, and `forget`, including the category allow-list and credential/PII rejection |
 | `lib/memory-instructions.ts` | Builds the untrusted-JSON memory preamble behind `instructions/memory.ts` |
 | `instructions/memory.ts` | Dynamic, per-turn instructions loading recent memories as untrusted JSON |
 | `skills/` | Optional Eve, Linear project, and README-hygiene procedures |
@@ -145,8 +145,18 @@ autonomous read/write access to that store for low-stakes operational facts;
 `instructions/memory.ts` loads up to 50 recent memories on every `turn.started`
 and feeds them back as JSON-encoded, explicitly untrusted stored data, per
 eve's `patterns/multi-tenant-memory.md`. `instructions.md` tells the model what
-belongs there instead of `.botfile/memory/domain/product.md`. Retention and
-provenance bounds are HAR-75.
+belongs there instead of `.botfile/memory/domain/product.md`.
+
+`lib/memory-tools.ts` enforces the store's bounds and provenance rules
+(HAR-75) as input validation, not just prose: `key` is a restricted-charset,
+80-character slug, `value` is capped at 4000 characters, `category` must be
+one of a closed allow-list (`workaround`, `debugging-note`, `entity`), and
+`source` is required on every write. A `remember` call whose key, value, or
+source looks credential- or PII-shaped (API keys, PEM blocks, AWS/GitHub/Slack
+tokens, JWTs, SSNs, labeled `password:`/`secret:` values) is rejected outright
+rather than merely discouraged. `lib/memory-store.ts` bounds total store size
+by evicting the least-recently-updated memory on every write once the store
+holds more than 500 rows, so the table cannot grow unbounded.
 
 See [WORKAROUNDS.md](WORKAROUNDS.md) for framework gaps that must be checked
 when Eve changes.

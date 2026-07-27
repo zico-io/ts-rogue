@@ -2,12 +2,12 @@ import { createClient } from "@libsql/client";
 import { describe, expect, it } from "vitest";
 import { LibsqlMemoryStore, type MemoryClock } from "./memory-store";
 
-function createTestStore(now?: MemoryClock): LibsqlMemoryStore {
+function createTestStore(now?: MemoryClock, maxMemories?: number): LibsqlMemoryStore {
   // A fresh in-memory database per store: `:memory:` state lives on this
   // one Client instance, so tests must reuse it across calls instead of
   // minting a new client per operation the way production does.
   const client = createClient({ url: ":memory:" });
-  return new LibsqlMemoryStore(() => client, now);
+  return new LibsqlMemoryStore(() => client, now, maxMemories);
 }
 
 function tickingClock(startYear = 2026): MemoryClock {
@@ -89,5 +89,28 @@ describe("LibsqlMemoryStore", () => {
 
     const listed = await store.list({ limit: 10 });
     expect(listed.map((memory) => memory.key)).toEqual(["new", "old"]);
+  });
+
+  it("evicts the least-recently-updated memory once the retention cap is exceeded", async () => {
+    const store = createTestStore(tickingClock(), 2);
+    await store.put({ key: "oldest", value: "1", category: "note", source: "test" });
+    await store.put({ key: "middle", value: "2", category: "note", source: "test" });
+    await store.put({ key: "newest", value: "3", category: "note", source: "test" });
+
+    const listed = await store.list({ limit: 10 });
+    expect(listed.map((memory) => memory.key)).toEqual(["newest", "middle"]);
+  });
+
+  it("keeps a re-written key alive instead of evicting it as stale", async () => {
+    const store = createTestStore(tickingClock(), 2);
+    await store.put({ key: "a", value: "1", category: "note", source: "test" });
+    await store.put({ key: "b", value: "1", category: "note", source: "test" });
+    // Touching "a" again makes it the most recently updated, so "b" (now the
+    // least-recently-updated) is evicted instead.
+    await store.put({ key: "a", value: "2", category: "note", source: "test" });
+    await store.put({ key: "c", value: "1", category: "note", source: "test" });
+
+    const listed = await store.list({ limit: 10 });
+    expect(listed.map((memory) => memory.key).sort()).toEqual(["a", "c"]);
   });
 });

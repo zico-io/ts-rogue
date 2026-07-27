@@ -81,9 +81,16 @@ low-stakes operational facts - a debugging insight, a workaround, an
 entity-dedup note - things worth knowing next session but not worth a PR.
 Writes are autonomous.
 
+- `category` must be one of the allow-listed values (`workaround`,
+  `debugging-note`, `entity`); `remember` rejects anything else.
 - Never save a password, access token, private key, one-time code, or other
-  personal data there. If a fact needs review before it counts as true, it
-  does not belong in this store.
+  personal data there. This is enforced, not just discouraged: `remember`
+  rejects a key, value, or source that looks credential- or PII-shaped. If a
+  fact needs review before it counts as true, it does not belong in this
+  store.
+- The store keeps a bounded number of memories. Once full, writing a new key
+  silently evicts the least-recently-updated one - do not rely on it as
+  unlimited or permanent storage.
 - Reviewed shipped-behavior documentation still only lives in
   `.botfile/memory/domain/product.md` and subsystem READMEs, updated through
   the normal PR path. Do not use runtime memory as a substitute.
