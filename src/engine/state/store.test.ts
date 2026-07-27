@@ -15,6 +15,7 @@ import type {
   DungeonLayout,
   Point,
 } from "../world/types";
+import { dungeonWaypointId } from "../world/waypoints";
 import { GameStore, INN_COST_PER_MEMBER, newGame, reduce } from "./store";
 import type { GameEvent, GameState } from "./types";
 
@@ -294,11 +295,14 @@ describe("game store", () => {
       expect(after.log.at(-1)?.text).toBe("You descend into the dungeon");
       expect(after.dungeonState).not.toBeNull();
       expect(after.dungeonState?.floor).toBe(1);
-      expect(after.dungeonState?.dungeonId).toBe("dungeon-0");
+      expect(after.dungeonState?.dungeonId).toBe(dungeonWaypointId(0));
       expect(after.dungeonState?.player).toEqual(
         after.dungeonState?.layout.entrance,
       );
-      expect(after.activatedWaypoints).toEqual(["village", "dungeon-0"]);
+      expect(after.activatedWaypoints).toEqual([
+        "village",
+        dungeonWaypointId(0),
+      ]);
     });
 
     it("re-entering an already-activated dungeon entrance does not duplicate its waypoint", () => {
@@ -325,7 +329,10 @@ describe("game store", () => {
         },
         enter,
       );
-      expect(second.activatedWaypoints).toEqual(["village", "dungeon-0"]);
+      expect(second.activatedWaypoints).toEqual([
+        "village",
+        dungeonWaypointId(0),
+      ]);
     });
 
     it("accumulates encounter danger on wild tiles below the threshold", () => {
@@ -425,7 +432,7 @@ describe("Dungeon", () => {
     const state = enterDungeon(1);
     expect(state.scene).toBe("dungeon");
     expect(state.dungeonState?.floor).toBe(1);
-    expect(state.dungeonState?.dungeonId).toBe("dungeon-0");
+    expect(state.dungeonState?.dungeonId).toBe(dungeonWaypointId(0));
     expect(state.dungeonState?.player).toEqual(
       state.dungeonState?.layout.entrance,
     );
@@ -1222,15 +1229,16 @@ describe("Phase 5 loot, equip, and sell", () => {
       expect(state.gold).toBeGreaterThan(goldBefore);
     });
 
-    it("configured filter dismantles a common-rarity chest drop and adds its gold", () => {
+    it("configured filter dismantles a below-threshold chest drop and adds its gold", () => {
       let state = withToughHero(enterDungeon(1234));
       const chest = findDungeonTile(state, "chest");
       expect(chest).toBeDefined();
       state = walkTo(state, chest ?? { x: 0, y: 0 });
 
+      /* Seed 1234's sunken-crypt floor 1 chest drops a magic-rarity item. */
       state = reduce(state, {
         type: "SetLootFilter",
-        rules: { minRarityByTier: { 1: "magic" }, keepAffixStats: [] },
+        rules: { minRarityByTier: { 1: "rare" }, keepAffixStats: [] },
       });
       const goldBefore = state.gold;
       const itemsBefore = state.items.length;
@@ -1272,10 +1280,10 @@ describe("Phase 5 loot, equip, and sell", () => {
       const chest = findDungeonTile(state, "chest");
       expect(chest).toBeDefined();
       state = walkTo(state, chest ?? { x: 0, y: 0 });
-      /* Filter: dismantle anything below magic on tier 1. Seed 1234 floor 1 drops a common tunic. */
+      /* Filter: dismantle anything below rare on tier 1. Seed 1234's sunken-crypt floor 1 drops a magic item. */
       state = reduce(state, {
         type: "SetLootFilter",
-        rules: { minRarityByTier: { 1: "magic" }, keepAffixStats: [] },
+        rules: { minRarityByTier: { 1: "rare" }, keepAffixStats: [] },
       });
       const goldBefore = state.gold;
       state = reduce(state, { type: "OpenChest" });
@@ -1541,7 +1549,10 @@ describe("Zoom (ENG-1 fast travel)", () => {
 
   it("is a no-op when the waypoint has not been activated yet", () => {
     const state = newGame(1);
-    const after = reduce(state, { type: "Zoom", waypointId: "dungeon-0" });
+    const after = reduce(state, {
+      type: "Zoom",
+      waypointId: dungeonWaypointId(0),
+    });
     expect(after.scene).toBe(state.scene);
     expect(after.worldState.player).toEqual(state.worldState.player);
     expect(after.log.at(-1)?.text).toBe(
@@ -1585,7 +1596,7 @@ describe("Zoom (ENG-1 fast travel)", () => {
 
     const after = reduce(backInVillage, {
       type: "Zoom",
-      waypointId: "dungeon-0",
+      waypointId: dungeonWaypointId(0),
     });
     expect(after.scene).toBe("overworld");
     expect(after.worldState.player).toEqual(entrance);
@@ -1608,14 +1619,14 @@ describe("Zoom (ENG-1 fast travel)", () => {
       dx: approach.dx,
       dy: approach.dy,
     });
-    expect(state.activatedWaypoints).toEqual(["village", "dungeon-0"]);
+    expect(state.activatedWaypoints).toEqual(["village", dungeonWaypointId(0)]);
 
     state = reduce(state, { type: "ExitDungeon" });
     state = reduce(state, { type: "Zoom", waypointId: "village" });
     expect(state.scene).toBe("village");
     expect(state.worldState.player).toEqual(map.village);
 
-    state = reduce(state, { type: "Zoom", waypointId: "dungeon-0" });
+    state = reduce(state, { type: "Zoom", waypointId: dungeonWaypointId(0) });
     expect(state.scene).toBe("overworld");
     expect(state.worldState.player).toEqual(entrance);
     expect(state.dungeonState).toBeNull();
@@ -1651,7 +1662,7 @@ describe("Zoom (ENG-1 fast travel)", () => {
       },
       { type: "MoveOverworld", dx: approach.dx, dy: approach.dy },
     );
-    expect(state.activatedWaypoints).toEqual(["village", "dungeon-0"]);
+    expect(state.activatedWaypoints).toEqual(["village", dungeonWaypointId(0)]);
 
     const fresh = newGame(seed);
     expect(fresh.activatedWaypoints).toEqual(["village"]);
