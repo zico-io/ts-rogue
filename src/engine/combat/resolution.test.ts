@@ -9,13 +9,16 @@ import {
   applyInitiativePenalty,
   atkFrom,
   computeDamage,
+  DEFAULT_ROW,
   defFrom,
   deriveAtk,
   deriveDef,
   deriveSpd,
+  FRONT_ROW_SIZE,
   fleeChance,
   grantXp,
   hitChance,
+  isMeleeTargetable,
   pickEnemyGroup,
   resolveAttack,
   rollInitiative,
@@ -24,7 +27,7 @@ import {
   startBattle,
   xpToNext,
 } from "./resolution";
-import type { BattleEnemy, BattleState } from "./types";
+import type { BattleEnemy, BattleState, EnemyRow } from "./types";
 
 const HERO_STATS = { str: 5, agi: 5, vit: 5, int: 5 };
 const SLIME_STATS = { str: 4, agi: 3, vit: 4, int: 1 };
@@ -37,8 +40,20 @@ function makeEnemy(
   stats: { str: number; agi: number; vit: number; int: number },
   xp: number,
   gold: number,
+  row: EnemyRow = DEFAULT_ROW,
 ): BattleEnemy {
-  return { id, defId, name, hp, maxHp: hp, stats, ascii: ["x"], xp, gold };
+  return {
+    id,
+    defId,
+    name,
+    hp,
+    maxHp: hp,
+    stats,
+    ascii: ["x"],
+    xp,
+    gold,
+    row,
+  };
 }
 
 function battleVs(
@@ -71,6 +86,33 @@ function stateInBattle(
     party: [hero],
     dungeonState: { ...ds, encounter: { kind: "wandering", floor: 1 } },
     battleState: battleVs(enemy),
+  };
+}
+
+function battleVsMany(
+  enemies: BattleEnemy[],
+  activeMemberId = "hero-1",
+): BattleState {
+  return {
+    enemies,
+    status: "ongoing",
+    initiative: ["hero-1", ...enemies.map((enemy) => enemy.id)],
+    awaitingCommand: true,
+    returnScene: "dungeon",
+    activeMemberId,
+    defendingIds: [],
+  };
+}
+
+function stateWithEnemies(seed: number, enemies: BattleEnemy[]): GameState {
+  const base = newGame(seed);
+  const ds = createInitialDungeonState(seed, "dungeon-0", 1);
+  return {
+    ...base,
+    scene: "battle",
+    party: [base.party[0]],
+    dungeonState: { ...ds, encounter: { kind: "wandering", floor: 1 } },
+    battleState: battleVsMany(enemies),
   };
 }
 
@@ -258,6 +300,80 @@ describe("pickEnemyGroup", () => {
   it("is deterministic for a fixed seed", () => {
     const runOnce = () => pickEnemyGroup(new Rng(777), "wandering", 3);
     expect(runOnce()).toEqual(runOnce());
+  });
+
+  it("places the first FRONT_ROW_SIZE enemies in front and overflows the rest to the back row (ENG-29)", () => {
+    let sawBackRow = false;
+    for (let seed = 1; seed <= 2000; seed++) {
+      const group = pickEnemyGroup(new Rng(seed), "wandering", 3);
+      group.forEach((enemy, index) => {
+        const expectedRow = index < FRONT_ROW_SIZE ? "front" : "back";
+        expect(enemy.row).toBe(expectedRow);
+        if (enemy.row === "back") sawBackRow = true;
+      });
+    }
+    expect(sawBackRow).toBe(true);
+  });
+});
+
+describe("ENG-29 melee reachability: front row must fall before back row is targetable", () => {
+  it("rejects a basic attack aimed at a living back-row enemy while the front row survives, and opens it once the front row clears", () => {
+    const front = makeEnemy(
+      "goblin-front",
+      "slime",
+      "Front Slime",
+      6,
+      SLIME_STATS,
+      5,
+      3,
+      "front",
+    );
+    const back = makeEnemy(
+      "slime-back",
+      "slime",
+      "Back Slime",
+      999,
+      SLIME_STATS,
+      5,
+      3,
+      "back",
+    );
+    expect(isMeleeTargetable([front, back], back)).toBe(false);
+    expect(isMeleeTargetable([front, back], front)).toBe(true);
+
+    let state = stateWithEnemies(1234, [front, back]);
+    const rejected = reduce(state, {
+      type: "BattleAttack",
+      targetId: "slime-back",
+    });
+    expect(rejected).toBe(state);
+
+    for (
+      let i = 0;
+      i < 50 &&
+      state.battleState?.status === "ongoing" &&
+      (state.battleState.enemies.find((e) => e.id === "goblin-front")?.hp ??
+        0) > 0;
+      i++
+    ) {
+      state = reduce(state, { type: "BattleAttack", targetId: "goblin-front" });
+    }
+    expect(
+      state.battleState?.enemies.find((e) => e.id === "goblin-front")?.hp,
+    ).toBe(0);
+    expect(isMeleeTargetable(state.battleState?.enemies ?? [], back)).toBe(
+      true,
+    );
+
+    const after = reduce(state, {
+      type: "BattleAttack",
+      targetId: "slime-back",
+    });
+    expect(after).not.toBe(state);
+    const backAfter = after.battleState?.enemies.find(
+      (e) => e.id === "slime-back",
+    );
+    expect(backAfter?.hp).toBeLessThan(999);
   });
 });
 
