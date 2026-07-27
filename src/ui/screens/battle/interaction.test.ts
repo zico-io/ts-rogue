@@ -13,7 +13,7 @@ const attackSkill: SkillDef = {
   name: "Flame",
   mpCost: 3,
   kind: "attack",
-  target: "enemy",
+  target: "single",
   power: 5,
 };
 

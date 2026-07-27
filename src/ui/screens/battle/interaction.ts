@@ -130,7 +130,7 @@ export function reduceBattleUi(
     if (intent.kind === "confirm") {
       const skill = ctx.knownSkills[state.skillCursor];
       if (skill && ctx.actorMp >= skill.mpCost) {
-        if (skill.target === "enemy") {
+        if (skill.target === "single") {
           return {
             state: {
               ...state,

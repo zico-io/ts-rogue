@@ -745,6 +745,83 @@ describe("message.completed narration buffering (HAR-78)", () => {
   });
 });
 
+describe("ask_question confirmation gate stays self-contained (HAR-78)", () => {
+  it("keeps the full proposal visible ahead of a terse ask_question prompt, in order", async () => {
+    vi.mocked(createLinearAgentActivity).mockClear();
+    vi.mocked(renderLinearInputRequests).mockReturnValueOnce(
+      "Create it as described?\n\n1. Yes, create it as described\n2. Don't do this",
+    );
+    vi.mocked(linearInputRequestSignal).mockReturnValueOnce({
+      signal: "select",
+      signalMetadata: {
+        options: [{ label: "Yes, create it as described", value: "approve" }],
+      },
+    });
+
+    const proposal = [
+      'Create the "Skill Trees" project with these 5 sequenced tickets:',
+      "1. Skill tree data model",
+      "2. Skill points & node state",
+      "3. Skill tree UI",
+      "4. Battle skill menu",
+      "5. Starter trees for Warrior/Rogue/Wizard",
+    ].join("\n");
+    const askQuestionAction = {
+      kind: "tool-call",
+      callId: "c1",
+      toolName: "ask_question",
+      input: { prompt: "Create it as described?" },
+    };
+    const state: Record<string, unknown> = {
+      agentSessionId: "sess-1",
+      pendingToolCallMessage: null,
+    };
+
+    // The model narrates the full proposal, then calls `ask_question` with
+    // only a short recap - the same shape as the reported ENG-26 session.
+    // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handlers directly
+    await (channel as any).events["message.completed"](
+      { message: proposal, finishReason: "tool-calls" },
+      { state },
+    );
+    // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handlers directly
+    await (channel as any).events["actions.requested"](
+      { actions: [askQuestionAction] },
+      { state },
+    );
+    // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handlers directly
+    await (channel as any).events["input.requested"](
+      {
+        requests: [
+          {
+            requestId: "req-1",
+            prompt: "Create it as described?",
+            options: [{ id: "approve", label: "Yes, create it as described" }],
+          },
+        ],
+      },
+      { state },
+    );
+
+    const posted = vi
+      .mocked(createLinearAgentActivity)
+      .mock.calls.map((call) => call[0].activity.content);
+
+    // The full ticket-by-ticket proposal must be posted as its own durable
+    // activity before the terse elicitation - Linear folds narration into a
+    // preceding tool call's collapsed activity, so the elicitation prompt
+    // alone is not enough for a reviewer to see what they are approving.
+    const thoughtIndex = posted.findIndex(
+      (content) => content.type === "thought" && content.body === proposal,
+    );
+    const elicitationIndex = posted.findIndex(
+      (content) => content.type === "elicitation",
+    );
+    expect(thoughtIndex).toBeGreaterThanOrEqual(0);
+    expect(elicitationIndex).toBeGreaterThan(thoughtIndex);
+  });
+});
+
 describe("input.requested elicitation (HAR-17)", () => {
   it("posts a clean elicitation body with Linear's native select signal, not a hidden tracking marker", async () => {
     vi.mocked(createLinearAgentActivity).mockClear();

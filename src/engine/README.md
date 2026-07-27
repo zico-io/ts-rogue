@@ -63,6 +63,11 @@ loot before returning to the originating scene.
   poison and Thermal Salts cure burn/chilled; every Heal-kind skill also
   cleanses the caster's own status effects on cast (see the comment on
   `SkillKind` in `combat/skills.ts` for the full Heal-cleanse rationale).
+- Enemies stand in a front or back formation row (`BattleEnemy.row`,
+  `pickEnemyGroup`'s `FRONT_ROW_SIZE`); the party stays a flat line. A basic
+  attack cannot reach a back-row enemy while any front-row enemy is still
+  alive (`isMeleeTargetable` in `combat/resolution.ts`) - skills ignore this
+  for now until shape-aware targeting lands.
 - Loot combines item bases, rarity, prefixes, suffixes, and optional
   monster-specific implicit properties.
 - Village events cover resting, buying, selling, and equipment; saving stays at

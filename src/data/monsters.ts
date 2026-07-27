@@ -33,6 +33,11 @@ export interface MonsterDef {
   attackApplies?: AppliedEffect[];
 
   sprite?: string;
+
+  // Skill ids into the shared SKILLS table (see src/engine/combat/skills.ts).
+  // Data-model only for now (ENG-30) - no battle logic reads this yet; the
+  // follow-up resolution ticket (ENG-28) wires monster ability usage.
+  skills?: readonly string[];
 }
 
 export const MONSTERS: readonly MonsterDef[] = [
@@ -113,6 +118,7 @@ export const MONSTERS: readonly MonsterDef[] = [
       "      _|____|_",
     ],
     color: "#e74343",
+    skills: ["cleave"],
   },
 ];
 
