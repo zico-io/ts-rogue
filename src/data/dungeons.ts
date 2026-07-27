@@ -121,10 +121,7 @@ export function dungeonDefFor(dungeonId: string): DungeonDef {
 
 // Resolves the floor band covering `floor`, clamping to the nearest band
 // when a floor falls outside the def's declared range.
-export function floorBandFor(
-  def: DungeonDef,
-  floor: number,
-): DungeonFloorBand {
+export function floorBandFor(def: DungeonDef, floor: number): DungeonFloorBand {
   const bands = def.floorBands;
   const match = bands.find(
     (band) => floor >= band.minFloor && floor <= band.maxFloor,
@@ -139,7 +136,5 @@ export function floorBandFor(
 export function allStoryDungeonsCleared(
   clearedAt: Readonly<Record<string, number>>,
 ): boolean {
-  return DUNGEONS.every(
-    (dungeon) => !dungeon.story || dungeon.id in clearedAt,
-  );
+  return DUNGEONS.every((dungeon) => !dungeon.story || dungeon.id in clearedAt);
 }
