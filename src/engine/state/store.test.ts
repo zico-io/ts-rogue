@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { allStoryDungeonsCleared, dungeonDefFor } from "../../data/dungeons";
 import { deserialize, serialize } from "../../persistence/save";
 import { atkFrom, startBattle } from "../combat/resolution";
 import type { PartyMember } from "../entities/party";
@@ -7,7 +8,7 @@ import { describeItem, itemSellPrice } from "../loot/items";
 import { EMPTY_LOOT_FILTER, type LootFilterRules } from "../loot/lootFilter";
 import type { ItemInstance } from "../loot/types";
 import { Rng } from "../rng/rng";
-import { isDungeonWall } from "../world/dungeon";
+import { createInitialDungeonState, isDungeonWall } from "../world/dungeon";
 import { generateOverworldMap, isPassable, tileAt } from "../world/overworld";
 import type {
   DungeonFacing,
@@ -1740,6 +1741,13 @@ describe("Phase 6: boss victory marks the dungeon cleared", () => {
     expect(state.log.some((m) => m.text.includes("dungeon is cleared"))).toBe(
       true,
     );
+
+    // Persistent clearedAt (ROG-91) is keyed by the def's real id, which
+    // entrance 0 already resolves to post-ROG-90. Distinct from the session
+    // cleared flag.
+    const defId = dungeonDefFor(dungeonWaypointId(0)).id;
+    expect(state.dungeonState?.dungeonId).toBe(dungeonWaypointId(0));
+    expect(state.clearedAt[defId]).toBeTypeOf("number");
   });
 
   it("a wandering victory does NOT mark the dungeon cleared", () => {
@@ -1764,11 +1772,107 @@ describe("Phase 6: boss victory marks the dungeon cleared", () => {
       ) {
         state = fightToResolution(state);
         expect(state.dungeonState?.cleared).toBe(false);
+        expect(state.clearedAt).toEqual({});
         found = true;
       }
     }
 
     if (!found) expect(state.dungeonState?.cleared).toBe(false);
+  });
+});
+
+describe("ROG-91: persistent per-dungeon clearedAt and all-cleared check", () => {
+  // Wins a boss battle for `dungeonId` directly, bypassing overworld/maze
+  // navigation, so several dungeons can be cleared in one deterministic test.
+  function winBossBattle(
+    seed: number,
+    dungeonId: string,
+    clearedAt: Record<string, number> = {},
+  ): GameState {
+    const base = withToughHero(newGame(seed));
+    const def = dungeonDefFor(dungeonId);
+    const ds = createInitialDungeonState(seed, dungeonId, def.floorCount);
+    const rng = new Rng(base.seed, base.rngState);
+    const battle = startBattle(
+      rng,
+      base.party,
+      "boss",
+      ds.floor,
+      "dungeon",
+      def,
+    );
+    const state: GameState = {
+      ...base,
+      scene: "battle",
+      rngState: rng.getState(),
+      battleState: battle,
+      dungeonState: { ...ds, encounter: { kind: "boss", floor: ds.floor } },
+      clearedAt,
+    };
+    return fightToResolution(state);
+  }
+
+  it("clearing a dungeon sets its clearedAt record", () => {
+    const result = winBossBattle(1234, "sunken-crypt");
+    expect(result.clearedAt["sunken-crypt"]).toBeTypeOf("number");
+  });
+
+  it("stays false until the last story boss falls, then flips true", () => {
+    expect(allStoryDungeonsCleared({})).toBe(false);
+
+    const afterFirst = winBossBattle(1234, "sunken-crypt");
+    expect(allStoryDungeonsCleared(afterFirst.clearedAt)).toBe(false);
+
+    const afterSecond = winBossBattle(
+      1234,
+      "howling-cave",
+      afterFirst.clearedAt,
+    );
+    expect(allStoryDungeonsCleared(afterSecond.clearedAt)).toBe(false);
+
+    const afterLast = winBossBattle(
+      1234,
+      "forgotten-ruins",
+      afterSecond.clearedAt,
+    );
+    expect(allStoryDungeonsCleared(afterLast.clearedAt)).toBe(true);
+  });
+
+  it("a rejected battle command is a no-op, clearedAt included", () => {
+    const base = withToughHero(newGame(1234));
+    const def = dungeonDefFor("sunken-crypt");
+    const ds = createInitialDungeonState(1234, "sunken-crypt", def.floorCount);
+    const rng = new Rng(base.seed, base.rngState);
+    const battle = startBattle(
+      rng,
+      base.party,
+      "boss",
+      ds.floor,
+      "dungeon",
+      def,
+    );
+    const state: GameState = {
+      ...base,
+      scene: "battle",
+      rngState: rng.getState(),
+      battleState: battle,
+      dungeonState: { ...ds, encounter: { kind: "boss", floor: ds.floor } },
+    };
+
+    const result = reduce(state, {
+      type: "BattleSkill",
+      skillId: "not-a-real-skill",
+      targetId: battle.enemies[0].id,
+    });
+
+    expect(result).toBe(state);
+    expect(result.clearedAt).toEqual({});
+  });
+
+  it("a non-boss action never writes clearedAt", () => {
+    const state = withToughHero(enterDungeon(1234));
+    const result = reduce(state, { type: "TurnDungeon", direction: "right" });
+    expect(result.clearedAt).toEqual({});
   });
 });
 
