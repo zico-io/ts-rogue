@@ -61,12 +61,13 @@ export default defineTool({
   async execute(input, ctx) {
     const self = callerAgentSessionId(ctx);
     // A flaky lookup must never block a legitimate handoff: fail open to the
-    // cross-issue path (create a fresh session) rather than throwing.
-    let live: Awaited<ReturnType<typeof listLiveAgentSessions>> | null = null;
+    // cross-issue path (create a fresh session) rather than throwing. An empty
+    // list reads as "no live session", which is exactly the fail-open behavior.
+    let live: Awaited<ReturnType<typeof listLiveAgentSessions>> = [];
     try {
       live = await listLiveAgentSessions({ credentials, issueId: input.issueId });
     } catch {
-      live = null;
+      live = [];
     }
 
     // Self-continuation: the caller's own Agent Session is live on the target
@@ -77,7 +78,7 @@ export default defineTool({
     // case: pausing at a phase boundary (e.g. after opening the PR) so the
     // review/merge webhook runs fresh instead of resuming the accumulated
     // implementation context.
-    if (self && live?.some((s) => s.id === self)) {
+    if (self && live.some((s) => s.id === self)) {
       const checkpointCommentId = await createLinearComment({
         issueId: input.issueId,
         body: formatCheckpointComment(input.brief),
@@ -87,15 +88,13 @@ export default defineTool({
 
     // Cross-issue handoff (ralph dependency unlock): one live session per issue.
     // Creating a second Agent Session while one is live is the HAR-26 duplicate.
-    if (live !== null) {
-      const existing = live.find((session) => session.id !== self);
-      if (existing !== undefined) {
-        return {
-          alreadyLive: true,
-          existingSessionId: existing.id,
-          existingSessionUrl: existing.url,
-        };
-      }
+    const existing = live.find((session) => session.id !== self);
+    if (existing !== undefined) {
+      return {
+        alreadyLive: true,
+        existingSessionId: existing.id,
+        existingSessionUrl: existing.url,
+      };
     }
     const commentId = await createLinearComment({
       issueId: input.issueId,

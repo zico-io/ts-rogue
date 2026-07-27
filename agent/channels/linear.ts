@@ -903,7 +903,10 @@ async function dispatchAgentSession(input: {
         epoch - 1,
       ),
       reason: "context checkpoint rotation",
-    }).catch(() => {});
+    }).catch((error) => {
+      // Surface the leaked stale session/sandbox for a human; never block dispatch.
+      console.warn("checkpoint-rotation reset of previous epoch failed", error);
+    });
   }
 
   await cancel({ continuationToken });

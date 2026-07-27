@@ -106,6 +106,33 @@ immediate disengagement, and human accountability. These criteria live once in
 the root instructions and are mirrored by the `aig:` lens in
 `scripts/ci-review.ts`.
 
+## Session cost and context window
+
+A Linear issue maps to one long-lived eve session that is never explicitly
+closed, so its transcript grows across every wake and tool round-trip. A
+2026-07-27 production analysis found this dominated spend: long sessions
+re-read a near-1M-token transcript on each of a turn's ~14 tool round-trips
+(~14M input tokens/turn), and multi-hour idle gaps blew the prompt cache so
+afternoon PR/merge hooks paid to rebuild it. Three knobs bound that cost:
+
+- **Earlier compaction** - `agent.ts` sets `modelContextWindowTokens`, which is
+  a compaction *trigger*, not a hard cap: eve compacts at
+  `floor(modelContextWindowTokens * 0.9)` (see eve `createCompactionConfig` in
+  `execution/session.js`), summarizing the older transcript and keeping the
+  recent tail verbatim. Session *parking* is the separate `maxInputTokensPerSession`
+  knob (default 40M), left untouched. Lowering the trigger caps the per-turn
+  re-read; tune down if quality holds, up if summaries drop needed detail.
+- **In-context tool-result truncation** - `lib/truncate-for-context.ts` and the
+  wrapped `bash`/`web_fetch` tools keep head+tail with an elision pointer so
+  high-volume output stops riding every subsequent round-trip. This is distinct
+  from `lib/truncate.ts`, which is display-only for Linear activity chips.
+- **Per-phase session rotation** - `handoff` self-continuation posts a
+  checkpoint-marker comment instead of opening a second Linear session; the
+  Linear channel derives an epoch from those markers and routes the next inbound
+  event to a fresh eve context window (see `lib/checkpoint.ts`). This retires the
+  accumulated implementation context at a phase boundary (e.g. after opening the
+  PR) without losing the stable Linear session.
+
 ## Sandbox and credentials
 
 Each root session receives a persistent Vercel Sandbox with the repository,
