@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   extractReviewJson,
+  filterCommentsToValidLines,
   parseDiffAddedLines,
   parseReview,
 } from "./ci-review";
@@ -138,5 +139,62 @@ describe("parseReview", () => {
       '{"event":"COMMENT","body":"review","comments":[{"path":"agent/agent.ts","line":1,"side":"LEFT","body":"shrink: test"}]}';
 
     expect(() => parseReview(input)).toThrow();
+  });
+});
+
+describe("filterCommentsToValidLines", () => {
+  it("keeps a comment whose line is valid in the supplied diff", () => {
+    const validLines = new Map([["src/foo.ts", new Set([2, 3])]]);
+    const comments = [
+      { path: "src/foo.ts", line: 2, side: "RIGHT" as const, body: "note" },
+    ];
+
+    expect(filterCommentsToValidLines(comments, validLines)).toEqual(
+      comments,
+    );
+  });
+
+  it("drops a comment valid only against an incremental diff, not the full PR diff", () => {
+    // Regression for HAR-80: GitHub's create-review API validates comment
+    // paths/lines against the full base...head PR diff, not an incremental
+    // BEFORE_SHA...HEAD_SHA diff. A comment that a smaller incremental diff
+    // considers valid must still be dropped if it does not resolve against
+    // the full PR diff, or GitHub responds 422 "Path could not be resolved".
+    const incrementalDiff = [
+      "diff --git a/src/renamed-only-recently.ts b/src/renamed-only-recently.ts",
+      "index abc..def 100644",
+      "--- a/src/renamed-only-recently.ts",
+      "+++ b/src/renamed-only-recently.ts",
+      "@@ -1,0 +2,1 @@",
+      "+const x = 1;",
+    ].join("\n");
+    const incrementalValidLines = parseDiffAddedLines(incrementalDiff);
+
+    // The full PR diff never touches this path (e.g. it was reverted or
+    // renamed earlier in the PR's history), so GitHub's compare view has no
+    // matching file/line to anchor the comment to.
+    const fullDiff = [
+      "diff --git a/src/other.ts b/src/other.ts",
+      "index abc..def 100644",
+      "--- a/src/other.ts",
+      "+++ b/src/other.ts",
+      "@@ -1,0 +1,1 @@",
+      "+const y = 2;",
+    ].join("\n");
+    const fullValidLines = parseDiffAddedLines(fullDiff);
+
+    const comments = [
+      {
+        path: "src/renamed-only-recently.ts",
+        line: 2,
+        side: "RIGHT" as const,
+        body: "note",
+      },
+    ];
+
+    expect(filterCommentsToValidLines(comments, incrementalValidLines)).toEqual(
+      comments,
+    );
+    expect(filterCommentsToValidLines(comments, fullValidLines)).toEqual([]);
   });
 });
