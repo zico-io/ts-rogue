@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { findAffix } from "../../data/affixes";
+import { dungeonDefFor, floorBandFor } from "../../data/dungeons";
 import { findImplicitPool } from "../../data/implicitPools";
 import { findLootTable } from "../../data/lootTables";
 import { Rng } from "../rng/rng";
@@ -228,6 +229,64 @@ describe("rollChestLoot", () => {
       }
       expect(drops).toBe(50);
     }
+  });
+});
+
+describe("dungeon floor-band loot scaling (ROG-92)", () => {
+  it("rollChestLoot draws a higher-ilvl item from a deeper floor band, same dungeon/seed", () => {
+    const seed = 42;
+    const shallow = rollChestLoot(new Rng(seed), 1, 1, "sunken-crypt");
+    const deep = rollChestLoot(new Rng(seed), 3, 1, "sunken-crypt");
+    expect(shallow.items).toHaveLength(1);
+    expect(deep.items).toHaveLength(1);
+    expect(deep.items[0].ilvl).toBeGreaterThan(shallow.items[0].ilvl);
+  });
+
+  it("rollChestLoot only pulls from the floor band's own table, never the neighboring band's", () => {
+    const shallowTableIds = new Set(
+      (findLootTable("chest-1")?.items ?? []).map((item) => item.baseId),
+    );
+    const deepTableIds = new Set(
+      (findLootTable("chest-2")?.items ?? []).map((item) => item.baseId),
+    );
+    for (let seed = 1; seed <= 30; seed++) {
+      const shallow = rollChestLoot(new Rng(seed), 1, 1, "sunken-crypt");
+      const deep = rollChestLoot(new Rng(seed), 3, 1, "sunken-crypt");
+      expect(shallowTableIds.has(shallow.items[0].baseId)).toBe(true);
+      expect(deepTableIds.has(deep.items[0].baseId)).toBe(true);
+    }
+  });
+
+  it("rollVictoryLoot with a dungeon context overrides the monster's own tier with the floor band's table", () => {
+    const dungeon = dungeonDefFor("howling-cave");
+    const shallowRef = floorBandFor(dungeon, 1).lootTableRef;
+    const deepRef = floorBandFor(dungeon, 4).lootTableRef;
+    expect(shallowRef).toBe("tier-2");
+    expect(deepRef).toBe("tier-3");
+
+    const enemies = [{ defId: "slime", hp: 0 }];
+    let shallowMaxIlvl = 0;
+    let deepMaxIlvl = 0;
+    for (let seed = 1; seed <= 40; seed++) {
+      const shallow = rollVictoryLoot(new Rng(seed), enemies, 1, {
+        dungeonId: "howling-cave",
+        floor: 1,
+      });
+      const deep = rollVictoryLoot(new Rng(seed), enemies, 1, {
+        dungeonId: "howling-cave",
+        floor: 4,
+      });
+      for (const item of shallow.items) {
+        shallowMaxIlvl = Math.max(shallowMaxIlvl, item.ilvl);
+      }
+      for (const item of deep.items) {
+        deepMaxIlvl = Math.max(deepMaxIlvl, item.ilvl);
+      }
+    }
+    // Slime's own lootTableRef is "tier-1" (max ilvl 1); with dungeon context
+    // both floors should instead draw from tier-2/tier-3 (max ilvl 5 and 10).
+    expect(shallowMaxIlvl).toBeGreaterThan(1);
+    expect(deepMaxIlvl).toBeGreaterThan(shallowMaxIlvl);
   });
 });
 

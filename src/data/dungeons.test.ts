@@ -6,6 +6,7 @@ import {
   dungeonDescendFlavor,
   dungeonEntryFlavor,
   findDungeon,
+  floorBandFor,
 } from "./dungeons";
 import { findLootTable } from "./lootTables";
 import { findMonster } from "./monsters";
@@ -22,6 +23,21 @@ describe("DUNGEONS data table", () => {
   it("exposes findDungeon", () => {
     expect(findDungeon("sunken-crypt")?.name).toBe("Sunken Crypt");
     expect(findDungeon("nope")).toBeUndefined();
+  });
+
+  it("dungeonDefFor resolves known ids and falls back to DUNGEONS[0] for unmapped ids", () => {
+    expect(dungeonDefFor("howling-cave").name).toBe("Howling Cave");
+    expect(dungeonDefFor("some-unmapped-entrance-id")).toBe(DUNGEONS[0]);
+  });
+
+  it("floorBandFor picks the band covering the floor and clamps out-of-range floors", () => {
+    const crypt = findDungeon("sunken-crypt");
+    if (!crypt) throw new Error("sunken-crypt missing from DUNGEONS");
+    expect(floorBandFor(crypt, 1).lootTableRef).toBe("tier-1");
+    expect(floorBandFor(crypt, 2).lootTableRef).toBe("tier-1");
+    expect(floorBandFor(crypt, 3).lootTableRef).toBe("tier-2");
+    expect(floorBandFor(crypt, 0).lootTableRef).toBe("tier-1");
+    expect(floorBandFor(crypt, 99).lootTableRef).toBe("tier-2");
   });
 
   it("every palette monster id resolves against the monster roster", () => {
