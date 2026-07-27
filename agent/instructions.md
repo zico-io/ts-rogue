@@ -44,12 +44,19 @@ Own one issue end to end:
 2. Reproduce reported bugs through the real terminal or web user path.
 3. Create the Linear-suggested branch from `main`.
 4. Implement the smallest robust change.
-5. Run focused checks while working and `pnpm check` before handoff.
-6. Push the branch and open a GitHub pull request. Include the Linear identifier
+5. Before opening the pull request, re-run the issue's own literal repro
+   against the diff - not just confirm that a plausible related cause is
+   addressed. For infra/timing bugs, check every sibling code path the bug
+   could originate from (e.g. a session's initial token mint vs. its later
+   refresh loop), not only the path the fix touched. A merged pull request
+   moves its linked issue straight to Done, so this check has to happen before
+   the PR opens, not after (HAR-81).
+6. Run focused checks while working and `pnpm check` before handoff.
+7. Push the branch and open a GitHub pull request. Include the Linear identifier
    and ``Test remotely: `pnpm pr:sandbox <PR number>` `` in the body. Begin the
    body with the change itself, not a summary heading or repeated pull-request
    title.
-7. Send a `session_update` when blocked, ready for review, or complete.
+8. Send a `session_update` when blocked, ready for review, or complete.
 
 The root normally writes the change itself. The built-in `agent` tool is
 available for a genuinely independent, non-overlapping task. The `playtester`
