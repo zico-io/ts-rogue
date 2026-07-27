@@ -2,7 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 
 import { connectLinearCredentials } from "@vercel/connect/eve";
 import type { UserContent } from "ai";
-import { type CancelFn, defineChannel, POST } from "eve/channels";
+import { type CancelFn, defineChannel, POST, type ResetFn } from "eve/channels";
 import {
   createLinearAgentActivity,
   createLinearAgentSessionOnComment,
@@ -33,6 +33,10 @@ import {
   updateLinearAgentSession,
 } from "eve/channels/linear";
 
+import {
+  epochContinuationToken,
+  epochFromComments,
+} from "../lib/checkpoint";
 import { isPlainObject } from "../lib/is-plain-object";
 import { advanceIssueState } from "../lib/issue-state";
 import { listLiveAgentSessions } from "../lib/live-sessions";
@@ -984,10 +988,19 @@ async function dispatchAgentSession(input: {
   readonly config: LinearChannelConfig;
   readonly event: LinearAgentSessionEvent;
   readonly onAgentSession: NonNullable<LinearChannelConfig["onAgentSession"]>;
+  readonly reset: ResetFn;
   // biome-ignore lint/suspicious/noExplicitAny: mirrors eve's own SendFn generic default
   readonly send: (payload: any, options: any) => Promise<unknown>;
 }) {
-  const { cancel, config, event, onAgentSession, send } = input;
+  const { cancel, config, event, onAgentSession, reset, send } = input;
+
+  // Context-checkpoint rotation (see agent/lib/checkpoint.ts): the eve session
+  // behind this Linear Agent Session is keyed by an epoch derived from the
+  // checkpoint-marker comments already on the webhook, so a `handoff`
+  // self-continuation retires the accumulated implementation context and the
+  // next inbound event runs in a fresh window - without a second Linear session.
+  const epoch = epochFromComments(event.previousComments);
+  const continuationToken = epochContinuationToken(event.agentSession.id, epoch);
   const ctx = {
     delivery: event.delivery,
     linear: buildLinearHandle({
@@ -1004,7 +1017,6 @@ async function dispatchAgentSession(input: {
   // confirming disengagement without ever dispatching a new turn to the model
   // or running the issue-lifecycle sync.
   if (event.action === "prompted" && event.agentActivity?.signal === "stop") {
-    const continuationToken = linearContinuationToken(event.agentSession.id);
     await cancel({ continuationToken });
     await ctx.linear.createActivity({
       body: "Stopped. This session will not take further action until you send a new message.",
@@ -1015,7 +1027,23 @@ async function dispatchAgentSession(input: {
   const result = await onAgentSession(ctx, event);
   if (result === null) return;
 
-  const continuationToken = linearContinuationToken(event.agentSession.id);
+  // Past epoch 0 we have rotated to a fresh eve session; retire the previous
+  // epoch's now-abandoned session so its parked workflow and sandbox are freed
+  // instead of lingering. Idempotent (a repeat resolves to no_active_session)
+  // and safe against the live turn: the prior epoch parked when its checkpoint
+  // comment was posted and never gets another webhook, since the epoch only
+  // grows. Best-effort - a failed cleanup must not block dispatch. The fresh
+  // session still receives the checkpoint brief: it rides in `previousComments`
+  // below (the checkpoint is itself a Linear comment).
+  if (epoch > 0) {
+    await reset({
+      continuationToken: epochContinuationToken(
+        event.agentSession.id,
+        epoch - 1,
+      ),
+      reason: "context checkpoint rotation",
+    }).catch(() => {});
+  }
 
   await cancel({ continuationToken });
 
@@ -1104,7 +1132,7 @@ function linearChannel(config: LinearChannelConfig = {}): LinearChannel {
     routes: [
       POST(
         config.route ?? LINEAR_CHANNEL_DEFAULT_ROUTE,
-        async (req, { send, cancel, waitUntil }) => {
+        async (req, { send, cancel, reset, waitUntil }) => {
           const body = await verifyInbound(req, config.credentials);
           if (body === null)
             return new Response("unauthorized", { status: 401 });
@@ -1125,6 +1153,7 @@ function linearChannel(config: LinearChannelConfig = {}): LinearChannel {
                 config,
                 event,
                 onAgentSession,
+                reset,
                 send,
               }),
             );

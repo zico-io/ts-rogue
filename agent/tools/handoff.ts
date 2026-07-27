@@ -7,6 +7,7 @@ import { defineTool } from "eve/tools";
 import type { ToolContext } from "eve/tools";
 import { z } from "zod";
 
+import { formatCheckpointComment } from "../lib/checkpoint";
 import { listLiveAgentSessions } from "../lib/live-sessions";
 
 const credentials = connectLinearCredentials("linear/ts-rogue-eve");
@@ -85,21 +86,42 @@ export const createLinearComment = async (input: {
 
 export default defineTool({
   description:
-    "Hand off a Linear issue to a brand-new Agent Session with an empty context window and its own fresh token quota, seeded by a comment carrying `brief`. Two uses: (1) Self-continuation - the current session has run long enough to risk hitting its own token-quota limit. Pass the current issue's id and a full continuation packet (what's done with evidence, what's left, the exact next action), then end your own turn immediately after calling it. (2) Ralph-mode dependency unlock - a sub-issue just became ready because its blocker(s) merged. Pass that sub-issue's id and a brief carrying context its own issue packet won't have: what the predecessor(s) shipped (their PR), and any decisions or gotchas that affect this sub-issue's approach. Use this instead of a bare delegate assignment so the new session starts informed, not blind. Either way, `brief` must let a fresh agent with zero conversation history proceed without re-reading anything. If the issue already has another live Agent Session, this tool creates nothing and returns `alreadyLive` with that session's id and URL - treat the issue as in flight and report the existing session; never retry the handoff.",
+    "Hand off to a fresh, empty context window seeded by a `brief`. Two uses: (1) Self-continuation - end the current phase and let the next inbound event resume this SAME Linear issue in a fresh eve session. Pass the current issue's id. Best at a natural pause where an event will wake it (right after opening the PR, so the review/merge webhook runs fresh) - not to keep working right now (eve auto-compacts, so you no longer need to hand off just to avoid a token limit). This posts a context-checkpoint comment (no second Linear session is created) and returns `checkpointed`; end your own turn immediately after calling it. (2) Ralph-mode dependency unlock - a DIFFERENT sub-issue just became ready because its blocker(s) merged. Pass that sub-issue's id and a brief carrying context its own issue packet won't have: what the predecessor(s) shipped (their PR), and any decisions or gotchas that affect its approach. This creates a brand-new Agent Session on that sub-issue and returns `handoffSessionId`. Either way, `brief` must let a fresh agent with zero conversation history proceed without re-reading anything: what the issue asked for, what's done with evidence, what's left, the exact next action. For case (2), if that issue already has another live Agent Session, this tool creates nothing and returns `alreadyLive` with its id and URL - treat it as in flight and never retry.",
   inputSchema: z.object({
     issueId: z.string().min(1),
     brief: z.string().min(1).max(8000),
   }),
   async execute(input, ctx) {
-    // One live session per issue: creating a second Agent Session while one
-    // is live is exactly the HAR-26 duplicate. The caller's own session
-    // (self-continuation) is exempt; a pre-check failure fails open because
-    // a flaky lookup must never block a legitimate handoff.
+    const self = callerAgentSessionId(ctx);
+    // A flaky lookup must never block a legitimate handoff: fail open to the
+    // cross-issue path (create a fresh session) rather than throwing.
+    let live: Awaited<ReturnType<typeof listLiveAgentSessions>> | null = null;
     try {
-      const self = callerAgentSessionId(ctx);
-      const existing = (
-        await listLiveAgentSessions({ credentials, issueId: input.issueId })
-      ).find((session) => session.id !== self);
+      live = await listLiveAgentSessions({ credentials, issueId: input.issueId });
+    } catch {
+      live = null;
+    }
+
+    // Self-continuation: the caller's own Agent Session is live on the target
+    // issue. Post a context checkpoint (agent/lib/checkpoint.ts) instead of
+    // opening a SECOND Linear session - the linear channel reads the checkpoint
+    // marker on the next inbound event and rotates the eve session (a fresh,
+    // empty context window) behind this same Linear session. This is the common
+    // case: pausing at a phase boundary (e.g. after opening the PR) so the
+    // review/merge webhook runs fresh instead of resuming the accumulated
+    // implementation context.
+    if (self && live?.some((s) => s.id === self)) {
+      const checkpointCommentId = await createLinearComment({
+        issueId: input.issueId,
+        body: formatCheckpointComment(input.brief),
+      });
+      return { checkpointed: true, checkpointCommentId };
+    }
+
+    // Cross-issue handoff (ralph dependency unlock): one live session per issue.
+    // Creating a second Agent Session while one is live is the HAR-26 duplicate.
+    if (live !== null) {
+      const existing = live.find((session) => session.id !== self);
       if (existing !== undefined) {
         return {
           alreadyLive: true,
@@ -107,8 +129,6 @@ export default defineTool({
           existingSessionUrl: existing.url,
         };
       }
-    } catch {
-      // fail open
     }
     const commentId = await createLinearComment({
       issueId: input.issueId,

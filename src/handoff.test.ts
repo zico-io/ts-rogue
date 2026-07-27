@@ -33,6 +33,7 @@ const handoffTool = (await import("../agent/tools/handoff"))
         existingSessionId: string;
         existingSessionUrl: string | null;
       }
+    | { checkpointed: true; checkpointCommentId: string }
   >;
 };
 const { createLinearComment } = await import("../agent/tools/handoff");
@@ -207,7 +208,7 @@ describe("handoff duplicate-session guard", () => {
     expect(createSessionOnComment).not.toHaveBeenCalled();
   });
 
-  it("proceeds when the only live session is the caller's own (self-continuation)", async () => {
+  it("checkpoints in place when the only live session is the caller's own (self-continuation)", async () => {
     mockGraphQL({
       sessions: [
         {
@@ -219,17 +220,24 @@ describe("handoff duplicate-session guard", () => {
       ],
       commentId: "comment-2",
     });
-    createSessionOnComment.mockResolvedValue({ id: "session-next" });
 
     const result = await handoffTool.execute(
       { issueId: "issue-uuid", brief: "continuation packet" },
       toolCtx("session-self"),
     );
 
-    expect(result).toMatchObject({ handoffSessionId: "session-next" });
-    expect(createSessionOnComment).toHaveBeenCalledWith(
-      expect.objectContaining({ commentId: "comment-2" }),
-    );
+    // Self-continuation rotates the eve session behind the SAME Linear session:
+    // post a checkpoint-marker comment, create no second Agent Session. The
+    // linear channel reads the marker on the next inbound event and routes to a
+    // fresh eve context window (see agent/lib/checkpoint.ts).
+    expect(result).toEqual({
+      checkpointed: true,
+      checkpointCommentId: "comment-2",
+    });
+    expect(createSessionOnComment).not.toHaveBeenCalled();
+    const commentBody = commentCreateCall()?.variables.input.body;
+    expect(commentBody).toContain("<!-- eve-checkpoint -->");
+    expect(commentBody).toContain("continuation packet");
   });
 
   it("ignores sessions in terminal statuses", async () => {
