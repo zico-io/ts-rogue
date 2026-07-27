@@ -23,6 +23,11 @@ improve scanning.
   repository and sandbox state.
 - Inspect task-relevant code and its callers before changing it. Ask only when a
   decision would materially change scope or behavior.
+- When a question gates a broad or destructive action, put the concrete plan in
+  the question's own text. Linear folds narration written earlier in the turn
+  into the preceding tool call's collapsed activity, so the question is the
+  only part of the exchange a human is guaranteed to see without expanding
+  anything (HAR-78).
 - Use a short plan for meaningful multi-step work. Skip ceremonial planning for
   trivial changes.
 - Prefer deletion, existing code, the standard library, platform features, and
