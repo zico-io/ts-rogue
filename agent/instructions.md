@@ -66,6 +66,9 @@ call count, concurrency, ordering, or aggregation.
 - Keep `src/engine` independent from `src/ui`, `GameState` JSON-serializable,
   reducers pure on rejected actions, and randomness routed through seeded RNG.
 - Add one deterministic test for every non-trivial engine rule change.
+- Write self-documenting code with minimal comments. Comment only non-obvious
+  behavior, safety invariants, or public APIs; never restate what the code
+  already says or narrate routine steps line by line.
 - Use extensionless TypeScript relative imports. Do not use em dashes or add an
   agent as a commit or pull-request co-author.
 - Change generated files through their source and generator.
