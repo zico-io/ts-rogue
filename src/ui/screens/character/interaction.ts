@@ -11,15 +11,9 @@ export interface CharacterUiState {
 
 export const INITIAL_CHARACTER_UI_STATE: CharacterUiState = { memberIndex: 0 };
 
-export type CharacterUiEffect = { type: "back" };
-
 export interface CharacterUiResult {
   state: CharacterUiState;
-  effect?: CharacterUiEffect;
-}
-
-export interface CharacterUiContext {
-  partyLength: number;
+  back?: boolean;
 }
 
 const characterKeymap: Keymap = {
@@ -35,16 +29,15 @@ export function resolveCharacterIntent(key: KeyName): Intent | undefined {
 export function reduceCharacterUi(
   state: CharacterUiState,
   intent: Intent,
-  ctx: CharacterUiContext,
+  partyLength: number,
 ): CharacterUiResult {
-  if (intent.kind === "cancel") return { state, effect: { type: "back" } };
+  if (intent.kind === "cancel") return { state, back: true };
   if (
     (intent.kind === "menuLeft" || intent.kind === "menuRight") &&
-    ctx.partyLength > 1
+    partyLength > 1
   ) {
     const delta = intent.kind === "menuLeft" ? -1 : 1;
-    const next =
-      (state.memberIndex + delta + ctx.partyLength) % ctx.partyLength;
+    const next = (state.memberIndex + delta + partyLength) % partyLength;
     return { state: { memberIndex: next } };
   }
   return { state };

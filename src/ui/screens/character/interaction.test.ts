@@ -40,23 +40,22 @@ describe("resolveCharacterIntent", () => {
 });
 
 describe("reduceCharacterUi", () => {
-  it("cancel emits a back effect and leaves state untouched", () => {
+  it("cancel signals back and leaves state untouched", () => {
     const result = reduceCharacterUi(
       INITIAL_CHARACTER_UI_STATE,
       { kind: "cancel" },
-      { partyLength: 1 },
+      1,
     );
-    expect(result.effect).toEqual({ type: "back" });
+    expect(result.back).toBe(true);
     expect(result.state).toEqual(INITIAL_CHARACTER_UI_STATE);
   });
 
   it("wraps the member index with menuLeft/menuRight when the party has more than one member", () => {
-    const ctx = { partyLength: 3 };
     expect(
-      reduceCharacterUi({ memberIndex: 0 }, { kind: "menuLeft" }, ctx).state,
+      reduceCharacterUi({ memberIndex: 0 }, { kind: "menuLeft" }, 3).state,
     ).toEqual({ memberIndex: 2 });
     expect(
-      reduceCharacterUi({ memberIndex: 2 }, { kind: "menuRight" }, ctx).state,
+      reduceCharacterUi({ memberIndex: 2 }, { kind: "menuRight" }, 3).state,
     ).toEqual({ memberIndex: 0 });
   });
 
@@ -64,20 +63,20 @@ describe("reduceCharacterUi", () => {
     const result = reduceCharacterUi(
       { memberIndex: 0 },
       { kind: "menuRight" },
-      { partyLength: 1 },
+      1,
     );
     expect(result.state).toEqual({ memberIndex: 0 });
-    expect(result.effect).toBeUndefined();
+    expect(result.back).toBeUndefined();
   });
 
   it("is a no-op for an unrelated intent", () => {
     const result = reduceCharacterUi(
       { memberIndex: 0 },
       { kind: "toggleConsole" },
-      { partyLength: 1 },
+      1,
     );
     expect(result.state).toEqual({ memberIndex: 0 });
-    expect(result.effect).toBeUndefined();
+    expect(result.back).toBeUndefined();
   });
 });
 

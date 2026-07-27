@@ -49,10 +49,8 @@ export function CharacterSheetScreen({
     const intent = resolveCharacterIntent(keyName);
     if (!intent) return;
 
-    const result = reduceCharacterUi(characterUi, intent, {
-      partyLength: state.party.length,
-    });
-    if (result.effect?.type === "back") onClose();
+    const result = reduceCharacterUi(characterUi, intent, state.party.length);
+    if (result.back) onClose();
     setCharacterUi(result.state);
   });
 
