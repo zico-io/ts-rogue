@@ -110,3 +110,11 @@ export const DUNGEONS: readonly DungeonDef[] = [
 export function findDungeon(id: string): DungeonDef | undefined {
   return DUNGEONS.find((dungeon) => dungeon.id === id);
 }
+
+// Resolves the def driving a live dungeon run. Falls back to the first story
+// def for a dungeonId that doesn't match one yet -- e.g. the placeholder
+// `dungeon-<entranceIndex>` ids overworld generation assigns until ROG-90
+// wires real entrance-to-dungeon assignment.
+export function dungeonDefFor(dungeonId: string): DungeonDef {
+  return findDungeon(dungeonId) ?? DUNGEONS[0];
+}
