@@ -118,7 +118,10 @@ export const MONSTERS: readonly MonsterDef[] = [
       "      _|____|_",
     ],
     color: "#e74343",
-    skills: ["cleave"],
+    // Cleave (single) is its default strike; Meteor (allEnemies) is its
+    // room-clearing blast, both cast through the same shape resolver a
+    // party member's BattleSkill command uses (ENG-28).
+    skills: ["cleave", "meteor"],
   },
 ];
 

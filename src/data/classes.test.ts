@@ -126,15 +126,19 @@ describe("classSkills", () => {
     expect(classSkills("warrior").map((s) => s.id)).toEqual([
       "cleave",
       "second-wind",
+      "skewer",
     ]);
     expect(classSkills("rogue").map((s) => s.id)).toEqual([
       "backstab",
       "pinpoint",
+      "scattershot",
     ]);
     expect(classSkills("wizard").map((s) => s.id)).toEqual([
       "flame",
       "heal",
       "frost",
+      "hailstorm",
+      "meteor",
     ]);
   });
 
