@@ -85,7 +85,7 @@ export const XP_GROWTH = 1.5;
 
 export const SHOCKED_VULNERABLE_MULTIPLIER = 1.5;
 
-export interface PendingReorder {
+interface PendingReorder {
   id: string;
   penalty: number;
 }
