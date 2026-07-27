@@ -10,10 +10,10 @@ import {
 } from "../loot/consumables";
 import { effectiveStats } from "../loot/equipment";
 import { FIELD_BACKPACK_CAP } from "../loot/inventory";
-import { describeItem } from "../loot/items";
 import {
   applyLootPickupWithFilter,
   buildLootFilterContext,
+  lootLogEntries,
   queueLootTriage,
 } from "../loot/pickup";
 import { rollVictoryLoot } from "../loot/resolution";
@@ -457,11 +457,9 @@ function tickSingleEffect(
   element: Element | undefined,
 ): EffectInstance | null {
   logs.push(
-    entry(
-      `${actorName} takes ${damage} ${effectName} damage!`,
-      "damage",
+    entry(`${actorName} takes ${damage} ${effectName} damage!`, "damage", {
       element,
-    ),
+    }),
   );
 
   const nextDuration = effect.duration - 1;
@@ -618,7 +616,7 @@ function applyMemberCommand(
             entry(
               `${actor.name} hits ${target.name} for ${finalDamage}${result.crit ? " - crit!" : ""}`,
               "damage",
-              "physical",
+              { element: "physical" },
             ),
           );
           if (target.hp === 0)
@@ -656,7 +654,7 @@ function applyMemberCommand(
             entry(
               `${actor.name} casts ${skill.name} on ${target.name} for ${finalDamage}${elementTag}!`,
               "damage",
-              skill.element ?? "physical",
+              { element: skill.element ?? "physical" },
             ),
           );
           if (target.hp === 0)
@@ -804,7 +802,7 @@ function advanceRound(
         entry(
           `${enemy.name} hits ${target.name} for ${finalDamage}${elementTag}${attack.crit ? " - crit!" : ""}`,
           "damage",
-          attackElement ?? "physical",
+          { element: attackElement ?? "physical" },
         ),
       );
 
@@ -891,21 +889,10 @@ function finalizeWon(
     state.pendingLootTriage,
     pickup.queued,
   );
-  // Loot log lines: kept items rendered with their rarity color (ENG-20).
-  const lootLogs = pickup.outcome.kept.map((item) =>
-    entry(`Looted ${describeItem(item)}!`, "loot", undefined, item.rarity),
-  );
-  // Dismantle summary line (ENG-20): one line listing count and total gold,
-  // using the gold-toned "loot" kind color (mixed rarities, no single rarity).
-  const dismantleLogs: LogEntry[] =
-    pickup.outcome.dismantled.length > 0
-      ? [
-          entry(
-            `Dismantled ${pickup.outcome.dismantled.length} item(s) -> ${pickup.outcome.goldGained}g`,
-            "loot",
-          ),
-        ]
-      : [];
+  // Loot log lines (ENG-20): kept items rendered with their rarity color,
+  // plus a dismantle summary when the filter discarded anything. Shared with
+  // `openChest`'s pickup site via `lootLogEntries`.
+  const lootOutcomeLogs = lootLogEntries(pickup.outcome);
   const triageLogs = pickup.queued.length
     ? [
         entry(
@@ -935,13 +922,7 @@ function finalizeWon(
     pendingLootTriage,
     dungeonState,
     battleState: null,
-    log: [
-      ...state.log,
-      ...finalLogs,
-      ...lootLogs,
-      ...dismantleLogs,
-      ...triageLogs,
-    ],
+    log: [...state.log, ...finalLogs, ...lootOutcomeLogs, ...triageLogs],
   };
 }
 

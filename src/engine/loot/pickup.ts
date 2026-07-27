@@ -1,5 +1,6 @@
 import { tierForFloor } from "../../data/lootTables";
-import { itemSellPrice } from "./items";
+import { entry, type LogEntry } from "../log";
+import { describeItem, itemSellPrice } from "./items";
 import type { LootFilterContext, LootFilterRules } from "./lootFilter";
 import { shouldDismantle } from "./lootFilter";
 import type { ItemInstance } from "./types";
@@ -50,6 +51,28 @@ export interface LootPickupOutcome {
   dismantled: ItemInstance[];
 
   goldGained: number;
+}
+
+/**
+ * Build the log lines for a pickup outcome (ENG-20 loot toast): one
+ * rarity-colored "Looted ...!" line per kept item, followed by a single
+ * "Dismantled N item(s) -> Gg" summary line when the filter discarded
+ * anything. Shared by both pickup sites (`openChest` and battle victory's
+ * `finalizeWon`) so the line-building and text templates live in one place.
+ */
+export function lootLogEntries(outcome: LootPickupOutcome): LogEntry[] {
+  const keptLines = outcome.kept.map((item) =>
+    entry(`Looted ${describeItem(item)}!`, "loot", { rarity: item.rarity }),
+  );
+  const dismantleLines = outcome.dismantled.length
+    ? [
+        entry(
+          `Dismantled ${outcome.dismantled.length} item(s) -> ${outcome.goldGained}g`,
+          "loot",
+        ),
+      ]
+    : [];
+  return [...keptLines, ...dismantleLines];
 }
 
 export function applyLootPickupWithFilter(

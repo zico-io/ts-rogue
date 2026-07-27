@@ -17,6 +17,7 @@ import { EMPTY_LOOT_FILTER, type LootFilterRules } from "../loot/lootFilter";
 import {
   applyLootPickupWithFilter,
   buildLootFilterContext,
+  lootLogEntries,
   queueLootTriage,
 } from "../loot/pickup";
 import { rollChestLoot } from "../loot/resolution";
@@ -397,21 +398,10 @@ function openChest(state: GameState): GameState {
     state.pendingLootTriage,
     pickup.queued,
   );
-  // ENG-20: base chest loot line (fixed drops, no rarity); then one
-  // rarity-colored log line per kept generated item; then the dismantle
-  // summary; and finally the triage-full line if the backpack overflowed.
+  // ENG-20: base chest loot line (fixed drops, no rarity), then the shared
+  // kept/dismantle lines (`lootLogEntries`, also used by battle victory's
+  // `finalizeWon`), then the triage-full line if the backpack overflowed.
   const baseLine = entry(chestLootMessage(loot), "loot");
-  const keptLines = pickup.outcome.kept.map((item) =>
-    entry(`Looted ${describeItem(item)}!`, "loot", undefined, item.rarity),
-  );
-  const dismantleLines = pickup.outcome.dismantled.length
-    ? [
-        entry(
-          `Dismantled ${pickup.outcome.dismantled.length} item(s) -> ${pickup.outcome.goldGained}g`,
-          "loot",
-        ),
-      ]
-    : [];
   const triageLines = pickup.queued.length
     ? [
         entry(
@@ -423,8 +413,7 @@ function openChest(state: GameState): GameState {
   const logs = [
     ...state.log,
     baseLine,
-    ...keptLines,
-    ...dismantleLines,
+    ...lootLogEntries(pickup.outcome),
     ...triageLines,
   ];
   return {
