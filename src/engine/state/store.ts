@@ -384,7 +384,7 @@ function openChest(state: GameState): GameState {
     : state.inventory;
 
   const rng = new Rng(state.seed, state.rngState);
-  const chest = rollChestLoot(rng, ds.floor, state.nextItemId);
+  const chest = rollChestLoot(rng, ds.floor, state.nextItemId, ds.dungeonId);
 
   const filterContext = buildLootFilterContext(state.party, ds.floor);
   const pickup = applyLootPickupWithFilter(

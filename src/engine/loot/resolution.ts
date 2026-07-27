@@ -1,6 +1,11 @@
+import { dungeonDefFor, floorBandFor } from "../../data/dungeons";
 import { findImplicitPool } from "../../data/implicitPools";
 import { findItemBase } from "../../data/itemBases";
-import { chestLootTableFor, findLootTable } from "../../data/lootTables";
+import {
+  chestLootTableFor,
+  chestLootTableForRef,
+  findLootTable,
+} from "../../data/lootTables";
 import { findMonster } from "../../data/monsters";
 import type { Rng } from "../rng/rng";
 import { rollAffixes, rollImplicitAffix } from "./affixes";
@@ -24,6 +29,21 @@ export const DEFAULT_RARITY_WEIGHTS: RarityWeights = {
 export interface LootEnemy {
   defId: string;
   hp: number;
+}
+
+// Identifies the current dungeon floor so loot resolution can draw from that
+// floor band's tiered table instead of a monster- or floor-global default.
+export interface DungeonLootContext {
+  dungeonId: string;
+  floor: number;
+}
+
+function dungeonLootTableRef(
+  context: DungeonLootContext | undefined,
+): string | undefined {
+  if (!context) return undefined;
+  return floorBandFor(dungeonDefFor(context.dungeonId), context.floor)
+    .lootTableRef;
 }
 
 function weightedPick<T extends { weight: number }>(
@@ -101,12 +121,13 @@ export function rollEnemyLoot(
   rng: Rng,
   defId: string,
   startId: number,
+  lootTableRef?: string,
 ): LootRollResult {
   const monster = findMonster(defId);
   if (!monster) return { items: [], nextId: startId };
   let items: ItemInstance[] = [];
   let nextId = startId;
-  const table = findLootTable(monster.lootTableRef);
+  const table = findLootTable(lootTableRef ?? monster.lootTableRef);
   if (table) {
     const result = rollLootTable(rng, table, nextId);
     items = [...items, ...result.items];
@@ -127,12 +148,14 @@ export function rollVictoryLoot(
   rng: Rng,
   enemies: readonly LootEnemy[],
   startId: number,
+  dungeon?: DungeonLootContext,
 ): LootRollResult {
+  const lootTableRef = dungeonLootTableRef(dungeon);
   let items: ItemInstance[] = [];
   let nextId = startId;
   for (const enemy of enemies) {
     if (enemy.hp > 0) continue;
-    const result = rollEnemyLoot(rng, enemy.defId, nextId);
+    const result = rollEnemyLoot(rng, enemy.defId, nextId, lootTableRef);
     items = [...items, ...result.items];
     nextId = result.nextId;
   }
@@ -143,6 +166,13 @@ export function rollChestLoot(
   rng: Rng,
   floor: number,
   startId: number,
+  dungeonId?: string,
 ): LootRollResult {
-  return rollLootTable(rng, chestLootTableFor(floor), startId);
+  const lootTableRef = dungeonId
+    ? dungeonLootTableRef({ dungeonId, floor })
+    : undefined;
+  const table = lootTableRef
+    ? chestLootTableForRef(lootTableRef)
+    : chestLootTableFor(floor);
+  return rollLootTable(rng, table, startId);
 }

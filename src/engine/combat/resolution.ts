@@ -1153,7 +1153,18 @@ export function resolveBattleEvent(
   let loot: ItemInstance[] = [];
   let nextItemId = state.nextItemId;
   if (status === "won") {
-    const result = rollVictoryLoot(rng, enemies, state.nextItemId);
+    const dungeonContext = state.dungeonState
+      ? {
+          dungeonId: state.dungeonState.dungeonId,
+          floor: state.dungeonState.floor,
+        }
+      : undefined;
+    const result = rollVictoryLoot(
+      rng,
+      enemies,
+      state.nextItemId,
+      dungeonContext,
+    );
     loot = result.items;
     nextItemId = result.nextId;
   }

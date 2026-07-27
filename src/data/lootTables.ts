@@ -88,3 +88,10 @@ export function chestLootTableFor(floor: number): LootTable {
   if (tier === 2) return findLootTable("chest-2") as LootTable;
   return findLootTable("chest-3") as LootTable;
 }
+
+// Chest tables mirror the "tier-N" reward tables 1:1 as "chest-N" - the
+// convention every DungeonFloorBand.lootTableRef already follows.
+export function chestLootTableForRef(lootTableRef: string): LootTable {
+  const chestId = lootTableRef.replace(/^tier-/, "chest-");
+  return findLootTable(chestId) ?? chestLootTableFor(1);
+}
