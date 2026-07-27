@@ -1742,10 +1742,11 @@ describe("Phase 6: boss victory marks the dungeon cleared", () => {
       true,
     );
 
-    // Persistent clearedAt (ROG-91) is keyed by the def's real id, not the
-    // raw placeholder entrance id. Distinct from the session cleared flag.
-    const defId = dungeonDefFor("dungeon-0").id;
-    expect(state.dungeonState?.dungeonId).toBe("dungeon-0");
+    // Persistent clearedAt (ROG-91) is keyed by the def's real id, which
+    // entrance 0 already resolves to post-ROG-90. Distinct from the session
+    // cleared flag.
+    const defId = dungeonDefFor(dungeonWaypointId(0)).id;
+    expect(state.dungeonState?.dungeonId).toBe(dungeonWaypointId(0));
     expect(state.clearedAt[defId]).toBeTypeOf("number");
   });
 
