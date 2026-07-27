@@ -13,8 +13,8 @@ documents.
 ## Before writing
 
 Read the named project and related issues first. If the request would create or
-substantially restructure several records, get approval with an `ask_question`
-whose prompt text *is* the preview:
+substantially restructure several records, delegate the structural breakdown to
+the `scoper` specialist, then present one concise preview covering:
 
 - project outcome and non-goals;
 - milestones and their exit conditions;

@@ -34,8 +34,10 @@ already render the project, issue, pull request, author, and activity state.
 
 The declared `playtester` subagent is available when independent terminal or web
 verification adds value. The root can also drive the same play scripts directly.
-Automatic ponytail pull-request review runs in GitHub Actions through
-`scripts/ci-review.ts`.
+The declared `scoper` subagent runs a stronger Opus model to break a
+multi-deliverable request into an approvable breakdown; the root keeps the
+approval gate and does every Linear write. Automatic ponytail pull-request review
+runs in GitHub Actions through `scripts/ci-review.ts`.
 
 The `Workflow` tool (`tools/workflow.ts`) lets the root orchestrate several
 `agent` calls - fan-out, chained results, loop/conditional dispatch - from one
@@ -69,6 +71,7 @@ context. Blocking relations in Linear determine readiness.
 | `instructions/memory.ts` | Dynamic, per-turn instructions loading recent memories as untrusted JSON |
 | `skills/` | Optional Eve, Linear project, and README-hygiene procedures |
 | `subagents/playtester/` | Independent terminal and web acceptance verification |
+| `subagents/scoper/` | Opus-model planner that breaks a multi-deliverable request into an approvable breakdown |
 | `tools/handoff.ts` | Starts an informed successor Agent Session |
 | `tools/workflow.ts` | Enables the `Workflow` tool to orchestrate `agent` calls as one durable step |
 | `tools/session_update.ts` | Posts blocked, review, and completion activities |
@@ -115,8 +118,9 @@ process environment or repository. Startup tolerates temporary token-mint
 failure, retries in the background, and recovers stranded commits when access
 returns.
 
-The playtester has its own read-only, screenshot-enabled sandbox. Declared
-subagents do not inherit root slots, so its sandbox and prewarm hook are authored
+The playtester has its own read-only, screenshot-enabled sandbox. The scoper has
+its own read-only sandbox so it can inspect code to size work but cannot write or
+push. Declared subagents do not inherit root slots, so each sandbox is authored
 under its own directory.
 
 ## Connections

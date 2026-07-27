@@ -8,6 +8,10 @@ export interface CoreStats {
   int: number;
 }
 
+// Formation slot within an encounter. Absent means "front" - see the melee
+// reachability rule in resolution.ts (ENG-29).
+export type EnemyRow = "front" | "back";
+
 export interface BattleEnemy {
   id: string;
 
@@ -24,6 +28,8 @@ export interface BattleEnemy {
   sprite?: string;
   xp: number;
   gold: number;
+
+  row?: EnemyRow;
 
   effects?: EffectInstance[];
 }
