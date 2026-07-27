@@ -62,22 +62,20 @@ export function hasShore(sides: Sides): boolean {
   return sides.north || sides.east || sides.south || sides.west;
 }
 
-function positionHash(x: number, y: number): number {
-  const h = (Math.imul(x, 73856093) ^ Math.imul(y, 19349663)) >>> 0;
+// The one deterministic position hash shared by every "derive an independent
+// pseudo-random value per cell" need in the overworld renderer (shimmer,
+// ambient particle phase/position, landmark scale, grass decoration, etc.).
+// Independent rolls for the same cell salt the inputs with distinct prime
+// multipliers/offsets rather than each caller inventing its own hash shape.
+export function hash01(a: number, b: number): number {
+  const h = (Math.imul(a, 2654435761) ^ Math.imul(b, 2246822519)) >>> 0;
   return (h % 1000) / 1000;
-}
-
-// A second, differently-salted hash so two independent rolls (whether to
-// decorate, which decoration to use) don't collapse to the same value for a
-// given cell.
-function saltedHash(x: number, y: number, salt: number): number {
-  return positionHash(x + salt * 92821, y + salt * 31337);
 }
 
 export function landmarkScale(x: number, y: number): number {
   const MIN_SCALE = 0.9;
   const MAX_SCALE = 1.15;
-  return MIN_SCALE + positionHash(x, y) * (MAX_SCALE - MIN_SCALE);
+  return MIN_SCALE + hash01(x, y) * (MAX_SCALE - MIN_SCALE);
 }
 
 // Sparse ground clutter for grass tiles (WEB-6): most grass cells stay plain,
@@ -93,10 +91,14 @@ export const GRASS_DECORATIONS: readonly TileName[] = [
 const GRASS_DECORATION_DENSITY = 0.16;
 
 export function grassDecoration(x: number, y: number): TileName | undefined {
-  if (saltedHash(x, y, 1) >= GRASS_DECORATION_DENSITY) return undefined;
+  if (hash01(x * 92821 + 101, y * 31337 + 47) >= GRASS_DECORATION_DENSITY) {
+    return undefined;
+  }
   const index = Math.min(
     GRASS_DECORATIONS.length - 1,
-    Math.floor(saltedHash(x, y, 2) * GRASS_DECORATIONS.length),
+    Math.floor(
+      hash01(x * 92821 + 211, y * 31337 + 89) * GRASS_DECORATIONS.length,
+    ),
   );
   return GRASS_DECORATIONS[index];
 }

@@ -4,6 +4,7 @@ import { generateOverworldMap } from "../../engine/world/overworld";
 import type { OverworldMap, Tile } from "../../engine/world/types";
 import { theme, toPixiColor } from "../../ui/theme";
 import { GRASS_DECORATIONS } from "../../ui/tiles/overworldVariants";
+import type { TileName } from "../../ui/tiles/sources";
 import type {
   BlobHandle,
   MultiCellRegion,
@@ -22,7 +23,7 @@ import type { RectHandle } from "./sceneView";
 interface FakeSprite extends SpriteHandle {
   setPosition: ReturnType<typeof vi.fn<(x: number, y: number) => void>>;
   setTexture: ReturnType<
-    typeof vi.fn<(name: string, region?: MultiCellRegion) => void>
+    typeof vi.fn<(name: TileName, region?: MultiCellRegion) => void>
   >;
   setSize: ReturnType<typeof vi.fn<(width: number, height: number) => void>>;
   setTint: ReturnType<typeof vi.fn<(color: number) => void>>;
@@ -230,11 +231,10 @@ describe("OverworldSceneView", () => {
   });
 
   function decorationSprites(factory: FakeFactory) {
-    return factory.sprites.filter((sprite) =>
-      (GRASS_DECORATIONS as readonly string[]).includes(
-        sprite.setTexture.mock.calls.at(-1)?.[0] as string,
-      ),
-    );
+    return factory.sprites.filter((sprite) => {
+      const texture = sprite.setTexture.mock.calls.at(-1)?.[0];
+      return texture !== undefined && GRASS_DECORATIONS.includes(texture);
+    });
   }
 
   it("scatters grass-decoration sprites over a subset of grass tiles (WEB-6)", () => {
@@ -286,12 +286,14 @@ describe("OverworldSceneView", () => {
     expect(decoratedBefore).toBeGreaterThan(0);
 
     view.render(positioned, map, { width: 20, height: 20 }, TILE_PX);
-    const destroyedDecorations = factory.sprites.filter(
-      (sprite) =>
-        (GRASS_DECORATIONS as readonly string[]).includes(
-          sprite.setTexture.mock.calls.at(-1)?.[0] as string,
-        ) && sprite.destroy.mock.calls.length > 0,
-    );
+    const destroyedDecorations = factory.sprites.filter((sprite) => {
+      const texture = sprite.setTexture.mock.calls.at(-1)?.[0];
+      return (
+        texture !== undefined &&
+        GRASS_DECORATIONS.includes(texture) &&
+        sprite.destroy.mock.calls.length > 0
+      );
+    });
     expect(destroyedDecorations.length).toBeGreaterThan(0);
   });
 

@@ -10,6 +10,7 @@ import { theme, toPixiColor } from "../../ui/theme";
 import {
   clusterScale,
   grassDecoration,
+  hash01,
   landmarkScale,
   mountainTexture,
   type Sides,
@@ -111,11 +112,6 @@ const LEAF_PX = 9;
 const FIREFLY_PX = 5;
 const LEAF_DRIFT_PX_PER_MS = 0.012;
 const FIREFLY_DRIFT_PX_PER_MS = 0.006;
-
-function hash01(a: number, b: number): number {
-  const h = (Math.imul(a, 2654435761) ^ Math.imul(b, 2246822519)) >>> 0;
-  return (h % 1000) / 1000;
-}
 
 export function needsPropShadow(
   tile: Tile | undefined,
