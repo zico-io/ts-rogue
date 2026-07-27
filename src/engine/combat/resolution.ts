@@ -398,10 +398,6 @@ interface EffectCarrier {
   effects?: EffectInstance[];
 }
 
-interface Castable extends FormationSlot, EffectCarrier {
-  maxHp: number;
-}
-
 function slotRow<T extends FormationSlot>(slot: T): EnemyRow {
   return slot.row ?? DEFAULT_ROW;
 }
@@ -541,7 +537,7 @@ export function resolveSkillHit(
 // one independent crit/damage/status roll per target, not a single roll
 // broadcast to every target (ENG-28). Used by both a party member's
 // BattleSkill command and a monster's advanceRound turn.
-function castOffensiveSkill<T extends Castable>(
+function castOffensiveSkill<T extends EffectCarrier>(
   skill: SkillDef,
   casterName: string,
   casterStats: CoreStats,
@@ -576,11 +572,14 @@ function castOffensiveSkill<T extends Castable>(
 }
 
 // Applies a heal-kind skill to each resolved (ally-side) target in turn.
-function castHealSkill<T extends Castable>(
+// Only ever called with the party pool: heal-kind shapes always target the
+// caster's own side, and only party members cast heal-kind skills today
+// (chooseMonsterSkill filters monsters to attack-kind skills only).
+function castHealSkill(
   skill: SkillDef,
   casterName: string,
   casterStats: CoreStats,
-  targets: readonly T[],
+  targets: readonly PartyMember[],
   logs: LogEntry[],
 ): void {
   const heal = skill.power + skillStatValue(skill, casterStats);
