@@ -84,16 +84,17 @@ export const theme = {
   gameOverGradient: ["#f9ab8f", "#fa7d66", "#e74343", "#b7383c", "#823439"],
 } as const;
 
-export const DUNGEON_RAMPS: readonly (readonly string[])[] = [
-  ["#1c2b39", "#2c5a5f", "#5c9a7b", "#f3b45a"],
-  ["#232043", "#453f7a", "#8a6f9c", "#f5b563"],
-  ["#2a1f22", "#5c2f2c", "#a94f3a", "#f9b355"],
-];
+// First-person depth-band accents keyed by DungeonDef.theme (src/data/dungeons.ts),
+// far-dim to near-bright. One ramp per story theme keeps the three dungeons
+// visually distinct (ROG-94); unknown themes fall back to `crypt`.
+export const DUNGEON_RAMPS: Record<string, readonly string[]> = {
+  crypt: ["#1c2b39", "#2c5a5f", "#5c9a7b", "#f3b45a"],
+  cave: ["#232043", "#453f7a", "#8a6f9c", "#f5b563"],
+  ruins: ["#2a1f22", "#5c2f2c", "#a94f3a", "#f9b355"],
+};
 
-export function dungeonRamp(dungeonId: string): readonly string[] {
-  const n = Number.parseInt(dungeonId.split("-")[1] ?? "", 10);
-  const index = Number.isNaN(n) ? 0 : n % DUNGEON_RAMPS.length;
-  return DUNGEON_RAMPS[index];
+export function dungeonRamp(theme: string): readonly string[] {
+  return DUNGEON_RAMPS[theme] ?? DUNGEON_RAMPS.crypt;
 }
 
 export function hpColor(hp: number, maxHp: number): string {

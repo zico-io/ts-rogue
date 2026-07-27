@@ -154,7 +154,7 @@ function DungeonBody({
   );
   const minimapRows = renderMinimap(ds);
 
-  const ramp = dungeonRamp(ds.dungeonId);
+  const ramp = dungeonRamp(ds.theme);
 
   const statusParts = [`Facing ${ds.facing}`];
   if (ds.reachedBoss) statusParts.push("boss room reached");
