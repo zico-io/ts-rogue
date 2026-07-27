@@ -29,6 +29,14 @@ recorded, screenshots, and exits - so `key` just records intent and `shot` shows
 the resulting state. Pass a path to keep a frame: `shot before.png`.
 Add `--dev` to `start` to enable the in-game dev console (backtick toggles it).
 
+`shot` downscales (nearest-neighbor) and palette-quantizes the PNG by default -
+a full-resolution shot runs ~250KB, which is ~100K tokens once base64-embedded
+by a caller without filesystem access to this sandbox (e.g. the playtester
+subagent), and that was enough on its own to trip Eve's session token budget
+(HAR-77). The default shrinks that to ~15KB with no loss of legibility for
+pixel art. Pass `shot --full <path>` for the rare case that needs the original
+resolution.
+
 ## Keys
 
 `key` takes the same tokens as the terminal harness. Special keys are named:

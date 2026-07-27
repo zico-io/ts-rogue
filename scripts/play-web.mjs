@@ -15,6 +15,18 @@ const PORT = 5173;
 const HOST = "127.0.0.1";
 const URL_BASE = `http://${HOST}:${PORT}`;
 
+// A raw 1280x800 PNG of the game runs ~250KB, which is ~100K tokens once
+// base64-embedded as Markdown text (the only way a caller without
+// filesystem access to this sandbox - e.g. the playtester subagent - can
+// receive the image). That single shot was enough to trip Eve's session
+// token budget after a couple of round trips (HAR-77). Downscaling with
+// nearest-neighbor (pixel art has no gradients to blur) and quantizing to a
+// small palette cuts a shot to ~15KB (~5-6K tokens) with no loss of
+// legibility. `shot --full` skips this for the rare case that needs the
+// original resolution.
+const SHOT_MAX_WIDTH_PX = 640;
+const SHOT_MAX_COLORS = 128;
+
 const KEY_MAP = {
   Up: "ArrowUp",
   Down: "ArrowDown",
@@ -116,17 +128,35 @@ function cmdKey(tokens) {
   fs.appendFileSync(KEYLOG, `${tokens.join(" ")}\n`);
 }
 
+/**
+ * Shrinks a screenshot in place for cheap embedding (HAR-77): downscale with
+ * nearest-neighbor (no gradients to blur in pixel art) and quantize to a
+ * small palette. Leaves the file untouched if it's already narrower than the
+ * target width.
+ */
+async function compactScreenshot(filePath) {
+  const { default: sharp } = await import("sharp");
+  const raw = fs.readFileSync(filePath);
+  const compact = await sharp(raw)
+    .resize({ width: SHOT_MAX_WIDTH_PX, withoutEnlargement: true, kernel: "nearest" })
+    .png({ palette: true, colors: SHOT_MAX_COLORS, compressionLevel: 9 })
+    .toBuffer();
+  fs.writeFileSync(filePath, compact);
+}
+
 async function cmdShot(args) {
   if (!(await portOpen(PORT))) {
     console.error("no web session; run: node scripts/play-web.mjs start");
     process.exit(1);
   }
+  const full = args.includes("--full");
+  const positional = args.filter((a) => !a.startsWith("--"));
   const { chromium } = await import("playwright");
   const state = readState();
   const seed = state.seed ?? 1;
   const width = state.width ?? 1280;
   const height = state.height ?? 800;
-  const outPath = path.resolve(args[0] ?? path.join(FRAMES, "frame.png"));
+  const outPath = path.resolve(positional[0] ?? path.join(FRAMES, "frame.png"));
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
 
   const query = `?seed=${seed}&fresh${state.dev ? "&dev" : ""}`;
@@ -149,6 +179,9 @@ async function cmdShot(args) {
     }
     await sleep(500);
     await page.screenshot({ path: outPath });
+    if (!full) {
+      await compactScreenshot(outPath);
+    }
     console.log(outPath);
   } finally {
     await browser.close();
