@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { DUNGEONS, dungeonDefFor, findDungeon, floorBandFor } from "./dungeons";
+import {
+  allStoryDungeonsCleared,
+  DUNGEONS,
+  dungeonDefFor,
+  findDungeon,
+  floorBandFor,
+} from "./dungeons";
 import { findLootTable } from "./lootTables";
 import { findMonster } from "./monsters";
 
@@ -74,5 +80,35 @@ describe("DUNGEONS data table", () => {
         );
       }
     }
+  });
+});
+
+describe("allStoryDungeonsCleared", () => {
+  it("is false when no dungeons are cleared", () => {
+    expect(allStoryDungeonsCleared({})).toBe(false);
+  });
+
+  it("stays false until the last story dungeon's boss falls", () => {
+    const allButLast = DUNGEONS.slice(0, -1);
+    const clearedAt = Object.fromEntries(
+      allButLast.map((dungeon, i) => [dungeon.id, i + 1]),
+    );
+    expect(allStoryDungeonsCleared(clearedAt)).toBe(false);
+  });
+
+  it("flips true once every story dungeon has a clearedAt entry", () => {
+    const clearedAt = Object.fromEntries(
+      DUNGEONS.map((dungeon, i) => [dungeon.id, i + 1]),
+    );
+    expect(allStoryDungeonsCleared(clearedAt)).toBe(true);
+  });
+
+  it("ignores unrelated ids in the record", () => {
+    const clearedAt = Object.fromEntries(
+      DUNGEONS.map((dungeon, i) => [dungeon.id, i + 1]),
+    );
+    expect(allStoryDungeonsCleared({ ...clearedAt, "not-a-dungeon": 1 })).toBe(
+      true,
+    );
   });
 });

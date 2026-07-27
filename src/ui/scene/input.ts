@@ -28,6 +28,7 @@ export type Intent =
   | { kind: "quit" }
   | { kind: "openZoom" }
   | { kind: "openInventory" }
+  | { kind: "openCharacterSheet" }
   | { kind: "type"; char: string }
   | { kind: "backspace" }
   | { kind: "stepForward" | "stepBack" }

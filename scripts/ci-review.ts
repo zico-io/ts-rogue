@@ -67,6 +67,8 @@ const commentSchema = z.object({
   body: z.string(),
 });
 
+type Comment = z.infer<typeof commentSchema>;
+
 const reviewSchema = z.object({
   event: z.literal("COMMENT"),
   body: z.string(),
@@ -75,6 +77,29 @@ const reviewSchema = z.object({
 
 export function parseReview(modelOutput: string) {
   return reviewSchema.parse(extractReviewJson(modelOutput));
+}
+
+/**
+ * Drops comments anchored to a line GitHub's create-review API will not accept.
+ * `validLines` MUST come from the full base...head PR diff - the same range
+ * GitHub validates comment paths against - even if the model was prompted with
+ * a smaller incremental diff. A comment valid against an incremental diff can
+ * still land on a line or file GitHub's compare view never shows.
+ */
+export function filterCommentsToValidLines(
+  comments: Comment[],
+  validLines: Map<string, Set<number>>,
+): Comment[] {
+  return comments.filter((c) => {
+    const fileLines = validLines.get(c.path);
+    if (!fileLines?.has(c.line)) {
+      console.warn(
+        `[ci-review] Dropping comment for ${c.path}:${c.line} - not in PR diff added lines`,
+      );
+      return false;
+    }
+    return true;
+  });
 }
 
 function buildPrompt(diff: string): string {
@@ -136,35 +161,33 @@ async function main() {
 
   execFileSync("git", ["fetch", "origin", BASE_REF], { stdio: "pipe" });
 
-  let diff: string;
-  const fullDiffArgs = ["diff", `origin/${BASE_REF}...${HEAD_SHA}`];
+  // The full PR diff is the range GitHub's create-review API validates comment
+  // paths and lines against, so it is always computed and used for filtering,
+  // regardless of which diff the model is prompted with.
+  const fullDiff = execFileSync(
+    "git",
+    ["diff", `origin/${BASE_REF}...${HEAD_SHA}`],
+    { encoding: "utf-8", stdio: "pipe" },
+  );
 
+  let promptDiff = fullDiff;
   if (BEFORE_SHA) {
-    const scopedArgs = ["diff", `${BEFORE_SHA}...${HEAD_SHA}`];
     try {
-      diff = execFileSync("git", scopedArgs, {
+      promptDiff = execFileSync("git", ["diff", `${BEFORE_SHA}...${HEAD_SHA}`], {
         encoding: "utf-8",
         stdio: "pipe",
       });
     } catch {
-      diff = execFileSync("git", fullDiffArgs, {
-        encoding: "utf-8",
-        stdio: "pipe",
-      });
+      promptDiff = fullDiff;
     }
-  } else {
-    diff = execFileSync("git", fullDiffArgs, {
-      encoding: "utf-8",
-      stdio: "pipe",
-    });
   }
 
-  if (!diff.trim()) {
+  if (!promptDiff.trim()) {
     console.log("No diff. Skipping.");
     process.exit(0);
   }
 
-  const prompt = buildPrompt(diff);
+  const prompt = buildPrompt(promptDiff);
   const { text: modelOutput } = await generateText({
     model: gateway("anthropic/claude-sonnet-5"),
     prompt,
@@ -172,17 +195,11 @@ async function main() {
 
   const parsed = parseReview(modelOutput);
 
-  const validLines = parseDiffAddedLines(diff);
-  const filteredComments = parsed.comments.filter((c) => {
-    const fileLines = validLines.get(c.path);
-    if (!fileLines?.has(c.line)) {
-      console.warn(
-        `[ci-review] Dropping comment for ${c.path}:${c.line} - not in diff added lines`,
-      );
-      return false;
-    }
-    return true;
-  });
+  const validLines = parseDiffAddedLines(fullDiff);
+  const filteredComments = filterCommentsToValidLines(
+    parsed.comments,
+    validLines,
+  );
 
   const url = `https://api.github.com/repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/reviews`;
   const response = await fetch(url, {
