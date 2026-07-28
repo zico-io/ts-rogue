@@ -63,10 +63,16 @@ pure darks downsample to invisible ANSI black; that is why `border` and
 | Backpack Full (loot triage) | `s` swaps (then Up/Down picks a carried item, Enter confirms dismantling it and taking the drop), `d` dismantles the drop itself; Esc from the swap picker returns to the choice |
 | Character Sheet | Left/Right switches party member; Esc closes and returns to the scene it was opened from |
 
-The store view uses Tab to switch between shop and backpack modes. Backpack
-mode is sell-only (`s` to sell) - browsing, inspecting, comparing, and
-equipping/unequipping gear now live on the dedicated Inventory screen (`v`)
-described above.
+The store view uses Tab to switch between shop and backpack modes. Shop mode
+lists the static catalog (gated into tiers by `ShopItem.minLevel`, showing
+only what the party's highest level has unlocked, with a one-line teaser for
+the next locked tier) followed by a Rare Stock section of 2-3 rolled
+magic/rare gear items that restocks on inn rest; buying a rolled item hands
+over the exact `ItemInstance` shown (affixes intact) and the Inventory
+screen's `ComparePanel` shows how it would change the current member's gear.
+Backpack mode is sell-only (`s` to sell) - browsing, inspecting, comparing,
+and equipping/unequipping gear now live on the dedicated Inventory screen
+(`v`) described above.
 
 The class selection offers Warrior, Rogue, and Wizard. Battle skill menus show
 only the selected class's known skills, and restarting after permadeath keeps

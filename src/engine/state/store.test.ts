@@ -245,6 +245,80 @@ describe("game store", () => {
     });
   });
 
+  describe("StoreBuy gear + tiered gate (ENG-41)", () => {
+    it("mints a real common ItemInstance for a gear catalog row instead of a stackable", () => {
+      const before = newGame(1);
+      const after = reduce(before, {
+        type: "StoreBuy",
+        itemId: "rusty-dagger",
+        quantity: 1,
+      });
+      expect(after.inventory).toEqual([]);
+      expect(after.items).toHaveLength(1);
+      expect(after.items[0]).toMatchObject({
+        baseId: "rusty-dagger",
+        rarity: "common",
+        prefixes: [],
+        suffixes: [],
+      });
+      expect(after.gold).toBe(before.gold - 10);
+    });
+
+    it("rejects buying a gear row above the party's highest level", () => {
+      const before = newGame(1);
+      const after = reduce(before, {
+        type: "StoreBuy",
+        itemId: "war-blade",
+        quantity: 1,
+      });
+      expect(after.gold).toBe(before.gold);
+      expect(after.items).toEqual([]);
+      expect(after.log.at(-1)?.text).toBe("War Blade is not in stock yet");
+    });
+  });
+
+  describe("StoreBuyRolled / RefreshShopStock (ENG-41 rare stock)", () => {
+    it("RefreshShopStock rolls 2-3 magic/rare items into shopStock", () => {
+      const before = newGame(1);
+      const after = reduce(before, { type: "RefreshShopStock" });
+      expect(after.shopStock.length).toBeGreaterThanOrEqual(2);
+      expect(after.shopStock.length).toBeLessThanOrEqual(3);
+      for (const item of after.shopStock) {
+        expect(["magic", "rare"]).toContain(item.rarity);
+      }
+    });
+
+    it("buys the exact rolled item, removes it from stock, and deducts gold", () => {
+      const stocked = reduce(newGame(1), { type: "RefreshShopStock" });
+      const target = stocked.shopStock[0];
+      const after = reduce(stocked, {
+        type: "StoreBuyRolled",
+        instanceId: target.instanceId,
+      });
+      expect(after.items).toEqual([target]);
+      expect(
+        after.shopStock.some((i) => i.instanceId === target.instanceId),
+      ).toBe(false);
+      expect(after.gold).toBe(stocked.gold - itemSellPrice(target) * 2);
+    });
+
+    it("no-ops buying an instanceId no longer in stock", () => {
+      const before = newGame(1);
+      const after = reduce(before, {
+        type: "StoreBuyRolled",
+        instanceId: "missing",
+      });
+      expect(after.gold).toBe(before.gold);
+      expect(after.log.at(-1)?.text).toBe("That item is no longer in stock");
+    });
+
+    it("InnHeal restocks shopStock alongside the recruit pool", () => {
+      const before = newGame(1);
+      const after = reduce(before, { type: "InnHeal" });
+      expect(after.shopStock.length).toBeGreaterThanOrEqual(2);
+    });
+  });
+
   describe("MoveOverworld", () => {
     it("moves onto a passable tile without mutating the previous state", () => {
       const before = newGame(1);

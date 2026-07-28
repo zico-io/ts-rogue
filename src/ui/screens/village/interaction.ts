@@ -1,4 +1,4 @@
-import { SHOP_ITEMS } from "../../../data/shops";
+import { type ShopItem, unlockedShopItems } from "../../../data/shops";
 import type { EquipmentSlotName } from "../../../engine/loot/equipment";
 import type { ItemInstance } from "../../../engine/loot/types";
 import type { GameState } from "../../../engine/state/types";
@@ -167,15 +167,35 @@ export function buildPackEntries(
   ];
 }
 
+export type ShopRow =
+  | { kind: "catalog"; item: ShopItem }
+  | { kind: "rolled"; item: ItemInstance };
+
+/** Combined, level-gated catalog + rare rolled stock, in cursor order (ENG-41). */
+export function buildShopRows(
+  level: number,
+  rolledStock: readonly ItemInstance[],
+): ShopRow[] {
+  return [
+    ...unlockedShopItems(level).map((item) => ({
+      kind: "catalog" as const,
+      item,
+    })),
+    ...rolledStock.map((item) => ({ kind: "rolled" as const, item })),
+  ];
+}
+
 export interface StoreUiContext {
   partyLength: number;
   memberId: string;
   packEntries: readonly PackEntry[];
+  shopRows: readonly ShopRow[];
 }
 
 export type StoreUiEffect =
   | { type: "storeBuy"; itemId: string }
   | { type: "storeSell"; itemId: string }
+  | { type: "storeBuyRolled"; instanceId: string }
   | { type: "sellItem"; instanceId: string }
   | { type: "back" };
 
@@ -238,30 +258,37 @@ export function reduceStoreUi(
   }
 
   if (state.mode === "shop") {
+    const rowCount = ctx.shopRows.length;
+    if (rowCount === 0) return { state };
     if (intent.kind === "menuUp") {
       return {
         state: {
           ...state,
-          shopCursor:
-            (state.shopCursor + SHOP_ITEMS.length - 1) % SHOP_ITEMS.length,
+          shopCursor: (state.shopCursor + rowCount - 1) % rowCount,
         },
       };
     }
     if (intent.kind === "menuDown") {
       return {
-        state: {
-          ...state,
-          shopCursor: (state.shopCursor + 1) % SHOP_ITEMS.length,
-        },
+        state: { ...state, shopCursor: (state.shopCursor + 1) % rowCount },
       };
     }
-    const selected = SHOP_ITEMS[state.shopCursor];
-    if (!selected) return { state };
+    const shopIndex = Math.min(state.shopCursor, rowCount - 1);
+    const row = ctx.shopRows[shopIndex];
+    if (!row) return { state };
     if (intent.kind === "buy") {
-      return { state, effect: { type: "storeBuy", itemId: selected.id } };
+      return row.kind === "catalog"
+        ? { state, effect: { type: "storeBuy", itemId: row.item.id } }
+        : {
+            state,
+            effect: {
+              type: "storeBuyRolled",
+              instanceId: row.item.instanceId,
+            },
+          };
     }
-    if (intent.kind === "sell") {
-      return { state, effect: { type: "storeSell", itemId: selected.id } };
+    if (intent.kind === "sell" && row.kind === "catalog") {
+      return { state, effect: { type: "storeSell", itemId: row.item.id } };
     }
     return { state };
   }

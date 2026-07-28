@@ -41,6 +41,10 @@ export interface GameState {
   recruits: PartyMember[];
   gold: number;
 
+  // Rotating rare-gear section (ENG-41); restocks on the same cadence as
+  // the tavern recruit pool (inn rest) so save/load never rerolls it.
+  shopStock: ItemInstance[];
+
   inventory: InventoryItem[];
 
   items: ItemInstance[];
@@ -95,6 +99,8 @@ export type GameEvent =
   | { type: "InnHeal" }
   | { type: "StoreBuy"; itemId: string; quantity: number }
   | { type: "StoreSell"; itemId: string; quantity: number }
+  | { type: "StoreBuyRolled"; instanceId: string }
+  | { type: "RefreshShopStock" }
   | { type: "EquipItem"; instanceId: string; memberId: string }
   | { type: "UnequipItem"; slot: EquipmentSlotName; memberId: string }
   | { type: "SellItem"; instanceId: string }
