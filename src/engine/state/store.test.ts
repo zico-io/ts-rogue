@@ -4,6 +4,7 @@ import {
   dungeonDefFor,
   dungeonEntryFlavor,
 } from "../../data/dungeons";
+import { findQuest, QUESTS } from "../../data/quests";
 import { deserialize, serialize } from "../../persistence/save";
 import { atkFrom, startBattle } from "../combat/resolution";
 import type { PartyMember } from "../entities/party";
@@ -61,14 +62,26 @@ describe("game store", () => {
     expect(state.activatedWaypoints).toEqual(["village"]);
   });
 
-  it("seeds quests and questItems empty on a new run (ENG-38)", () => {
+  it("seeds accepted/completedIds empty and questItems empty on a new run (ENG-38)", () => {
     const state = newGame(1234);
-    expect(state.quests).toEqual({
-      available: [],
-      accepted: [],
-      completedIds: [],
-    });
+    expect(state.quests.accepted).toEqual([]);
+    expect(state.quests.completedIds).toEqual([]);
     expect(state.questItems).toEqual({});
+  });
+
+  it("seeds the quest board via rollQuests on a new run (ENG-37)", () => {
+    const state = newGame(1234);
+    expect(state.quests.available.length).toBeGreaterThan(0);
+    const staticIds = new Set(QUESTS.map((q) => q.id));
+    const heroLevel = state.party[0].level;
+    for (const quest of state.quests.available) {
+      if (staticIds.has(quest.id)) {
+        expect(findQuest(quest.id)?.minLevel).toBeLessThanOrEqual(heroLevel);
+      } else {
+        expect(quest.id).toMatch(/^bounty-\d+$/);
+        expect(quest.repeatable).toBe(true);
+      }
+    }
   });
 
   it("defaults flags to permadeath=false and gameOver=false", () => {
@@ -2096,5 +2109,33 @@ describe("Phase 6: save/restore integrity", () => {
       const restored = deserialize(JSON.stringify(legacy));
       expect(restored.lootFilter).toEqual(EMPTY_LOOT_FILTER);
     });
+  });
+});
+
+describe("RefreshQuests reducer (ENG-37)", () => {
+  it("excludes completed and accepted quests from the rebuilt board", () => {
+    const base = newGame(1234);
+    const staticQuest = QUESTS[0];
+    const acceptedQuest = QUESTS[1];
+    const seeded: GameState = {
+      ...base,
+      quests: {
+        available: [],
+        accepted: [{ def: acceptedQuest, progress: 0 }],
+        completedIds: [staticQuest.id],
+      },
+    };
+    const after = reduce(seeded, { type: "RefreshQuests" });
+    const availableIds = after.quests.available.map((q) => q.id);
+    expect(availableIds).not.toContain(staticQuest.id);
+    expect(availableIds).not.toContain(acceptedQuest.id);
+  });
+
+  it("still offers fresh bounties alongside the filtered static quests", () => {
+    const base = newGame(1234);
+    const after = reduce(base, { type: "RefreshQuests" });
+    expect(after.quests.available.some((q) => q.id.startsWith("bounty-"))).toBe(
+      true,
+    );
   });
 });
