@@ -1,18 +1,11 @@
 import { type Client, createClient, type Row } from "@libsql/client";
 import { mintMemoryDatabaseCredential } from "./connector";
 
-/**
- * One fact in Eve's runtime memory store (HAR-71). This is deliberately
- * low-stakes, autonomously written operational memory - a debugging insight,
- * a workaround, an entity dedup note - not the reviewed shipped-behavior
- * source of truth that lives in `.botfile/memory/domain/product.md`.
- */
+/** One low-stakes, autonomously written operational fact (HAR-71). */
 export interface Memory {
   key: string;
   value: string;
-  /** e.g. "workaround", "entity", "debugging-note". */
   category: string;
-  /** Provenance, matching `.botfile` discipline (who/what wrote this and why). */
   source: string;
   createdAt: string;
   updatedAt: string;
@@ -30,14 +23,6 @@ const MIGRATIONS = [
   "CREATE INDEX IF NOT EXISTS memories_category_idx ON memories (category)",
 ];
 
-/**
- * Retention bound (HAR-75): the store keeps at most this many rows. Each row
- * is at most one 80-char key plus a 4000-char value (bounded by
- * `rememberInputSchema` in `tools.ts`), so this also caps total store
- * size at a few megabytes. `put` evicts the least-recently-updated memory
- * once this cap is exceeded, so the store self-trims instead of growing
- * unbounded - there is no separate expiry timer to run.
- */
 const DEFAULT_MAX_MEMORIES = 500;
 
 function rowToMemory(row: Row): Memory {
@@ -73,17 +58,7 @@ async function mintMemoryClient(): Promise<Client> {
   return createClient({ url: credential.url, authToken: credential.authToken });
 }
 
-/**
- * libSQL-backed `MemoryStore`. Single-tenant: the store belongs to the Eve
- * harness itself, not per-end-user, so no operation takes a tenant scope
- * (contrast eve's `patterns/multi-tenant-memory.md`).
- *
- * Every operation requests its own client and re-applies the (idempotent)
- * schema migration rather than holding one long-lived connection open:
- * `mintMemoryDatabaseCredential` mints a short-lived Connect token meant to
- * be requested fresh per use rather than cached across calls, and the
- * migration is cheap `CREATE ... IF NOT EXISTS` DDL.
- */
+/** Single-tenant libSQL `MemoryStore`; every operation mints its own client. */
 export class LibsqlMemoryStore {
   constructor(
     private readonly getClient: MemoryClientFactory = mintMemoryClient,
@@ -136,9 +111,6 @@ export class LibsqlMemoryStore {
         now,
       ],
     });
-    // Retention bound: drop the least-recently-updated rows beyond the cap.
-    // The row just written is always the most recently updated, so it is
-    // never the one evicted.
     await client.execute({
       sql: `DELETE FROM memories WHERE key NOT IN (
               SELECT key FROM memories ORDER BY updated_at DESC LIMIT ?

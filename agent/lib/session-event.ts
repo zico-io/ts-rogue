@@ -1,9 +1,7 @@
 import type { HookEventMap } from "eve/hooks";
 
-// eve's own payloads for the three lifecycle events whose shapes this agent
-// reads into. `HookEventMap` is eve's explicit event-name to payload contract;
-// the action unions behind it (`RuntimeActionRequest`, `RuntimeActionResult`,
-// `InputRequest`) are not exported by name, so they are reached structurally.
+// eve's own event payloads; the unions behind them are reached structurally
+// because eve does not export them by name.
 
 export type ActionsRequestedData = HookEventMap["actions.requested"]["data"];
 export type ActionResultData = HookEventMap["action.result"]["data"];

@@ -11,10 +11,7 @@ const LIVE_STATUSES = new Set(["pending", "active", "awaitingInput"]);
 
 export const STALE_SESSION_MS = 30 * 60 * 1000;
 
-/**
- * Returns non-stale live sessions oldest-first with the id as a stable
- * tie-breaker. Transport failures are left to the caller.
- */
+/** Non-stale live sessions oldest-first; transport failures are the caller's. */
 export const listLiveAgentSessions = async (input: {
   readonly credentials: LinearChannelConfig["credentials"];
   readonly issueId: string;

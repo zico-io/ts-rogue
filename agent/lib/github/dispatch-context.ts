@@ -1,8 +1,4 @@
-/**
- * Every string the agent is woken with when an external event dispatches a
- * turn. Kept together because this is prompt text tuned as a set, separate from
- * the logic that decides when to wake.
- */
+// Every string the agent is woken with; prompt text tuned as a set.
 
 import type { GitHubPullRequestReviewWebhookPayload } from "./pull-request";
 

@@ -15,12 +15,7 @@ import { AgentSession } from "../lib/session";
 
 const GITHUB_COMMENT_BODY_MAX_LENGTH = 65536;
 
-/**
- * GitHub's rendering of the shared session lifecycle: everything a human needs
- * to read becomes a thread comment, split at GitHub's comment-length cap. A
- * thread has no chip, plan, or native prompt surface, so `textRenderer` shows
- * those updates as nothing rather than as extra comments.
- */
+/** GitHub's rendering: every readable update becomes a thread comment. */
 export const githubSession = new AgentSession<GitHubEventContext>(
   textRenderer({
     maxLength: GITHUB_COMMENT_BODY_MAX_LENGTH,
@@ -31,9 +26,7 @@ export const githubSession = new AgentSession<GitHubEventContext>(
 const baseChannel = githubChannel({
   credentials: githubAgentCredentials,
   events: {
-    // Deliberately silences eve's default, which would 👀-react and check the
-    // repository out again on every turn - the sandbox recipe's `onSession`
-    // already provisions the checkout this agent works in.
+    // Silences eve's default, which would re-check-out the repository each turn.
     "turn.started": () => {},
     "message.completed": (data, channel, ctx) =>
       githubSession.messageCompleted(data, channel, ctx),
@@ -41,17 +34,13 @@ const baseChannel = githubChannel({
       githubSession.authorizationRequired(data, channel, ctx),
     "authorization.completed": (data, channel, ctx) =>
       githubSession.authorizationCompleted(data, channel, ctx),
-    // `session.failed` and `turn.failed` keep eve's built-in rendering; a
-    // channel opts into the shared definition by wiring them here.
   },
   onComment: commentWakeDecision,
   onPullRequest: syncAndWakeOnPullRequest,
 });
 
-// githubChannel always registers exactly one HTTP POST route; asserted at
-// runtime because the wrapper below replaces the route it finds. An eve upgrade
-// that added a second one would otherwise leave it silently unwrapped and
-// unreachable - no crash to notice, just a route that stopped existing.
+// Asserted because the wrapper replaces the one route it finds: a second one
+// added by an eve upgrade would silently stop existing rather than crash.
 if (baseChannel.routes.length !== 1) {
   throw new Error(
     `githubChannel: expected exactly one route, got ${baseChannel.routes.length}.`,
@@ -65,8 +54,7 @@ export default {
   ...baseChannel,
   routes: [
     POST(baseRoute.path, async (request, args) => {
-      // eve never dispatches on `pull_request_review`, so that one event is
-      // intercepted ahead of its handler - see `lib/github/webhook.ts` (HAR-49).
+      // eve never dispatches on `pull_request_review` (HAR-49).
       if (request.headers.get("x-github-event") === "pull_request_review") {
         return handlePullRequestReviewWebhook(
           request,

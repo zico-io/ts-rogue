@@ -1,18 +1,8 @@
 import { z } from "zod";
 
-/**
- * Input validation behind `agent/tools/remember.ts`, `recall.ts`, and
- * `forget.ts`. Lives here (rather than in `agent/tools/`) so it can be unit
- * tested: eve treats every file directly under `agent/tools/` as a tool
- * definition, so a colocated `*.test.ts` file there fails discovery.
- */
+// Input validation behind the memory tools; lives here so it can be unit tested.
 
-/**
- * Closed set of categories the runtime memory store accepts (HAR-75). Keeps
- * the store queryable and matches the vocabulary already used in
- * `instructions.md` and `agent/README.md`. Extend deliberately - this is a
- * product decision, not free text the model can invent per call.
- */
+/** Closed set of categories the runtime memory store accepts (HAR-75). */
 export const MEMORY_CATEGORIES = [
   "workaround",
   "debugging-note",
@@ -20,13 +10,7 @@ export const MEMORY_CATEGORIES = [
 ] as const;
 export type MemoryCategory = (typeof MEMORY_CATEGORIES)[number];
 
-/**
- * Heuristic patterns for content that must never enter the runtime memory
- * store (HAR-75): credentials, tokens, and a couple of common PII shapes.
- * This is a denylist of recognizable secret/PII *shapes*, not a general
- * secret scanner - it backstops the `instructions.md` prose warning with
- * real input validation, matching `.botfile` provenance discipline.
- */
+/** Recognizable secret and PII shapes, not a general secret scanner (HAR-75). */
 const SENSITIVE_CONTENT_PATTERNS: readonly RegExp[] = [
   /-----BEGIN [A-Z ]*PRIVATE KEY-----/, // PEM private key block
   /\bsk-[A-Za-z0-9]{20,}\b/, // OpenAI-style secret key

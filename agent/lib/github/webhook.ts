@@ -11,25 +11,14 @@ import {
   pullRequestReviewVerdict,
 } from "./wake-policy";
 
-// --- Coarse pull_request_review webhook events (HAR-49) --------------------
-// eve's githubChannel never dispatches on the `pull_request_review` webhook
-// event, so a bare "Approve"/"Request changes" with no inline comment was
-// silently dropped. The channel intercepts that one event ahead of eve's route
-// handler and calls this, which wakes the PR's own turn (same continuation
-// token as `pullRequestWakeDecision`) with the verdict attached; every other
-// event still flows through eve's real handler unchanged.
+// eve's githubChannel never dispatches on `pull_request_review`, so a bare
+// approve or request-changes was silently dropped (HAR-49).
 
-// Continuation token for the PR's own timeline conversation, matching the
-// one the pull-request dispatch resumes.
 const pullRequestConversationToken = (
   repositoryId: number,
   pullRequestNumber: number,
 ): string => `repo:${repositoryId}:pull:${pullRequestNumber}`;
 
-// Mirrors the `SessionAuthContext` shape eve's `defaultGitHubAuth` builds
-// for a "pull_request" conversation. Built directly rather than through
-// `defaultGitHubAuth` since this raw webhook route has no live
-// `GitHubInboundContext` to hand it.
 const buildPullRequestReviewAuth = (input: {
   readonly deliveryId: string;
   readonly installationId: number | undefined;
@@ -77,17 +66,12 @@ const pullRequestReviewState = (
   triggeringUserLogin: (payload.review.user ?? payload.sender)?.login ?? null,
 });
 
-// Handles one verified `pull_request_review` delivery and wakes the PR's
-// own turn when it carries a dispatchable verdict.
+/** Wakes the PR's own turn when a verified delivery carries a dispatchable verdict. */
 export const handlePullRequestReviewWebhook = async (
   request: Request,
   args: Pick<RouteHandlerArgs<GitHubChannelState>, "send">,
   credentials: GitHubChannelCredentials,
 ): Promise<Response> => {
-  // This repo always configures `connectGitHubCredentials`, which always sets
-  // `webhookVerifier`, so an absent verifier is a misconfiguration to reject
-  // rather than a path to implement. A verifier returning a string replaces the
-  // body; any other truthy result accepts the one already read.
   const rawBody = await request.text();
   const verified = await credentials.webhookVerifier?.(request, rawBody);
   if (!verified) return new Response("unauthorized", { status: 401 });

@@ -6,24 +6,12 @@ import {
 import type { Memory } from "./store";
 import { memoryStore } from "./store";
 
-/**
- * Logic behind `agent/instructions/memory.ts`. Lives here (rather than in
- * `agent/instructions/`) so it can be unit tested: eve treats every file
- * directly under `agent/instructions/` as an instructions module, so a
- * colocated `*.test.ts` file there fails discovery.
- */
+// Logic behind `agent/instructions/memory.ts`; lives here so it can be unit tested.
 
 /** Caps how many memories load into context per turn (see `recall` for a filtered view). */
 const MEMORY_INSTRUCTIONS_LIMIT = 50;
 
-/**
- * Builds the memory preamble, or `null` when there is nothing to say.
- *
- * JSON-encodes the memories and frames them explicitly as untrusted stored
- * data (matching eve's `patterns/multi-tenant-memory.md`): a past session
- * wrote these values autonomously, so they carry no more authority than any
- * other tool output and must never be treated as instructions.
- */
+/** Builds the memory preamble as explicitly untrusted data, or `null` when empty. */
 export function buildMemoryInstructionsMarkdown(
   memories: readonly Memory[],
 ): string | null {
@@ -42,11 +30,7 @@ export function buildMemoryInstructionsMarkdown(
   ].join("\n");
 }
 
-/**
- * Resolves the dynamic instructions payload for one `turn.started` event.
- * Takes `list` as a parameter (defaulting to the live store) so it can be
- * unit tested with a fake implementation.
- */
+/** Resolves the dynamic instructions payload for one `turn.started` event. */
 export async function resolveMemoryInstructions(
   list: () => Promise<readonly Memory[]> = () =>
     memoryStore.list({ limit: MEMORY_INSTRUCTIONS_LIMIT }),

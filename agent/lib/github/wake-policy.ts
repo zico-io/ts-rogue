@@ -26,10 +26,7 @@ const isNewReviewFinding = (comment: GitHubComment): boolean => {
   return raw.in_reply_to_id === undefined || raw.in_reply_to_id === null;
 };
 
-/**
- * Inline review findings wake the agent on their own; anywhere else it needs an
- * explicit mention.
- */
+/** Inline review findings wake the agent; anywhere else needs an explicit mention. */
 export const commentWakeDecision = (
   ctx: GitHubInboundContext,
   comment: GitHubComment,
@@ -47,12 +44,7 @@ export const commentWakeDecision = (
     : null;
 };
 
-/**
- * Validates only the fields dereferenced without optional chaining -
- * everything else is read downstream with `??`/`?.`, so a malformed value
- * there just resolves to `undefined`. Returns `null` on a shape mismatch,
- * treated the same as unparseable JSON.
- */
+/** Validates only the fields dereferenced without optional chaining; `null` on mismatch. */
 export const parsePullRequestReviewPayload = (
   value: unknown,
 ): GitHubPullRequestReviewWebhookPayload | null => {
@@ -81,10 +73,7 @@ export const parsePullRequestReviewPayload = (
   return value as unknown as GitHubPullRequestReviewWebhookPayload;
 };
 
-/**
- * A verdict only exists for a freshly submitted approve/request-changes
- * review; "commented", "edited", and "dismissed" carry none.
- */
+/** A verdict exists only for a freshly submitted approve or request-changes review. */
 export const pullRequestReviewVerdict = (
   payload: Pick<GitHubPullRequestReviewWebhookPayload, "action" | "review">,
 ): "approved" | "changes_requested" | null => {

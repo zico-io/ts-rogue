@@ -31,11 +31,7 @@ const planFromTodoToolOutput = (output: unknown): readonly PlanEntry[] => {
   return entries;
 };
 
-/**
- * The agent's plan as of a completed action, or `null` when the action carried
- * no usable plan. Only a successful `todo` tool result sets the plan, and an
- * empty one is ignored rather than blanking out a real plan.
- */
+/** The plan as of a completed action, or `null` when it carried no usable plan. */
 export const planFromActionResult = (
   data: Pick<ActionResultData, "result" | "status">,
 ): readonly PlanEntry[] | null => {

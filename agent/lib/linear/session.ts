@@ -7,10 +7,7 @@ import type {
 import type { PendingAction } from "../session";
 import { type LiveAgentSession, listLiveAgentSessions } from "./live-sessions";
 
-/**
- * The channel state plus the in-flight actions awaiting a result, keyed by call
- * id so `action.result` can pair a result back to the chip that announced it.
- */
+/** The channel state plus the in-flight actions awaiting a result, keyed by call id. */
 export type LinearStateWithPending = LinearChannelState & {
   pendingActionsByCallId?: Record<string, PendingAction>;
 };
@@ -34,11 +31,7 @@ interface GuardableSession {
   readonly issueId?: string | null;
 }
 
-/**
- * Only one live session works an issue at a time. Returns the older session
- * that blocks this one, or `null` when it may start. Agent-created sessions
- * (handoff successors) are exempt, and a failed lookup fails open.
- */
+/** The older session blocking this one, or `null` when it may start; fails open. */
 export const findDuplicateSessionBlocker = async (input: {
   readonly credentials: LinearChannelConfig["credentials"];
   readonly session: GuardableSession;

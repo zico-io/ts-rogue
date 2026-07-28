@@ -9,19 +9,13 @@ const api = process.env.LINEAR_API_BASE_URL
   ? { apiBaseUrl: process.env.LINEAR_API_BASE_URL }
   : undefined;
 
-// `linearContinuationToken()`'s format. A token without it - a merge-woken
-// GitHub session, say - has no Linear Agent Session to post to.
 const CONTINUATION_PREFIX = "agent-session:";
 
 type ActivityContent = Parameters<
   typeof createLinearAgentActivity
 >[0]["activity"]["content"];
 
-/**
- * One update as an Agent Activity, or `null` when it has no activity form.
- * Plans and prompts are deliberately absent: both need the channel's own
- * session handle and signal metadata, which an out-of-band caller has not got.
- */
+/** One update as an Agent Activity, or `null` when it has no activity form. */
 const activityContent = (update: SessionUpdate): ActivityContent | null => {
   switch (update.kind) {
     case "thought":
@@ -45,11 +39,7 @@ const activityContent = (update: SessionUpdate): ActivityContent | null => {
 const errorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
-/**
- * Posts into a Linear Agent Session addressed only by its continuation token,
- * for a caller outside any channel handler. A token without Linear's prefix -
- * a merge-woken GitHub session, say - is a no-op, not an error.
- */
+/** Posts into a Linear Agent Session addressed only by its continuation token. */
 export const postLinearUpdate = async (
   continuationToken: string,
   update: SessionUpdate,
@@ -68,7 +58,6 @@ export const postLinearUpdate = async (
       },
     });
   } catch (error) {
-    // Observe-only: a Linear hiccup must never fail the caller's work.
     console.warn(
       "postLinearUpdate: posting a Linear activity failed:",
       errorMessage(error),

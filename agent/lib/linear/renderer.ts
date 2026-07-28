@@ -16,16 +16,7 @@ import { linearUserIdFromAuthContext } from "./authorization";
 import { advanceIssueState } from "./issue-state";
 import { pendingState } from "./session";
 
-/**
- * Linear's rendering of the shared session lifecycle: every update becomes an
- * Agent Activity, with Linear's native signals for the two prompt kinds and its
- * Agent Plan for the plan. The decisions all live in `lib/session`; this is only
- * how they look in Linear.
- *
- * It lives beside `textRenderer` in `lib/` rather than in `channels/linear.ts`
- * so it can be unit tested against eve's `LinearHandle` alone, with no channel,
- * route, or webhook in the way.
- */
+/** Linear's rendering: every update becomes an Agent Activity. */
 export const linearRenderer: ChannelRenderer<LinearChannelContext> = {
   restartHint: "Start a new Linear agent session to continue.",
 
@@ -47,8 +38,6 @@ export const linearRenderer: ChannelRenderer<LinearChannelContext> = {
             ? { ephemeral: true }
             : {},
         );
-        // A dead session leaves its issue blocked, not in progress. Only a
-        // fatal error means the session is gone; a failed turn can be retried.
         if (
           update.kind === "error" &&
           update.fatal === true &&

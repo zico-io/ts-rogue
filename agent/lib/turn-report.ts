@@ -54,11 +54,7 @@ const failureBody = (
   ].join("\n");
 };
 
-/**
- * An unrecoverable session needs a fresh session, not a retry. How a human
- * starts that fresh session is the channel's own wording, so it is passed in;
- * a channel with no wording of its own gets the channel-agnostic phrasing.
- */
+/** An unrecoverable session needs a fresh one; the restart wording is the channel's. */
 export const sessionFailureBody = (
   data: FailureData,
   restartHint = "Start a new conversation to continue.",
@@ -90,8 +86,6 @@ export const actionParameter = (action: ActionRequest): string => {
   if (action.kind === "tool-call") {
     return toolActionParameter(action.toolName, action.input);
   }
-  // Only a subagent-call or a remote-agent-call carries a description; what is
-  // left after those two is a load-skill, whose input is all it has to show.
   if ("description" in action) return action.description;
   return JSON.stringify(action.input);
 };

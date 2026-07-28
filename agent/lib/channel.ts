@@ -2,15 +2,7 @@ import type { SessionContext } from "eve/tools";
 
 import type { SessionScratch, SessionUpdate } from "./session";
 
-/**
- * What a channel must answer to take part in the shared session lifecycle: how
- * one update appears there, how a human restarts, and where scratch that must
- * outlive a single event is kept.
- *
- * A renderer is a value, not a subclass, so the same one can serve several
- * channels (see `textRenderer`) and be reached from outside a channel handler
- * (see `hooks/workflow-progress.ts`).
- */
+/** What a channel must answer to take part in the shared session lifecycle. */
 export interface ChannelRenderer<Channel> {
   /** Show one update, however this channel shows things. */
   render(
@@ -19,26 +11,14 @@ export interface ChannelRenderer<Channel> {
     ctx?: SessionContext,
   ): Promise<void>;
 
-  /**
-   * How a human restarts after an unrecoverable failure, worded for this
-   * channel. Omit it on a channel that keeps eve's own `session.failed`
-   * rendering and so never reaches this wording.
-   */
+  /** How a human restarts after an unrecoverable failure, worded for this channel. */
   readonly restartHint?: string;
 
-  /**
-   * Scratch that survives between events of one session. Omit it and every
-   * event gets a fresh, forgetful object - which is right for a channel that
-   * never wires the events that flush it. Overriding it to persisted channel
-   * state is how a channel opts into buffering.
-   */
+  /** Scratch that survives between events of one session. */
   scratch?(channel: Channel): SessionScratch;
 }
 
-/**
- * One update as a single body of text, or `null` when a text-only channel shows
- * it as nothing: chips, plans, and native prompts have no surface there.
- */
+/** One update as a single body of text, or `null` when this channel shows it as nothing. */
 const textBody = (update: SessionUpdate): string | null => {
   switch (update.kind) {
     case "thought":
@@ -66,15 +46,7 @@ const chunked = (body: string, max: number): readonly string[] => {
   return chunks;
 };
 
-/**
- * The renderer for channels whose only surface is posted text - GitHub
- * comments, Slack messages, Discord replies. Each supplies its own post-length
- * cap, because that limit belongs to whoever posts.
- *
- * Chips, plans, and prompts render as nothing on purpose: eve's own channel
- * defaults already turn HITL into buttons and turn progress into the platform's
- * typing indicator.
- */
+/** The renderer for channels whose only surface is posted text. */
 export const textRenderer = <Channel>(options: {
   readonly maxLength: number;
   readonly post: (channel: Channel, body: string) => Promise<unknown>;

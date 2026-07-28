@@ -29,8 +29,6 @@ export const SANDBOX_TIMEOUT_MS = 5 * 60 * 60 * 1000;
 /** Keys dependency snapshots by lockfile content, with the commit as a read-failure fallback. */
 export function dependencyRevalidationKey(): string {
   try {
-    // Relative to this file: agent/lib/sandbox/ -> repository root. Moving
-    // this module means fixing the walk; `token-refresh.test.ts` catches it.
     const lock = readFileSync(
       new URL("../../../pnpm-lock.yaml", import.meta.url),
     );
@@ -121,10 +119,7 @@ export interface SandboxRecipeOptions {
   seedGitHubConfig?: boolean;
 }
 
-/**
- * The one sandbox recipe. The root agent takes the push-capable variant; a
- * subagent that only reads takes the default.
- */
+/** The one sandbox recipe; the root agent takes the push-capable variant. */
 export function buildSandboxDefinition(
   options: SandboxRecipeOptions = {},
 ): SandboxDefinition<
@@ -150,8 +145,6 @@ export function buildSandboxDefinition(
         throw new Error(setup.stderr || "Sandbox pre-warming failed");
     },
     async onSession({ use }) {
-      // resolveStartupAuth (not just the policy) so keepTokenFresh gets this
-      // session's real token expiry - see StartupAuthResult.
       const auth = await resolveStartupAuth();
       const sandbox = await use({
         networkPolicy: auth.policy,

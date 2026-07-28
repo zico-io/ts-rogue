@@ -27,10 +27,7 @@ import {
 import { verifyLinearWebhook } from "../lib/linear/webhook";
 import { AgentSession, sessionEvents } from "../lib/session";
 
-/**
- * Declines a second live session on an issue, and starts the issue when a real
- * one opens. Both hang off eve's inbound hook rather than a forked dispatch.
- */
+/** Declines a second live session on an issue, and starts the issue when a real one opens. */
 const guardedOnAgentSession: NonNullable<
   LinearChannelConfig["onAgentSession"]
 > = async (ctx, event) => {
@@ -66,10 +63,8 @@ const base = linearChannel({
   onAgentSession: guardedOnAgentSession,
 });
 
-// linearChannel always registers exactly one HTTP POST route; asserted at
-// runtime because the wrapper below replaces the route it finds. An eve upgrade
-// that added a second one would otherwise leave it silently unwrapped and
-// unreachable - no crash to notice, just a route that stopped existing.
+// Asserted because the wrapper replaces the one route it finds: a second one
+// added by an eve upgrade would silently stop existing rather than crash.
 if (base.routes.length !== 1) {
   throw new Error(
     `linearChannel: expected exactly one route, got ${base.routes.length}.`,
@@ -77,11 +72,7 @@ if (base.routes.length !== 1) {
 }
 const [baseRoute] = base.routes as [HttpRouteDefinition<LinearChannelState>];
 
-/**
- * The inbound Agent Session event, verified, or `null` for anything the
- * pre-dispatch decisions below must not act on. Reads a clone so eve's own
- * handler still gets an unread body - and verifies again itself.
- */
+/** The inbound Agent Session event, verified, or `null` for anything to leave alone. */
 const preDispatchEvent = async (
   request: Request,
 ): Promise<LinearAgentSessionEvent | null> => {
@@ -94,22 +85,12 @@ const preDispatchEvent = async (
     return null;
   }
   if (event === null || event.kind !== "agent_session") return null;
-  // The two actions eve's `defaultOnAgentSession` dispatches; cancelling on any
-  // other would interrupt a turn no inbound message is replacing.
   return event.action === "created" || event.action === "prompted"
     ? event
     : null;
 };
 
-/**
- * Retires the eve session a `handoff` checkpoint marked, so eve's own dispatch
- * re-creates it empty on the send that follows (see `lib/linear/checkpoint.ts`).
- * Only the session named by the marker is reset, which is what keeps this a
- * no-op on every webhook after the rotation instead of wiping live work.
- *
- * Best-effort: a failed lookup or reset leaves the accumulated session in place,
- * which is exactly the pre-rotation behavior, and must not block dispatch.
- */
+/** Retires only the eve session a `handoff` checkpoint named; best-effort. */
 const rotateCheckpointedContext = async (
   event: LinearAgentSessionEvent,
   args: RouteHandlerArgs<LinearChannelState>,
@@ -130,11 +111,6 @@ export default {
   ...base,
   routes: [
     POST(baseRoute.path, async (request, args) => {
-      // Three things eve's Linear route does not do, all needing the
-      // continuation token before its handler dispatches: steer a live turn with
-      // the newest message, honor the human `stop` signal (HAR-39), and rotate a
-      // checkpointed context window. Everything else - verification, inbound
-      // images, default events, state - is eve's.
       const event = await preDispatchEvent(request.clone());
       if (event !== null) {
         const continuationToken = linearContinuationToken(

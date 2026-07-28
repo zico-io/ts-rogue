@@ -1,7 +1,4 @@
-/**
- * The Linear user to attribute an auth prompt to, so Linear can show the
- * connect flow to the person who triggered the session.
- */
+/** The Linear user to attribute an auth prompt to. */
 export const linearUserIdFromAuthContext = (
   auth: {
     readonly authenticator: string;

@@ -118,10 +118,7 @@ const updateIssueState = async (
   }
 };
 
-/**
- * Advances an issue without downgrading it and starts an unstarted parent when
- * the child enters progress. Linear failures are reported but never thrown.
- */
+/** Advances an issue without downgrading it; Linear failures never throw. */
 export const advanceIssueState = async (input: {
   readonly credentials: LinearChannelConfig["credentials"];
   readonly issueRef: string;

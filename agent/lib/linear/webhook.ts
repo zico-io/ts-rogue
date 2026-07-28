@@ -33,13 +33,8 @@ const isFresh = (rawBody: string): boolean => {
 };
 
 /**
- * Verifies an inbound Linear webhook the way eve's own route does, for the one
- * decision this channel makes ahead of eve's handler (see `channels/linear.ts`).
- * Returns the verified body, or `null` when the request must be ignored - eve's
- * handler verifies again and owns the 401, so this never throws.
- *
- * ponytail: eve's `verifyLinearRequest` already does exactly this; it is not
- * exported. Delete this file the day it is.
+ * Verifies an inbound Linear webhook the way eve's own route does; `null` to ignore.
+ * ponytail: eve's `verifyLinearRequest` does exactly this but is not exported.
  */
 export const verifyLinearWebhook = async (
   request: Request,

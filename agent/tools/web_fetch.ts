@@ -4,14 +4,7 @@ import { webFetch } from "eve/tools/defaults";
 import { flagField, scalarField, textField } from "../lib/tool-output";
 import { truncateForContext } from "../lib/truncate-for-context";
 
-// Overrides the framework `web_fetch` tool (slug = filename). Same mechanism as
-// `bash.ts`: spread the default, inherit `execute`, reshape only the
-// model-facing result; Linear chips (fed by `action.result`) still get the full
-// output. `content` is the unbounded field (a whole page converted to
-// markdown/text); `url`, `contentType`, and `truncated` are small and preserved
-// so the model still knows what it fetched and whether the fetcher already
-// capped the body. eve types this output as `unknown`, so the fields are read
-// rather than asserted - see `lib/tool-output.ts`.
+/** eve's `web_fetch` with only `toModelOutput` replaced; same mechanism as `bash.ts`. */
 export default defineTool({
   ...webFetch,
   toModelOutput(output) {

@@ -101,19 +101,13 @@ export const syncAndWakeOnPullRequest = async (
   return pullRequestWakeDecision(context, pullRequest);
 };
 
-/**
- * The only two review states with a dispatchable verdict (see
- * `pullRequestReviewVerdict`); kept open since GitHub can send others.
- */
+/** The only two review states with a dispatchable verdict; kept open by design. */
 type GitHubPullRequestReviewState =
   | "approved"
   | "changes_requested"
   | (string & {});
 
-/**
- * Minimal shape read from a `pull_request_review` webhook payload - only the
- * fields the handler actually uses.
- */
+/** Minimal shape read from a `pull_request_review` webhook payload. */
 export interface GitHubPullRequestReviewWebhookPayload {
   readonly action: string;
   readonly installation?: { readonly id?: number };

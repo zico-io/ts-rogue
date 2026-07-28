@@ -83,23 +83,14 @@ interface MessageData {
   readonly message: string | null;
 }
 
-/** A connection slug as a human would say it: `linear/ts-rogue-eve` reads "Linear Ts Rogue Eve". */
+/** A connection slug as a human would say it. */
 const connectionDisplayName = (name: string): string =>
   name.replace(/[-_/]+/gu, " ").replace(/\b\p{L}/gu, (c) => c.toUpperCase());
 
 const authorizationDisplayName = (data: AuthorizationData): string =>
   data.authorization?.displayName ?? connectionDisplayName(data.name);
 
-/**
- * One definition of how the agent behaves across a turn: what it says, when it
- * says it, and what it remembers in between. Every channel shares this one
- * instance of those decisions and supplies a `ChannelRenderer` for the single
- * seam where a `SessionUpdate` becomes whatever that channel actually posts.
- *
- * Every decision here is channel-agnostic on purpose. A channel's transport,
- * its native surfaces, and its platform limits (message length, post size)
- * belong in its renderer, not here.
- */
+/** One channel-agnostic definition of how the agent behaves across a turn. */
 export class AgentSession<Channel> {
   constructor(private readonly renderer: ChannelRenderer<Channel>) {}
 
@@ -133,7 +124,6 @@ export class AgentSession<Channel> {
     const pending = scratch.pendingToolCallMessage;
     scratch.pendingToolCallMessage = null;
     if (pending) {
-      // Durable, not transient - see HAR-68.
       await this.render({ body: pending, kind: "thought" }, channel, ctx);
     }
     if (data.actions.length === 0) return;
@@ -191,13 +181,6 @@ export class AgentSession<Channel> {
     const scratch = this.scratch(channel);
     const message = data.message ? stripLeadingProseHeader(data.message) : null;
     if (data.finishReason === "tool-calls") {
-      // Keep the full narration, not just its first line (HAR-78). This text
-      // is often the substantive content - e.g. a scoping proposal enumerating
-      // the tickets about to be created - immediately ahead of an
-      // `ask_question` confirmation. Once HAR-68 made it durable, a one-line
-      // summary permanently discarded the rest instead of merely flashing
-      // past; the human approving the gate never saw the structure they were
-      // asked to confirm.
       scratch.pendingToolCallMessage = message;
       return;
     }
@@ -230,8 +213,6 @@ export class AgentSession<Channel> {
     const { [data.result.callId]: _, ...rest } =
       scratch.pendingActionsByCallId ?? {};
     scratch.pendingActionsByCallId = rest;
-    // Durable, not transient: the paired chip is the turn's audit record of
-    // what actually ran (HAR-45).
     await this.render(
       {
         action: pending.action,
@@ -328,15 +309,7 @@ export class AgentSession<Channel> {
   }
 }
 
-/**
- * Wires every lifecycle event eve emits to the session that decides what to do
- * with it. One table for every channel: the event names are eve's, not any one
- * platform's.
- *
- * A channel that wants less spreads this and nulls a key -
- * `{ ...sessionEvents(session), "input.requested": undefined }` - because eve's
- * adapter builder registers only truthy handlers.
- */
+/** Wires every lifecycle event eve emits to the session that decides what to do with it. */
 export const sessionEvents = <Channel>(
   session: AgentSession<Channel>,
 ): ChannelEvents<Channel> => ({

@@ -4,17 +4,7 @@ import { bash } from "eve/tools/defaults";
 import { flagField, scalarField, textField } from "../lib/tool-output";
 import { truncateForContext } from "../lib/truncate-for-context";
 
-// Overrides the framework `bash` tool (slug = filename): the resolver drops any
-// framework default whose name matches an authored tool, so spreading the
-// import and adding `toModelOutput` replaces it rather than duplicating it.
-// `execute` (and its sandbox behavior) is inherited untouched; we only reshape
-// what the MODEL sees. Channel `action.result` handlers - and therefore the
-// Linear activity chips - still receive the full `execute` output.
-//
-// `stdout`/`stderr` are the unbounded fields; `exitCode` and `truncated` are
-// small and kept verbatim so the model still sees the command's result and any
-// sandbox-level truncation flag. eve types this output as `unknown`, so the
-// fields are read rather than asserted - see `lib/tool-output.ts`.
+/** eve's `bash` with only `toModelOutput` replaced; `action.result` still gets the full output. */
 export default defineTool({
   ...bash,
   toModelOutput(output) {

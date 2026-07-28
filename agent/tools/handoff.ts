@@ -60,8 +60,6 @@ export default defineTool({
   }),
   async execute(input, ctx) {
     const self = callerAgentSessionId(ctx);
-    // A flaky lookup must never block a legitimate handoff: an empty list reads
-    // as "nothing live", which falls through to the cross-issue path below.
     let live: Awaited<ReturnType<typeof listLiveAgentSessions>> = [];
     try {
       live = await listLiveAgentSessions({
@@ -70,11 +68,7 @@ export default defineTool({
       });
     } catch {}
 
-    // Self-continuation: the caller's own Agent Session is the live one on the
-    // target issue. Post a context checkpoint naming this eve session instead of
-    // opening a SECOND Linear session - `channels/linear.ts` retires the named
-    // session on the next inbound event, so the same Agent Session continues in
-    // a fresh context window (see `lib/linear/checkpoint.ts`).
+    // Self-continuation: checkpoint in place rather than opening a second session.
     if (self !== null && live.some((session) => session.id === self)) {
       const checkpointCommentId = await createLinearComment({
         issueId: input.issueId,
@@ -86,8 +80,7 @@ export default defineTool({
       return { checkpointed: true, checkpointCommentId };
     }
 
-    // Cross-issue handoff: one live session per issue, so a second one while
-    // another is live is the HAR-26 duplicate.
+    // Cross-issue handoff: one live session per issue (HAR-26).
     const existing = live.find((session) => session.id !== self);
     if (existing !== undefined) {
       return {
