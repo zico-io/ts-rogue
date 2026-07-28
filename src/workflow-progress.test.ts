@@ -43,11 +43,18 @@ const linearCtx = (continuationToken = "agent-session:sess-1") => ({
   channel: { continuationToken, kind: "linear" },
 });
 
-// A channel `lib/channel-registry.ts` has no poster for, e.g. a merge-woken
-// GitHub session. The hook posts the same update; nothing shows.
+// A channel with no out-of-band posting surface, e.g. a merge-woken GitHub
+// session. The hook posts the same update; nothing shows.
 const unpostableCtx = () => ({
   session: {},
   channel: { continuationToken: "issue:42", kind: "github" },
+});
+
+// A Linear session the hook cannot address, because the runtime handed it no
+// continuation token.
+const unaddressableCtx = () => ({
+  session: {},
+  channel: { kind: "linear" },
 });
 
 const contentOf = (call: number) =>
@@ -176,6 +183,15 @@ describe("workflow-progress hook", () => {
     await events["subagent.completed"](
       completed({ callId: "call_1", output: "done" }),
       unpostableCtx(),
+    );
+
+    expect(createActivity).not.toHaveBeenCalled();
+  });
+
+  it("does nothing without a continuation token to address the session", async () => {
+    await events["subagent.called"](
+      called({ callId: "call_1", sequence: 0 }),
+      unaddressableCtx(),
     );
 
     expect(createActivity).not.toHaveBeenCalled();

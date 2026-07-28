@@ -1,7 +1,6 @@
 import { connectLinearCredentials } from "@vercel/connect/eve";
 import { createLinearAgentActivity } from "eve/channels/linear";
 
-import type { SessionPoster } from "../channel-registry";
 import type { SessionUpdate } from "../session";
 import { activityText } from "./activity";
 
@@ -46,28 +45,33 @@ const activityContent = (update: SessionUpdate): ActivityContent | null => {
 const errorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 
-/** Posts into a Linear Agent Session addressed only by its continuation token. */
-export const linearPoster: SessionPoster = {
-  async post(continuationToken, update) {
-    if (!continuationToken.startsWith(CONTINUATION_PREFIX)) return;
-    const content = activityContent(update);
-    if (content === null) return;
-    try {
-      await createLinearAgentActivity({
-        api,
-        credentials,
-        activity: {
-          agentSessionId: continuationToken.slice(CONTINUATION_PREFIX.length),
-          content,
-          ephemeral: update.kind === "action" ? update.transient : undefined,
-        },
-      });
-    } catch (error) {
-      // Observe-only: a Linear hiccup must never fail the caller's work.
-      console.warn(
-        "linearPoster: posting a Linear activity failed:",
-        errorMessage(error),
-      );
-    }
-  },
+/**
+ * Posts into a Linear Agent Session addressed only by its continuation token,
+ * for a caller outside any channel handler. A token without Linear's prefix -
+ * a merge-woken GitHub session, say - is a no-op, not an error.
+ */
+export const postLinearUpdate = async (
+  continuationToken: string,
+  update: SessionUpdate,
+): Promise<void> => {
+  if (!continuationToken.startsWith(CONTINUATION_PREFIX)) return;
+  const content = activityContent(update);
+  if (content === null) return;
+  try {
+    await createLinearAgentActivity({
+      api,
+      credentials,
+      activity: {
+        agentSessionId: continuationToken.slice(CONTINUATION_PREFIX.length),
+        content,
+        ephemeral: update.kind === "action" ? update.transient : undefined,
+      },
+    });
+  } catch (error) {
+    // Observe-only: a Linear hiccup must never fail the caller's work.
+    console.warn(
+      "postLinearUpdate: posting a Linear activity failed:",
+      errorMessage(error),
+    );
+  }
 };

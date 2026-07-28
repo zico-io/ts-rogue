@@ -8,11 +8,9 @@ import {
 
 import { textRenderer } from "../lib/channel";
 import { githubAgentCredentials } from "../lib/credentials";
-import {
-  commentWakeDecision,
-  handlePullRequestReviewWebhook,
-  syncAndWakeOnPullRequest,
-} from "../lib/github";
+import { syncAndWakeOnPullRequest } from "../lib/github/pull-request";
+import { commentWakeDecision } from "../lib/github/wake-policy";
+import { handlePullRequestReviewWebhook } from "../lib/github/webhook";
 import { AgentSession } from "../lib/session";
 
 const GITHUB_COMMENT_BODY_MAX_LENGTH = 65536;
@@ -27,9 +25,6 @@ export const githubSession = new AgentSession<GitHubEventContext>(
   textRenderer({
     maxLength: GITHUB_COMMENT_BODY_MAX_LENGTH,
     post: (channel: GitHubEventContext, body) => channel.thread.post(body),
-    // Unused while eve's built-in `session.failed` still renders GitHub
-    // failures; kept correct so overriding that default needs no other change.
-    restartHint: "Start a new comment to continue.",
   }),
 );
 

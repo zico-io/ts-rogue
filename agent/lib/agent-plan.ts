@@ -15,10 +15,8 @@ export interface PlanEntry {
   readonly status: "pending" | "inProgress" | "completed" | "canceled";
 }
 
-export function planFromTodoToolOutput(
-  output: unknown,
-): readonly PlanEntry[] | null {
-  if (!isPlainObject(output) || !Array.isArray(output.todos)) return null;
+const planFromTodoToolOutput = (output: unknown): readonly PlanEntry[] => {
+  if (!isPlainObject(output) || !Array.isArray(output.todos)) return [];
   const entries: PlanEntry[] = [];
   for (const todo of output.todos) {
     if (!isPlainObject(todo)) continue;
@@ -30,11 +28,12 @@ export function planFromTodoToolOutput(
     entries.push({ content: todo.content, status });
   }
   return entries;
-}
+};
 
 /**
  * The agent's plan as of a completed action, or `null` when the action carried
- * no usable plan. Only a successful `todo` tool result sets the plan.
+ * no usable plan. Only a successful `todo` tool result sets the plan, and an
+ * empty one is ignored rather than blanking out a real plan.
  */
 export const planFromActionResult = (data: {
   readonly status?: string;
@@ -51,5 +50,5 @@ export const planFromActionResult = (data: {
     return null;
   }
   const plan = planFromTodoToolOutput(result.output);
-  return plan === null || plan.length === 0 ? null : plan;
+  return plan.length === 0 ? null : plan;
 };

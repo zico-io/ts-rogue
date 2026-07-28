@@ -22,16 +22,16 @@
   one platform, or imports one platform's types, belongs in `lib/linear/` or
   `lib/github/` - directory names the channel, file names the concept. Platform
   limits (message length, activity size) belong to whoever posts: a channel
-  renderer or a hook, never a shared module. `lib/channel-registry.ts` is the
-  one exception, and stays the only one: it names each channel because being
-  the single place that knows the set is its whole job, and it loads each
-  channel's poster lazily so one channel's credentials never reach another's.
+  renderer or a hook, never a shared module. Import those modules directly;
+  they carry no barrel, so a caller loads only what it names.
 - Add a channel as one file under `channels/`: a `ChannelRenderer` from
   `lib/channel.ts` (`textRenderer` already covers any channel whose only
   surface is posted text), wired with `sessionEvents` from `lib/session.ts`.
   Spread that table and set a key to `undefined` to keep Eve's own default for
-  an event. Anything the channel needs from outside a handler - workflow
-  progress, say - is a `SessionPoster` row in `lib/channel-registry.ts`.
+  an event. Reaching a session from outside a handler - workflow progress, say
+  - needs a poster like `lib/linear/poster.ts`, dispatched on the channel kind
+  by the caller and imported lazily so one channel's credentials never reach
+  another's process.
 - Test channel transforms, hooks, tools, lifecycle changes, and sandbox behavior.
 - Colocate tests inside `lib/` only. Eve's discovery treats every file under
   `channels/`, `connections/`, `tools/`, `hooks/`, and `schedules/` as an

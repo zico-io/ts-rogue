@@ -45,8 +45,8 @@ const readExternalUrls = (
   return urls.length > 0 ? urls : undefined;
 };
 
-export function initialSessionState(): LinearChannelState {
-  const state: LinearStateWithPending = {
+export function initialSessionState(): LinearStateWithPending {
+  return {
     agentSessionId: null,
     agentSessionUrl: null,
     commentId: null,
@@ -59,13 +59,12 @@ export function initialSessionState(): LinearChannelState {
     sourceCommentId: null,
     pendingActionsByCallId: {},
   };
-  return state;
 }
 
 export function stateFromAgentSession(
   agentSession: LinearAgentSessionRef,
-): LinearChannelState {
-  const state: LinearStateWithPending = {
+): LinearStateWithPending {
+  return {
     agentSessionId: agentSession.id,
     agentSessionUrl: agentSession.url ?? null,
     commentId: agentSession.commentId ?? null,
@@ -78,7 +77,6 @@ export function stateFromAgentSession(
     sourceCommentId: agentSession.sourceCommentId ?? null,
     pendingActionsByCallId: {},
   };
-  return state;
 }
 
 /** Resolves a proactive `receive` target to the session it should post into. */

@@ -4,7 +4,7 @@ import type {
   GitHubChannelState,
 } from "eve/channels/github";
 import type { SessionAuthContext } from "eve/context";
-import { Webhook } from "../webhook";
+import { verifyWebhook } from "../webhook";
 import { pullRequestReviewVerdictContext } from "./dispatch-context";
 import type { GitHubPullRequestReviewWebhookPayload } from "./pull-request";
 import {
@@ -90,10 +90,11 @@ export const handlePullRequestReviewWebhook = async (
     // No fallback: this repo always configures `connectGitHubCredentials`,
     // which always sets `webhookVerifier`, so an absent verifier is a
     // misconfiguration to reject rather than a path to implement.
-    rawBody = await new Webhook(
-      "githubChannel",
-      credentials.webhookVerifier,
-    ).verify(request);
+    rawBody = await verifyWebhook({
+      channel: "githubChannel",
+      request,
+      verifier: credentials.webhookVerifier,
+    });
   } catch {
     return new Response("unauthorized", { status: 401 });
   }

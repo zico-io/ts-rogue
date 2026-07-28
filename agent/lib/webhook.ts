@@ -6,42 +6,36 @@
 export type WebhookVerifier = (request: Request, rawBody: string) => unknown;
 
 /**
- * Channel-specific verification, used only when no `webhookVerifier` is
- * configured. Returns the verified body or throws.
- */
-export type WebhookFallback = (
-  request: Request,
-  rawBody: string,
-) => string | Promise<string>;
-
-/**
  * Inbound webhook verification shared by every channel. The verifier protocol
  * is the same everywhere; each channel supplies only its own `fallback` for
  * when no verifier is configured. Omitting `fallback` means an unverifiable
  * request is rejected rather than trusted.
+ *
+ * Returns the verified raw body, or throws when the request must be rejected.
  */
-export class Webhook {
-  constructor(
-    private readonly channel: string,
-    private readonly verifier: WebhookVerifier | undefined,
-    private readonly fallback?: WebhookFallback,
-  ) {}
-
-  /** The verified raw body. Throws when the request must be rejected. */
-  async verify(request: Request): Promise<string> {
-    const rawBody = await request.text();
-    if (this.verifier === undefined) {
-      if (this.fallback === undefined) {
-        throw new Error(`${this.channel}: no webhookVerifier configured.`);
-      }
-      return this.fallback(request, rawBody);
+export const verifyWebhook = async (options: {
+  readonly channel: string;
+  /** Channel-specific verification. Returns the verified body or throws. */
+  readonly fallback?: (
+    request: Request,
+    rawBody: string,
+  ) => string | Promise<string>;
+  readonly request: Request;
+  readonly verifier: WebhookVerifier | undefined;
+}): Promise<string> => {
+  const { channel, fallback, request, verifier } = options;
+  const rawBody = await request.text();
+  if (verifier === undefined) {
+    if (fallback === undefined) {
+      throw new Error(`${channel}: no webhookVerifier configured.`);
     }
-    const result = await this.verifier(request, rawBody);
-    if (!result) {
-      throw new Error(
-        `${this.channel}: inbound webhook verifier rejected the request.`,
-      );
-    }
-    return typeof result === "string" ? result : rawBody;
+    return fallback(request, rawBody);
   }
-}
+  const result = await verifier(request, rawBody);
+  if (!result) {
+    throw new Error(
+      `${channel}: inbound webhook verifier rejected the request.`,
+    );
+  }
+  return typeof result === "string" ? result : rawBody;
+};

@@ -2,10 +2,6 @@ import type { ChannelEvents } from "eve/channels";
 import type { SessionContext } from "eve/tools";
 
 import { type PlanEntry, planFromActionResult } from "./agent-plan";
-import {
-  authorizationDisplayName,
-  authorizationOutcomeLabel,
-} from "./authorization";
 import type { ChannelRenderer } from "./channel";
 import { stripLeadingProseHeader } from "./prose";
 import {
@@ -84,6 +80,13 @@ interface MessageData {
   readonly message: string | null;
 }
 
+/** A connection slug as a human would say it: `linear/ts-rogue-eve` reads "Linear Ts Rogue Eve". */
+const connectionDisplayName = (name: string): string =>
+  name.replace(/[-_/]+/gu, " ").replace(/\b\p{L}/gu, (c) => c.toUpperCase());
+
+const authorizationDisplayName = (data: AuthorizationData): string =>
+  data.authorization?.displayName ?? connectionDisplayName(data.name);
+
 /**
  * One definition of how the agent behaves across a turn: what it says, when it
  * says it, and what it remembers in between. Every channel shares this one
@@ -94,13 +97,13 @@ interface MessageData {
  * its native surfaces, and its platform limits (message length, post size)
  * belong in its renderer, not here.
  */
-export class AgentSession<Channel, Ctx = SessionContext> {
-  constructor(private readonly renderer: ChannelRenderer<Channel, Ctx>) {}
+export class AgentSession<Channel> {
+  constructor(private readonly renderer: ChannelRenderer<Channel>) {}
 
   private render(
     update: SessionUpdate,
     channel: Channel,
-    ctx?: Ctx,
+    ctx?: SessionContext,
   ): Promise<void> {
     return this.renderer.render(update, channel, ctx);
   }
@@ -109,7 +112,7 @@ export class AgentSession<Channel, Ctx = SessionContext> {
     return this.renderer.scratch?.(channel) ?? {};
   }
 
-  async turnStarted(channel: Channel, ctx?: Ctx): Promise<void> {
+  async turnStarted(channel: Channel, ctx?: SessionContext): Promise<void> {
     this.scratch(channel).pendingToolCallMessage = null;
     await this.render(
       { body: "Working on this.", kind: "thought", transient: true },
@@ -122,7 +125,7 @@ export class AgentSession<Channel, Ctx = SessionContext> {
     // biome-ignore lint/suspicious/noExplicitAny: mirrors the union of runtime action request shapes (see turn-report.ts)
     data: { readonly actions: readonly any[] },
     channel: Channel,
-    ctx?: Ctx,
+    ctx?: SessionContext,
   ): Promise<void> {
     const scratch = this.scratch(channel);
     const pending = scratch.pendingToolCallMessage;
@@ -170,7 +173,7 @@ export class AgentSession<Channel, Ctx = SessionContext> {
     // biome-ignore lint/suspicious/noExplicitAny: eve's input-request shape, passed through untouched
     data: { readonly requests: readonly any[] },
     channel: Channel,
-    ctx?: Ctx,
+    ctx?: SessionContext,
   ): Promise<void> {
     await this.render(
       { kind: "inputPrompt", requests: data.requests },
@@ -182,7 +185,7 @@ export class AgentSession<Channel, Ctx = SessionContext> {
   async messageCompleted(
     data: MessageData,
     channel: Channel,
-    ctx?: Ctx,
+    ctx?: SessionContext,
   ): Promise<void> {
     const scratch = this.scratch(channel);
     const message = data.message ? stripLeadingProseHeader(data.message) : null;
@@ -211,7 +214,7 @@ export class AgentSession<Channel, Ctx = SessionContext> {
       readonly result: any;
     },
     channel: Channel,
-    ctx?: Ctx,
+    ctx?: SessionContext,
   ): Promise<void> {
     const steps = planFromActionResult(data);
     if (steps !== null) {
@@ -248,7 +251,7 @@ export class AgentSession<Channel, Ctx = SessionContext> {
   async authorizationRequired(
     data: AuthorizationData,
     channel: Channel,
-    ctx?: Ctx,
+    ctx?: SessionContext,
   ): Promise<void> {
     const challenge = data.authorization;
     const displayName = authorizationDisplayName(data);
@@ -273,7 +276,7 @@ export class AgentSession<Channel, Ctx = SessionContext> {
   async authorizationCompleted(
     data: AuthorizationOutcomeData,
     channel: Channel,
-    ctx?: Ctx,
+    ctx?: SessionContext,
   ): Promise<void> {
     const displayName = authorizationDisplayName(data);
     if (data.outcome === "authorized") {
@@ -288,7 +291,7 @@ export class AgentSession<Channel, Ctx = SessionContext> {
       );
       return;
     }
-    const outcome = authorizationOutcomeLabel(data.outcome);
+    const outcome = data.outcome === "timed-out" ? "timed out" : data.outcome;
     await this.render(
       {
         body: `Authorization for ${displayName} ${outcome}${data.reason ? `: ${data.reason}` : "."}`,
@@ -303,7 +306,7 @@ export class AgentSession<Channel, Ctx = SessionContext> {
   async sessionFailed(
     data: FailureData,
     channel: Channel,
-    ctx?: Ctx,
+    ctx?: SessionContext,
   ): Promise<void> {
     await this.render(
       {
@@ -319,7 +322,7 @@ export class AgentSession<Channel, Ctx = SessionContext> {
   async turnFailed(
     data: FailureData,
     channel: Channel,
-    ctx?: Ctx,
+    ctx?: SessionContext,
   ): Promise<void> {
     await this.render(
       { body: turnFailureBody(data), kind: "error" },

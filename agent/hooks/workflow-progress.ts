@@ -1,8 +1,7 @@
 import { defineState } from "eve/context";
 import { defineHook } from "eve/hooks";
 
-import { postUpdate } from "../lib/channel-registry";
-import type { PendingAction } from "../lib/session";
+import type { PendingAction, SessionUpdate } from "../lib/session";
 import { toolLabel } from "../lib/tool-activity";
 
 // Surfaces each `agent()` call the `Workflow` tool dispatches from inside its
@@ -18,9 +17,22 @@ import { toolLabel } from "../lib/tool-activity";
 // the channel's `actions.requested`/`action.result` pairing (kind
 // `subagent-call`), so there is no double-posting between the two paths.
 //
-// Which channel these chips reach is `lib/channel-registry.ts`'s decision, not
-// this hook's: it posts a channel-agnostic `SessionUpdate`, and a session on a
-// channel with no poster shows nothing.
+// The handlers below post a channel-agnostic `SessionUpdate`; `postUpdate`
+// below is the one place that knows which channel can show one from out here,
+// where there is no channel context - only the token addressing the session.
+
+// Linear is the only channel with an out-of-band posting surface; a session on
+// any other shows nothing rather than failing the caller, since a hook is
+// observe-only. The import is lazy so a session on another channel never drags
+// Linear's Connect credentials into the process.
+const postUpdate = async (
+  channel: { readonly continuationToken?: string; readonly kind?: string },
+  update: SessionUpdate,
+): Promise<void> => {
+  if (channel.kind !== "linear" || !channel.continuationToken) return;
+  const { postLinearUpdate } = await import("../lib/linear/poster");
+  await postLinearUpdate(channel.continuationToken, update);
+};
 
 // Keyed by the workflow call's callId so `subagent.completed` (which carries
 // no sequence) can echo the same action/parameter chip the ephemeral

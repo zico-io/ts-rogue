@@ -12,7 +12,7 @@ vi.mock("eve/channels/linear", () => ({
   createLinearAgentActivity: (input: unknown) => createActivity(input),
 }));
 
-const { linearPoster } = await import("./poster");
+const { postLinearUpdate } = await import("./poster");
 
 const activity = (call = 0) => createActivity.mock.calls[call]?.[0].activity;
 
@@ -21,9 +21,9 @@ beforeEach(() => {
   vi.spyOn(console, "warn").mockImplementation(() => {});
 });
 
-describe("linearPoster", () => {
+describe("postLinearUpdate", () => {
   it("posts a chip against the agent session the token names", async () => {
-    await linearPoster.post("agent-session:sess-1", {
+    await postLinearUpdate("agent-session:sess-1", {
       action: "Bash",
       kind: "action",
       parameter: "git status",
@@ -40,7 +40,7 @@ describe("linearPoster", () => {
   });
 
   it("applies Linear's activity cap, since this is the code that posts", async () => {
-    await linearPoster.post("agent-session:sess-1", {
+    await postLinearUpdate("agent-session:sess-1", {
       action: "Agent",
       kind: "action",
       parameter: "Workflow call 1",
@@ -52,7 +52,7 @@ describe("linearPoster", () => {
   });
 
   it("posts prose as its own activity type", async () => {
-    await linearPoster.post("agent-session:sess-1", {
+    await postLinearUpdate("agent-session:sess-1", {
       body: "Working on this.",
       kind: "thought",
     });
@@ -64,7 +64,7 @@ describe("linearPoster", () => {
   });
 
   it("ignores a token that is not a Linear agent session", async () => {
-    await linearPoster.post("issue:42", {
+    await postLinearUpdate("issue:42", {
       body: "hello",
       kind: "response",
     });
@@ -73,11 +73,11 @@ describe("linearPoster", () => {
   });
 
   it("ignores the updates that need the channel's own session handle", async () => {
-    await linearPoster.post("agent-session:sess-1", {
+    await postLinearUpdate("agent-session:sess-1", {
       kind: "plan",
       steps: [],
     });
-    await linearPoster.post("agent-session:sess-1", {
+    await postLinearUpdate("agent-session:sess-1", {
       kind: "inputPrompt",
       requests: [],
     });
@@ -89,7 +89,7 @@ describe("linearPoster", () => {
     createActivity.mockRejectedValueOnce(new Error("linear down"));
 
     await expect(
-      linearPoster.post("agent-session:sess-1", {
+      postLinearUpdate("agent-session:sess-1", {
         body: "hello",
         kind: "response",
       }),

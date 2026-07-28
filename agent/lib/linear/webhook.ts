@@ -7,7 +7,7 @@ import type {
 import { signLinearWebhookBody } from "eve/channels/linear";
 
 import { isPlainObject } from "../narrow";
-import { Webhook } from "../webhook";
+import { verifyWebhook } from "../webhook";
 
 const LINEAR_WEBHOOK_MAX_SKEW_MS = 60_000;
 
@@ -58,28 +58,32 @@ function verifyWebhookTimestamp(rawBody: string, maxSkewMs: number): void {
  * timestamp-skew check. The skew check only guards the signature path - a
  * configured `webhookVerifier` owns replay protection itself.
  */
-export const linearWebhook = (
-  credentials: LinearChannelConfig["credentials"],
-): Webhook =>
-  new Webhook(
-    "linearChannel",
-    credentials?.webhookVerifier,
-    async (request, rawBody) => {
-      const secret = await resolveLinearWebhookSecret(
-        credentials?.webhookSecret,
-      );
-      const signature = request.headers.get("linear-signature") ?? "";
-      if (!signature) {
-        throw new Error(
-          "linearChannel: inbound request missing Linear-Signature.",
+export const linearWebhook =
+  (credentials: LinearChannelConfig["credentials"]) =>
+  (request: Request): Promise<string> =>
+    verifyWebhook({
+      channel: "linearChannel",
+      request,
+      verifier: credentials?.webhookVerifier,
+      fallback: async (req, rawBody) => {
+        const secret = await resolveLinearWebhookSecret(
+          credentials?.webhookSecret,
         );
-      }
-      if (
-        !constantTimeCompare(signLinearWebhookBody(rawBody, secret), signature)
-      ) {
-        throw new Error("linearChannel: inbound request signature mismatch.");
-      }
-      verifyWebhookTimestamp(rawBody, LINEAR_WEBHOOK_MAX_SKEW_MS);
-      return rawBody;
-    },
-  );
+        const signature = req.headers.get("linear-signature") ?? "";
+        if (!signature) {
+          throw new Error(
+            "linearChannel: inbound request missing Linear-Signature.",
+          );
+        }
+        if (
+          !constantTimeCompare(
+            signLinearWebhookBody(rawBody, secret),
+            signature,
+          )
+        ) {
+          throw new Error("linearChannel: inbound request signature mismatch.");
+        }
+        verifyWebhookTimestamp(rawBody, LINEAR_WEBHOOK_MAX_SKEW_MS);
+        return rawBody;
+      },
+    });

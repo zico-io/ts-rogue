@@ -29,7 +29,7 @@ describe("linearWebhook (signature path)", () => {
     const body = freshBody({ action: "created" });
 
     await expect(
-      linearWebhook({ webhookSecret: "s3cret" }).verify(
+      linearWebhook({ webhookSecret: "s3cret" })(
         linearRequest(body, sign(body, "s3cret")),
       ),
     ).resolves.toBe(body);
@@ -39,7 +39,7 @@ describe("linearWebhook (signature path)", () => {
     const body = freshBody();
 
     await expect(
-      linearWebhook({ webhookSecret: "s3cret" }).verify(
+      linearWebhook({ webhookSecret: "s3cret" })(
         linearRequest(body, sign(body, "wrong")),
       ),
     ).rejects.toThrow("signature mismatch");
@@ -47,9 +47,7 @@ describe("linearWebhook (signature path)", () => {
 
   it("rejects a request with no signature header", async () => {
     await expect(
-      linearWebhook({ webhookSecret: "s3cret" }).verify(
-        linearRequest(freshBody()),
-      ),
+      linearWebhook({ webhookSecret: "s3cret" })(linearRequest(freshBody())),
     ).rejects.toThrow("missing Linear-Signature");
   });
 
@@ -57,7 +55,7 @@ describe("linearWebhook (signature path)", () => {
     const body = JSON.stringify({ webhookTimestamp: Date.now() - 120_000 });
 
     await expect(
-      linearWebhook({ webhookSecret: "s3cret" }).verify(
+      linearWebhook({ webhookSecret: "s3cret" })(
         linearRequest(body, sign(body, "s3cret")),
       ),
     ).rejects.toThrow("timestamp outside allowed skew");
@@ -67,7 +65,7 @@ describe("linearWebhook (signature path)", () => {
     const body = JSON.stringify({ action: "created" });
 
     await expect(
-      linearWebhook({ webhookSecret: "s3cret" }).verify(
+      linearWebhook({ webhookSecret: "s3cret" })(
         linearRequest(body, sign(body, "s3cret")),
       ),
     ).rejects.toThrow("missing webhookTimestamp");
@@ -78,7 +76,7 @@ describe("linearWebhook (signature path)", () => {
     try {
       const body = freshBody();
       await expect(
-        linearWebhook({}).verify(linearRequest(body, sign(body, "s3cret"))),
+        linearWebhook({})(linearRequest(body, sign(body, "s3cret"))),
       ).rejects.toThrow("missing webhook secret");
     } finally {
       vi.unstubAllEnvs();
@@ -91,9 +89,7 @@ describe("linearWebhook (verifier path)", () => {
     const body = JSON.stringify({ no: "timestamp needed" });
 
     await expect(
-      linearWebhook({ webhookVerifier: async () => true }).verify(
-        linearRequest(body),
-      ),
+      linearWebhook({ webhookVerifier: async () => true })(linearRequest(body)),
     ).resolves.toBe(body);
   });
 
@@ -101,13 +97,13 @@ describe("linearWebhook (verifier path)", () => {
     await expect(
       linearWebhook({
         webhookVerifier: async () => '{"rewritten":true}',
-      }).verify(linearRequest("{}")),
+      })(linearRequest("{}")),
     ).resolves.toBe('{"rewritten":true}');
   });
 
   it("rejects when the verifier rejects", async () => {
     await expect(
-      linearWebhook({ webhookVerifier: async () => false }).verify(
+      linearWebhook({ webhookVerifier: async () => false })(
         linearRequest("{}"),
       ),
     ).rejects.toThrow("linearChannel: inbound webhook verifier rejected");

@@ -9,14 +9,22 @@ import type { SessionScratch, SessionUpdate } from "./session";
  *
  * A renderer is a value, not a subclass, so the same one can serve several
  * channels (see `textRenderer`) and be reached from outside a channel handler
- * (see `channel-registry.ts`).
+ * (see `hooks/workflow-progress.ts`).
  */
-export interface ChannelRenderer<Channel, Ctx = SessionContext> {
+export interface ChannelRenderer<Channel> {
   /** Show one update, however this channel shows things. */
-  render(update: SessionUpdate, channel: Channel, ctx?: Ctx): Promise<void>;
+  render(
+    update: SessionUpdate,
+    channel: Channel,
+    ctx?: SessionContext,
+  ): Promise<void>;
 
-  /** How a human restarts after an unrecoverable failure, worded for this channel. */
-  readonly restartHint: string;
+  /**
+   * How a human restarts after an unrecoverable failure, worded for this
+   * channel. Omit it on a channel that keeps eve's own `session.failed`
+   * rendering and so never reaches this wording.
+   */
+  readonly restartHint?: string;
 
   /**
    * Scratch that survives between events of one session. Omit it and every
@@ -31,7 +39,7 @@ export interface ChannelRenderer<Channel, Ctx = SessionContext> {
  * One update as a single body of text, or `null` when a text-only channel shows
  * it as nothing: chips, plans, and native prompts have no surface there.
  */
-export const textBody = (update: SessionUpdate): string | null => {
+const textBody = (update: SessionUpdate): string | null => {
   switch (update.kind) {
     case "thought":
     case "response":
@@ -50,7 +58,7 @@ export const textBody = (update: SessionUpdate): string | null => {
 };
 
 /** Splits a body into posts of at most `max` characters each. */
-export const chunked = (body: string, max: number): readonly string[] => {
+const chunked = (body: string, max: number): readonly string[] => {
   const chunks: string[] = [];
   for (let i = 0; i < body.length; i += max) {
     chunks.push(body.slice(i, i + max));
@@ -67,12 +75,14 @@ export const chunked = (body: string, max: number): readonly string[] => {
  * defaults already turn HITL into buttons and turn progress into the platform's
  * typing indicator.
  */
-export const textRenderer = <Channel, Ctx = SessionContext>(options: {
+export const textRenderer = <Channel>(options: {
   readonly maxLength: number;
   readonly post: (channel: Channel, body: string) => Promise<unknown>;
-  readonly restartHint: string;
-}): ChannelRenderer<Channel, Ctx> => ({
-  restartHint: options.restartHint,
+  readonly restartHint?: string;
+}): ChannelRenderer<Channel> => ({
+  ...(options.restartHint === undefined
+    ? {}
+    : { restartHint: options.restartHint }),
   async render(update: SessionUpdate, channel: Channel): Promise<void> {
     const body = textBody(update);
     if (body === null) return;

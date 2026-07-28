@@ -25,7 +25,7 @@ const recordingRenderer = (updates: SessionUpdate[]) => ({
 
 const setup = () => {
   const updates: SessionUpdate[] = [];
-  const renderer: ChannelRenderer<Channel, undefined> = {
+  const renderer: ChannelRenderer<Channel> = {
     ...recordingRenderer(updates),
     scratch: (channel) => channel.scratch,
   };
@@ -99,9 +99,7 @@ describe("message.completed", () => {
 
   it("forgets buffered narration when the renderer keeps no scratch", async () => {
     const updates: SessionUpdate[] = [];
-    const session = new AgentSession<Channel, undefined>(
-      recordingRenderer(updates),
-    );
+    const session = new AgentSession<Channel>(recordingRenderer(updates));
     const channel = { scratch: {} as SessionScratch };
 
     await session.messageCompleted(
@@ -334,6 +332,23 @@ describe("authorization.required", () => {
       },
     ]);
   });
+
+  it("reads a slug-style connection name as separate words", async () => {
+    const { channel, session, updates } = setup();
+
+    await session.authorizationRequired(
+      { name: "linear/ts-rogue-eve" },
+      channel,
+    );
+    await session.authorizationRequired(
+      { authorization: null, name: "github_app" },
+      channel,
+    );
+
+    expect(
+      updates.map((u) => (u.kind === "authPrompt" ? u.displayName : "")),
+    ).toEqual(["Linear Ts Rogue Eve", "Github App"]);
+  });
 });
 
 describe("authorization.completed", () => {
@@ -371,6 +386,19 @@ describe("authorization.completed", () => {
         body: "Authorization for Linear timed out: challenge expired",
         kind: "thought",
       },
+    ]);
+  });
+
+  it("passes an outcome that already reads as prose straight through", async () => {
+    const { channel, session, updates } = setup();
+
+    await session.authorizationCompleted(
+      { name: "linear", outcome: "denied" },
+      channel,
+    );
+
+    expect(updates).toEqual([
+      { body: "Authorization for Linear denied.", kind: "thought" },
     ]);
   });
 });

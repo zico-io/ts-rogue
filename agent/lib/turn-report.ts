@@ -54,11 +54,12 @@ const failureBody = (
 
 /**
  * An unrecoverable session needs a fresh session, not a retry. How a human
- * starts that fresh session is the channel's own wording, so it is passed in.
+ * starts that fresh session is the channel's own wording, so it is passed in;
+ * a channel with no wording of its own gets the channel-agnostic phrasing.
  */
 export const sessionFailureBody = (
   data: FailureData,
-  restartHint: string,
+  restartHint = "Start a new conversation to continue.",
 ): string =>
   failureBody(
     data,

@@ -1,11 +1,28 @@
 import { describe, expect, it } from "vitest";
 
-import { planFromActionResult, planFromTodoToolOutput } from "./agent-plan";
+import { planFromActionResult } from "./agent-plan";
 
-describe("planFromTodoToolOutput", () => {
-  it("maps todo tool output into Linear plan entries", () => {
+describe("planFromActionResult", () => {
+  const todoResult = (overrides: Record<string, unknown> = {}) => ({
+    status: "completed",
+    result: {
+      kind: "tool-result",
+      toolName: "todo",
+      output: {
+        todos: [
+          { content: "Ship it", priority: "high", status: "in_progress" },
+        ],
+      },
+      ...overrides,
+    },
+  });
+
+  const planFrom = (output: unknown) =>
+    planFromActionResult(todoResult({ output }));
+
+  it("maps every todo status onto its Linear plan equivalent", () => {
     expect(
-      planFromTodoToolOutput({
+      planFrom({
         counts: {
           cancelled: 1,
           completed: 1,
@@ -36,9 +53,9 @@ describe("planFromTodoToolOutput", () => {
     ]);
   });
 
-  it("drops malformed entries and returns null for a non-object output", () => {
+  it("drops malformed entries and ignores output that is not todo-shaped", () => {
     expect(
-      planFromTodoToolOutput({
+      planFrom({
         todos: [
           { content: "ok", status: "pending" },
           { content: 42, status: "pending" },
@@ -46,24 +63,8 @@ describe("planFromTodoToolOutput", () => {
         ],
       }),
     ).toEqual([{ content: "ok", status: "pending" }]);
-    expect(planFromTodoToolOutput("not an object")).toBeNull();
-    expect(planFromTodoToolOutput({})).toBeNull();
-  });
-});
-
-describe("planFromActionResult", () => {
-  const todoResult = (overrides: Record<string, unknown> = {}) => ({
-    status: "completed",
-    result: {
-      kind: "tool-result",
-      toolName: "todo",
-      output: {
-        todos: [
-          { content: "Ship it", priority: "high", status: "in_progress" },
-        ],
-      },
-      ...overrides,
-    },
+    expect(planFrom("not an object")).toBeNull();
+    expect(planFrom({})).toBeNull();
   });
 
   it("returns the plan for a completed todo tool result", () => {

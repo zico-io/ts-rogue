@@ -26,20 +26,20 @@ import type { SessionContext } from "eve/tools";
 
 import type { ChannelRenderer } from "../lib/channel";
 import { linearAgentCredentials } from "../lib/credentials";
+import { activityText } from "../lib/linear/activity";
+import { linearUserIdFromAuthContext } from "../lib/linear/authorization";
+import { attachLinearInboundImages } from "../lib/linear/inbound-attachments";
+import { advanceIssueState } from "../lib/linear/issue-state";
 import {
-  activityText,
-  advanceIssueState,
-  attachLinearInboundImages,
   duplicateSessionDeclineBody,
   findDuplicateSessionBlocker,
   initialSessionState,
   isStopSignal,
-  linearUserIdFromAuthContext,
-  linearWebhook,
   pendingState,
   resolveReceiveSession,
   stateFromAgentSession,
-} from "../lib/linear";
+} from "../lib/linear/session";
+import { linearWebhook } from "../lib/linear/webhook";
 import { nonEmptyString } from "../lib/narrow";
 import {
   AgentSession,
@@ -322,7 +322,7 @@ async function dispatchAgentSession(input: {
 
 function linearChannel(config: LinearChannelConfig = {}): LinearChannel {
   const onAgentSession = config.onAgentSession ?? defaultOnAgentSession;
-  const webhook = linearWebhook(config.credentials);
+  const verifyInbound = linearWebhook(config.credentials);
   const events = {
     ...sessionEvents(
       new AgentSession(
@@ -365,7 +365,7 @@ function linearChannel(config: LinearChannelConfig = {}): LinearChannel {
         async (req, { send, cancel, waitUntil }) => {
           let body: string;
           try {
-            body = await webhook.verify(req);
+            body = await verifyInbound(req);
           } catch (error) {
             console.warn("linear inbound verification failed", error);
             return new Response("unauthorized", { status: 401 });

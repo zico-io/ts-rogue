@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { githubSession } from "../agent/channels/github";
-import { handlePullRequestReviewWebhook } from "../agent/lib/github";
+import { handlePullRequestReviewWebhook } from "../agent/lib/github/webhook";
 
 // The wake and state-sync decisions these handlers render live in
 // agent/lib - see agent/lib/{wake-policy,pull-request,dispatch-context}.test.ts.
