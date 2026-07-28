@@ -9,6 +9,7 @@ import {
   AUTO_RECOVER_PUSH_COMMAND,
   buildBootstrapCommand,
   dependencyRevalidationKey,
+  MEX_AGENT_VERSION,
   WORKSPACE_GIT_CONFIG_ENV,
 } from "./recipe";
 
@@ -91,7 +92,7 @@ describe("buildBootstrapCommand", () => {
 
   it("installs mex and builds the graph after the checkout that lands .mex/", () => {
     const command = buildBootstrapCommand();
-    expect(command).toContain("npm install -g mex-agent@0.7.0");
+    expect(command).toContain(`npm install -g mex-agent@${MEX_AGENT_VERSION}`);
 
     const graphBuildIndex = command.indexOf("mex graph");
     const resetIndex = command.indexOf("git reset --hard origin/main");

@@ -25,8 +25,10 @@ improve scanning.
   decision would materially change scope or behavior.
 - Prefer the `mex` code graph over grepping or reading whole files. Explore an
   unfamiliar task with `mex graph scope "<task>"` first (a compact JSONL
-  manifest; treat any source it returns as already read), then expand a few node
-  ids with `mex graph get <id> --detail source`. When you know the symbol, skip
+  manifest; source it returns counts as already read for the indexed tree, but
+  re-read from disk any file you have since edited, and verify directly when
+  correctness is safety-critical), then expand a few node ids with
+  `mex graph get <id> --detail source`. When you know the symbol, skip
   scope: `mex graph query <who-calls|what-calls|where-defined> <symbol>`. Run
   `mex impact <symbol|file>` before editing a symbol to see affected callers.
   Rerun `mex graph` to refresh `.mex/graph.db` after meaningful code changes.
