@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-
 import linearConnection from "../agent/connections/linear";
 import { sessionUpdateActivity } from "../agent/tools/session_update";
 

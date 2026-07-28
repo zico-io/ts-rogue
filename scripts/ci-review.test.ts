@@ -150,9 +150,7 @@ describe("filterCommentsToValidLines", () => {
       { path: "src/foo.ts", line: 2, side: "RIGHT" as const, body: "note" },
     ];
 
-    expect(filterCommentsToValidLines(comments, validLines)).toEqual(
-      comments,
-    );
+    expect(filterCommentsToValidLines(comments, validLines)).toEqual(comments);
   });
 
   it("drops a comment valid only against an incremental diff, not the full PR diff", () => {
