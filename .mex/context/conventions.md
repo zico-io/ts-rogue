@@ -1,6 +1,6 @@
 ---
 name: conventions
-description: How code is written in this project — naming, structure, patterns, and style. Load when writing new code or reviewing existing code.
+description: How code is written in this project - naming, structure, patterns, and style. Load when writing new code or reviewing existing code.
 triggers:
   - "convention"
   - "pattern"
@@ -43,7 +43,7 @@ last_updated: 2026-07-28
   but must never import `src/ui`, `ink`, or `pixi.js`.
 - All state transitions go through [`reduce()`](mex://function:e96e0f8f03a354c7b531617f6be534a2)
   behind `GameStore.dispatch`. Renderers never mutate `GameState` or duplicate
-  reducer logic — they dispatch a `GameEvent` and read `store.getState()`.
+  reducer logic - they dispatch a `GameEvent` and read `store.getState()`.
 - Input handling and menu/cursor state live in framework-free
   `src/ui/screens/**/interaction.ts` reducers, shared by both renderers. Add
   input logic there, not inside an Ink component or a Pixi view.
@@ -51,7 +51,7 @@ last_updated: 2026-07-28
   (`src/ui/scene/chrome.ts`); both `Screen.tsx` (Ink) and `sceneView.ts`
   (Pixi) walk the same tree.
 - Renderer effects (damage numbers, particles, hit-flash) are derived from
-  state deltas observed across renders — never a new `GameEvent`; the engine
+  state deltas observed across renders - never a new `GameEvent`; the engine
   stays pure.
 
 ## Patterns
@@ -70,20 +70,20 @@ state.player.x += 1            // never mutate GameState
 
 **Determinism.** Random outcomes must consume the serialized `Rng` state;
 blocked/no-op actions are side-effect-free and consume no randomness. Never use
-`Math.random` — hash coordinates/indices for reproducible variety (see
+`Math.random` - hash coordinates/indices for reproducible variety (see
 `overworldVariants.ts`).
 
 ## Verify Checklist
 
 Before presenting any code:
 - [ ] `pnpm check` passes (`typecheck` via `tsgo`, `test`, `lint` via biome).
-- [ ] Engine changes keep BOTH frontends working — run `pnpm game` (terminal)
+- [ ] Engine changes keep BOTH frontends working - run `pnpm game` (terminal)
       and `pnpm web:dev` (browser); CI cannot see whether the change makes
       sense in a Pixi container.
 - [ ] No cross-boundary import: no `pixi.js` in `src/app.tsx`/`src/ui`; no
       `ink`/Node builtins/DOM globals in `src/web`.
 - [ ] New player actions are a `GameEvent` + `reduce` case, not renderer-local
       state; `GameState` is never mutated in place.
-- [ ] No `Math.random` in engine or render variety — seeded RNG or coordinate
+- [ ] No `Math.random` in engine or render variety - seeded RNG or coordinate
       hashing only.
 - [ ] Colors come from `theme.ts` tokens, not raw hex.

@@ -1,6 +1,6 @@
 # Pattern Index
 
-Lookup table for all pattern files in this directory. Check here before starting any task — if a pattern exists, follow it.
+Lookup table for all pattern files in this directory. Check here before starting any task - if a pattern exists, follow it.
 
 <!-- Each row maps a pattern file (or section) to when the agent should load it.
      Simple form: one row per file. Anchored form (multi-section files): one

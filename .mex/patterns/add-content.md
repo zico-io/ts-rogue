@@ -25,7 +25,7 @@ Static content lives in `src/data` (`monsters.ts`, items, `dungeons.ts`,
 `quests.ts`, `classes`, affixes, loot tables). The engine reads these; it never
 hardcodes content. The terminal renderer draws content as ASCII (`MonsterDef.ascii`);
 the browser draws sprites from a packed atlas. The two art paths are
-independent — adding a sprite is additive and never touches the terminal.
+independent - adding a sprite is additive and never touches the terminal.
 
 ## Steps
 
@@ -37,7 +37,7 @@ independent — adding a sprite is additive and never touches the terminal.
    - Add a frame rect to `TILE_SOURCES` in `src/ui/tiles/sources.ts` (use
      `at(sheet, col, row)` for a plain 8x8 tile, or a raw `{x,y,w,h}`).
    - Regenerate the atlas by running the `scripts/build-atlas.ts` tsx script
-     (e.g. via `tsx scripts/build-atlas.ts`) — it rewrites
+     (e.g. via `tsx scripts/build-atlas.ts`) - it rewrites
      `src/web/public/atlas/atlas.png` + `atlas.json`. **Commit both.**
    - Set `sprite: "<frame>"` on the `MonsterDef`. Look it up as
      `sheet.textures["<frame>"]` and set `texture.source.scaleMode = "nearest"`.
@@ -48,10 +48,10 @@ independent — adding a sprite is additive and never touches the terminal.
 
 ## Gotchas
 
-- `public/atlas/atlas.{png,json}` is **generated — never hand-edit**; always
+- `public/atlas/atlas.{png,json}` is **generated - never hand-edit**; always
   regenerate via the script and commit the result.
 - A `BattleEnemy` with a missing/unknown `sprite` id falls back to a tinted
-  rect in the browser — battles never break on a missing sprite, so a broken
+  rect in the browser - battles never break on a missing sprite, so a broken
   frame name fails silently visually. Verify the frame renders.
 - Terminal art uses none of the atlas; don't assume a sprite change shows up in
   `pnpm game`.

@@ -1,6 +1,6 @@
 ---
 name: web-renderer
-description: The PixiJS browser renderer and its Next.js chrome — the GameStore/GameEvent seam, cross-boundary import guardrails, atlas/art pipeline, and per-scene views. Load when touching src/web.
+description: The PixiJS browser renderer and its Next.js chrome - the GameStore/GameEvent seam, cross-boundary import guardrails, atlas/art pipeline, and per-scene views. Load when touching src/web.
 triggers:
   - "web"
   - "pixi"
@@ -34,7 +34,7 @@ last_updated: 2026-07-28
 
 `src/web` is a PixiJS renderer that boots the same engine core the Ink terminal
 uses, wrapped in a Next.js app shell (`@ts-rogue/web`). It is an independent
-drawing layer downstream of `GameStore.subscribe` — it never mutates
+drawing layer downstream of `GameStore.subscribe` - it never mutates
 `GameState` or reimplements reducer logic.
 
 ## Boot + the shared seam
@@ -48,7 +48,7 @@ three triggers: a store dispatch (`subscribe`), the Pixi `resize` event, and
 every keydown (menu-cursor moves are local UI state, not `GameEvent`s, so they
 would otherwise never redraw). It returns a `dispose()` handle that tears down
 every listener + the Pixi app, so React chrome (`app/GamePortal.tsx`) can
-mount/unmount it — including StrictMode's double-invoke — without leaking a
+mount/unmount it - including StrictMode's double-invoke - without leaking a
 second game.
 
 Input is resolved by `input/keyboard.ts`'s `BrowserKeyboardManager` through the
@@ -59,7 +59,7 @@ keymap/reducer logic is duplicated here. New player actions are added as a
 ## Shared framework-free layer
 
 The HUD frame/party-bar/log is built once by [`buildChrome()`](mex://function:3f4d35579ad2237045276b9f87930be2)
-(`src/ui/scene/chrome.ts`) as an abstract `PanelNode` tree in `Unit`s — the same
+(`src/ui/scene/chrome.ts`) as an abstract `PanelNode` tree in `Unit`s - the same
 tree the terminal's `Screen.tsx` and this renderer's `render/sceneView.ts`
 (`SceneChromeView`) both walk. `UNIT_PX` maps one chrome `Unit` to pixels here.
 Every per-scene view (`sceneView`, `battleView`, `dungeonView`, `overworldView`,
@@ -83,7 +83,7 @@ web:build` is a separate CI step proving the vite/Next build still succeeds.
 Full-color 8x8 pixel art from the Minifantasy packs; each atlas frame's source
 rect lives in `src/ui/tiles/sources.ts` (`TILE_SOURCES`).
 `scripts/build-atlas.ts` packs them into `public/atlas/atlas.png` +
-`atlas.json` — **generated, commit both, never hand-edit**. Frames stay native
+`atlas.json` - **generated, commit both, never hand-edit**. Frames stay native
 size; Pixi upscales with `scaleMode = "nearest"`. Battle monsters are separate
 individually-loaded textures (`battlers.ts`), not packed into the atlas. The
 terminal renderer is pure ASCII and uses none of this. See
@@ -93,7 +93,7 @@ terminal renderer is pure ASCII and uses none of this. See
 
 Damage numbers, particle bursts, and hit-flash are derived from state deltas
 observed across renders (e.g. a new `"damage"` log entry + an enemy HP drop),
-never a new `GameEvent` — the engine stays pure. All effects are additive and
+never a new `GameEvent` - the engine stays pure. All effects are additive and
 gated on `prefers-reduced-motion` (`setReducedMotion(true)` clears live
 particles and stops new ones while legibility features keep rendering).
 

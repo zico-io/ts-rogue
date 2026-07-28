@@ -1,12 +1,12 @@
 # Patterns
 
-This folder contains task-specific guidance — the things you would tell your agent if you were sitting next to it. Not generic instructions. Project-specific accumulated wisdom.
+This folder contains task-specific guidance - the things you would tell your agent if you were sitting next to it. Not generic instructions. Project-specific accumulated wisdom.
 
 ## How patterns get created
 
-**During setup:** After the context/ files are populated, the agent generates starter patterns based on the project's actual stack, architecture, and conventions. These are stack-specific — a Flask API project gets different patterns than a React SPA or a CLI tool.
+**During setup:** After the context/ files are populated, the agent generates starter patterns based on the project's actual stack, architecture, and conventions. These are stack-specific - a Flask API project gets different patterns than a React SPA or a CLI tool.
 
-**Over time:** You or your agent add patterns as they emerge from real work — when something breaks, when a task has a non-obvious gotcha, when you've explained the same thing twice.
+**Over time:** You or your agent add patterns as they emerge from real work - when something breaks, when a task has a non-obvious gotcha, when you've explained the same thing twice.
 
 ## What belongs here
 
@@ -31,7 +31,7 @@ If in doubt, generate the pattern. A pattern that turns out to be obvious costs 
 ```markdown
 ---
 name: [pattern-name]
-description: [one line — what this pattern covers and when to use it]
+description: [one line - what this pattern covers and when to use it]
 triggers:
   - "[keyword that should trigger loading this file]"
 edges:
@@ -52,7 +52,7 @@ last_updated: [YYYY-MM-DD]
 Read the broad task neighborhood, but ground only nodes that embody this pattern.]
 
 ## Steps
-[The workflow — what to do, in what order]
+[The workflow - what to do, in what order]
 
 ## Gotchas
 [The things that go wrong. What to watch out for.]
@@ -77,7 +77,7 @@ Use this when tasks share context but differ in steps. Each task gets its own
 ```markdown
 ---
 name: [pattern-name]
-description: [one line — what this pattern file covers]
+description: [one line - what this pattern file covers]
 triggers:
   - "[keyword]"
 edges:
@@ -130,14 +130,14 @@ Do not use a fixed number. Generate one pattern per:
 - Each major failure boundary in the architecture flow
 
 For a simple project this may be 3-4 files. For a complex project this may be 10-15.
-Do not cap based on a number — cap based on whether the pattern adds real value.
+Do not cap based on a number - cap based on whether the pattern adds real value.
 
 ## Pattern categories
 
 Walk through each category below. For each one, check the relevant context files
 and generate patterns for everything that applies to this project.
 
-### Category 1 — Common task patterns
+### Category 1 - Common task patterns
 
 The repeatable tasks in this project. What does a developer do most often?
 
@@ -151,30 +151,30 @@ Examples by project type:
 - Pipeline: "add new pipeline stage", "add new data source"
 - SaaS: "add payment flow", "add user-facing feature", "add admin operation"
 
-### Category 2 — Integration patterns
+### Category 2 - Integration patterns
 
 How to work with the external dependencies in this project.
 
 Every entry in `context/stack.md` "Key Libraries" or `context/architecture.md`
 "External Dependencies" that has non-obvious setup, gotchas, or failure modes
-deserves a pattern. These are the most dangerous areas — the agent will
+deserves a pattern. These are the most dangerous areas - the agent will
 confidently write integration code that looks right but misses project-specific
 configuration, error handling, or rate limiting.
 
 Examples: "calling the payments API", "running database migrations",
 "adding a new third-party service client", "configuring auth provider"
 
-### Category 3 — Debug/diagnosis patterns
+### Category 3 - Debug/diagnosis patterns
 
 When something breaks, where do you look?
 
-Derive from the architecture flow — each boundary between components is a
+Derive from the architecture flow - each boundary between components is a
 potential failure point. One debug pattern per major boundary.
 
 Examples: "debug webhook failures", "debug pipeline stage failures",
 "diagnose auth/permission issues", "debug background job failures"
 
-### Category 4 — Deploy/release patterns
+### Category 4 - Deploy/release patterns
 
 Only generate if `context/setup.md` reveals non-trivial deployment.
 

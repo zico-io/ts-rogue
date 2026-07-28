@@ -13,7 +13,7 @@ edges:
   - target: context/setup.md
     condition: when setting up the dev environment or running the project for the first time
   - target: patterns/INDEX.md
-    condition: when starting a task — check the pattern index for a matching pattern file
+    condition: when starting a task - check the pattern index for a matching pattern file
   - target: context/engine.md
     condition: when the task touches game rules, state, combat, loot, skills, quests, or persistence
   - target: context/web-renderer.md
@@ -23,7 +23,7 @@ last_updated: 2026-07-28
 
 # Session Bootstrap
 
-If you haven't already read `AGENTS.md`, read it now — it contains the project identity, non-negotiables, and commands.
+If you haven't already read `AGENTS.md`, read it now - it contains the project identity, non-negotiables, and commands.
 
 Then read this file fully before doing anything else in this session.
 
@@ -35,7 +35,7 @@ Then read this file fully before doing anything else in this session.
 - Deterministic engine: seeded RNG, reducer + GameStore, combat with
   rows/status/target-shapes, loot with affixes, Guild quests, fast travel.
 - Skill tree: data model, passive stat aggregation, battle skill menu, and the
-  Skill Tree UI (view nodes/prerequisites, spend points) — ENG-33.
+  Skill Tree UI (view nodes/prerequisites, spend points) - ENG-33.
 - PixiJS browser renderer (`src/web`): all four playing scenes have real
   content, atlas/art pipeline, IndexedDB save, dev console + crash overlay,
   Next.js portal chrome, deployed alongside the eve agent.
@@ -72,11 +72,11 @@ Load the relevant file based on the current task. Always load `context/architect
 
 For every task, follow this loop:
 
-1. **CONTEXT** — Load the relevant context file(s) from the routing table above. Check `patterns/INDEX.md` for a matching pattern. If one exists, follow it. Narrate what you load: "Loading architecture context..."
-2. **BUILD** — Do the work. If a pattern exists, follow its Steps. If you are about to deviate from an established pattern, say so before writing any code — state the deviation and why.
-3. **VERIFY** — Load `context/conventions.md` and run the Verify Checklist item by item. State each item and whether the output passes. Do not summarise — enumerate explicitly.
-4. **DEBUG** — If verification fails or something breaks, check `patterns/INDEX.md` for a debug pattern. Follow it. Fix the issue and re-run VERIFY.
-5. **GROW** — After meaningful work, run this binary checklist:
+1. **CONTEXT** - Load the relevant context file(s) from the routing table above. Check `patterns/INDEX.md` for a matching pattern. If one exists, follow it. Narrate what you load: "Loading architecture context..."
+2. **BUILD** - Do the work. If a pattern exists, follow its Steps. If you are about to deviate from an established pattern, say so before writing any code - state the deviation and why.
+3. **VERIFY** - Load `context/conventions.md` and run the Verify Checklist item by item. State each item and whether the output passes. Do not summarise - enumerate explicitly.
+4. **DEBUG** - If verification fails or something breaks, check `patterns/INDEX.md` for a debug pattern. Follow it. Fix the issue and re-run VERIFY.
+5. **GROW** - After meaningful work, run this binary checklist:
    - **Ground:** What changed in reality? Name the changed behavior, system, command, dependency, or workflow.
    - **Record:** If project state changed, update the "Current Project State" section above. If documented facts changed, update the relevant `context/` file surgically.
    - **Orient:** If this task can recur and no pattern exists, create one in `patterns/` using `patterns/README.md`, then add it to `patterns/INDEX.md`. If a pattern exists but you learned a gotcha, update it.

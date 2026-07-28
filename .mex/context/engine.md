@@ -1,6 +1,6 @@
 ---
 name: engine
-description: The deterministic, UI-independent game engine — state/reducer, RNG, combat targeting, skill tree, loot, quests, world, and persistence. Load when changing any game rule or state shape.
+description: The deterministic, UI-independent game engine - state/reducer, RNG, combat targeting, skill tree, loot, quests, world, and persistence. Load when changing any game rule or state shape.
 triggers:
   - "engine"
   - "reducer"
@@ -66,9 +66,9 @@ Determinism rules (non-negotiable):
 A `SkillDef.target` shape (`single`, `row`, `column`, `allEnemies`, `randomN`,
 `self`, `ally`, `allAllies`) expands into a concrete target list through
 [`resolveShapeTargets()`](mex://function:156f7e1cf6c4b61914f225116ab26138)
-in `combat/resolution.ts` — the one resolver both a party member's `BattleSkill`
+in `combat/resolution.ts` - the one resolver both a party member's `BattleSkill`
 command and a monster's `advanceRound` turn use. Every resolved target rolls its
-own crit, damage, and status independently — never one roll broadcast to a group.
+own crit, damage, and status independently - never one roll broadcast to a group.
 
 - Enemies stand in front/back rows (`BattleEnemy.row`); a basic **attack**
   cannot reach a back-row enemy while any front-row enemy lives
@@ -85,7 +85,7 @@ own crit, damage, and status independently — never one roll broadcast to a gro
 Warrior, Rogue, Wizard classes define starting stats, per-level growth, and
 known skills in `CLASSES`; each carries a `treeId` into `SKILL_TREES`.
 [`grantXp()`](mex://function:12d97fc8a68cceab82868d1070c4f39e) awards **one
-skill point per level gained** on top of stat/HP/MP growth — never retroactively.
+skill point per level gained** on top of stat/HP/MP growth - never retroactively.
 [`unlockSkillNode()`](mex://function:b1356f5dad73f326e406c96ffedd29c7) spends a
 point on a node from the member's class tree, staying **pure on rejection**
 (unknown node, already unlocked, missing prerequisite, insufficient points) and
@@ -101,14 +101,14 @@ Loot combines item bases, rarity, prefixes, suffixes, and optional
 monster-specific implicit properties. The Guild quest board (`quests.ts`) holds
 up to 3 accepted quests; `advanceQuestsOnVictory` (inside `finalizeWon`) tallies
 kill/clear/fetch progress and only spends fetch-drop RNG for kills an incomplete
-accepted quest still needs — no RNG on quests nobody took.
+accepted quest still needs - no RNG on quests nobody took.
 
 ## World
 
 Overworld: passable biomes, a 2x2-footprint village (`world/landmarks.ts`),
-reachable dungeon entrances, and a seeded encounter meter. Fast travel — evac
+reachable dungeon entrances, and a seeded encounter meter. Fast travel - evac
 (leave a dungeon to its entrance tile) and zoom (teleport between visited
-landmarks via `world/waypoints.ts`) — never triggers an encounter or advances
+landmarks via `world/waypoints.ts`) - never triggers an encounter or advances
 the meter. Dungeons are deterministic rooms/corridors/chests/stairs with a boss
 floor.
 

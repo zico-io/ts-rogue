@@ -38,12 +38,12 @@ biome guardrails keep clean.
 1. Reproduce in BOTH: `pnpm game` (terminal) and `pnpm web:dev` (browser via the
    play-web harness). Confirm which one is wrong.
 2. If a new action does nothing in the browser: check `src/web/input/keyboard.ts`
-   routes the key, and that `bootGame`'s `renderCurrent()` fires — local-only UI
+   routes the key, and that `bootGame`'s `renderCurrent()` fires - local-only UI
    state (menu cursor) doesn't dispatch a `GameEvent`, so it only redraws on the
    keydown path, not `store.subscribe`.
 3. If the terminal is wrong: check the `src/ui/screens/*Screen.tsx` for that
    scene and its shared `interaction.ts` reducer.
-4. If it's a lint failure: read the biome error — `src/web/**` importing `ink`/a
+4. If it's a lint failure: read the biome error - `src/web/**` importing `ink`/a
    Node builtin, or `src/app.tsx`/`src/ui/**` importing `pixi.js` or a DOM
    global. Move the offending logic into the framework-free shared layer
    (`interaction.ts` / `chrome.ts`) instead of crossing the boundary.
@@ -53,12 +53,12 @@ biome guardrails keep clean.
 
 ## Gotchas
 
-- `pnpm check` (typecheck + test + lint) proves the mechanical half only — it
+- `pnpm check` (typecheck + test + lint) proves the mechanical half only - it
   can't tell whether a new event makes sense in a Pixi container. Always eyeball
   both UIs.
 - Effects (damage numbers, particles) are derived from state deltas, not events;
   a missing effect in the browser is a view bug, not an engine bug.
-- Don't "fix" a divergence by adding renderer-local state — push the logic into
+- Don't "fix" a divergence by adding renderer-local state - push the logic into
   the engine (`reduce`) or the shared interaction/chrome layer.
 
 ## Verify

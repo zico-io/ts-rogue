@@ -33,9 +33,9 @@ behind `GameStore.dispatch`; both frontends only dispatch `GameEvent`s and read
 **Reasoning:** Two renderers (Ink terminal, PixiJS browser) must never drift.
 Keeping the only event→state path pure and shared means a new player action is
 implemented once in the engine and picked up by both UIs.
-**Alternatives considered:** A shared abstract rendering layer (rejected — the
+**Alternatives considered:** A shared abstract rendering layer (rejected - the
 two targets, terminal cells vs WebGL, are too different; a common draw API
-would be a leaky abstraction). Per-renderer state (rejected — guarantees drift).
+would be a leaky abstraction). Per-renderer state (rejected - guarantees drift).
 **Consequences:** Renderer effects (damage numbers, particles) must be derived
 from state deltas across renders, since the engine has no animation concept.
 CI enforces the mechanical half (`pnpm check` + `pnpm web:build`); the semantic
@@ -48,7 +48,7 @@ half ("does it make sense in Pixi") needs manual review of both UIs.
 core the Ink terminal uses; the terminal renderer stays the primary target.
 **Reasoning:** Reuse the deterministic engine unchanged; the browser is a
 second view, not a rewrite.
-**Alternatives considered:** Forking a browser-specific game loop (rejected —
+**Alternatives considered:** Forking a browser-specific game loop (rejected -
 duplicates engine logic and invites divergence).
 **Consequences:** biome overrides enforce the split: `src/web/**` may not import
 `ink` or Node builtins; `src/app.tsx`/`src/ui/**` may not import `pixi.js` or
@@ -60,11 +60,11 @@ touch DOM globals. See `context/web-renderer.md`.
 **Decision:** Keep stable `typescript` v5 installed AND
 `@typescript/native-preview` (`tsgo`); `pnpm typecheck` runs `tsgo --noEmit`.
 **Reasoning:** Next's build loads the TypeScript compiler API, which the native
-preview does not expose — Next would silently downgrade a lone preview install.
+preview does not expose - Next would silently downgrade a lone preview install.
 Keeping both gives Next + editors a stable compiler and the CI typecheck the
 fast one.
-**Alternatives considered:** Native preview only (rejected — breaks the Next
-build). Stable only (rejected — loses tsgo's typecheck speed).
+**Alternatives considered:** Native preview only (rejected - breaks the Next
+build). Stable only (rejected - loses tsgo's typecheck speed).
 **Consequences:** `next.config.mjs` is plain JS so Next never transpiles a
 `.ts` config with whichever compiler is active. Do not replace `typescript`
 with the preview.
@@ -77,7 +77,7 @@ terminal persists it via `node:sqlite` (`save.db`), browser via IndexedDB,
 both sharing `serializer.ts`.
 **Reasoning:** Determinism makes the whole state cheap to serialize; one blob
 keeps the save format portable across both platforms without a schema.
-**Alternatives considered:** Relational schema / ORM (rejected — no query needs,
-adds migration burden). Multi-slot saves (rejected — out of scope).
+**Alternatives considered:** Relational schema / ORM (rejected - no query needs,
+adds migration burden). Multi-slot saves (rejected - out of scope).
 **Consequences:** Older saves are backfilled with newer required fields
 (run flags, default Warrior class, zero skill points) during `deserialize`.

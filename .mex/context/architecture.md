@@ -51,45 +51,45 @@ never imports UI.
 
 ## Key Components
 
-- **Engine** (`src/engine`) — deterministic, UI-independent game state and
+- **Engine** (`src/engine`) - deterministic, UI-independent game state and
   rules: `state/` (types, reducer, store, validation, incidents), `rng/`
   (serializable seeded RNG), `world/`, `combat/`, `loot/`, `entities/`. Never
   imports `src/ui`. See `context/engine.md`.
-- **GameStore** (`src/engine/state/store.ts`) — the only event→state seam.
+- **GameStore** (`src/engine/state/store.ts`) - the only event→state seam.
   `dispatch` runs `reduce`, validates, journals, and notifies subscribers.
   Both frontends depend on it. See `context/decisions.md`.
-- **Ink terminal UI** (`src/app.tsx`, `src/ui`) — renders `GameState` to a
+- **Ink terminal UI** (`src/app.tsx`, `src/ui`) - renders `GameState` to a
   terminal, owns terminal + Node I/O (SQLite save, Linear dev reports). Pure
   render/interaction helpers under `src/ui/screens/**` are framework-free and
   shared with the web renderer.
-- **PixiJS web renderer** (`src/web`) — a WebGL renderer + Next.js chrome that
+- **PixiJS web renderer** (`src/web`) - a WebGL renderer + Next.js chrome that
   boots the same engine in the browser. See `context/web-renderer.md`.
-- **Eve agent** (`agent/`) — a durable backend AI agent deployed on the same
+- **Eve agent** (`agent/`) - a durable backend AI agent deployed on the same
   Vercel project as the web game, mounted at `/eve/v1/*` (see `context/stack.md`).
 
 ## External Dependencies
 
-- **SQLite / IndexedDB (save slot)** — a single-slot whole-state-JSON save.
+- **SQLite / IndexedDB (save slot)** - a single-slot whole-state-JSON save.
   Terminal uses `node:sqlite` (`src/persistence/save.ts`, `save.db`); browser
   uses IndexedDB (`src/persistence/browserSave.ts`). Both share
   `serializer.ts`'s `serialize`/`deserialize` so the format stays portable.
-- **Vercel (deployment + Connect)** — the Next.js app hosts the game and the
+- **Vercel (deployment + Connect)** - the Next.js app hosts the game and the
   eve agent from one deployment. Vercel Connect supplies Linear credentials to
   the terminal dev console when `VERCEL_OIDC_TOKEN` is present.
-- **Linear** — the terminal `pnpm game:dev` dev console files issues to the
+- **Linear** - the terminal `pnpm game:dev` dev console files issues to the
   `ROG` team (overridable via `LINEAR_TEAM_KEY`). Not contacted in production
   play or in the browser.
 
 ## What Does NOT Exist Here
 
-- No shared rendering layer between the two frontends — Ink and Pixi are
+- No shared rendering layer between the two frontends - Ink and Pixi are
   independent drawing layers glued to `GameStore`; the only shared code is the
   framework-free `src/ui/screens/**/interaction.ts` reducers and
   `src/ui/scene/chrome.ts`.
-- No floating combat text / animation concept in the engine — the engine is
+- No floating combat text / animation concept in the engine - the engine is
   pure; damage numbers and particles are derived by renderers from state deltas
   across renders, never from a `GameEvent`.
-- No multi-slot saves, no networked/multiplayer state — one local save slot,
+- No multi-slot saves, no networked/multiplayer state - one local save slot,
   single-player, fully reproducible from seed + RNG state.
-- No Linear/Node I/O in the browser bundle — dev-console issue filing is
+- No Linear/Node I/O in the browser bundle - dev-console issue filing is
   terminal-only.

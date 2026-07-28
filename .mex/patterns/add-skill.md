@@ -29,7 +29,7 @@ last_updated: 2026-07-28
 
 A `SkillDef` (`src/data`) has a `target` shape that
 [`resolveShapeTargets()`](mex://function:156f7e1cf6c4b61914f225116ab26138)
-expands into a concrete list — the single resolver both a party member's
+expands into a concrete list - the single resolver both a party member's
 `BattleSkill` and a monster's `advanceRound` use. Skill-tree nodes are unlocked
 by [`unlockSkillNode()`](mex://function:b1356f5dad73f326e406c96ffedd29c7);
 points come from [`grantXp()`](mex://function:12d97fc8a68cceab82868d1070c4f39e)
@@ -43,21 +43,21 @@ points come from [`grantXp()`](mex://function:12d97fc8a68cceab82868d1070c4f39e)
    `self` | `ally` | `allAllies`), damage/heal, optional status effect.
 2. Reference it from a `ClassDef.skills` list and/or a `MonsterDef.skills` list.
 3. Test targeting in a vitest against a small synthetic battle: every resolved
-   target rolls its own crit/damage/status — assert independence, not one roll.
+   target rolls its own crit/damage/status - assert independence, not one roll.
 
 **A skill-tree node:**
 1. Add the node to its tree in `data/skillTrees.ts` (referenced by
    `ClassDef.treeId` → `SKILL_TREES`): id, prerequisites, cost, and either
    `skillId` (active) or a stat delta (passive).
 2. Active nodes surface in `memberSkills` (`combat/skills.ts`); passive nodes
-   fold into `effectiveStats` (`loot/equipment.ts`) — no extra wiring.
+   fold into `effectiveStats` (`loot/equipment.ts`) - no extra wiring.
 3. Test unlock rejection paths stay pure (unknown/already-unlocked/missing-prereq/
    insufficient points return a reason, never throw).
 
 ## Gotchas
 
 - A basic **attack** can't reach a back-row enemy while a front-row one lives
-  (`isMeleeTargetable`); **skills** ignore row rules — pick the shape deliberately.
+  (`isMeleeTargetable`); **skills** ignore row rules - pick the shape deliberately.
 - A monster with an attack-kind skill always casts one instead of attacking.
 - Every Heal-kind skill also cleanses the caster's own statuses on cast.
 - Status effects clear entirely when battle ends; they tick at the afflicted

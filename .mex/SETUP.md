@@ -1,6 +1,6 @@
-# Setup — Populate This Scaffold
+# Setup - Populate This Scaffold
 
-This file contains the prompts to populate the scaffold. It is NOT the dev environment setup — for that, see `context/setup.md` after population.
+This file contains the prompts to populate the scaffold. It is NOT the dev environment setup - for that, see `context/setup.md` after population.
 
 This scaffold is currently empty. Follow the steps below to populate it for your project.
 
@@ -14,7 +14,7 @@ The script handles everything automatically:
 1. Detects your project state (existing codebase, fresh project, or partial)
 2. Asks which AI tool you use and copies the right config file
 3. Pre-scans your codebase with `mex init` to build a structured brief (~5-8k tokens vs ~50k from AI exploration)
-4. Builds and runs the population prompt — or prints it for manual paste
+4. Builds and runs the population prompt - or prints it for manual paste
 
 If you want to populate manually instead, use the prompts below.
 
@@ -22,29 +22,29 @@ If you want to populate manually instead, use the prompts below.
 
 **Existing codebase?** Follow Option A.
 **Fresh project, nothing built yet?** Follow Option B.
-**Partially built?** Follow Option A — the agent will flag empty slots it cannot fill yet.
+**Partially built?** Follow Option A - the agent will flag empty slots it cannot fill yet.
 
 ---
 
-## Option A — Existing Codebase
+## Option A - Existing Codebase
 
 Paste the following prompt into your agent:
 
 ---
 
-**SETUP PROMPT — copy everything between the lines:**
+**SETUP PROMPT - copy everything between the lines:**
 
 ```
 You are going to populate an AI context scaffold for this project.
 The scaffold lives in the root of this repository.
 
 Read the following files in order before doing anything else:
-1. ROUTER.md — understand the scaffold structure
-2. context/architecture.md — read the annotation comments to understand what belongs there
-3. context/stack.md — same
-4. context/conventions.md — same
-5. context/decisions.md — same
-6. context/setup.md — same
+1. ROUTER.md - understand the scaffold structure
+2. context/architecture.md - read the annotation comments to understand what belongs there
+3. context/stack.md - same
+4. context/conventions.md - same
+5. context/decisions.md - same
+6. context/setup.md - same
 
 Then explore this codebase:
 - Read the main entry point(s)
@@ -52,14 +52,14 @@ Then explore this codebase:
 - Read 2-3 representative files from each major layer
 - Read any existing README or documentation
 
-PASS 1 — Populate knowledge files:
+PASS 1 - Populate knowledge files:
 
 Populate each context/ file by replacing the annotation comments
 with real content from this codebase. Follow the annotation instructions exactly.
 For each slot:
 - Use the actual names, patterns, and structures from this codebase
 - Do not use generic examples
-- Do not leave any slot empty — if you cannot determine the answer,
+- Do not leave any slot empty - if you cannot determine the answer,
   write "[TO DETERMINE]" and explain what information is needed
 - Keep length within the guidance given in each annotation
 
@@ -70,7 +70,7 @@ Examples: a project with a complex auth system gets context/auth.md.
 A data pipeline gets context/ingestion.md. A project with Stripe gets
 context/payments.md. Use the same YAML frontmatter format (name,
 description, triggers, edges, last_updated). Only create these for
-domains that have real depth — not for simple integrations that fit
+domains that have real depth - not for simple integrations that fit
 in a few lines of architecture.md.
 
 After populating context/ files, update ROUTER.md:
@@ -80,7 +80,7 @@ After populating context/ files, update ROUTER.md:
 Update AGENTS.md:
 - Fill in the project name, one-line description, non-negotiables, and commands
 
-PASS 2 — Generate starter patterns:
+PASS 2 - Generate starter patterns:
 
 Read patterns/README.md for the format and categories.
 
@@ -90,12 +90,12 @@ types in this project. Focus on:
 - The 1-2 integrations with the most non-obvious gotchas
 - 1 debug pattern for the most common failure boundary
 
-Each pattern should be specific to this project — real file paths, real gotchas,
+Each pattern should be specific to this project - real file paths, real gotchas,
 real verify steps derived from the code you read in Pass 1.
 Use the format in patterns/README.md. Name descriptively (e.g., add-endpoint.md).
 
 Do NOT try to generate a pattern for every possible task type. The scaffold
-grows incrementally — the behavioural contract (step 5: GROW) will create
+grows incrementally - the behavioural contract (step 5: GROW) will create
 new patterns from real work as the project evolves. Setup just seeds the most
 critical ones.
 
@@ -103,7 +103,7 @@ After generating patterns, update patterns/INDEX.md with a row for each
 pattern file you created. For multi-section patterns, add one row per task
 section using anchor links (see INDEX.md annotation for format).
 
-PASS 3 — Wire the web:
+PASS 3 - Wire the web:
 
 Re-read every file you just wrote (context/ files, pattern files, ROUTER.md).
 For each file, add or update the `edges` array in the YAML frontmatter.
@@ -127,27 +127,27 @@ you could not fill with confidence.
 
 ---
 
-## Option B — Fresh Project
+## Option B - Fresh Project
 
 Paste the following prompt into your agent:
 
 ---
 
-**SETUP PROMPT — copy everything between the lines:**
+**SETUP PROMPT - copy everything between the lines:**
 
 ```
 You are going to populate an AI context scaffold for a project that
 is just starting. Nothing is built yet.
 
 Read the following files in order before doing anything else:
-1. ROUTER.md — understand the scaffold structure
-2. All files in context/ — read the annotation comments in each
+1. ROUTER.md - understand the scaffold structure
+2. All files in context/ - read the annotation comments in each
 
 Then ask me the following questions one section at a time.
 Wait for my answer before moving to the next section:
 
 1. What does this project do? (one sentence)
-2. What are the hard rules — things that must never happen in this codebase?
+2. What are the hard rules - things that must never happen in this codebase?
 3. What is the tech stack? (language, framework, database, key libraries)
 4. Why did you choose this stack over alternatives?
 5. How will the major pieces connect? Describe the flow of a typical request/action.
@@ -165,9 +165,9 @@ in context/. Examples: a project with a complex auth system gets
 context/auth.md. A data pipeline gets context/ingestion.md. A project
 with Stripe gets context/payments.md. Use the same YAML frontmatter
 format (name, description, triggers, edges, last_updated). Only create
-these for domains that have real depth — not for simple integrations
+these for domains that have real depth - not for simple integrations
 that fit in a few lines of architecture.md. For fresh projects, mark
-domain-specific unknowns with "[TO BE DETERMINED — populate after first
+domain-specific unknowns with "[TO BE DETERMINED - populate after first
 implementation]".
 
 Update ROUTER.md current state to reflect that this is a new project.
@@ -181,14 +181,14 @@ anticipate for this stack. Focus on the tasks a developer will do first.
 Mark unknowns with "[VERIFY AFTER FIRST IMPLEMENTATION]".
 
 Do NOT try to anticipate every possible pattern. The scaffold grows
-incrementally — the behavioural contract (step 5: GROW) will create
+incrementally - the behavioural contract (step 5: GROW) will create
 new patterns from real work as the project evolves. Setup just seeds
 the most critical ones.
 
 After generating patterns, update patterns/INDEX.md with a row for each
 pattern file you created.
 
-PASS 3 — Wire the web:
+PASS 3 - Wire the web:
 
 Re-read every file you just wrote (context/ files, pattern files, ROUTER.md).
 For each file, add or update the `edges` array in the YAML frontmatter.
@@ -223,6 +223,6 @@ A well-populated scaffold should give the agent enough to:
 
 Once the scaffold is populated, use these to keep it aligned with your codebase:
 
-- **`mex check`** — detect drift (zero tokens, zero AI)
-- **`.mex/sync.sh`** — interactive drift check + targeted or full resync
-- **`mex watch`** — auto drift score after every commit
+- **`mex check`** - detect drift (zero tokens, zero AI)
+- **`.mex/sync.sh`** - interactive drift check + targeted or full resync
+- **`mex watch`** - auto drift score after every commit

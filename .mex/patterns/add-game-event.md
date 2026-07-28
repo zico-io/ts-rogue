@@ -28,7 +28,7 @@ Every player action is a closed-set `GameEvent` variant applied by the pure
 [`reduce()`](mex://function:e96e0f8f03a354c7b531617f6be534a2) in
 `src/engine/state/store.ts`, dispatched through
 [`GameStore.dispatch`](mex://method:e0dcd4448f45744691c8c6131ee6b47e). Both
-renderers only dispatch and read — engine first, then wire each UI.
+renderers only dispatch and read - engine first, then wire each UI.
 
 ## Steps
 
@@ -38,7 +38,7 @@ renderers only dispatch and read — engine first, then wire each UI.
    outcomes consume the serialized `Rng`.
 3. Add/extend a vitest test near the engine module (pure-function coverage).
 4. Wire input in the shared reducer under `src/ui/screens/**/interaction.ts`
-   (resolve a key → intent → dispatch). Both renderers reuse this — do not add
+   (resolve a key → intent → dispatch). Both renderers reuse this - do not add
    keymap logic in an Ink component or a Pixi view.
 5. Terminal: make sure the relevant `src/ui/screens/*Screen.tsx` reflects the
    new state. Browser: make sure the matching `src/web/render/*View.ts` draws it
@@ -46,7 +46,7 @@ renderers only dispatch and read — engine first, then wire each UI.
 
 ## Gotchas
 
-- Never mutate `GameState` — return a new object from `reduce`.
+- Never mutate `GameState` - return a new object from `reduce`.
 - If the action needs an on-screen animation, do NOT model it as an event; derive
   the effect from a state delta across renders (see `context/web-renderer.md`).
 - A local-only UI change (menu cursor) is not a `GameEvent`; in the browser it
