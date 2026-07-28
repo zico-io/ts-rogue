@@ -258,6 +258,27 @@ describe("level-up curve", () => {
     expect(member.mp).toBe(12);
     expect(member.stats).toEqual({ str: 13, agi: 7, vit: 13, int: 2 });
   });
+
+  it("awards no skill points when leveling does not occur (ENG-32)", () => {
+    const hero = createStartingHero();
+    const { member } = grantXp(hero, 5);
+    expect(member.skillPoints).toBe(0);
+  });
+
+  it("awards exactly one skill point per level gained (ENG-32)", () => {
+    const hero = createStartingHero();
+    const { member } = grantXp(hero, 80);
+    expect(member.level).toBe(4);
+    expect(member.skillPoints).toBe(3);
+  });
+
+  it("accumulates skill points across successive grants (ENG-32)", () => {
+    const hero = createStartingHero();
+    const afterFirst = grantXp(hero, xpToNext(1)).member;
+    expect(afterFirst.skillPoints).toBe(1);
+    const afterSecond = grantXp(afterFirst, xpToNext(2)).member;
+    expect(afterSecond.skillPoints).toBe(2);
+  });
 });
 
 describe("rollInitiative", () => {

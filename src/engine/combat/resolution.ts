@@ -204,13 +204,13 @@ export function grantXp(member: PartyMember, amount: number): GrantXpResult {
   let maxHp = member.maxHp;
   let maxMp = member.maxMp;
   let stats = member.stats;
-  let leveledUp = false;
+  let levelsGained = 0;
   const growth = (findClass(member.classId) ?? findClass(DEFAULT_CLASS_ID))
     ?.growth;
   while (xp >= xpToNext(level)) {
     xp -= xpToNext(level);
     level += 1;
-    leveledUp = true;
+    levelsGained += 1;
     if (growth) {
       maxHp += growth.hp;
       maxMp += growth.mp;
@@ -222,7 +222,18 @@ export function grantXp(member: PartyMember, amount: number): GrantXpResult {
       };
     }
   }
-  const updated: PartyMember = { ...member, level, xp, maxHp, maxMp, stats };
+  const leveledUp = levelsGained > 0;
+  // One skill point per level gained, on top of the stat/HP/MP growth above.
+  const skillPoints = member.skillPoints + levelsGained;
+  const updated: PartyMember = {
+    ...member,
+    level,
+    xp,
+    maxHp,
+    maxMp,
+    stats,
+    skillPoints,
+  };
   if (leveledUp) {
     updated.hp = maxHp;
     updated.mp = maxMp;

@@ -195,6 +195,51 @@ describe("deserialize backfills clearedAt for older saves (ROG-91)", () => {
   });
 });
 
+describe("deserialize backfills skillPoints/unlockedNodes for older saves (ENG-32)", () => {
+  it("defaults a party member missing both fields to zero points and no unlocks", () => {
+    const modern = newGame(42);
+    const older: Record<string, unknown> = {
+      ...modern,
+      party: [
+        {
+          ...modern.party[0],
+          skillPoints: undefined,
+          unlockedNodes: undefined,
+        },
+      ],
+    };
+    const restored = deserialize(JSON.stringify(older));
+    expect(restored.party[0].skillPoints).toBe(0);
+    expect(restored.party[0].unlockedNodes).toEqual([]);
+  });
+
+  it("defaults a recruit missing both fields the same way", () => {
+    const modern = newGame(42);
+    const legacyRecruit = { ...modern.party[0], id: "recruit-1" } as Record<
+      string,
+      unknown
+    >;
+    delete legacyRecruit.skillPoints;
+    delete legacyRecruit.unlockedNodes;
+    const older = { ...modern, recruits: [legacyRecruit] };
+    const restored = deserialize(JSON.stringify(older));
+    expect(restored.recruits[0].skillPoints).toBe(0);
+    expect(restored.recruits[0].unlockedNodes).toEqual([]);
+  });
+
+  it("preserves existing points and unlocks through a round-trip", () => {
+    const state: GameState = {
+      ...newGame(42),
+      party: [
+        { ...newGame(42).party[0], skillPoints: 2, unlockedNodes: ["root"] },
+      ],
+    };
+    const restored = deserialize(serialize(state));
+    expect(restored.party[0].skillPoints).toBe(2);
+    expect(restored.party[0].unlockedNodes).toEqual(["root"]);
+  });
+});
+
 describe("deserialize backfills quests/questItems for older saves (ENG-38)", () => {
   it("defaults a save missing quests/questItems to empty state", () => {
     const modern = newGame(42);

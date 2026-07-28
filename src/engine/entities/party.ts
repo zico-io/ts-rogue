@@ -34,6 +34,14 @@ export interface PartyMember {
   maxMp: number;
   equipment: PartyMemberEquipment;
 
+  // Unspent skill points and the ids of nodes already unlocked on the
+  // member's class tree (see unlockSkillNode, ./skillTree.ts). Points are
+  // granted per level gained (grantXp, ../combat/resolution.ts) - never
+  // backfilled for levels reached before this existed (see the
+  // deserialize defaulting in ../../persistence/serializer.ts).
+  skillPoints: number;
+  unlockedNodes: string[];
+
   effects?: EffectInstance[];
 }
 
@@ -66,5 +74,7 @@ export function createStartingHero(
       accessory1: null,
       accessory2: null,
     },
+    skillPoints: 0,
+    unlockedNodes: [],
   };
 }

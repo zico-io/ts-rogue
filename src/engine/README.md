@@ -30,8 +30,8 @@ from `src/ui`. The application and UI dispatch events and perform external I/O.
 - Overworld and dungeon layouts are reproducible from their seed inputs.
 - Combat, loot, exploration, and economy changes flow through the reducer.
 - Saves serialize the whole state to `save.db`; older supported saves are
-  backfilled with required run flags and the default Warrior class during
-  deserialization.
+  backfilled with required run flags, the default Warrior class, and zero
+  skill points/unlocked nodes during deserialization.
 
 Normal defeat revives the party in the village with one HP and half its gold.
 Permadeath marks the run as over and clears its active battle and dungeon; the
@@ -41,7 +41,15 @@ loot before returning to the originating scene.
 ## Gameplay systems
 
 - Warrior, Rogue, and Wizard classes define starting stats, per-level growth,
-  and known skills through the `CLASSES` data table.
+  and known skills through the `CLASSES` data table. Each class also carries a
+  `treeId` reference into `SKILL_TREES` (`data/skillTrees.ts`; starter tree
+  content ships in ENG-35). `grantXp` (`combat/resolution.ts`) awards one
+  skill point per level gained on top of the usual stat/HP/MP growth - never
+  retroactively for levels reached before this shipped. `unlockSkillNode`
+  (`entities/skillTree.ts`) spends a point on a node from the member's class
+  tree, staying pure on rejection (unknown node, already unlocked, missing
+  prerequisite, or insufficient points) and returning a reason instead of
+  throwing.
 - The overworld contains passable biomes, a village, reachable dungeon
   entrances, and a seeded encounter meter. The village occupies a 2x2
   footprint (`world/landmarks.ts`); `map.village` is its top-left anchor

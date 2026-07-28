@@ -27,6 +27,12 @@ export function deserialize(json: string): GameState {
     if (!member.classId) member.classId = DEFAULT_CLASS_ID;
   }
   if (!state.recruits) state.recruits = [];
+  // No retroactive points for levels reached before skill trees shipped
+  // (ENG-32) - old members simply start at zero points and no unlocks.
+  for (const member of [...state.party, ...state.recruits]) {
+    if (member.skillPoints === undefined) member.skillPoints = 0;
+    if (!member.unlockedNodes) member.unlockedNodes = [];
+  }
   if (!state.activatedWaypoints) state.activatedWaypoints = ["village"];
   if (!state.stash) state.stash = [];
   if (state.pendingLootTriage === undefined) state.pendingLootTriage = null;
