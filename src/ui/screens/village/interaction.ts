@@ -628,28 +628,24 @@ export function reduceStashUi(
   return { state };
 }
 
-export type GuildMode = "available" | "accepted";
+export type GuildRowKind = "accepted" | "available";
 
-export interface GuildUiState {
-  mode: GuildMode;
-  availableCursor: number;
-  acceptedCursor: number;
-}
-
-export const INITIAL_GUILD_UI_STATE: GuildUiState = {
-  mode: "available",
-  availableCursor: 0,
-  acceptedCursor: 0,
-};
-
-export interface GuildAcceptedRow {
+export interface GuildRow {
+  kind: GuildRowKind;
   id: string;
+
+  // Only meaningful for accepted rows; available rows are never turn-in ready.
   complete: boolean;
 }
 
+export interface GuildUiState {
+  cursor: number;
+}
+
+export const INITIAL_GUILD_UI_STATE: GuildUiState = { cursor: 0 };
+
 export interface GuildUiContext {
-  availableIds: readonly string[];
-  acceptedQuests: readonly GuildAcceptedRow[];
+  rows: readonly GuildRow[];
 }
 
 export type GuildUiEffect =
@@ -664,7 +660,6 @@ export interface GuildUiResult {
 
 const guildKeymap: Keymap = {
   escape: { kind: "cancel" },
-  tab: { kind: "switchMode" },
   up: { kind: "menuUp" },
   down: { kind: "menuDown" },
   enter: { kind: "confirm" },
@@ -674,70 +669,34 @@ export function resolveGuildIntent(key: KeyName): Intent | undefined {
   return guildKeymap[key];
 }
 
+/** Shared clamp so a stale cursor (e.g. after a quest is turned in and the
+ * combined row list shrinks) resolves to the same index in the reducer's
+ * confirm branch and in the view's render pass. */
+export function clampGuildCursor(cursor: number, rowCount: number): number {
+  return Math.min(cursor, Math.max(0, rowCount - 1));
+}
+
 export function reduceGuildUi(
   state: GuildUiState,
   intent: Intent,
   ctx: GuildUiContext,
 ): GuildUiResult {
   if (intent.kind === "cancel") return { state, effect: { type: "back" } };
-  if (intent.kind === "switchMode") {
-    return {
-      state: {
-        mode: state.mode === "available" ? "accepted" : "available",
-        availableCursor: 0,
-        acceptedCursor: 0,
-      },
-    };
-  }
-
-  if (state.mode === "available") {
-    const length = ctx.availableIds.length;
-    if (length === 0) return { state };
-    if (intent.kind === "menuUp") {
-      return {
-        state: {
-          ...state,
-          availableCursor: (state.availableCursor + length - 1) % length,
-        },
-      };
-    }
-    if (intent.kind === "menuDown") {
-      return {
-        state: {
-          ...state,
-          availableCursor: (state.availableCursor + 1) % length,
-        },
-      };
-    }
-    if (intent.kind === "confirm") {
-      const index = Math.min(state.availableCursor, length - 1);
-      const questId = ctx.availableIds[index];
-      return questId
-        ? { state, effect: { type: "accept", questId } }
-        : { state };
-    }
-    return { state };
-  }
-
-  const length = ctx.acceptedQuests.length;
+  const length = ctx.rows.length;
   if (length === 0) return { state };
   if (intent.kind === "menuUp") {
-    return {
-      state: {
-        ...state,
-        acceptedCursor: (state.acceptedCursor + length - 1) % length,
-      },
-    };
+    return { state: { cursor: (state.cursor + length - 1) % length } };
   }
   if (intent.kind === "menuDown") {
-    return {
-      state: { ...state, acceptedCursor: (state.acceptedCursor + 1) % length },
-    };
+    return { state: { cursor: (state.cursor + 1) % length } };
   }
   if (intent.kind === "confirm") {
-    const index = Math.min(state.acceptedCursor, length - 1);
-    const row = ctx.acceptedQuests[index];
-    return row?.complete
+    const row = ctx.rows[clampGuildCursor(state.cursor, length)];
+    if (!row) return { state };
+    if (row.kind === "available") {
+      return { state, effect: { type: "accept", questId: row.id } };
+    }
+    return row.complete
       ? { state, effect: { type: "turnIn", questId: row.id } }
       : { state };
   }

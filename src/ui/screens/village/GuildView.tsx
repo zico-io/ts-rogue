@@ -15,6 +15,8 @@ import { Screen } from "../../components/Screen";
 import { normalizeInkKey } from "../../hooks/normalizeInkKey";
 import { theme } from "../../theme";
 import {
+  clampGuildCursor,
+  type GuildRow,
   type GuildUiState,
   INITIAL_GUILD_UI_STATE,
   reduceGuildUi,
@@ -27,6 +29,34 @@ export interface GuildViewProps {
   onBack: () => void;
 }
 
+// A single combined row list -- accepted quests (with live progress) first,
+// then the available board -- so accepting and turning in both happen from
+// one pane instead of a Tab-gated mode switch.
+type DisplayRow =
+  | { kind: "accepted"; quest: AcceptedQuest; complete: boolean }
+  | { kind: "available"; quest: QuestDef };
+
+function buildDisplayRows(state: GameState): DisplayRow[] {
+  return [
+    ...state.quests.accepted.map(
+      (quest): DisplayRow => ({
+        kind: "accepted",
+        quest,
+        complete: isQuestComplete(quest, state.questItems),
+      }),
+    ),
+    ...state.quests.available.map(
+      (quest): DisplayRow => ({ kind: "available", quest }),
+    ),
+  ];
+}
+
+function toGuildRow(row: DisplayRow): GuildRow {
+  return row.kind === "accepted"
+    ? { kind: "accepted", id: row.quest.def.id, complete: row.complete }
+    : { kind: "available", id: row.quest.id, complete: false };
+}
+
 export function GuildView({ state, dispatch, onBack }: GuildViewProps) {
   const [guildUi, setGuildUi] = useState<GuildUiState>(INITIAL_GUILD_UI_STATE);
 
@@ -36,11 +66,7 @@ export function GuildView({ state, dispatch, onBack }: GuildViewProps) {
     }
   }, [state.quests.available.length, dispatch]);
 
-  const availableIds = state.quests.available.map((quest) => quest.id);
-  const acceptedRows = state.quests.accepted.map((quest) => ({
-    id: quest.def.id,
-    complete: isQuestComplete(quest, state.questItems),
-  }));
+  const displayRows = buildDisplayRows(state);
 
   useInput((input, key) => {
     const keyName = normalizeInkKey(input, key);
@@ -49,8 +75,7 @@ export function GuildView({ state, dispatch, onBack }: GuildViewProps) {
     if (!intent) return;
 
     const result = reduceGuildUi(guildUi, intent, {
-      availableIds,
-      acceptedQuests: acceptedRows,
+      rows: displayRows.map(toGuildRow),
     });
 
     switch (result.effect?.type) {
@@ -70,37 +95,19 @@ export function GuildView({ state, dispatch, onBack }: GuildViewProps) {
     setGuildUi(result.state);
   });
 
-  const availableIndex = Math.min(
-    guildUi.availableCursor,
-    Math.max(0, state.quests.available.length - 1),
-  );
-  const acceptedIndex = Math.min(
-    guildUi.acceptedCursor,
-    Math.max(0, state.quests.accepted.length - 1),
-  );
+  const cursor = clampGuildCursor(guildUi.cursor, displayRows.length);
 
   return (
     <Screen
+      hint="Up/down to select, Enter to accept an available quest or turn in a ready one, Esc to go back."
       state={state}
-      title={`Guild - ${guildUi.mode === "available" ? "Available" : "Accepted"}`}
-      hint={
-        guildUi.mode === "available"
-          ? "Up/down to select, Enter to accept, Tab for accepted, Esc to go back."
-          : "Up/down to select, Enter to turn in when ready, Tab for available, Esc to go back."
-      }
+      title="Guild"
     >
-      {guildUi.mode === "available" ? (
-        <AvailableList
-          cursor={availableIndex}
-          quests={state.quests.available}
-        />
-      ) : (
-        <AcceptedList
-          cursor={acceptedIndex}
-          questItems={state.questItems}
-          quests={state.quests.accepted}
-        />
-      )}
+      <QuestList
+        cursor={cursor}
+        questItems={state.questItems}
+        rows={displayRows}
+      />
     </Screen>
   );
 }
@@ -147,68 +154,60 @@ function describeProgress(
   }
 }
 
-interface AvailableListProps {
-  quests: readonly QuestDef[];
+interface QuestListProps {
+  rows: readonly DisplayRow[];
+  questItems: Readonly<Record<string, number>>;
   cursor: number;
 }
 
-function AvailableList({ quests, cursor }: AvailableListProps) {
-  if (quests.length === 0) {
+function QuestList({ rows, questItems, cursor }: QuestListProps) {
+  if (rows.length === 0) {
     return (
       <Text color={theme.textMuted}>The quest board is empty right now.</Text>
     );
   }
   return (
     <Box flexDirection="column">
-      {quests.map((quest, index) => (
-        <Text
-          color={index === cursor ? theme.accent : undefined}
-          key={quest.id}
-        >
-          {index === cursor ? "> " : "  "}
-          {quest.title} - {describeObjective(quest.objective)} -{" "}
-          <Text color={theme.gold}>{describeReward(quest.reward)}</Text>
-        </Text>
+      {rows.map((row, index) => (
+        <QuestRow
+          index={index}
+          isCursor={index === cursor}
+          key={row.kind === "accepted" ? row.quest.def.id : row.quest.id}
+          questItems={questItems}
+          row={row}
+        />
       ))}
     </Box>
   );
 }
 
-interface AcceptedListProps {
-  quests: readonly AcceptedQuest[];
+interface QuestRowProps {
+  row: DisplayRow;
+  index: number;
+  isCursor: boolean;
   questItems: Readonly<Record<string, number>>;
-  cursor: number;
 }
 
-function AcceptedList({ quests, questItems, cursor }: AcceptedListProps) {
-  if (quests.length === 0) {
+function QuestRow({ row, isCursor, questItems }: QuestRowProps) {
+  const cursorGlyph = isCursor ? "> " : "  ";
+
+  if (row.kind === "available") {
+    const { quest } = row;
     return (
-      <Text color={theme.textMuted}>
-        You have no quests accepted. Visit the board to pick one up.
+      <Text color={isCursor ? theme.accent : undefined}>
+        {cursorGlyph}
+        {quest.title} - {describeObjective(quest.objective)} -{" "}
+        <Text color={theme.gold}>{describeReward(quest.reward)}</Text>
       </Text>
     );
   }
+
+  const { quest, complete } = row;
   return (
-    <Box flexDirection="column">
-      {quests.map((quest, index) => {
-        const complete = isQuestComplete(quest, questItems);
-        return (
-          <Text
-            color={
-              index === cursor
-                ? theme.accent
-                : complete
-                  ? theme.gold
-                  : undefined
-            }
-            key={quest.def.id}
-          >
-            {index === cursor ? "> " : "  "}
-            {quest.def.title} - {describeProgress(quest, questItems)}
-            {complete ? " - ready to turn in!" : ""}
-          </Text>
-        );
-      })}
-    </Box>
+    <Text color={isCursor ? theme.accent : complete ? theme.gold : undefined}>
+      {cursorGlyph}
+      {quest.def.title} - {describeProgress(quest, questItems)}
+      {complete ? " - ready to turn in!" : ""}
+    </Text>
   );
 }

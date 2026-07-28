@@ -60,7 +60,7 @@ pure darks downsample to invisible ANSI black; that is why `border` and
 | Fast travel | Up/Down selects a discovered waypoint; Enter travels; Esc cancels |
 | Inventory | Tab cycles gear/consumables/currency/quest/filter sections; in gear, Up/Down selects, Enter inspects full affix lines, `e`/`u` equip/unequip, `r` cycles the backpack sort (rarity/ilvl/slot/value), Left/Right switches party member; in consumables, Up/Down selects a stack, Left/Right retargets the party member, `u` uses a heal item on them (outside battle only - battle's own item command is unchanged); in the loot filter pane, Up/Down selects a rule row (minimum rarity per dungeon tier, minimum ilvl offset vs party level, affix-stat keep-list toggles) and Enter/Left/Right cycles or toggles its value, applying live via `SetLootFilter`; Esc closes |
 | Stash | Tab switches backpack/stash panes; Up/Down selects, `d` deposits (backpack pane), `w` withdraws (stash pane), `r` cycles sort (rarity/ilvl/slot/value); Esc returns |
-| Guild | Tab switches available/accepted panes; Up/Down selects, Enter accepts (available pane) or turns in a completed quest (accepted pane); Esc returns |
+| Guild | Single pane, accepted quests first then the available board; Up/Down selects, Enter accepts an available quest or turns in a ready accepted one; Esc returns |
 | Backpack Full (loot triage) | `s` swaps (then Up/Down picks a carried item, Enter confirms dismantling it and taking the drop), `d` dismantles the drop itself; Esc from the swap picker returns to the choice |
 | Character Sheet | Left/Right switches party member; Esc closes and returns to the scene it was opened from |
 
