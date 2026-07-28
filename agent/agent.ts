@@ -2,5 +2,6 @@ import { defineAgent } from "eve";
 
 export default defineAgent({
   model: "anthropic/claude-sonnet-5",
-  modelContextWindowTokens: 1_040_000,
+  // Compaction trigger, not a hard cap; see agent/README.md for the rationale.
+  modelContextWindowTokens: 400_000,
 });

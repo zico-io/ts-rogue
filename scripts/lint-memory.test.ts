@@ -68,7 +68,10 @@ describe("lintEmDash", () => {
 
 describe("checkIndex", () => {
   it("reports a memory file missing from the index", () => {
-    const v = checkIndex("- `domain/product.md`", ["domain/product.md", "tools/x.md"]);
+    const v = checkIndex("- `domain/product.md`", [
+      "domain/product.md",
+      "tools/x.md",
+    ]);
     expect(v).toHaveLength(1);
     expect(v[0].message).toMatch(/tools\/x\.md.*not listed/);
   });

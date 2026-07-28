@@ -34,7 +34,7 @@ terminals; there is no capability-detection code.
 | `statusEffect.*` | one color per `StatusEffectId` (poison, burn, stun, slow, wet, oiled, chilled, frozen, shocked) | `BattleScreen` status badges (name + turns remaining) on the acting party member and enemies |
 | `rarity.*` | common `#c6b4b1`, magic `#1793e6`, rare `#fee284`, unique `#ca7ef2` | Item rarity everywhere items appear |
 | `biome.*` | grass `#5fae3b`, forest `#21804c`, mountain `#837d83`, water `#23b4e9`, village `#fbc254`, entrance `#ca7ef2` | Overworld tiles |
-| `DUNGEON_RAMPS` | teal / indigo / ember, 4 steps each | First-person depth bands per dungeon, far-dim to near-bright |
+| `DUNGEON_RAMPS` | teal (crypt) / indigo (cave) / ember (ruins) / seafoam (temple), 4 steps each | First-person depth bands keyed by the active dungeon theme id, far-dim to near-bright |
 
 Monster art carries its own accent (`MonsterDef.color`); the title logo and
 game-over banner use the `logoGradient` / `gameOverGradient` ramps.

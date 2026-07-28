@@ -47,6 +47,11 @@ export interface DungeonEncounter {
 
 export interface DungeonState {
   dungeonId: string;
+
+  // The active DungeonDef's theme id (src/data/dungeons.ts), threaded through
+  // as plain data so src/ui can drive per-theme accents without importing
+  // engine behavior (ROG-94).
+  theme: string;
   floor: number;
   layout: DungeonLayout;
   player: Point;

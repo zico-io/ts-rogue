@@ -1,3 +1,4 @@
+import type { QuestDef } from "../../data/quests";
 import type { BattleEvent, BattleState } from "../combat/types";
 import type { InventoryItem, PartyMember } from "../entities/party";
 import type { LogEntry, LogKind } from "../log";
@@ -15,6 +16,19 @@ export type Scene = "village" | "overworld" | "dungeon" | "battle";
 export interface GameFlags {
   permadeath: boolean;
   gameOver: boolean;
+}
+
+// A snapshot of the def taken at accept time, not a live reference into
+// QUESTS -- procedural bounties (ENG-37) never exist in the static table.
+export interface AcceptedQuest {
+  def: QuestDef;
+  progress: number;
+}
+
+export interface QuestState {
+  available: QuestDef[];
+  accepted: AcceptedQuest[];
+  completedIds: string[];
 }
 
 export interface GameState {
@@ -58,6 +72,12 @@ export interface GameState {
   lootFilter: LootFilterRules;
 
   lastLootOutcome: LootPickupOutcome | null;
+
+  quests: QuestState;
+
+  // Fetch-quest turn-in counts, keyed by QuestItemDef id (see
+  // src/data/questItems.ts).
+  questItems: Record<string, number>;
 }
 
 export type MoveDelta = -1 | 0 | 1;
@@ -105,4 +125,7 @@ export type GameEvent =
     }
   | { type: "ResolveLootTriage"; action: "dismantleDrop" }
   | { type: "SetLootFilter"; rules: LootFilterRules }
+  | { type: "AcceptQuest"; questId: string }
+  | { type: "TurnInQuest"; questId: string }
+  | { type: "RefreshQuests" }
   | BattleEvent;

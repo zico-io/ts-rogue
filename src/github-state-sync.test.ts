@@ -1,13 +1,15 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { RouteHandlerArgs } from "eve/channels";
+import type { GitHubChannelState } from "eve/channels/github";
+import { describe, expect, it, vi } from "vitest";
 
-const { advanceIssueStateMock, capturedConfig } = vi.hoisted(() => ({
-  advanceIssueStateMock: vi.fn(async () => {}),
+// The state-sync behavior itself is covered in agent/lib/github/pull-request.test.ts.
+// This asserts only the wiring: that the channel hands eve the state-syncing
+// decision rather than the bare wake decision.
+
+const { capturedConfig } = vi.hoisted(() => ({
   capturedConfig: { current: null as Record<string, unknown> | null },
 }));
 
-vi.mock("../agent/lib/issue-state", () => ({
-  advanceIssueState: advanceIssueStateMock,
-}));
 vi.mock("@vercel/connect/eve", () => ({
   connectGitHubCredentials: () => ({}),
   connectLinearCredentials: () => ({}),
@@ -32,170 +34,52 @@ vi.mock("eve/channels/github", () => ({
   },
 }));
 
-const { onPullRequest, pullRequestStateSync } = await import(
-  "../agent/channels/github"
+const { default: channel } = await import("../agent/channels/github");
+const { pullRequestWakeDecision, syncAndWakeOnPullRequest } = await import(
+  "../agent/lib/github/pull-request"
 );
+const { commentWakeDecision } = await import("../agent/lib/github/wake-policy");
 
-import type {
-  GitHubInboundContext,
-  GitHubPullRequestEvent,
-} from "eve/channels/github";
-
-const registeredOnPullRequest = capturedConfig.current?.onPullRequest as (
-  ctx: GitHubInboundContext,
-  pullRequest: GitHubPullRequestEvent,
-) => Promise<ReturnType<typeof onPullRequest>>;
-
-const pr = (
-  action: string,
-  raw: GitHubPullRequestEvent["raw"],
-): GitHubPullRequestEvent =>
-  ({
-    action,
-    headSha: "abc",
-    pullRequestNumber: 7,
-    raw,
-  }) as unknown as GitHubPullRequestEvent;
-
-const context = {
-  conversation: { kind: "pull_request", pullRequestNumber: 7 },
-} as unknown as GitHubInboundContext;
-
-describe("pullRequestStateSync", () => {
-  it("targets Done when a pull request merges into main", () => {
-    expect(
-      pullRequestStateSync(
-        pr("closed", {
-          base: { ref: "main" },
-          head: { ref: "nico/har-9-scoping" },
-          merged: true,
-        }),
-      ),
-    ).toEqual({ issueRef: "HAR-9", target: "done" });
+const post = (event: string) =>
+  new Request("https://example.test/eve/v1/github", {
+    method: "POST",
+    body: "{}",
+    headers: { "x-github-event": event },
   });
 
-  it("ignores merges into non-main branches", () => {
-    expect(
-      pullRequestStateSync(
-        pr("closed", {
-          base: { ref: "release" },
-          head: { ref: "nico/har-9-scoping" },
-          merged: true,
-        }),
-      ),
-    ).toBeNull();
-  });
+const route = channel.routes[0];
 
-  it("ignores a pull request closed without merging", () => {
-    expect(
-      pullRequestStateSync(
-        pr("closed", {
-          base: { ref: "main" },
-          head: { ref: "nico/har-9-scoping" },
-          merged: false,
-        }),
-      ),
-    ).toBeNull();
-  });
+// The override only reads `send`; the rest of `RouteHandlerArgs` is unused here.
+const routeArgs = {
+  send: async () => {},
+} as unknown as RouteHandlerArgs<GitHubChannelState>;
 
-  it("targets In Review when a pull request opens", () => {
-    expect(
-      pullRequestStateSync(
-        pr("opened", { base: { ref: "main" }, head: { ref: "feat/ROG-3" } }),
-      ),
-    ).toEqual({ issueRef: "ROG-3", target: "inReview" });
-  });
-
-  it("targets In Review when a draft becomes ready for review", () => {
-    expect(
-      pullRequestStateSync(
-        pr("ready_for_review", {
-          base: { ref: "main" },
-          head: { ref: "feat/ROG-3" },
-        }),
-      ),
-    ).toEqual({ issueRef: "ROG-3", target: "inReview" });
-  });
-
-  it("skips draft pull requests", () => {
-    expect(
-      pullRequestStateSync(
-        pr("opened", {
-          base: { ref: "main" },
-          draft: true,
-          head: { ref: "feat/ROG-3" },
-        }),
-      ),
-    ).toBeNull();
-  });
-
-  it("skips synchronize events (state was set at open)", () => {
-    expect(
-      pullRequestStateSync(
-        pr("synchronize", {
-          base: { ref: "main" },
-          head: { ref: "feat/ROG-3" },
-        }),
-      ),
-    ).toBeNull();
-  });
-
-  it("skips pull requests naming no Linear issue", () => {
-    expect(
-      pullRequestStateSync(
-        pr("opened", { base: { ref: "main" }, head: { ref: "chore/tidy" } }),
-      ),
-    ).toBeNull();
-  });
-});
-
-describe("onPullRequest state-sync wrapper", () => {
-  beforeEach(() => {
-    advanceIssueStateMock.mockClear();
-  });
-
-  it("is what the channel registers", () => {
-    expect(registeredOnPullRequest).toBeTypeOf("function");
-    expect(registeredOnPullRequest).not.toBe(onPullRequest);
-  });
-
-  it("moves the issue to Done before returning the main-merge dispatch decision", async () => {
-    const event = pr("closed", {
-      base: { ref: "main" },
-      head: { ref: "nico/har-9-scoping" },
-      merged: true,
-    });
-
-    const result = await registeredOnPullRequest(context, event);
-
-    expect(advanceIssueStateMock).toHaveBeenCalledWith(
-      expect.objectContaining({ issueRef: "HAR-9", target: "done" }),
+describe("channel wiring", () => {
+  it("registers the state-syncing pull-request handler, not the bare wake decision", () => {
+    expect(capturedConfig.current?.onPullRequest).toBe(
+      syncAndWakeOnPullRequest,
     );
-    expect(result).toEqual(onPullRequest(context, event));
-    expect(result?.context?.join("\n")).toContain("HAR-9");
+    expect(capturedConfig.current?.onPullRequest).not.toBe(
+      pullRequestWakeDecision,
+    );
   });
 
-  it("moves the issue to In Review and returns null (auto-review dispatch moved to CI)", async () => {
-    const event = pr("opened", {
-      base: { ref: "main" },
-      head: { ref: "feat/ROG-3" },
-    });
-
-    const result = await registeredOnPullRequest(context, event);
-
-    expect(advanceIssueStateMock).toHaveBeenCalledWith(
-      expect.objectContaining({ issueRef: "ROG-3", target: "inReview" }),
-    );
-    expect(result).toBeNull();
+  it("registers the comment wake policy", () => {
+    expect(capturedConfig.current?.onComment).toBe(commentWakeDecision);
   });
 
-  it("passes null decisions through untouched with no sync", async () => {
-    const result = await registeredOnPullRequest(
-      context,
-      pr("labeled", { base: { ref: "main" }, head: { ref: "feat/ROG-3" } }),
-    );
+  it("routes pull_request_review to the HAR-49 override and everything else to eve", async () => {
+    expect(channel.routes).toHaveLength(1);
 
-    expect(advanceIssueStateMock).not.toHaveBeenCalled();
-    expect(result).toBeNull();
+    // The override reaches `handlePullRequestReviewWebhook`, which rejects the
+    // mocked credentials (no webhookVerifier) rather than reaching eve.
+    const intercepted = await route.handler(
+      post("pull_request_review"),
+      routeArgs,
+    );
+    expect(intercepted.status).toBe(401);
+
+    const passthrough = await route.handler(post("pull_request"), routeArgs);
+    expect(await passthrough.text()).toBe("mock");
   });
 });

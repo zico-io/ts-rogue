@@ -1,4 +1,5 @@
 import { DEFAULT_CLASS_ID } from "../data/classes";
+import { dungeonDefFor } from "../data/dungeons";
 import { EMPTY_LOOT_FILTER } from "../engine/loot/lootFilter";
 import type { GameState, LogEntry } from "../engine/state/types";
 
@@ -17,6 +18,11 @@ export function deserialize(json: string): GameState {
   if (state.dungeonState && state.dungeonState.cleared === undefined) {
     state.dungeonState.cleared = false;
   }
+  if (state.dungeonState && state.dungeonState.theme === undefined) {
+    state.dungeonState.theme = dungeonDefFor(
+      state.dungeonState.dungeonId,
+    ).theme;
+  }
   for (const member of state.party) {
     if (!member.classId) member.classId = DEFAULT_CLASS_ID;
   }
@@ -27,6 +33,13 @@ export function deserialize(json: string): GameState {
   if (!state.lootFilter) state.lootFilter = EMPTY_LOOT_FILTER;
   if (state.lastLootOutcome === undefined) state.lastLootOutcome = null;
   if (!state.clearedAt) state.clearedAt = {};
+<<<<<<< HEAD
   if (!state.shopStock) state.shopStock = [];
+=======
+  if (!state.quests) {
+    state.quests = { available: [], accepted: [], completedIds: [] };
+  }
+  if (!state.questItems) state.questItems = {};
+>>>>>>> origin/main
   return state;
 }

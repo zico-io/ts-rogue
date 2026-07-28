@@ -105,6 +105,28 @@ export const DUNGEONS: readonly DungeonDef[] = [
     recommendedLevel: 10,
     story: true,
   },
+  // Added purely as data (ROG-95's extensibility proof): no src/engine edit
+  // was needed beyond deriving the overworld's entrance count from
+  // DUNGEONS.length (see overworld.ts), which was previously a coincidental
+  // hardcoded 3.
+  {
+    id: "drowned-temple",
+    name: "Drowned Temple",
+    theme: "temple",
+    tier: 4,
+    floorCount: 6,
+    palette: [
+      { monsterId: "goblin", weight: 2 },
+      { monsterId: "slime", weight: 1 },
+    ],
+    bossId: "dungeon-guardian",
+    floorBands: [
+      { minFloor: 1, maxFloor: 2, lootTableRef: "tier-2" },
+      { minFloor: 3, maxFloor: 6, lootTableRef: "tier-3" },
+    ],
+    recommendedLevel: 15,
+    story: true,
+  },
 ];
 
 export function findDungeon(id: string): DungeonDef | undefined {
@@ -137,4 +159,48 @@ export function allStoryDungeonsCleared(
   clearedAt: Readonly<Record<string, number>>,
 ): boolean {
   return DUNGEONS.every((dungeon) => !dungeon.story || dungeon.id in clearedAt);
+}
+
+interface DungeonThemeFlavor {
+  enter: string;
+  descend: string;
+}
+
+// Per-theme message-log flavor for dungeon entry/descent (ROG-94). Palette-level
+// copy only, keyed by DungeonDef.theme; not a new content system.
+const THEME_FLAVOR: Record<string, DungeonThemeFlavor> = {
+  crypt: {
+    enter: "Cold, stale air rolls out of the crypt as you step inside.",
+    descend: "You press deeper into the crypt, past shelves of old bone.",
+  },
+  cave: {
+    enter: "Damp rock and dripping echoes greet you as you enter the cave.",
+    descend:
+      "The cave passage narrows, water tracing the walls as you climb down.",
+  },
+  ruins: {
+    enter: "Crumbling pillars and drifting dust mark the ruins' entrance.",
+    descend:
+      "Cracked stairs carry you further into the ruins, stone grinding underfoot.",
+  },
+  temple: {
+    enter:
+      "Brackish water laps at broken columns as you step into the drowned temple.",
+    descend:
+      "You wade deeper into the drowned temple, algae-slick steps vanishing into the dark.",
+  },
+};
+
+const DEFAULT_THEME_FLAVOR = THEME_FLAVOR.crypt;
+
+function flavorFor(theme: string): DungeonThemeFlavor {
+  return THEME_FLAVOR[theme] ?? DEFAULT_THEME_FLAVOR;
+}
+
+export function dungeonEntryFlavor(theme: string): string {
+  return flavorFor(theme).enter;
+}
+
+export function dungeonDescendFlavor(theme: string, floor: number): string {
+  return `${flavorFor(theme).descend} (floor ${floor})`;
 }

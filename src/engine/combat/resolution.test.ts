@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DungeonDef } from "../../data/dungeons";
+import { findQuest } from "../../data/quests";
 import { createStartingHero, type PartyMember } from "../entities/party";
 import { Rng } from "../rng/rng";
 import { GameStore, newGame, reduce } from "../state/store";
@@ -120,6 +121,19 @@ function stateWithEnemies(
     dungeonState: { ...ds, encounter: { kind: "wandering", floor: 1 } },
     battleState: battleVsMany(enemies, hero.id),
   };
+}
+
+/**
+ * The battle a state is in. `battleState` is nullable on `GameState`, so a
+ * test that is not in battle should fail here rather than at a later
+ * assertion.
+ */
+function battleOf(state: GameState): NonNullable<GameState["battleState"]> {
+  const battle = state.battleState;
+  if (battle == null) {
+    throw new Error("expected the state to be in battle");
+  }
+  return battle;
 }
 
 describe("derived stats", () => {
@@ -1109,10 +1123,10 @@ describe("ENG-22 status effect ticking", () => {
     state = {
       ...state,
       battleState: {
-        ...state.battleState!,
+        ...battleOf(state),
         enemies: [
           {
-            ...state.battleState!.enemies[0],
+            ...battleOf(state).enemies[0],
             effects: [
               {
                 effectId: "burn" as const,
@@ -1129,23 +1143,23 @@ describe("ENG-22 status effect ticking", () => {
     const initialHp = 999;
 
     state = reduce(state, { type: "BattleDefend" });
-    const slimeAfter1 = state.battleState!.enemies[0];
+    const slimeAfter1 = battleOf(state).enemies[0];
     const burn1 = slimeAfter1.effects?.find((e) => e.effectId === "burn");
     expect(burn1).toBeDefined();
-    expect(burn1!.duration).toBe(2);
+    expect(burn1?.duration).toBe(2);
     expect(initialHp - slimeAfter1.hp).toBe(5);
 
     state = reduce(state, { type: "BattleDefend" });
-    const slimeAfter2 = state.battleState!.enemies[0];
+    const slimeAfter2 = battleOf(state).enemies[0];
     const burn2 = slimeAfter2.effects?.find((e) => e.effectId === "burn");
     expect(burn2).toBeDefined();
-    expect(burn2!.duration).toBe(1);
+    expect(burn2?.duration).toBe(1);
     const tick2Damage =
       initialHp - slimeAfter2.hp - (initialHp - slimeAfter1.hp);
     expect(tick2Damage).toBe(3);
 
     state = reduce(state, { type: "BattleDefend" });
-    const slimeAfter3 = state.battleState!.enemies[0];
+    const slimeAfter3 = battleOf(state).enemies[0];
     const burn3 = slimeAfter3.effects?.find((e) => e.effectId === "burn");
     expect(burn3).toBeUndefined();
     expect(initialHp - slimeAfter3.hp).toBe(10);
@@ -1184,10 +1198,10 @@ describe("ENG-22 effects cleared on battle end", () => {
         },
       ],
       battleState: {
-        ...base.battleState!,
+        ...battleOf(base),
         enemies: [
           {
-            ...base.battleState!.enemies[0],
+            ...battleOf(base).enemies[0],
             effects: [
               {
                 effectId: "burn" as const,
@@ -1232,10 +1246,10 @@ describe("ENG-22 effects cleared on battle end", () => {
         },
       ],
       battleState: {
-        ...state.battleState!,
+        ...battleOf(state),
         enemies: [
           {
-            ...state.battleState!.enemies[0],
+            ...battleOf(state).enemies[0],
             effects: [
               {
                 effectId: "burn" as const,
@@ -1385,10 +1399,10 @@ describe("ENG-23 turn skip", () => {
     state = {
       ...state,
       battleState: {
-        ...state.battleState!,
+        ...battleOf(state),
         enemies: [
           {
-            ...state.battleState!.enemies[0],
+            ...battleOf(state).enemies[0],
             effects: [
               {
                 effectId: "stun" as const,
@@ -1437,10 +1451,10 @@ describe("ENG-23 shocked stun-lite and damage vulnerability", () => {
     const shocked: GameState = {
       ...shockedBase,
       battleState: {
-        ...shockedBase.battleState!,
+        ...battleOf(shockedBase),
         enemies: [
           {
-            ...shockedBase.battleState!.enemies[0],
+            ...battleOf(shockedBase).enemies[0],
             effects: [
               {
                 effectId: "shocked" as const,
@@ -1886,5 +1900,81 @@ describe("ENG-20 loot toast (finalizeWon)", () => {
       `${after.lastLootOutcome?.goldGained}g`,
     );
     expect(after.gold).toBeGreaterThan(goldBefore);
+  });
+});
+
+describe("ENG-36 quest progress hooks (advanceQuestsOnVictory via finalizeWon)", () => {
+  function deadEnemy(id: string, defId: string): BattleEnemy {
+    return makeEnemy(id, defId, defId, 0, SLIME_STATS, 5, 5);
+  }
+
+  function stateWithQuest(
+    accepted: GameState["quests"]["accepted"],
+    enemies: BattleEnemy[],
+    encounterKind: "wandering" | "boss",
+  ): GameState {
+    const base = newGame(1);
+    const ds = createInitialDungeonState(1, "dungeon-0", 1);
+    return {
+      ...base,
+      scene: "battle",
+      dungeonState: { ...ds, encounter: { kind: encounterKind, floor: 1 } },
+      quests: { available: [], accepted, completedIds: [] },
+      questItems: {},
+      battleState: battleVsMany(enemies, base.party[0].id),
+    };
+  }
+
+  it("kill: advances progress by matching defeated enemies through a real victory, capped at the objective count", () => {
+    const def = findQuest("slime-cull");
+    if (!def) throw new Error("missing slime-cull fixture");
+    const state = stateWithQuest(
+      [{ def, progress: 3 }],
+      [deadEnemy("s1", "slime"), deadEnemy("s2", "slime")],
+      "wandering",
+    );
+    const after = reduce(state, { type: "BattleDefend" });
+    expect(after.quests.accepted).toEqual([{ def, progress: 5 }]);
+    expect(
+      after.log.some(
+        (l) => l.kind === "quest" && l.text.includes("Slime Cull"),
+      ),
+    ).toBe(true);
+  });
+
+  it("clear: sets progress to 1 on a matching boss victory", () => {
+    const def = findQuest("clear-sunken-crypt");
+    if (!def) throw new Error("missing clear-sunken-crypt fixture");
+    const state = stateWithQuest(
+      [{ def, progress: 0 }],
+      [deadEnemy("g1", "dungeon-guardian")],
+      "boss",
+    );
+    const after = reduce(state, { type: "BattleDefend" });
+    expect(after.quests.accepted).toEqual([{ def, progress: 1 }]);
+  });
+
+  it("fetch: rolls dropChance into questItems for kills an accepted fetch quest needs, and completes deterministically", () => {
+    const def = findQuest("fetch-slime-gel");
+    if (!def) throw new Error("missing fetch-slime-gel fixture");
+    const enemies = [1, 2, 3, 4, 5, 6].map((n) => deadEnemy(`s${n}`, "slime"));
+    const state = stateWithQuest([{ def, progress: 0 }], enemies, "wandering");
+    const after = reduce(state, { type: "BattleDefend" });
+    // Deterministic under seed 1: six slime kills against a 0.5 dropChance
+    // yield 4 slime gel, clearing the fetch-slime-gel objective (count 3).
+    expect(after.questItems["slime-gel"]).toBe(4);
+    expect(
+      after.log.some(
+        (l) => l.kind === "quest" && l.text.includes("Slime Gel Order"),
+      ),
+    ).toBe(true);
+  });
+
+  it("never rolls RNG for a fetch item no accepted quest needs (no dead RNG)", () => {
+    const state = stateWithQuest([], [deadEnemy("s1", "slime")], "wandering");
+    const before = reduce(state, { type: "BattleDefend" });
+    const again = reduce(state, { type: "BattleDefend" });
+    expect(again.rngState).toEqual(before.rngState);
+    expect(again.rngState).toEqual(state.rngState);
   });
 });

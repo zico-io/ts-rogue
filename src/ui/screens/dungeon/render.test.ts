@@ -378,6 +378,7 @@ function buildState(
     explored ?? layout.tiles.map((row) => row.map((tile) => !tile.wall));
   return {
     dungeonId: "test",
+    theme: "crypt",
     floor: 1,
     layout,
     player,
