@@ -387,7 +387,7 @@ is the thin real-Pixi adapter.
   colors (split at mid-screen), not per-pixel raycast/textured - the
   original Wolfenstein 3D's own approach, and still satisfies "reuse
   `DUNGEON_RAMPS` for distance fog/tinting" since walls carry the real
-  per-column depth tint (`dungeonRamp(ds.dungeonId)`, same convention as the
+  per-column depth tint (`dungeonRamp(ds.theme)`, same convention as the
   TUI). There is no move/turn tween - `poseFromState(ds)` renders directly
   every call; the issue explicitly allows instant movement for v1 since Pixi
   has no soft-real-time requirement here.

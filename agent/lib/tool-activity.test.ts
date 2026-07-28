@@ -51,29 +51,21 @@ describe("toolActionParameter", () => {
     ).toBe("Playtester - Verify the new combat system.");
   });
 
-  it("truncates long subagent messages", () => {
+  it("returns a long parameter in full, leaving the cap to the channel", () => {
     const longMessage = "x".repeat(350);
-    const result = toolActionParameter("playtester", { message: longMessage });
-    expect(result.length).toBeLessThanOrEqual(301); // 300 + ellipsis
-    expect(result).toContain("Playtester");
-    expect(result.endsWith("…")).toBe(true);
+    expect(toolActionParameter("playtester", { message: longMessage })).toBe(
+      `Playtester - ${longMessage}`,
+    );
   });
 
-  it("preserves full trailing URLs through truncation", () => {
-    const textWithUrl = `Some context ${"y".repeat(250)} https://github.com/example/repo`;
-    const result = toolActionParameter("bash", { command: textWithUrl });
-    expect(result.endsWith("https://github.com/example/repo")).toBe(true);
-    expect(result.length).toBeLessThanOrEqual(301);
-  });
-
-  it("falls back to truncated JSON for unknown/MCP tools", () => {
+  it("falls back to JSON for unknown/MCP tools", () => {
     expect(toolActionParameter("linear__save_issue", { title: "x" })).toBe(
       '{"title":"x"}',
     );
-    const long = { blob: "y".repeat(500) };
-    const out = toolActionParameter("something_unknown", long);
-    expect(out.length).toBeLessThanOrEqual(301);
-    expect(out.endsWith("…")).toBe(true);
+    const blob = "y".repeat(500);
+    expect(toolActionParameter("something_unknown", { blob })).toBe(
+      JSON.stringify({ blob }),
+    );
   });
 
   it("never throws on malformed input", () => {
@@ -134,33 +126,24 @@ describe("toolActionResult", () => {
     expect(result).toBe("```\nline1\nline2\nline3\n```");
   });
 
-  it("re-closes a code fence that truncation would otherwise leave open", () => {
-    const longStderr = Array.from({ length: 40 }, (_, i) => `stderr line ${i}`).join(
-      "\n",
-    );
+  it("returns a long fenced result whole, fence closed, for the channel to fit", () => {
+    const longStderr = Array.from(
+      { length: 40 },
+      (_, i) => `stderr line ${i}`,
+    ).join("\n");
     const result = toolActionResult("bash", {
       exitCode: 1,
       stderr: longStderr,
       stdout: "",
       truncated: false,
     });
-    const fenceCount = (result.match(/```/g) ?? []).length;
-    expect(fenceCount % 2).toBe(0);
+    expect(result).toContain(longStderr);
+    expect((result.match(/```/g) ?? []).length).toBe(2);
   });
 
   it("renders an error summary with failure glyph when the tool failed", () => {
-    expect(toolActionResult("bash", { message: "boom" }, true)).toBe(
-      "✗ boom",
-    );
+    expect(toolActionResult("bash", { message: "boom" }, true)).toBe("✗ boom");
     expect(toolActionResult("read_file", undefined, true)).toBe("✗ error");
-  });
-
-  it("preserves a trailing URL when a long error result gets truncated", () => {
-    const url = "https://github.com/example/repo/pull/1234";
-    const message = `${"context ".repeat(50)}${url}`;
-    const result = toolActionResult("bash", { message }, true);
-    expect(result.endsWith(url)).toBe(true);
-    expect(result.length).toBeLessThanOrEqual(301);
   });
 
   it("never throws on malformed output", () => {

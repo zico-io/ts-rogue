@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { allStoryDungeonsCleared, dungeonDefFor } from "../../data/dungeons";
+import {
+  allStoryDungeonsCleared,
+  DUNGEONS,
+  dungeonDefFor,
+  dungeonEntryFlavor,
+} from "../../data/dungeons";
 import { deserialize, serialize } from "../../persistence/save";
 import { atkFrom, startBattle } from "../combat/resolution";
 import type { PartyMember } from "../entities/party";
@@ -16,7 +21,7 @@ import type {
   DungeonLayout,
   Point,
 } from "../world/types";
-import { dungeonWaypointId } from "../world/waypoints";
+import { dungeonWaypointId, storyDungeonForEntrance } from "../world/waypoints";
 import { GameStore, INN_COST_PER_MEMBER, newGame, reduce } from "./store";
 import type { GameEvent, GameState } from "./types";
 
@@ -55,6 +60,16 @@ describe("game store", () => {
   it("seeds activatedWaypoints with just the village on a new run (ENG-1)", () => {
     const state = newGame(1234);
     expect(state.activatedWaypoints).toEqual(["village"]);
+  });
+
+  it("seeds quests and questItems empty on a new run (ENG-38)", () => {
+    const state = newGame(1234);
+    expect(state.quests).toEqual({
+      available: [],
+      accepted: [],
+      completedIds: [],
+    });
+    expect(state.questItems).toEqual({});
   });
 
   it("defaults flags to permadeath=false and gameOver=false", () => {
@@ -291,9 +306,15 @@ describe("game store", () => {
         dx: approach.dx,
         dy: approach.dy,
       });
+      const def = storyDungeonForEntrance(0);
       expect(after.scene).toBe("dungeon");
       expect(after.worldState.player).toEqual(entrance);
-      expect(after.log.at(-1)?.text).toBe("You descend into the dungeon");
+      expect(after.log.at(-2)?.text).toBe(
+        `You descend into ${def?.name} (recommended level ${def?.recommendedLevel})`,
+      );
+      expect(after.log.at(-1)?.text).toBe(
+        dungeonEntryFlavor(dungeonDefFor(dungeonWaypointId(0)).theme),
+      );
       expect(after.dungeonState).not.toBeNull();
       expect(after.dungeonState?.floor).toBe(1);
       expect(after.dungeonState?.dungeonId).toBe(dungeonWaypointId(0));
@@ -304,6 +325,38 @@ describe("game store", () => {
         "village",
         dungeonWaypointId(0),
       ]);
+    });
+
+    it("entering a higher-tier entrance surfaces that entrance's own dungeon name and level", () => {
+      const seed = 1;
+      const map = generateOverworldMap(seed);
+      const entranceIndex = 2;
+      const entrance = map.dungeonEntrances[entranceIndex];
+      const approach = findPassableNeighbor(map, entrance);
+      const before = {
+        ...newGame(seed),
+        scene: "overworld" as const,
+        worldState: { player: approach.from, encounterMeter: 0 },
+      };
+      const after = reduce(before, {
+        type: "MoveOverworld",
+        dx: approach.dx,
+        dy: approach.dy,
+      });
+      const def = storyDungeonForEntrance(entranceIndex);
+      expect(def).toBeDefined();
+      expect(def?.name).not.toBe(storyDungeonForEntrance(0)?.name);
+      expect(after.log.at(-2)?.text).toBe(
+        `You descend into ${def?.name} (recommended level ${def?.recommendedLevel})`,
+      );
+      expect(after.log.at(-1)?.text).toBe(
+        dungeonEntryFlavor(
+          dungeonDefFor(dungeonWaypointId(entranceIndex)).theme,
+        ),
+      );
+      expect(after.dungeonState?.dungeonId).toBe(
+        dungeonWaypointId(entranceIndex),
+      );
     });
 
     it("re-entering an already-activated dungeon entrance does not duplicate its waypoint", () => {
@@ -438,7 +491,13 @@ describe("Dungeon", () => {
       state.dungeonState?.layout.entrance,
     );
     expect(state.dungeonState?.cleared).toBe(false);
-    expect(state.log.at(-1)?.text).toBe("You descend into the dungeon");
+    const def = storyDungeonForEntrance(0);
+    expect(state.log.at(-2)?.text).toBe(
+      `You descend into ${def?.name} (recommended level ${def?.recommendedLevel})`,
+    );
+    expect(state.log.at(-1)?.text).toBe(
+      dungeonEntryFlavor(dungeonDefFor(dungeonWaypointId(0)).theme),
+    );
   });
 
   it("TurnDungeon rotates the facing without mutating the previous state or logging", () => {
@@ -693,6 +752,29 @@ function walkTo(state: GameState, target: Point): GameState {
     s = reduce(s, { type: "StepDungeon", direction: "forward" });
   }
   return s;
+}
+
+// Wins a boss battle for `dungeonId` directly, bypassing overworld/maze
+// navigation, so several dungeons can be cleared in one deterministic test.
+function winBossBattle(
+  seed: number,
+  dungeonId: string,
+  clearedAt: Record<string, number> = {},
+): GameState {
+  const base = withToughHero(newGame(seed));
+  const def = dungeonDefFor(dungeonId);
+  const ds = createInitialDungeonState(seed, dungeonId, def.floorCount);
+  const rng = new Rng(base.seed, base.rngState);
+  const battle = startBattle(rng, base.party, "boss", ds.floor, "dungeon", def);
+  const state: GameState = {
+    ...base,
+    scene: "battle",
+    rngState: rng.getState(),
+    battleState: battle,
+    dungeonState: { ...ds, encounter: { kind: "boss", floor: ds.floor } },
+    clearedAt,
+  };
+  return fightToResolution(state);
 }
 
 describe("RecruitMember (ROG-20 dev/manual party growth)", () => {
@@ -1781,61 +1863,110 @@ describe("Phase 6: boss victory marks the dungeon cleared", () => {
   });
 });
 
-describe("ROG-91: persistent per-dungeon clearedAt and all-cleared check", () => {
-  // Wins a boss battle for `dungeonId` directly, bypassing overworld/maze
-  // navigation, so several dungeons can be cleared in one deterministic test.
-  function winBossBattle(
-    seed: number,
-    dungeonId: string,
-    clearedAt: Record<string, number> = {},
-  ): GameState {
-    const base = withToughHero(newGame(seed));
-    const def = dungeonDefFor(dungeonId);
-    const ds = createInitialDungeonState(seed, dungeonId, def.floorCount);
-    const rng = new Rng(base.seed, base.rngState);
-    const battle = startBattle(
-      rng,
-      base.party,
-      "boss",
-      ds.floor,
-      "dungeon",
-      def,
-    );
-    const state: GameState = {
-      ...base,
-      scene: "battle",
-      rngState: rng.getState(),
-      battleState: battle,
-      dungeonState: { ...ds, encounter: { kind: "boss", floor: ds.floor } },
-      clearedAt,
-    };
-    return fightToResolution(state);
-  }
+describe("ROG-95: 4th story dungeon integration proof (full loop)", () => {
+  // Drowned Temple (src/data/dungeons.ts) was added purely as a DungeonDef
+  // entry plus a theme palette. This walks the real overworld -> enter ->
+  // descend -> boss -> clear loop for it end to end, the same path a player
+  // takes, rather than asserting a plausible related mechanism in isolation.
+  const TEMPLE_ENTRANCE_INDEX = 3;
 
+  it("is reachable at its own overworld entrance, named/themed on entry, and clear-tracked through to the all-cleared check", () => {
+    const seed = 1234;
+    const map = generateOverworldMap(seed);
+    const def = storyDungeonForEntrance(TEMPLE_ENTRANCE_INDEX);
+    expect(def?.id).toBe("drowned-temple");
+
+    const entrance = map.dungeonEntrances[TEMPLE_ENTRANCE_INDEX];
+    const approach = findPassableNeighbor(map, entrance);
+    let state = withToughHero({
+      ...newGame(seed),
+      scene: "overworld" as const,
+      worldState: { player: approach.from, encounterMeter: 0 },
+    });
+    state = reduce(state, {
+      type: "MoveOverworld",
+      dx: approach.dx,
+      dy: approach.dy,
+    });
+
+    // Placed by tier/distance (ROG-90) and named on entry (ROG-93).
+    expect(state.scene).toBe("dungeon");
+    expect(state.log.at(-2)?.text).toBe(
+      `You descend into ${def?.name} (recommended level ${def?.recommendedLevel})`,
+    );
+    // Themed message-log flavor (ROG-94), distinct from the other 3 dungeons.
+    expect(state.log.at(-1)?.text).toBe(dungeonEntryFlavor("temple"));
+    expect(state.dungeonState?.dungeonId).toBe("drowned-temple");
+    expect(state.dungeonState?.theme).toBe("temple");
+    expect(state.dungeonState?.floor).toBe(1);
+
+    const goldBefore = state.gold;
+
+    // Descend every floor via its own stairs, confirming def-driven floor
+    // count (ROG-89) rather than the old global DUNGEON_FLOORS constant.
+    for (let floor = 1; floor < (def?.floorCount ?? 0); floor++) {
+      const stairs = findDungeonTile(state, "stairsDown");
+      expect(stairs, `floor ${floor}: no stairsDown tile`).toBeDefined();
+      state = walkTo(state, stairs ?? { x: 0, y: 0 });
+      state = reduce(state, { type: "DescendStairs" });
+      expect(state.dungeonState?.floor).toBe(floor + 1);
+    }
+    expect(state.dungeonState?.floor).toBe(def?.floorCount);
+
+    // Reach and defeat the def's own boss (ROG-89).
+    const boss = findDungeonTile(state, "bossMarker");
+    expect(boss).toBeDefined();
+    state = walkTo(state, boss ?? { x: 0, y: 0 });
+    expect(state.scene).toBe("battle");
+    expect(state.dungeonState?.encounter?.kind).toBe("boss");
+
+    expect(allStoryDungeonsCleared(state.clearedAt)).toBe(false);
+    state = fightToResolution(state);
+
+    expect(state.scene).toBe("dungeon");
+    expect(state.dungeonState?.cleared).toBe(true);
+    expect(state.log.some((m) => m.text.includes("dungeon is cleared"))).toBe(
+      true,
+    );
+    // Floor-band loot scaling (ROG-92) drew from a real tiered table along
+    // the way (chests + boss victory loot both roll gold at minimum).
+    expect(state.gold).toBeGreaterThan(goldBefore);
+
+    // Persistent clear tracking (ROG-91), keyed by the def's real id.
+    expect(state.clearedAt["drowned-temple"]).toBeTypeOf("number");
+    // The all-cleared hook ROG-28 will consume: still false, since the other
+    // 3 story dungeons haven't been cleared in this run.
+    expect(allStoryDungeonsCleared(state.clearedAt)).toBe(false);
+
+    // The rest of the story roster falling flips the derived check true -
+    // the exact behavior ROG-28's endgame trigger depends on.
+    const others = DUNGEONS.filter((d) => d.id !== "drowned-temple");
+    let clearedAt = state.clearedAt;
+    for (const dungeon of others) {
+      const won = winBossBattle(seed, dungeon.id, clearedAt);
+      clearedAt = won.clearedAt;
+    }
+    expect(allStoryDungeonsCleared(clearedAt)).toBe(true);
+  });
+});
+
+describe("ROG-91: persistent per-dungeon clearedAt and all-cleared check", () => {
   it("clearing a dungeon sets its clearedAt record", () => {
     const result = winBossBattle(1234, "sunken-crypt");
     expect(result.clearedAt["sunken-crypt"]).toBeTypeOf("number");
   });
 
-  it("stays false until the last story boss falls, then flips true", () => {
+  it("stays false until every story dungeon's boss falls, then flips true", () => {
+    // Iterates over the live DUNGEONS table (rather than hardcoding ids) so
+    // this stays correct as story dungeons are added or removed.
     expect(allStoryDungeonsCleared({})).toBe(false);
 
-    const afterFirst = winBossBattle(1234, "sunken-crypt");
-    expect(allStoryDungeonsCleared(afterFirst.clearedAt)).toBe(false);
-
-    const afterSecond = winBossBattle(
-      1234,
-      "howling-cave",
-      afterFirst.clearedAt,
-    );
-    expect(allStoryDungeonsCleared(afterSecond.clearedAt)).toBe(false);
-
-    const afterLast = winBossBattle(
-      1234,
-      "forgotten-ruins",
-      afterSecond.clearedAt,
-    );
-    expect(allStoryDungeonsCleared(afterLast.clearedAt)).toBe(true);
+    let state = winBossBattle(1234, DUNGEONS[0].id);
+    for (let i = 1; i < DUNGEONS.length; i++) {
+      expect(allStoryDungeonsCleared(state.clearedAt)).toBe(false);
+      state = winBossBattle(1234, DUNGEONS[i].id, state.clearedAt);
+    }
+    expect(allStoryDungeonsCleared(state.clearedAt)).toBe(true);
   });
 
   it("a rejected battle command is a no-op, clearedAt included", () => {

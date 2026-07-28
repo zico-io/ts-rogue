@@ -1,7 +1,7 @@
 # Eve project agent
 
 Eve takes ts-rogue work from Linear issues to reviewed GitHub pull requests in
-pre-warmed Vercel Sandboxes.
+Vercel Sandboxes.
 
 ## Quick start
 
@@ -58,16 +58,19 @@ context. Blocking relations in Linear determine readiness.
 | --- | --- |
 | `agent.ts` | Root model configuration |
 | `instructions.md` | Stable identity, safety boundaries, and delivery contract |
-| `channels/` | Eve, Linear, and GitHub message adapters |
+| `channels/` | Eve, Linear, and GitHub message adapters. Translation only: each wraps Eve's own channel with the platform rendering and the one or two route behaviors Eve does not provide (see `WORKAROUNDS.md`). Every decision they render comes from `lib/` |
 | `connections/` | Allow-listed Linear and read-only Vercel capabilities |
-| `hooks/prewarm-sandbox.ts` | Starts sandbox creation and refreshes brokered GitHub auth |
-| `hooks/workflow-progress.ts` | Streams per-call `Workflow` progress to the Linear Agent Session |
-| `sandbox/` and `lib/sandbox.ts` | Vercel Sandbox bootstrap, network policy, token refresh, and recovery |
-| `lib/orientation.ts` | Builds the session's concise `ORIENTATION.md` brief |
-| `lib/memory.ts` | Mints the Vercel Connect credential for Eve's runtime memory store |
-| `lib/memory-store.ts` | libSQL-backed adapter and schema for Eve's runtime memory store, including the retention-cap eviction |
-| `lib/memory-tools.ts` | Validated read/write logic behind `remember`, `recall`, and `forget`, including the category allow-list and credential/PII rejection |
-| `lib/memory-instructions.ts` | Builds the untrusted-JSON memory preamble behind `instructions/memory.ts` |
+| `hooks/workflow-progress.ts` | Streams per-call `Workflow` progress to whichever channel owns the session |
+| `sandbox/` and `lib/sandbox/` | One Vercel Sandbox recipe shared by the root agent and both subagents, its bootstrap, GitHub network policy and token refresh, and the `ORIENTATION.md` brief |
+| `lib/credentials.ts` | The agent's brokered Linear and GitHub identities, shared by channels and tools, plus Linear access-token resolution |
+| `lib/session.ts` | `AgentSession`, one turn lifecycle - what the agent says and when - plus `sessionEvents`, the table wiring it to Eve's lifecycle events, and the connect-prompt naming both channels word the same way |
+| `lib/channel.ts` | The `ChannelRenderer` contract each channel implements, and `textRenderer`, the shared rendering for channels whose only surface is posted text |
+| `lib/linear/` | Everything Linear-only: activity text limits, the out-of-band poster `hooks/workflow-progress.ts` reaches a session through, webhook re-verification for the pre-dispatch decisions, the stop signal and duplicate-session guard, issue workflow transitions, and live-session lookup |
+| `lib/github/` | Everything GitHub-only: the wake policy, pull-request state sync and Linear-ref extraction, dispatch prompt text, and the `pull_request_review` delivery eve never dispatches (HAR-49) |
+| `lib/turn-report.ts` | Action labels, parameters, results, and error narration for turn-lifecycle reporting |
+| `lib/tool-activity.ts` | How a tool call reads as a chip: its label, its parameter, and its result summary |
+| `lib/agent-plan.ts` | The `todo` tool's list mapped into an agent plan |
+| `lib/memory/` | Eve's runtime memory store: the Connect credential, the libSQL adapter and schema with its retention cap, the `remember`/`recall`/`forget` input schemas, and the untrusted-JSON preamble |
 | `instructions/memory.ts` | Dynamic, per-turn instructions loading recent memories as untrusted JSON |
 | `skills/` | Optional Eve, Linear project, and README-hygiene procedures |
 | `subagents/playtester/` | Independent terminal and web acceptance verification |
@@ -76,6 +79,9 @@ context. Blocking relations in Linear determine readiness.
 | `tools/workflow.ts` | Enables the `Workflow` tool to orchestrate `agent` calls as one durable step |
 | `tools/session_update.ts` | Posts blocked, review, and completion activities |
 | `tools/remember.ts`, `tools/recall.ts`, `tools/forget.ts` | Autonomous read/write access to the runtime memory store |
+| `tools/bash.ts`, `tools/web_fetch.ts` | eve's own tools with only `toModelOutput` replaced, so high-volume output stops riding every later round-trip |
+| `lib/truncate-for-context.ts` | The head+tail window those two tools show the model; `lib/truncate.ts` is the separate display-only cap for Linear chips |
+| `lib/tool-output.ts` | Reads a framework tool's output inside those overrides without asserting a shape eve types as `unknown` |
 | `schedules/eve-version-check.ts` | Checks for Eve upgrades and audits framework workarounds |
 | `schedules/agent-run-analysis.ts` | Daily review of recent Eve/GitHub/Vercel activity that files Harness issues for real findings |
 
@@ -105,6 +111,39 @@ agent disclosure, native platform behavior, prompt feedback, visible state,
 immediate disengagement, and human accountability. These criteria live once in
 the root instructions and are mirrored by the `aig:` lens in
 `scripts/ci-review.ts`.
+
+## Session cost and context window
+
+A Linear issue maps to one long-lived eve session that is never explicitly
+closed, so its transcript grows across every wake and tool round-trip. A
+2026-07-27 production analysis found this dominated spend: long sessions
+re-read a near-1M-token transcript on each of a turn's ~14 tool round-trips
+(~14M input tokens/turn), and multi-hour idle gaps blew the prompt cache so
+afternoon PR/merge hooks paid to rebuild it. Three knobs bound that cost:
+
+- **Earlier compaction** - `agent.ts` sets `modelContextWindowTokens`, which is
+  a compaction *trigger*, not a hard cap: eve compacts at
+  `floor(modelContextWindowTokens * 0.9)` (see eve `createCompactionConfig` in
+  `execution/session.js`), summarizing the older transcript and keeping the
+  recent tail verbatim. Session *parking* is the separate `maxInputTokensPerSession`
+  knob (default 40M), left untouched. Lowering the trigger caps the per-turn
+  re-read; tune down if quality holds, up if summaries drop needed detail.
+- **In-context tool-result truncation** - `lib/truncate-for-context.ts` and the
+  wrapped `bash`/`web_fetch` tools keep head+tail with an elision pointer so
+  high-volume output stops riding every subsequent round-trip. This is distinct
+  from `lib/truncate.ts`, which is display-only for Linear activity chips.
+- **Per-phase context rotation** - at a phase boundary (right after opening the
+  pull request, say) `handoff` posts a checkpoint comment naming its own eve
+  session instead of opening a second Linear session. The comment states the
+  turnover in prose, since the marker itself renders invisibly and a self-reset
+  is session state AIG asks to be visible. The Linear route then
+  retires that session with eve's `reset` on the next inbound event, so eve's own
+  dispatch re-creates it empty (see `lib/linear/checkpoint.ts`). Linear sees one
+  continuous Agent Session; only the context window behind it turns over. The
+  session id in the marker is what makes it idempotent - once rotated, the token
+  belongs to a different session and later events are no-ops - and rotation
+  simply does not engage if Linear omits app-authored comments from
+  `previousComments`.
 
 ## Sandbox and credentials
 
@@ -137,8 +176,8 @@ The OpenAPI connection derives default team and project identifiers from
 them. Resuming a named sandbox is denied because it mutates external state.
 
 Turso is not an MCP or OpenAPI surface, so it has no file under `connections/`.
-`lib/memory.ts` mints its Connect credential the same way `VERCEL_TOKEN` is
-read for the OpenAPI connection above, and `lib/memory-store.ts` uses it to
+`lib/memory/connector.ts` mints its Connect credential the same way `VERCEL_TOKEN` is
+read for the OpenAPI connection above, and `lib/memory/store.ts` uses it to
 run the `memories` table's schema migration and CRUD through `@libsql/client`.
 The credential never reaches the sandbox, unlike GitHub's, because the memory
 store runs as ordinary application code rather than shell commands the agent
@@ -151,14 +190,14 @@ and feeds them back as JSON-encoded, explicitly untrusted stored data, per
 eve's `patterns/multi-tenant-memory.md`. `instructions.md` tells the model what
 belongs there instead of the golden product SSOT under `.botfile/memory/domain/`.
 
-`lib/memory-tools.ts` enforces the store's bounds and provenance rules
+`lib/memory/tools.ts` enforces the store's bounds and provenance rules
 (HAR-75) as input validation, not just prose: `key` is a restricted-charset,
 80-character slug, `value` is capped at 4000 characters, `category` must be
 one of a closed allow-list (`workaround`, `debugging-note`, `entity`), and
 `source` is required on every write. A `remember` call whose key, value, or
 source looks credential- or PII-shaped (API keys, PEM blocks, AWS/GitHub/Slack
 tokens, JWTs, SSNs, labeled `password:`/`secret:` values) is rejected outright
-rather than merely discouraged. `lib/memory-store.ts` bounds total store size
+rather than merely discouraged. `lib/memory/store.ts` bounds total store size
 by evicting the least-recently-updated memory on every write once the store
 holds more than 500 rows, so the table cannot grow unbounded.
 
