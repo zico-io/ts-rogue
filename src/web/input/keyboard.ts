@@ -24,6 +24,7 @@ import {
 } from "../../ui/screens/overworld/interaction";
 import {
   buildPackEntries,
+  buildShopRows,
   INITIAL_STORE_UI_STATE,
   INITIAL_TAVERN_UI_STATE,
   type OverviewUiState,
@@ -347,6 +348,12 @@ export class BrowserKeyboardManager {
       ) {
         this.store.dispatch({ type: "RefreshRecruits" });
       }
+      if (
+        result.effect.building === "store" &&
+        this.store.getState().shopStock.length === 0
+      ) {
+        this.store.dispatch({ type: "RefreshShopStock" });
+      }
       return;
     }
     if (result.effect?.type === "leave") {
@@ -399,10 +406,12 @@ export class BrowserKeyboardManager {
       state.party.length - 1,
     );
     const member = state.party[clampedMemberIndex];
+    const highestLevel = Math.max(...state.party.map((p) => p.level));
     const result = reduceStoreUi(storeUi, intent, {
       partyLength: state.party.length,
       memberId: member.id,
       packEntries: buildPackEntries(member, state.items),
+      shopRows: buildShopRows(highestLevel, state.shopStock),
     });
 
     if (result.effect?.type === "back") {
@@ -415,6 +424,12 @@ export class BrowserKeyboardManager {
           type: "StoreBuy",
           itemId: result.effect.itemId,
           quantity: 1,
+        });
+        break;
+      case "storeBuyRolled":
+        this.store.dispatch({
+          type: "StoreBuyRolled",
+          instanceId: result.effect.instanceId,
         });
         break;
       case "storeSell":

@@ -1,22 +1,30 @@
 import { Box, Text, useInput } from "ink";
-import { useState } from "react";
-import { SHOP_ITEMS, sellPriceFor } from "../../../data/shops";
+import { useEffect, useState } from "react";
+import {
+  isGearShopItem,
+  nextLockedTier,
+  sellPriceFor,
+} from "../../../data/shops";
 import { atkFrom, defFrom, spdFrom } from "../../../engine/combat/resolution";
 import {
   describeItem,
   itemSellPrice,
   itemStatLine,
+  rolledItemPrice,
 } from "../../../engine/loot/items";
 import type { GameEvent, GameState } from "../../../engine/state/types";
+import { ComparePanel } from "../../components/ComparePanel";
 import { Screen } from "../../components/Screen";
 import { normalizeInkKey } from "../../hooks/normalizeInkKey";
 import { theme } from "../../theme";
 import {
   buildPackEntries,
+  buildShopRows,
   INITIAL_STORE_UI_STATE,
   type PackEntry,
   reduceStoreUi,
   resolveStoreIntent,
+  type ShopRow,
   type StoreUiState,
 } from "./interaction";
 
@@ -24,25 +32,6 @@ export interface StoreViewProps {
   state: GameState;
   dispatch: (event: GameEvent) => void;
   onBack: () => void;
-}
-
-const STAT_KEYS = ["str", "agi", "vit", "int"] as const;
-
-export function deltaLine(delta: {
-  str: number;
-  agi: number;
-  vit: number;
-  int: number;
-}): string {
-  const parts: string[] = [];
-  for (const key of STAT_KEYS) {
-    if (delta[key] !== 0) {
-      parts.push(
-        `${delta[key] >= 0 ? "+" : ""}${delta[key]} ${key.toUpperCase()}`,
-      );
-    }
-  }
-  return parts.length === 0 ? "no stat change" : parts.join(" ");
 }
 
 export function StoreView({ state, dispatch, onBack }: StoreViewProps) {
@@ -55,6 +44,16 @@ export function StoreView({ state, dispatch, onBack }: StoreViewProps) {
   const member = state.party[clampedMemberIndex];
   const packEntries = buildPackEntries(member, state.items);
   const packIndex = Math.min(storeUi.packCursor, packEntries.length - 1);
+  const highestLevel = Math.max(...state.party.map((p) => p.level));
+  const shopRows = buildShopRows(highestLevel, state.shopStock);
+  const shopIndex = Math.min(storeUi.shopCursor, shopRows.length - 1);
+  const selectedRow = shopRows[shopIndex];
+
+  // The rare section always restocks on inn rest (ENG-41), but a fresh save
+  // or a wiped stock still deserves an immediate roll instead of staying empty.
+  useEffect(() => {
+    if (state.shopStock.length === 0) dispatch({ type: "RefreshShopStock" });
+  }, [state.shopStock.length, dispatch]);
 
   useInput((input, key) => {
     const keyName = normalizeInkKey(input, key);
@@ -66,6 +65,7 @@ export function StoreView({ state, dispatch, onBack }: StoreViewProps) {
       partyLength: state.party.length,
       memberId: member.id,
       packEntries,
+      shopRows,
     });
 
     switch (result.effect?.type) {
@@ -74,6 +74,12 @@ export function StoreView({ state, dispatch, onBack }: StoreViewProps) {
           type: "StoreBuy",
           itemId: result.effect.itemId,
           quantity: 1,
+        });
+        break;
+      case "storeBuyRolled":
+        dispatch({
+          type: "StoreBuyRolled",
+          instanceId: result.effect.instanceId,
         });
         break;
       case "storeSell":
@@ -116,38 +122,78 @@ export function StoreView({ state, dispatch, onBack }: StoreViewProps) {
         </Text>
 
         {storeUi.mode === "shop" ? (
-          <ShopCatalog cursor={storeUi.shopCursor} state={state} />
+          <ShopCatalog
+            rows={shopRows}
+            cursor={shopIndex}
+            state={state}
+            highestLevel={highestLevel}
+          />
         ) : (
           <BackpackPanel entries={packEntries} cursor={packIndex} />
         )}
+
+        {storeUi.mode === "shop" && selectedRow?.kind === "rolled" ? (
+          <ComparePanel
+            member={member}
+            item={selectedRow.item}
+            candidateLabel="For sale"
+          />
+        ) : null}
       </Box>
     </Screen>
   );
 }
 
 interface ShopCatalogProps {
+  rows: readonly ShopRow[];
   cursor: number;
   state: GameState;
+  highestLevel: number;
 }
 
-function ShopCatalog({ cursor, state }: ShopCatalogProps) {
+function ShopCatalog({ rows, cursor, state, highestLevel }: ShopCatalogProps) {
+  const locked = nextLockedTier(highestLevel);
+  const rareStart = rows.findIndex((row) => row.kind === "rolled");
+
   return (
     <Box flexDirection="column">
-      {SHOP_ITEMS.map((item, index) => {
-        const owned =
-          state.inventory.find((entry) => entry.itemId === item.id)?.quantity ??
-          0;
+      {rows.map((row, index) => {
+        const selected = index === cursor;
+        const showHeader = rareStart !== -1 && index === rareStart;
+        if (row.kind === "catalog") {
+          const item = row.item;
+          const owned = isGearShopItem(item.id)
+            ? state.items.filter((entry) => entry.baseId === item.id).length
+            : (state.inventory.find((entry) => entry.itemId === item.id)
+                ?.quantity ?? 0);
+          return (
+            <Text color={selected ? theme.accent : undefined} key={item.id}>
+              {selected ? "> " : "  "}
+              {item.name} - buy {item.price}g / sell {sellPriceFor(item)}g
+              (owned {owned})
+            </Text>
+          );
+        }
         return (
-          <Text
-            color={index === cursor ? theme.accent : undefined}
-            key={item.id}
-          >
-            {index === cursor ? "> " : "  "}
-            {item.name} - buy {item.price}g / sell {sellPriceFor(item)}g (owned{" "}
-            {owned})
-          </Text>
+          <Box flexDirection="column" key={row.item.instanceId}>
+            {showHeader ? (
+              <Text color={theme.textMuted}>Rare Stock</Text>
+            ) : null}
+            <Text
+              color={selected ? theme.accent : theme.rarity[row.item.rarity]}
+            >
+              {selected ? "> " : "  "}
+              {describeItem(row.item)} - {itemStatLine(row.item)} - buy{" "}
+              {rolledItemPrice(row.item)}g
+            </Text>
+          </Box>
         );
       })}
+      {locked !== undefined ? (
+        <Text color={theme.textFaint}>
+          Locked: more stock unlocks at level {locked}.
+        </Text>
+      ) : null}
     </Box>
   );
 }

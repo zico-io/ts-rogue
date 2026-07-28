@@ -4,7 +4,6 @@ import { findShopItem } from "../../data/shops";
 import { atkFrom, defFrom, spdFrom } from "../../engine/combat/resolution";
 import type { InventoryItem } from "../../engine/entities/party";
 import { isHealItem } from "../../engine/loot/consumables";
-import { compareItem, equipTargetSlot } from "../../engine/loot/equipment";
 import {
   describeItem,
   itemAffixLines,
@@ -14,6 +13,7 @@ import {
 import type { LootFilterRules } from "../../engine/loot/lootFilter";
 import type { ItemInstance, Rarity } from "../../engine/loot/types";
 import type { GameEvent, GameState } from "../../engine/state/types";
+import { ComparePanel } from "../components/ComparePanel";
 import { Screen } from "../components/Screen";
 import { normalizeInkKey } from "../hooks/normalizeInkKey";
 import { theme } from "../theme";
@@ -28,12 +28,7 @@ import {
   type SortKey,
   sortPackEntries,
 } from "./inventory/interaction";
-import {
-  buildPackEntries,
-  EQUIP_SLOTS,
-  type PackEntry,
-} from "./village/interaction";
-import { deltaLine } from "./village/StoreView";
+import { buildPackEntries, type PackEntry } from "./village/interaction";
 
 export interface InventoryScreenProps {
   state: GameState;
@@ -248,47 +243,6 @@ function GearSection({
         </Text>
       )}
       {inspecting && inspectedItem && <InspectPanel item={inspectedItem} />}
-    </Box>
-  );
-}
-
-interface ComparePanelProps {
-  member: GameState["party"][number];
-  item: ItemInstance;
-}
-
-function ComparePanel({ member, item }: ComparePanelProps) {
-  const targetSlot = equipTargetSlot(member, item);
-  const slotDef = EQUIP_SLOTS.find((entry) => entry.slot === targetSlot);
-  const slotLabel = slotDef?.label ?? "Unknown";
-  const equipped = targetSlot ? member.equipment[targetSlot] : null;
-  const delta = compareItem(member, item);
-
-  return (
-    <Box flexDirection="column" marginTop={1}>
-      <Box flexDirection="row">
-        {}
-        <Box flexDirection="column" marginRight={4}>
-          <Text color={theme.textMuted}>Equipped ({slotLabel})</Text>
-          {equipped ? (
-            <>
-              <Text color={theme.rarity[equipped.rarity]}>
-                {describeItem(equipped)}
-              </Text>
-              <Text color={theme.text}>{itemStatLine(equipped)}</Text>
-            </>
-          ) : (
-            <Text color={theme.textFaint}>(empty)</Text>
-          )}
-        </Box>
-        {}
-        <Box flexDirection="column">
-          <Text color={theme.textMuted}>In backpack</Text>
-          <Text color={theme.rarity[item.rarity]}>{describeItem(item)}</Text>
-          <Text color={theme.text}>{itemStatLine(item)}</Text>
-        </Box>
-      </Box>
-      <Text color={theme.gold}>Delta: {deltaLine(delta)}</Text>
     </Box>
   );
 }
