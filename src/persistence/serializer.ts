@@ -33,9 +33,13 @@ export function deserialize(json: string): GameState {
   if (!state.lootFilter) state.lootFilter = EMPTY_LOOT_FILTER;
   if (state.lastLootOutcome === undefined) state.lastLootOutcome = null;
   if (!state.clearedAt) state.clearedAt = {};
+<<<<<<< HEAD
+  if (!state.shopStock) state.shopStock = [];
+=======
   if (!state.quests) {
     state.quests = { available: [], accepted: [], completedIds: [] };
   }
   if (!state.questItems) state.questItems = {};
+>>>>>>> origin/main
   return state;
 }

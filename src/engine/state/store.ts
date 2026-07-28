@@ -7,9 +7,15 @@ import {
   dungeonEntryFlavor,
   findDungeon,
 } from "../../data/dungeons";
+<<<<<<< HEAD
+import { findItemBase } from "../../data/itemBases";
+import { findShopItem, isGearShopItem, sellPriceFor } from "../../data/shops";
+import { resolveBattleEvent, startBattle } from "../combat/resolution";
+=======
 import { QUESTS } from "../../data/quests";
 import { findShopItem, sellPriceFor } from "../../data/shops";
 import { grantXp, resolveBattleEvent, startBattle } from "../combat/resolution";
+>>>>>>> origin/main
 import type { InventoryItem, PartyMember } from "../entities/party";
 import { createStartingHero, MAX_PARTY } from "../entities/party";
 import {
@@ -20,7 +26,7 @@ import {
 import { consumeItem, healAmount, isHealItem } from "../loot/consumables";
 import { type EquipmentSlotName, equipTargetSlot } from "../loot/equipment";
 import { FIELD_BACKPACK_CAP, isFieldBackpackFull } from "../loot/inventory";
-import { describeItem, itemSellPrice } from "../loot/items";
+import { describeItem, itemSellPrice, rolledItemPrice } from "../loot/items";
 import { EMPTY_LOOT_FILTER, type LootFilterRules } from "../loot/lootFilter";
 import {
   applyLootPickupWithFilter,
@@ -28,8 +34,13 @@ import {
   lootLogEntries,
   queueLootTriage,
 } from "../loot/pickup";
+<<<<<<< HEAD
+import { rollChestLoot, rollShopStock } from "../loot/resolution";
+import type { ItemInstance } from "../loot/types";
+=======
 import { rollChestLoot } from "../loot/resolution";
 import { isQuestComplete, MAX_ACCEPTED_QUESTS } from "../quests";
+>>>>>>> origin/main
 import { Rng } from "../rng/rng";
 import {
   createInitialDungeonState,
@@ -113,17 +124,45 @@ export function newGame(seed: number, options?: NewGameOptions): GameState {
     pendingLootTriage: null,
     lootFilter: EMPTY_LOOT_FILTER,
     lastLootOutcome: null,
+<<<<<<< HEAD
+    shopStock: [],
+=======
     quests: { available: [], accepted: [], completedIds: [] },
     questItems: {},
+>>>>>>> origin/main
   };
 
+  // shopStock stays empty until the store is first visited or after an
+  // inn rest (restockShop) - eager-rolling it here would perturb the RNG
+  // stream every newGame test relies on for unrelated deterministic checks.
   return rollRecruits(base);
+}
+
+function highestPartyLevel(party: readonly PartyMember[]): number {
+  return Math.max(...party.map((member) => member.level));
 }
 
 function rollRecruits(state: GameState): GameState {
   const rng = new Rng(state.seed, state.rngState);
   const recruits = generateRecruits(rng, state.party[0]?.level ?? 1);
   return { ...state, recruits, rngState: rng.getState() };
+}
+
+// Rare-stock restock cadence (ENG-41): fires alongside the tavern recruit
+// reroll (inn rest) so both rotating pools share one predictable cadence.
+function restockShop(state: GameState): GameState {
+  const rng = new Rng(state.seed, state.rngState);
+  const stock = rollShopStock(
+    rng,
+    highestPartyLevel(state.party),
+    state.nextItemId,
+  );
+  return {
+    ...state,
+    shopStock: stock.items,
+    nextItemId: stock.nextId,
+    rngState: rng.getState(),
+  };
 }
 
 function addItem(
@@ -160,7 +199,7 @@ function innHeal(state: GameState): GameState {
     log: [...state.log, entry(`Healed the party for ${cost} gold`)],
   };
 
-  return rollRecruits(healed);
+  return restockShop(rollRecruits(healed));
 }
 
 function storeBuy(
@@ -175,6 +214,12 @@ function storeBuy(
       log: [...state.log, entry(`Cannot buy unknown item "${itemId}"`)],
     };
   }
+  if (item.minLevel > highestPartyLevel(state.party)) {
+    return {
+      ...state,
+      log: [...state.log, entry(`${item.name} is not in stock yet`)],
+    };
+  }
   const cost = item.price * quantity;
   if (state.gold < cost) {
     return {
@@ -185,6 +230,39 @@ function storeBuy(
       ],
     };
   }
+  if (isGearShopItem(itemId)) {
+    const base = findItemBase(itemId);
+    if (!base) {
+      return {
+        ...state,
+        log: [...state.log, entry(`Cannot buy unknown item "${itemId}"`)],
+      };
+    }
+    let nextItemId = state.nextItemId;
+    const minted: ItemInstance[] = [];
+    for (let i = 0; i < quantity; i++) {
+      minted.push({
+        instanceId: `itm-${nextItemId}`,
+        baseId: base.id,
+        rarity: "common",
+        ilvl: base.ilvl,
+        prefixes: [],
+        suffixes: [],
+        implicit: null,
+      });
+      nextItemId += 1;
+    }
+    return {
+      ...state,
+      gold: state.gold - cost,
+      items: [...state.items, ...minted],
+      nextItemId,
+      log: [
+        ...state.log,
+        entry(`Bought ${quantity} ${item.name} for ${cost} gold`, "loot"),
+      ],
+    };
+  }
   return {
     ...state,
     gold: state.gold - cost,
@@ -192,6 +270,38 @@ function storeBuy(
     log: [
       ...state.log,
       entry(`Bought ${quantity} ${item.name} for ${cost} gold`, "loot"),
+    ],
+  };
+}
+
+function storeBuyRolled(state: GameState, instanceId: string): GameState {
+  const item = state.shopStock.find((entry) => entry.instanceId === instanceId);
+  if (!item) {
+    return {
+      ...state,
+      log: [...state.log, entry("That item is no longer in stock")],
+    };
+  }
+  const cost = rolledItemPrice(item);
+  if (state.gold < cost) {
+    return {
+      ...state,
+      log: [
+        ...state.log,
+        entry(`Not enough gold to buy ${describeItem(item)}`),
+      ],
+    };
+  }
+  return {
+    ...state,
+    gold: state.gold - cost,
+    items: [...state.items, item],
+    shopStock: state.shopStock.filter(
+      (entry) => entry.instanceId !== instanceId,
+    ),
+    log: [
+      ...state.log,
+      entry(`Bought ${describeItem(item)} for ${cost} gold`, "loot"),
     ],
   };
 }
@@ -968,6 +1078,10 @@ export function reduce(state: GameState, event: GameEvent): GameState {
       return storeBuy(state, event.itemId, event.quantity);
     case "StoreSell":
       return storeSell(state, event.itemId, event.quantity);
+    case "StoreBuyRolled":
+      return storeBuyRolled(state, event.instanceId);
+    case "RefreshShopStock":
+      return restockShop(state);
     case "EquipItem":
       return equipItem(state, event.instanceId, event.memberId);
     case "UnequipItem":

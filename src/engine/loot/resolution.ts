@@ -5,6 +5,7 @@ import {
   chestLootTableFor,
   chestLootTableForRef,
   findLootTable,
+  lootTableForTier,
 } from "../../data/lootTables";
 import { findMonster } from "../../data/monsters";
 import type { Rng } from "../rng/rng";
@@ -175,4 +176,42 @@ export function rollChestLoot(
     ? chestLootTableForRef(lootTableRef)
     : chestLootTableFor(floor);
   return rollLootTable(rng, table, startId);
+}
+
+// The rotating shop section only ever offers affixed gear (ENG-41), so it
+// forces magic/rare and skips common (no affixes) and unique (not for sale).
+export const SHOP_STOCK_RARITY_WEIGHTS: RarityWeights = {
+  common: 0,
+  magic: 65,
+  rare: 35,
+  unique: 0,
+};
+
+const SHOP_STOCK_MIN_COUNT = 2;
+const SHOP_STOCK_MAX_COUNT = 3;
+
+function shopTierForLevel(level: number): number {
+  if (level < 5) return 1;
+  if (level < 10) return 2;
+  return 3;
+}
+
+/** Rolls the village store's rare rotating stock: ilvl-appropriate affixed gear. */
+export function rollShopStock(
+  rng: Rng,
+  partyLevel: number,
+  startId: number,
+): LootRollResult {
+  const table = lootTableForTier(shopTierForLevel(partyLevel));
+  const count = rng.int(SHOP_STOCK_MIN_COUNT, SHOP_STOCK_MAX_COUNT);
+  const items: ItemInstance[] = [];
+  let nextId = startId;
+  for (let i = 0; i < count; i++) {
+    const ref = weightedPick(rng, table.items);
+    items.push(
+      generateItem(rng, ref, SHOP_STOCK_RARITY_WEIGHTS, `itm-${nextId}`),
+    );
+    nextId += 1;
+  }
+  return { items, nextId };
 }
