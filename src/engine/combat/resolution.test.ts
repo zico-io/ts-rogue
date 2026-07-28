@@ -122,6 +122,19 @@ function stateWithEnemies(
   };
 }
 
+/**
+ * The battle a state is in. `battleState` is nullable on `GameState`, so a
+ * test that is not in battle should fail here rather than at a later
+ * assertion.
+ */
+function battleOf(state: GameState): NonNullable<GameState["battleState"]> {
+  const battle = state.battleState;
+  if (battle == null) {
+    throw new Error("expected the state to be in battle");
+  }
+  return battle;
+}
+
 describe("derived stats", () => {
   it("derives ATK from str, DEF from vit/2, and SPD from agi", () => {
     expect(deriveAtk(SLIME_STATS)).toBe(4);
@@ -1109,10 +1122,10 @@ describe("ENG-22 status effect ticking", () => {
     state = {
       ...state,
       battleState: {
-        ...state.battleState!,
+        ...battleOf(state),
         enemies: [
           {
-            ...state.battleState!.enemies[0],
+            ...battleOf(state).enemies[0],
             effects: [
               {
                 effectId: "burn" as const,
@@ -1129,23 +1142,23 @@ describe("ENG-22 status effect ticking", () => {
     const initialHp = 999;
 
     state = reduce(state, { type: "BattleDefend" });
-    const slimeAfter1 = state.battleState!.enemies[0];
+    const slimeAfter1 = battleOf(state).enemies[0];
     const burn1 = slimeAfter1.effects?.find((e) => e.effectId === "burn");
     expect(burn1).toBeDefined();
-    expect(burn1!.duration).toBe(2);
+    expect(burn1?.duration).toBe(2);
     expect(initialHp - slimeAfter1.hp).toBe(5);
 
     state = reduce(state, { type: "BattleDefend" });
-    const slimeAfter2 = state.battleState!.enemies[0];
+    const slimeAfter2 = battleOf(state).enemies[0];
     const burn2 = slimeAfter2.effects?.find((e) => e.effectId === "burn");
     expect(burn2).toBeDefined();
-    expect(burn2!.duration).toBe(1);
+    expect(burn2?.duration).toBe(1);
     const tick2Damage =
       initialHp - slimeAfter2.hp - (initialHp - slimeAfter1.hp);
     expect(tick2Damage).toBe(3);
 
     state = reduce(state, { type: "BattleDefend" });
-    const slimeAfter3 = state.battleState!.enemies[0];
+    const slimeAfter3 = battleOf(state).enemies[0];
     const burn3 = slimeAfter3.effects?.find((e) => e.effectId === "burn");
     expect(burn3).toBeUndefined();
     expect(initialHp - slimeAfter3.hp).toBe(10);
@@ -1184,10 +1197,10 @@ describe("ENG-22 effects cleared on battle end", () => {
         },
       ],
       battleState: {
-        ...base.battleState!,
+        ...battleOf(base),
         enemies: [
           {
-            ...base.battleState!.enemies[0],
+            ...battleOf(base).enemies[0],
             effects: [
               {
                 effectId: "burn" as const,
@@ -1232,10 +1245,10 @@ describe("ENG-22 effects cleared on battle end", () => {
         },
       ],
       battleState: {
-        ...state.battleState!,
+        ...battleOf(state),
         enemies: [
           {
-            ...state.battleState!.enemies[0],
+            ...battleOf(state).enemies[0],
             effects: [
               {
                 effectId: "burn" as const,
@@ -1385,10 +1398,10 @@ describe("ENG-23 turn skip", () => {
     state = {
       ...state,
       battleState: {
-        ...state.battleState!,
+        ...battleOf(state),
         enemies: [
           {
-            ...state.battleState!.enemies[0],
+            ...battleOf(state).enemies[0],
             effects: [
               {
                 effectId: "stun" as const,
@@ -1437,10 +1450,10 @@ describe("ENG-23 shocked stun-lite and damage vulnerability", () => {
     const shocked: GameState = {
       ...shockedBase,
       battleState: {
-        ...shockedBase.battleState!,
+        ...battleOf(shockedBase),
         enemies: [
           {
-            ...shockedBase.battleState!.enemies[0],
+            ...battleOf(shockedBase).enemies[0],
             effects: [
               {
                 effectId: "shocked" as const,
