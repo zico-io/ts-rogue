@@ -7,7 +7,7 @@ import {
 import type { PartyMember } from "./party";
 
 // Why a spend attempt was rejected. Distinguishing these lets callers show a
-// specific reason instead of a generic \"can't unlock\" message.
+// specific reason instead of a generic "can't unlock" message.
 export type UnlockSkillNodeReason =
   | "unknown-node"
   | "already-unlocked"
