@@ -29,7 +29,7 @@ describe("Linear agent interaction", () => {
   });
 
   it("keeps Agent Session updates concise and headerless", () => {
-    // What `session_update` posts as an activity body.
+    // What `handoff` posts as an activity body.
     expect(
       stripLeadingProseHeader(
         "## Review\n\nAdded village state.\n\n- `pnpm check` passes",

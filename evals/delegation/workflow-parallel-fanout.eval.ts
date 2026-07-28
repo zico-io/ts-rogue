@@ -10,7 +10,7 @@ import { defineEval } from "eve/evals";
 // Runs without a mock-model flag like message-substance.eval.ts and
 // scoping.eval.ts: the synthetic turn packet drives the real model, so this
 // eval checks model behavior against the documented policy. It does not
-// assert noFailedActions (session_update may fire against real Linear with a
+// assert noFailedActions (a tool may fire against real Linear with a
 // synthetic session id, matching scoping.eval.ts's precedent).
 
 const isWorkflowTool = (toolName: string) => toolName === "Workflow";
@@ -56,11 +56,8 @@ export default defineEval({
               typeof action.input === "object" &&
               action.input !== null &&
               "js" in action.input &&
-              typeof (action.input as Record<string, unknown>).js ===
-                "string" &&
-              (action.input as Record<string, unknown>).js.includes(
-                "Promise.all",
-              ),
+              typeof (action.input as { js: unknown }).js === "string" &&
+              (action.input as { js: string }).js.includes("Promise.all"),
           );
         }),
     );

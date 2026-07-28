@@ -13,7 +13,7 @@ equivalent public capability. Recheck every row when upgrading Eve.
 | Per-phase context rotation via checkpoint comments | `lib/linear/checkpoint.ts`, `channels/linear.ts`, `tools/handoff.ts` | `linearChannel`'s dispatch hardcodes `linearContinuationToken(agentSession.id)`, so a channel cannot key a fresh context window itself; rotation has to go through `reset` from the route |
 | GitHub token refresh | `lib/sandbox/` | Brokered tokens expire mid-session and eve does not re-mint the network policy |
 | Vercel traces and sandbox inspection | `connections/vercel-api.ts` | The Vercel MCP server does not expose every required read operation |
-| Linear Agent Session activities | `channels/linear.ts`, `lib/agent-plan.ts`, `tools/session_update.ts`, `tools/handoff.ts` | The Linear MCP connection does not expose Agent Session mutations |
+| Linear Agent Session activities | `channels/linear.ts`, `lib/agent-plan.ts`, `tools/handoff.ts` | The Linear MCP connection does not expose Agent Session mutations |
 | Linear workflow-state synchronization | `lib/linear/issue-state.ts`, channel adapters | Linear Agent Sessions do not update issue workflow state |
 
 ## Upgrade check
