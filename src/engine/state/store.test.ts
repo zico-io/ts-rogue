@@ -1004,6 +1004,31 @@ describe("Phase 5 loot, equip, and sell", () => {
     });
   });
 
+  describe("UnlockSkillNode", () => {
+    it("no-ops on an unknown member id", () => {
+      const before = newGame(1);
+      const after = reduce(before, {
+        type: "UnlockSkillNode",
+        memberId: "nope",
+        nodeId: "any-node",
+      });
+      expect(after).toEqual(before);
+    });
+
+    it("no-ops for a real member and node until SKILL_TREES ships content (ENG-35)", () => {
+      const before = {
+        ...newGame(1),
+        party: [{ ...newGame(1).party[0], skillPoints: 3 }],
+      };
+      const after = reduce(before, {
+        type: "UnlockSkillNode",
+        memberId: before.party[0].id,
+        nodeId: "any-node",
+      });
+      expect(after).toEqual(before);
+    });
+  });
+
   describe("EquipItem/UnequipItem target a specific memberId (ROG-20)", () => {
     it("equips into the second party member's slot, leaving the first untouched", () => {
       const recruited = reduce(newGame(1), {

@@ -16,6 +16,11 @@ export const globalKeymap: Keymap = {
   // Capital C so it does not collide with the village overview's lowercase
   // `c` (church) shortcut.
   "char:C": { kind: "openCharacterSheet" },
+
+  // Capital K, same reasoning as `C` above, and lowercase `k` is reserved
+  // for vi-style menu-up. Stands in for the character sheet's future skill
+  // tree tab until ROG-18 ships and folds this in.
+  "char:K": { kind: "openSkillTree" },
 };
 
 export function resolveGlobalIntent(key: KeyName): Intent | undefined {
