@@ -56,7 +56,6 @@ Own one issue end to end:
    and ``Test remotely: `pnpm pr:sandbox <PR number>` `` in the body. Begin the
    body with the change itself, not a summary heading or repeated pull-request
    title.
-8. Send a `session_update` when blocked, ready for review, or complete.
 
 The root normally writes the change itself. The built-in `agent` tool is
 available for a genuinely independent, non-overlapping task. The `playtester`

@@ -77,7 +77,6 @@ context. Blocking relations in Linear determine readiness.
 | `subagents/scoper/` | Opus-model planner that breaks a multi-deliverable request into an approvable breakdown |
 | `tools/handoff.ts` | Starts an informed successor Agent Session |
 | `tools/workflow.ts` | Enables the `Workflow` tool to orchestrate `agent` calls as one durable step |
-| `tools/session_update.ts` | Posts blocked, review, and completion activities |
 | `tools/remember.ts`, `tools/recall.ts`, `tools/forget.ts` | Autonomous read/write access to the runtime memory store |
 | `tools/bash.ts`, `tools/web_fetch.ts` | eve's own tools with only `toModelOutput` replaced, so high-volume output stops riding every later round-trip |
 | `lib/truncate-for-context.ts` | The head+tail window those two tools show the model; `lib/truncate.ts` is the separate display-only cap for Linear chips |
