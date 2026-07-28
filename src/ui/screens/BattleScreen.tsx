@@ -7,7 +7,7 @@ import {
   spdFrom,
   xpToNext,
 } from "../../engine/combat/resolution";
-import { classSkills, type SkillDef } from "../../engine/combat/skills";
+import { memberSkills, type SkillDef } from "../../engine/combat/skills";
 import type { BattleState } from "../../engine/combat/types";
 import {
   battleItemEffectLabel,
@@ -51,7 +51,7 @@ export function BattleScreen({ state, dispatch }: BattleScreenProps) {
   const bs = state.battleState;
   const actor =
     state.party.find((m) => m.id === bs?.activeMemberId) ?? state.party[0];
-  const knownSkills = classSkills(actor.classId);
+  const knownSkills = memberSkills(actor);
 
   const aliveEnemies = bs ? bs.enemies.filter((enemy) => enemy.hp > 0) : [];
   const usableItems = state.inventory.filter((entry) =>

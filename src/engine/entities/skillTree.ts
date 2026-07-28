@@ -1,5 +1,9 @@
 import { findClass } from "../../data/classes";
-import { findSkillTree, type SkillTreeDef } from "../../data/skillTrees";
+import {
+  findSkillTree,
+  type SkillNodeDef,
+  type SkillTreeDef,
+} from "../../data/skillTrees";
 import type { PartyMember } from "./party";
 
 // Why a spend attempt was rejected. Distinguishing these lets callers show a
@@ -13,6 +17,28 @@ export type UnlockSkillNodeReason =
 export interface UnlockSkillNodeResult {
   member: PartyMember;
   reason?: UnlockSkillNodeReason;
+}
+
+// Resolves the member's class tree (ClassDef.treeId -> SKILL_TREES).
+// Shared by unlockSkillNode and every unlockedNodeDefs caller (battle
+// skill list, effectiveStats) so they all agree on which tree a member's
+// unlocks belong to.
+export function memberSkillTree(member: PartyMember): SkillTreeDef | undefined {
+  const treeId = findClass(member.classId)?.treeId;
+  return treeId === undefined ? undefined : findSkillTree(treeId);
+}
+
+// Node defs backing every id already in member.unlockedNodes, resolved
+// against `tree` (defaults to the member's own class tree). Takes an
+// explicit `tree` override so tests can exercise real node aggregation
+// against a fixture tree while SKILL_TREES has no starter content yet
+// (ENG-35); members with no unlocked nodes always resolve to [].
+export function unlockedNodeDefs(
+  member: PartyMember,
+  tree: SkillTreeDef | undefined = memberSkillTree(member),
+): SkillNodeDef[] {
+  if (!tree) return [];
+  return tree.nodes.filter((node) => member.unlockedNodes.includes(node.id));
 }
 
 // Core validation against an explicit tree, decoupled from the class/tree
@@ -50,14 +76,12 @@ export function unlockNodeInTree(
   };
 }
 
-// Resolves the member's class tree (ClassDef.treeId -> SKILL_TREES) and
-// validates/spends against it. A class with no matching tree yet resolves
-// the same as any other unknown node id.
+// Resolves the member's class tree and validates/spends against it. A
+// class with no matching tree yet resolves the same as any other unknown
+// node id.
 export function unlockSkillNode(
   member: PartyMember,
   nodeId: string,
 ): UnlockSkillNodeResult {
-  const treeId = findClass(member.classId)?.treeId;
-  const tree = treeId === undefined ? undefined : findSkillTree(treeId);
-  return unlockNodeInTree(member, tree, nodeId);
+  return unlockNodeInTree(member, memberSkillTree(member), nodeId);
 }

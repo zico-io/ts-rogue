@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { SkillTreeDef } from "../../data/skillTrees";
 import { createStartingHero, type PartyMember } from "./party";
-import { unlockNodeInTree, unlockSkillNode } from "./skillTree";
+import {
+  unlockedNodeDefs,
+  unlockNodeInTree,
+  unlockSkillNode,
+} from "./skillTree";
 
 const TREE: SkillTreeDef = {
   id: "test-tree",
@@ -97,5 +101,27 @@ describe("unlockSkillNode", () => {
     const result = unlockSkillNode(member, "any-node");
     expect(result.reason).toBe("unknown-node");
     expect(result.member).toEqual(member);
+  });
+});
+
+describe("unlockedNodeDefs", () => {
+  it("resolves the node defs backing every unlocked id in the given tree", () => {
+    const member = memberWith({ unlockedNodes: ["root", "branch"] });
+    expect(unlockedNodeDefs(member, TREE)).toEqual(TREE.nodes);
+  });
+
+  it("ignores an unlocked id that isn't in the tree", () => {
+    const member = memberWith({ unlockedNodes: ["root", "not-a-node"] });
+    expect(unlockedNodeDefs(member, TREE)).toEqual([TREE.nodes[0]]);
+  });
+
+  it("returns [] for a member with no unlocked nodes", () => {
+    expect(unlockedNodeDefs(memberWith(), TREE)).toEqual([]);
+  });
+
+  it("returns [] when no tree is given and the member's class has none yet (ENG-35)", () => {
+    expect(unlockedNodeDefs(memberWith({ unlockedNodes: ["root"] }))).toEqual(
+      [],
+    );
   });
 });

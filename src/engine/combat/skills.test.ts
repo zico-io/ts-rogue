@@ -1,6 +1,33 @@
 import { describe, expect, it } from "vitest";
 import { findMonster, MONSTERS } from "../../data/monsters";
-import { classSkills, findSkill, resolveSkillList, SKILLS } from "./skills";
+import type { SkillNodeDef } from "../../data/skillTrees";
+import { createStartingHero } from "../entities/party";
+import {
+  classSkills,
+  findSkill,
+  memberSkills,
+  resolveSkillList,
+  SKILLS,
+  skillIdsWithUnlocks,
+} from "./skills";
+
+const ACTIVE_NODE: SkillNodeDef = {
+  id: "unlock-cleave",
+  name: "Unlock Cleave",
+  cost: 1,
+  prereqs: [],
+  type: "skill",
+  skillId: "cleave",
+};
+const PASSIVE_NODE: SkillNodeDef = {
+  id: "str-node",
+  name: "Str Node",
+  cost: 1,
+  prereqs: [],
+  type: "stat",
+  stat: "str",
+  amount: 3,
+};
 
 // Every skill's expected v2 shape (ENG-28 wires each one into a concrete
 // resolveShapeTargets case in resolution.ts).
@@ -72,5 +99,42 @@ describe("MonsterDef skill lists", () => {
         monster.skills.length,
       );
     }
+  });
+});
+
+describe("skillIdsWithUnlocks", () => {
+  it("appends an unlocked active-skill node's skillId to the base ids", () => {
+    expect(skillIdsWithUnlocks(["flame", "heal"], [ACTIVE_NODE])).toEqual([
+      "flame",
+      "heal",
+      "cleave",
+    ]);
+  });
+
+  it("does not duplicate a node's skill id already in the base ids", () => {
+    expect(skillIdsWithUnlocks(["cleave", "skewer"], [ACTIVE_NODE])).toEqual([
+      "cleave",
+      "skewer",
+    ]);
+  });
+
+  it("ignores a passive stat node - it contributes no skill id", () => {
+    expect(skillIdsWithUnlocks(["flame"], [PASSIVE_NODE])).toEqual(["flame"]);
+  });
+
+  it("returns exactly the base ids with no unlocked nodes", () => {
+    expect(skillIdsWithUnlocks(["flame", "heal"], [])).toEqual([
+      "flame",
+      "heal",
+    ]);
+  });
+});
+
+describe("memberSkills", () => {
+  it("equals classSkills(classId) for a member with no unlocked nodes", () => {
+    const member = createStartingHero("wizard");
+    expect(memberSkills(member).map((s) => s.id)).toEqual(
+      classSkills(member.classId).map((s) => s.id),
+    );
   });
 });

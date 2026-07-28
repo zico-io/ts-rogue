@@ -1,4 +1,7 @@
 import { findClass } from "../../data/classes";
+import type { SkillNodeDef } from "../../data/skillTrees";
+import type { PartyMember } from "../entities/party";
+import { unlockedNodeDefs } from "../entities/skillTree";
 import type { AppliedEffect, Element } from "./statusEffects";
 import type { CoreStats } from "./types";
 
@@ -182,4 +185,30 @@ export function classSkills(classId: string): SkillDef[] {
   const cls = findClass(classId);
   if (!cls) return [];
   return resolveSkillList(cls.skills);
+}
+
+// Base skill ids plus each active-unlock ("skill" type) node's skillId,
+// deduped. Split out from memberSkills so the merge/dedup logic is directly
+// testable against plain SkillNodeDef fixtures, without needing a full
+// SkillTreeDef or SKILL_TREES to have real content yet (ENG-35).
+export function skillIdsWithUnlocks(
+  baseIds: readonly string[],
+  unlockedNodes: readonly SkillNodeDef[],
+): string[] {
+  const unlockedIds = unlockedNodes
+    .filter((node) => node.type === "skill")
+    .map((node) => node.skillId);
+  return [...new Set([...baseIds, ...unlockedIds])];
+}
+
+// Starting skills (ClassDef.skills) plus every active-unlock node the
+// member has spent a point on, resolved through the shared SKILLS table.
+// This is what the battle skill menu shows instead of the flat classSkills
+// lookup; a member with no unlocked nodes resolves to exactly
+// classSkills(member.classId).
+export function memberSkills(member: PartyMember): SkillDef[] {
+  const baseIds = findClass(member.classId)?.skills ?? [];
+  return resolveSkillList(
+    skillIdsWithUnlocks(baseIds, unlockedNodeDefs(member)),
+  );
 }

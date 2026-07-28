@@ -1,7 +1,31 @@
 import { describe, expect, it } from "vitest";
+import type { SkillNodeDef } from "../../data/skillTrees";
 import { createStartingHero, type PartyMember } from "../entities/party";
-import { compareItem, effectiveStats, equipTargetSlot } from "./equipment";
+import {
+  compareItem,
+  effectiveStats,
+  equipTargetSlot,
+  withPassiveNodeBonuses,
+} from "./equipment";
 import type { ItemInstance } from "./types";
+
+const PASSIVE_NODE: SkillNodeDef = {
+  id: "vit-node",
+  name: "Vit Node",
+  cost: 1,
+  prereqs: [],
+  type: "stat",
+  stat: "vit",
+  amount: 4,
+};
+const ACTIVE_NODE: SkillNodeDef = {
+  id: "unlock-cleave",
+  name: "Unlock Cleave",
+  cost: 1,
+  prereqs: [],
+  type: "skill",
+  skillId: "cleave",
+};
 
 const STR_SWORD: ItemInstance = {
   instanceId: "itm-w",
@@ -57,6 +81,35 @@ describe("effectiveStats", () => {
     });
 
     expect(effectiveStats(hero)).toEqual({ str: 12, agi: 5, vit: 12, int: 2 });
+  });
+
+  it("equals the member's own effectiveStats for a member with no unlocked nodes", () => {
+    const hero = createStartingHero();
+    expect(effectiveStats(hero)).toEqual(
+      withPassiveNodeBonuses(effectiveStats(hero), []),
+    );
+  });
+});
+
+describe("withPassiveNodeBonuses", () => {
+  it("adds an unlocked passive stat node's bonus on top of the given stats", () => {
+    const stats = { str: 7, agi: 4, vit: 12, int: 2 };
+    expect(withPassiveNodeBonuses(stats, [PASSIVE_NODE])).toEqual({
+      str: 7,
+      agi: 4,
+      vit: 16,
+      int: 2,
+    });
+  });
+
+  it("ignores an unlocked active-skill node - it contributes no stat bonus", () => {
+    const stats = { str: 7, agi: 4, vit: 7, int: 2 };
+    expect(withPassiveNodeBonuses(stats, [ACTIVE_NODE])).toEqual(stats);
+  });
+
+  it("returns the stats unchanged with no unlocked nodes", () => {
+    const stats = { str: 7, agi: 4, vit: 7, int: 2 };
+    expect(withPassiveNodeBonuses(stats, [])).toEqual(stats);
   });
 });
 

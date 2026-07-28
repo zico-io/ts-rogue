@@ -1,5 +1,7 @@
+import type { SkillNodeDef } from "../../data/skillTrees";
 import type { CoreStats } from "../combat/types";
 import type { PartyMember } from "../entities/party";
+import { unlockedNodeDefs } from "../entities/skillTree";
 import { itemBaseSlot, itemStats } from "./items";
 import type { EquipmentSlotName, ItemInstance } from "./types";
 
@@ -12,6 +14,25 @@ const SLOT_ORDER: readonly EquipmentSlotName[] = [
   "accessory2",
 ];
 
+// Adds every passive ("stat" type) node's bonus on top of `stats`, ignoring
+// active-skill nodes. Split out from effectiveStats so the aggregation is
+// directly testable against plain SkillNodeDef fixtures, without needing a
+// full SkillTreeDef or SKILL_TREES to have real content yet (ENG-35).
+export function withPassiveNodeBonuses(
+  stats: CoreStats,
+  unlockedNodes: readonly SkillNodeDef[],
+): CoreStats {
+  const total = { ...stats };
+  for (const node of unlockedNodes) {
+    if (node.type === "stat") total[node.stat] += node.amount;
+  }
+  return total;
+}
+
+// Base stats plus every equipped item's bonus plus every unlocked passive
+// skill tree node's bonus, so atkFrom/defFrom/spdFrom
+// (../combat/resolution.ts) pick up spent skill points for free. A member
+// with no unlocked nodes resolves exactly as before this shipped.
 export function effectiveStats(member: PartyMember): CoreStats {
   const base = member.stats;
   const total: CoreStats = {
@@ -29,7 +50,7 @@ export function effectiveStats(member: PartyMember): CoreStats {
     total.vit += bonus.vit;
     total.int += bonus.int;
   }
-  return total;
+  return withPassiveNodeBonuses(total, unlockedNodeDefs(member));
 }
 
 export function equipTargetSlot(

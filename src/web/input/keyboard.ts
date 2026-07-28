@@ -1,4 +1,4 @@
-import { classSkills } from "../../engine/combat/skills";
+import { memberSkills } from "../../engine/combat/skills";
 import { isUsableBattleItem } from "../../engine/loot/consumables";
 import type { GameStore } from "../../engine/state/store";
 import { generateOverworldMap } from "../../engine/world/overworld";
@@ -259,7 +259,7 @@ export class BrowserKeyboardManager {
     const result = reduceBattleUi(this.state.battle, intent, {
       actorId: actor.id,
       actorMp: actor.mp,
-      knownSkills: classSkills(actor.classId),
+      knownSkills: memberSkills(actor),
       aliveEnemyIds: bs.enemies
         .filter((enemy) => enemy.hp > 0)
         .map((enemy) => enemy.id),
