@@ -1,6 +1,46 @@
 import { describe, expect, it } from "vitest";
 import { findMonster, MONSTERS } from "../../data/monsters";
-import { classSkills, findSkill, resolveSkillList, SKILLS } from "./skills";
+import type { SkillTreeDef } from "../../data/skillTrees";
+import { createStartingHero, type PartyMember } from "../entities/party";
+import {
+  classSkills,
+  findSkill,
+  memberSkills,
+  resolveSkillList,
+  SKILLS,
+} from "./skills";
+
+// Fixture tree mirroring the shape ENG-35 will ship in SKILL_TREES, used to
+// exercise memberSkills against real node data while SKILL_TREES itself is
+// still empty (see src/engine/entities/skillTree.test.ts for the same
+// convention).
+const TREE: SkillTreeDef = {
+  id: "test-tree",
+  name: "Test Tree",
+  nodes: [
+    {
+      id: "unlock-cleave",
+      name: "Unlock Cleave",
+      cost: 1,
+      prereqs: [],
+      type: "skill",
+      skillId: "cleave",
+    },
+    {
+      id: "str-node",
+      name: "Str Node",
+      cost: 1,
+      prereqs: [],
+      type: "stat",
+      stat: "str",
+      amount: 3,
+    },
+  ],
+};
+
+function memberWith(overrides: Partial<PartyMember> = {}): PartyMember {
+  return { ...createStartingHero("wizard"), ...overrides };
+}
 
 // Every skill's expected v2 shape (ENG-28 wires each one into a concrete
 // resolveShapeTargets case in resolution.ts).
@@ -72,5 +112,41 @@ describe("MonsterDef skill lists", () => {
         monster.skills.length,
       );
     }
+  });
+});
+
+describe("memberSkills", () => {
+  it("equals classSkills(classId) for a member with no unlocked nodes", () => {
+    const member = memberWith();
+    expect(memberSkills(member).map((s) => s.id)).toEqual(
+      classSkills(member.classId).map((s) => s.id),
+    );
+  });
+
+  it("adds an unlocked active-skill node's skill to the battle skill list", () => {
+    const member = memberWith({ unlockedNodes: ["unlock-cleave"] });
+    expect(memberSkills(member, TREE).map((s) => s.id)).toEqual([
+      "flame",
+      "heal",
+      "frost",
+      "hailstorm",
+      "meteor",
+      "cleave",
+    ]);
+  });
+
+  it("does not duplicate a node's skill id already in the class's starting skills", () => {
+    const warrior = { ...createStartingHero("warrior"), unlockedNodes: [] };
+    const withNode = { ...warrior, unlockedNodes: ["unlock-cleave"] };
+    expect(memberSkills(withNode, TREE).map((s) => s.id)).toEqual(
+      memberSkills(warrior).map((s) => s.id),
+    );
+  });
+
+  it("ignores a passive stat node - it never appears in the skill list", () => {
+    const member = memberWith({ unlockedNodes: ["str-node"] });
+    expect(memberSkills(member, TREE).map((s) => s.id)).toEqual(
+      classSkills(member.classId).map((s) => s.id),
+    );
   });
 });

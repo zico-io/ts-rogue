@@ -1,5 +1,5 @@
 import { findShopItem } from "../../data/shops";
-import { classSkills, type SkillDef } from "../../engine/combat/skills";
+import { memberSkills, type SkillDef } from "../../engine/combat/skills";
 import type { Element } from "../../engine/combat/statusEffects";
 import type { BattleEnemy, BattleState } from "../../engine/combat/types";
 import type { PartyMember } from "../../engine/entities/party";
@@ -173,7 +173,7 @@ export class BattleSceneView {
     const actor: PartyMember =
       state.party.find((member) => member.id === bs.activeMemberId) ??
       state.party[0];
-    const knownSkills = classSkills(actor.classId);
+    const knownSkills = memberSkills(actor);
     const usableItems = state.inventory.filter((entryItem) =>
       isUsableBattleItem(entryItem.itemId),
     );

@@ -1,5 +1,7 @@
+import type { SkillTreeDef } from "../../data/skillTrees";
 import type { CoreStats } from "../combat/types";
 import type { PartyMember } from "../entities/party";
+import { unlockedNodeDefs } from "../entities/skillTree";
 import { itemBaseSlot, itemStats } from "./items";
 import type { EquipmentSlotName, ItemInstance } from "./types";
 
@@ -12,7 +14,16 @@ const SLOT_ORDER: readonly EquipmentSlotName[] = [
   "accessory2",
 ];
 
-export function effectiveStats(member: PartyMember): CoreStats {
+// Base stats plus every equipped item's bonus plus every unlocked passive
+// ("stat" type) skill tree node's bonus, so atkFrom/defFrom/spdFrom
+// (../combat/resolution.ts) pick up spent skill points for free. `tree`
+// overrides the member's resolved class tree so tests can exercise node
+// aggregation against a fixture while SKILL_TREES has no starter content
+// yet (ENG-35); a member with no unlocked nodes resolves exactly as before.
+export function effectiveStats(
+  member: PartyMember,
+  tree?: SkillTreeDef,
+): CoreStats {
   const base = member.stats;
   const total: CoreStats = {
     str: base.str,
@@ -28,6 +39,9 @@ export function effectiveStats(member: PartyMember): CoreStats {
     total.agi += bonus.agi;
     total.vit += bonus.vit;
     total.int += bonus.int;
+  }
+  for (const node of unlockedNodeDefs(member, tree)) {
+    if (node.type === "stat") total[node.stat] += node.amount;
   }
   return total;
 }

@@ -49,7 +49,12 @@ loot before returning to the originating scene.
   (`entities/skillTree.ts`) spends a point on a node from the member's class
   tree, staying pure on rejection (unknown node, already unlocked, missing
   prerequisite, or insufficient points) and returning a reason instead of
-  throwing.
+  throwing. A member's battle skill list (`memberSkills`, `combat/skills.ts`)
+  is `ClassDef.skills` plus every unlocked active-skill node's `skillId`; a
+  member's `effectiveStats` (`loot/equipment.ts`) adds every unlocked passive
+  node's stat delta on top of base stats and equipment, so
+  `atkFrom`/`defFrom`/`spdFrom` pick it up automatically. Both fall back to
+  their pre-skill-tree behavior for a member with no unlocked nodes.
 - The overworld contains passable biomes, a village, reachable dungeon
   entrances, and a seeded encounter meter. The village occupies a 2x2
   footprint (`world/landmarks.ts`); `map.village` is its top-left anchor
