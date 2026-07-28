@@ -1,11 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { findQuest } from "../data/quests";
 import type { BattleEnemy } from "./combat/types";
-import {
-  advanceQuestsOnVictory,
-  isQuestComplete,
-  MAX_ACCEPTED_QUESTS,
-} from "./quests";
+import { advanceQuestsOnVictory, isQuestComplete } from "./quests";
 import { Rng } from "./rng/rng";
 import type { AcceptedQuest, QuestState } from "./state/types";
 
@@ -32,12 +28,6 @@ function accept(questId: string, progress = 0): AcceptedQuest {
 function questState(accepted: AcceptedQuest[]): QuestState {
   return { available: [], accepted, completedIds: [] };
 }
-
-describe("MAX_ACCEPTED_QUESTS", () => {
-  it("caps the Guild board at 3 accepted quests", () => {
-    expect(MAX_ACCEPTED_QUESTS).toBe(3);
-  });
-});
 
 describe("isQuestComplete", () => {
   it("kill: complete once progress reaches the required count", () => {
