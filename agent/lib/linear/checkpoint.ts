@@ -24,11 +24,20 @@
 
 const MARKER_PATTERN = /<!-- eve-checkpoint session=([^\s>]+) -->/;
 
+/**
+ * What a human reads in the thread. The marker is machine-only and renders
+ * invisibly, so the comment says in prose that the context window turns over -
+ * a reset the agent performs on itself is meaningful session state, and AIG
+ * asks for that to be visible rather than inferable from a hidden marker.
+ */
+const DISCLOSURE = "Continuing this session with a fresh context window.";
+
 /** The Linear comment body a self-continuation `handoff` posts. */
 export const formatCheckpointComment = (
   eveSessionId: string,
   brief: string,
-): string => `<!-- eve-checkpoint session=${eveSessionId} -->\n\n${brief}`;
+): string =>
+  `<!-- eve-checkpoint session=${eveSessionId} -->\n\n${DISCLOSURE}\n\n${brief}`;
 
 /**
  * The eve session id the most recent checkpoint retires, or `null` when no

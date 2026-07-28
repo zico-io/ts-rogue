@@ -134,7 +134,9 @@ afternoon PR/merge hooks paid to rebuild it. Three knobs bound that cost:
   from `lib/truncate.ts`, which is display-only for Linear activity chips.
 - **Per-phase context rotation** - at a phase boundary (right after opening the
   pull request, say) `handoff` posts a checkpoint comment naming its own eve
-  session instead of opening a second Linear session, and the Linear route
+  session instead of opening a second Linear session. The comment states the
+  turnover in prose, since the marker itself renders invisibly and a self-reset
+  is session state AIG asks to be visible. The Linear route then
   retires that session with eve's `reset` on the next inbound event, so eve's own
   dispatch re-creates it empty (see `lib/linear/checkpoint.ts`). Linear sees one
   continuous Agent Session; only the context window behind it turns over. The

@@ -227,7 +227,7 @@ describe("handoff duplicate-session guard", () => {
     expect(createSessionOnComment).not.toHaveBeenCalled();
     const commentBody = commentCreateCall()?.variables.input.body;
     expect(commentBody).toBe(
-      "<!-- eve-checkpoint session=eve-session-1 -->\n\nPR #12 open; next: review",
+      "<!-- eve-checkpoint session=eve-session-1 -->\n\nContinuing this session with a fresh context window.\n\nPR #12 open; next: review",
     );
   });
 

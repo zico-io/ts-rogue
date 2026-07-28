@@ -49,8 +49,9 @@ const baseChannel = githubChannel({
 });
 
 // githubChannel always registers exactly one HTTP POST route; asserted at
-// runtime so a future eve upgrade that changes this fails loudly instead of
-// destructuring `undefined`.
+// runtime because the wrapper below replaces the route it finds. An eve upgrade
+// that added a second one would otherwise leave it silently unwrapped and
+// unreachable - no crash to notice, just a route that stopped existing.
 if (baseChannel.routes.length !== 1) {
   throw new Error(
     `githubChannel: expected exactly one route, got ${baseChannel.routes.length}.`,

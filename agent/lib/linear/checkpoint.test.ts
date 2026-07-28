@@ -27,6 +27,18 @@ describe("context-checkpoint markers", () => {
     expect(checkpointedSessionId([body])).toBe("sess-1");
   });
 
+  // The marker renders invisibly, so the rotation has to be stated in prose: a
+  // reader of the thread should not have to infer that the context turned over.
+  it("discloses the context turnover in prose a human can see", () => {
+    const visible = formatCheckpointComment("sess-1", "next: review")
+      .split("\n")
+      .filter((line) => !line.startsWith("<!--"))
+      .join("\n");
+
+    expect(visible).toContain("fresh context window");
+    expect(visible).toContain("next: review");
+  });
+
   it("ignores a marker-shaped comment with no session id", () => {
     expect(checkpointedSessionId(["<!-- eve-checkpoint -->"])).toBeNull();
     expect(
