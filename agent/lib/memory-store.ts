@@ -5,7 +5,7 @@ import { mintMemoryDatabaseCredential } from "./memory";
  * One fact in Eve's runtime memory store (HAR-71). This is deliberately
  * low-stakes, autonomously written operational memory - a debugging insight,
  * a workaround, an entity dedup note - not the reviewed shipped-behavior
- * source of truth that lives in `.botfile/memory/domain/product.md`.
+ * source of truth that lives under `.botfile/memory/domain/`.
  */
 export interface Memory {
   key: string;

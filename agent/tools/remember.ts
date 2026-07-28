@@ -7,7 +7,7 @@ export default defineTool({
     "Save one durable operational fact to Eve's cross-session runtime memory - " +
     "a debugging insight, a workaround, an entity-dedup note, or similar " +
     "low-stakes context that would help a future session. This is not the " +
-    'reviewed shipped-behavior record (`.botfile/memory/domain/product.md`). ' +
+    'reviewed shipped-behavior record (`.botfile/memory/domain/`). ' +
     "`category` must be one of the allowed values. A value that looks like a " +
     "password, access token, private key, or other credential or personal " +
     "data is rejected, not merely discouraged. Writing is autonomous and " +
