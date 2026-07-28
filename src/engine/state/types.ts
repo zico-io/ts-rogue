@@ -119,4 +119,7 @@ export type GameEvent =
     }
   | { type: "ResolveLootTriage"; action: "dismantleDrop" }
   | { type: "SetLootFilter"; rules: LootFilterRules }
+  | { type: "AcceptQuest"; questId: string }
+  | { type: "TurnInQuest"; questId: string }
+  | { type: "RefreshQuests" }
   | BattleEvent;

@@ -7,8 +7,9 @@ import {
   dungeonEntryFlavor,
   findDungeon,
 } from "../../data/dungeons";
+import { QUESTS } from "../../data/quests";
 import { findShopItem, sellPriceFor } from "../../data/shops";
-import { resolveBattleEvent, startBattle } from "../combat/resolution";
+import { grantXp, resolveBattleEvent, startBattle } from "../combat/resolution";
 import type { InventoryItem, PartyMember } from "../entities/party";
 import { createStartingHero, MAX_PARTY } from "../entities/party";
 import {
@@ -28,6 +29,7 @@ import {
   queueLootTriage,
 } from "../loot/pickup";
 import { rollChestLoot } from "../loot/resolution";
+import { isQuestComplete, MAX_ACCEPTED_QUESTS } from "../quests";
 import { Rng } from "../rng/rng";
 import {
   createInitialDungeonState,
@@ -865,6 +867,85 @@ function setLootFilter(state: GameState, rules: LootFilterRules): GameState {
   return { ...state, lootFilter: rules };
 }
 
+function acceptQuest(state: GameState, questId: string): GameState {
+  const { quests } = state;
+  if (quests.accepted.length >= MAX_ACCEPTED_QUESTS) return state;
+  const def = quests.available.find((quest) => quest.id === questId);
+  if (!def) return state;
+  return {
+    ...state,
+    quests: {
+      ...quests,
+      available: quests.available.filter((quest) => quest.id !== questId),
+      accepted: [...quests.accepted, { def, progress: 0 }],
+    },
+  };
+}
+
+function turnInQuest(state: GameState, questId: string): GameState {
+  const { quests, questItems } = state;
+  const accepted = quests.accepted.find((quest) => quest.def.id === questId);
+  if (!accepted || !isQuestComplete(accepted, questItems)) return state;
+
+  const { def } = accepted;
+  const party = state.party.map((member) =>
+    member.hp > 0 ? grantXp(member, def.reward.xp).member : member,
+  );
+  const inventory = def.reward.itemId
+    ? addItem(state.inventory, def.reward.itemId, 1)
+    : state.inventory;
+  const nextQuestItems =
+    def.objective.type === "fetch"
+      ? {
+          ...questItems,
+          [def.objective.questItemId]: Math.max(
+            0,
+            (questItems[def.objective.questItemId] ?? 0) - def.objective.count,
+          ),
+        }
+      : questItems;
+  const completedIds = def.repeatable
+    ? quests.completedIds
+    : [...quests.completedIds, def.id];
+  const itemName = def.reward.itemId
+    ? `, ${findShopItem(def.reward.itemId)?.name ?? def.reward.itemId}`
+    : "";
+
+  return {
+    ...state,
+    gold: state.gold + def.reward.gold,
+    party,
+    inventory,
+    questItems: nextQuestItems,
+    quests: {
+      ...quests,
+      accepted: quests.accepted.filter((quest) => quest.def.id !== questId),
+      completedIds,
+    },
+    log: [
+      ...state.log,
+      entry(
+        `Turned in "${def.title}" - +${def.reward.gold} gold, +${def.reward.xp} XP${itemName}`,
+        "quest",
+      ),
+    ],
+  };
+}
+
+function refreshQuests(state: GameState): GameState {
+  const heroLevel = state.party[0]?.level ?? 1;
+  const acceptedIds = new Set(
+    state.quests.accepted.map((quest) => quest.def.id),
+  );
+  const available = QUESTS.filter(
+    (def) =>
+      def.minLevel <= heroLevel &&
+      !acceptedIds.has(def.id) &&
+      (def.repeatable || !state.quests.completedIds.includes(def.id)),
+  );
+  return { ...state, quests: { ...state.quests, available } };
+}
+
 /** Pure state transition. Rejected events return the original state unchanged. */
 export function reduce(state: GameState, event: GameEvent): GameState {
   switch (event.type) {
@@ -925,6 +1006,12 @@ export function reduce(state: GameState, event: GameEvent): GameState {
       return resolveLootTriage(state, event);
     case "SetLootFilter":
       return setLootFilter(state, event.rules);
+    case "AcceptQuest":
+      return acceptQuest(state, event.questId);
+    case "TurnInQuest":
+      return turnInQuest(state, event.questId);
+    case "RefreshQuests":
+      return refreshQuests(state);
     case "BattleAttack":
     case "BattleSkill":
     case "BattleItem":

@@ -4,8 +4,9 @@ import {
   dungeonDefFor,
   dungeonEntryFlavor,
 } from "../../data/dungeons";
+import { findQuest, type QuestDef } from "../../data/quests";
 import { deserialize, serialize } from "../../persistence/save";
-import { atkFrom, startBattle } from "../combat/resolution";
+import { atkFrom, grantXp, startBattle } from "../combat/resolution";
 import type { PartyMember } from "../entities/party";
 import { FIELD_BACKPACK_CAP } from "../loot/inventory";
 import { describeItem, itemSellPrice } from "../loot/items";
@@ -2095,6 +2096,156 @@ describe("Phase 6: save/restore integrity", () => {
       delete legacy.lootFilter;
       const restored = deserialize(JSON.stringify(legacy));
       expect(restored.lootFilter).toEqual(EMPTY_LOOT_FILTER);
+    });
+  });
+});
+
+describe("ENG-36 quest events (AcceptQuest, TurnInQuest, RefreshQuests)", () => {
+  function withAvailable(available: QuestDef[]): GameState {
+    const state = newGame(1);
+    return { ...state, quests: { ...state.quests, available } };
+  }
+
+  const SLIME_CULL = findQuest("slime-cull") as QuestDef;
+  const CLEAR_CRYPT = findQuest("clear-sunken-crypt") as QuestDef;
+  const FETCH_GEL = findQuest("fetch-slime-gel") as QuestDef;
+
+  describe("AcceptQuest", () => {
+    it("moves a quest from available to accepted", () => {
+      const state = withAvailable([SLIME_CULL]);
+      const after = reduce(state, {
+        type: "AcceptQuest",
+        questId: SLIME_CULL.id,
+      });
+      expect(after.quests.available).toEqual([]);
+      expect(after.quests.accepted).toEqual([{ def: SLIME_CULL, progress: 0 }]);
+    });
+
+    it("no-ops on an unknown questId, without touching log or rng", () => {
+      const state = withAvailable([SLIME_CULL]);
+      const after = reduce(state, { type: "AcceptQuest", questId: "nope" });
+      expect(after).toBe(state);
+    });
+
+    it("caps accepted quests at 3 and no-ops past the cap", () => {
+      const state = withAvailable([
+        SLIME_CULL,
+        CLEAR_CRYPT,
+        FETCH_GEL,
+        findQuest("goblin-warband") as QuestDef,
+      ]);
+      let after = state;
+      for (const id of [SLIME_CULL.id, CLEAR_CRYPT.id, FETCH_GEL.id]) {
+        after = reduce(after, { type: "AcceptQuest", questId: id });
+      }
+      expect(after.quests.accepted).toHaveLength(3);
+
+      const rejected = reduce(after, {
+        type: "AcceptQuest",
+        questId: "goblin-warband",
+      });
+      expect(rejected).toBe(after);
+      expect(rejected.quests.accepted).toHaveLength(3);
+    });
+  });
+
+  describe("TurnInQuest", () => {
+    it("no-ops when the quest is not accepted or not yet complete", () => {
+      const state = withAvailable([SLIME_CULL]);
+      const rejectedUnknown = reduce(state, {
+        type: "TurnInQuest",
+        questId: "nope",
+      });
+      expect(rejectedUnknown).toBe(state);
+
+      const accepted = reduce(state, {
+        type: "AcceptQuest",
+        questId: SLIME_CULL.id,
+      });
+      const rejectedIncomplete = reduce(accepted, {
+        type: "TurnInQuest",
+        questId: SLIME_CULL.id,
+      });
+      expect(rejectedIncomplete).toBe(accepted);
+    });
+
+    it("pays out gold and xp, removes the quest, and records completion", () => {
+      let state = withAvailable([SLIME_CULL]);
+      state = reduce(state, { type: "AcceptQuest", questId: SLIME_CULL.id });
+      state = {
+        ...state,
+        quests: {
+          ...state.quests,
+          accepted: [{ def: SLIME_CULL, progress: 5 }],
+        },
+      };
+      const goldBefore = state.gold;
+      const expectedHero = grantXp(state.party[0], SLIME_CULL.reward.xp).member;
+
+      const after = reduce(state, {
+        type: "TurnInQuest",
+        questId: SLIME_CULL.id,
+      });
+      expect(after.gold).toBe(goldBefore + SLIME_CULL.reward.gold);
+      expect(after.party[0].level).toBe(expectedHero.level);
+      expect(after.party[0].xp).toBe(expectedHero.xp);
+      expect(after.quests.accepted).toEqual([]);
+      expect(after.quests.completedIds).toEqual([SLIME_CULL.id]);
+      expect(after.log.at(-1)?.kind).toBe("quest");
+    });
+
+    it("grants the reward item and decrements the fetch bag by the required count", () => {
+      let state = withAvailable([FETCH_GEL]);
+      state = reduce(state, { type: "AcceptQuest", questId: FETCH_GEL.id });
+      state = {
+        ...state,
+        questItems: { "slime-gel": 5 },
+      };
+      const after = reduce(state, {
+        type: "TurnInQuest",
+        questId: FETCH_GEL.id,
+      });
+      expect(after.questItems["slime-gel"]).toBe(2);
+      expect(
+        after.inventory.find((i) => i.itemId === FETCH_GEL.reward.itemId),
+      ).toMatchObject({ quantity: 1 });
+    });
+
+    it("does not push a repeatable quest onto completedIds", () => {
+      const repeatable: QuestDef = { ...SLIME_CULL, repeatable: true };
+      let state = withAvailable([repeatable]);
+      state = reduce(state, { type: "AcceptQuest", questId: repeatable.id });
+      state = {
+        ...state,
+        quests: {
+          ...state.quests,
+          accepted: [{ def: repeatable, progress: 5 }],
+        },
+      };
+      const after = reduce(state, {
+        type: "TurnInQuest",
+        questId: repeatable.id,
+      });
+      expect(after.quests.completedIds).toEqual([]);
+    });
+  });
+
+  describe("RefreshQuests", () => {
+    it("populates available from quests the hero qualifies for and hasn't already taken or completed", () => {
+      let state = reduce(newGame(1), { type: "RefreshQuests" });
+      state = reduce(state, {
+        type: "AcceptQuest",
+        questId: SLIME_CULL.id,
+      });
+      state = {
+        ...state,
+        quests: { ...state.quests, completedIds: [CLEAR_CRYPT.id] },
+      };
+      const after = reduce(state, { type: "RefreshQuests" });
+      const availableIds = after.quests.available.map((q) => q.id);
+      expect(availableIds).not.toContain(SLIME_CULL.id);
+      expect(availableIds).not.toContain(CLEAR_CRYPT.id);
+      expect(availableIds).toContain(FETCH_GEL.id);
     });
   });
 });
