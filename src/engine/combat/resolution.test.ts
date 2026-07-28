@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DungeonDef } from "../../data/dungeons";
+import { findQuest } from "../../data/quests";
 import { createStartingHero, type PartyMember } from "../entities/party";
 import { Rng } from "../rng/rng";
 import { GameStore, newGame, reduce } from "../state/store";
@@ -1899,5 +1900,81 @@ describe("ENG-20 loot toast (finalizeWon)", () => {
       `${after.lastLootOutcome?.goldGained}g`,
     );
     expect(after.gold).toBeGreaterThan(goldBefore);
+  });
+});
+
+describe("ENG-36 quest progress hooks (advanceQuestsOnVictory via finalizeWon)", () => {
+  function deadEnemy(id: string, defId: string): BattleEnemy {
+    return makeEnemy(id, defId, defId, 0, SLIME_STATS, 5, 5);
+  }
+
+  function stateWithQuest(
+    accepted: GameState["quests"]["accepted"],
+    enemies: BattleEnemy[],
+    encounterKind: "wandering" | "boss",
+  ): GameState {
+    const base = newGame(1);
+    const ds = createInitialDungeonState(1, "dungeon-0", 1);
+    return {
+      ...base,
+      scene: "battle",
+      dungeonState: { ...ds, encounter: { kind: encounterKind, floor: 1 } },
+      quests: { available: [], accepted, completedIds: [] },
+      questItems: {},
+      battleState: battleVsMany(enemies, base.party[0].id),
+    };
+  }
+
+  it("kill: advances progress by matching defeated enemies through a real victory, capped at the objective count", () => {
+    const def = findQuest("slime-cull");
+    if (!def) throw new Error("missing slime-cull fixture");
+    const state = stateWithQuest(
+      [{ def, progress: 3 }],
+      [deadEnemy("s1", "slime"), deadEnemy("s2", "slime")],
+      "wandering",
+    );
+    const after = reduce(state, { type: "BattleDefend" });
+    expect(after.quests.accepted).toEqual([{ def, progress: 5 }]);
+    expect(
+      after.log.some(
+        (l) => l.kind === "quest" && l.text.includes("Slime Cull"),
+      ),
+    ).toBe(true);
+  });
+
+  it("clear: sets progress to 1 on a matching boss victory", () => {
+    const def = findQuest("clear-sunken-crypt");
+    if (!def) throw new Error("missing clear-sunken-crypt fixture");
+    const state = stateWithQuest(
+      [{ def, progress: 0 }],
+      [deadEnemy("g1", "dungeon-guardian")],
+      "boss",
+    );
+    const after = reduce(state, { type: "BattleDefend" });
+    expect(after.quests.accepted).toEqual([{ def, progress: 1 }]);
+  });
+
+  it("fetch: rolls dropChance into questItems for kills an accepted fetch quest needs, and completes deterministically", () => {
+    const def = findQuest("fetch-slime-gel");
+    if (!def) throw new Error("missing fetch-slime-gel fixture");
+    const enemies = [1, 2, 3, 4, 5, 6].map((n) => deadEnemy(`s${n}`, "slime"));
+    const state = stateWithQuest([{ def, progress: 0 }], enemies, "wandering");
+    const after = reduce(state, { type: "BattleDefend" });
+    // Deterministic under seed 1: six slime kills against a 0.5 dropChance
+    // yield 4 slime gel, clearing the fetch-slime-gel objective (count 3).
+    expect(after.questItems["slime-gel"]).toBe(4);
+    expect(
+      after.log.some(
+        (l) => l.kind === "quest" && l.text.includes("Slime Gel Order"),
+      ),
+    ).toBe(true);
+  });
+
+  it("never rolls RNG for a fetch item no accepted quest needs (no dead RNG)", () => {
+    const state = stateWithQuest([], [deadEnemy("s1", "slime")], "wandering");
+    const before = reduce(state, { type: "BattleDefend" });
+    const again = reduce(state, { type: "BattleDefend" });
+    expect(again.rngState).toEqual(before.rngState);
+    expect(again.rngState).toEqual(state.rngState);
   });
 });
