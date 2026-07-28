@@ -108,6 +108,8 @@ export function newGame(seed: number, options?: NewGameOptions): GameState {
     pendingLootTriage: null,
     lootFilter: EMPTY_LOOT_FILTER,
     lastLootOutcome: null,
+    quests: { available: [], accepted: [], completedIds: [] },
+    questItems: {},
   };
 
   return rollRecruits(base);

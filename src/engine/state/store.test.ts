@@ -57,6 +57,16 @@ describe("game store", () => {
     expect(state.activatedWaypoints).toEqual(["village"]);
   });
 
+  it("seeds quests and questItems empty on a new run (ENG-38)", () => {
+    const state = newGame(1234);
+    expect(state.quests).toEqual({
+      available: [],
+      accepted: [],
+      completedIds: [],
+    });
+    expect(state.questItems).toEqual({});
+  });
+
   it("defaults flags to permadeath=false and gameOver=false", () => {
     const state = newGame(1234);
     expect(state.flags).toEqual({ permadeath: false, gameOver: false });

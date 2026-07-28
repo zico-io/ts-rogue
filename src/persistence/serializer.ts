@@ -27,5 +27,9 @@ export function deserialize(json: string): GameState {
   if (!state.lootFilter) state.lootFilter = EMPTY_LOOT_FILTER;
   if (state.lastLootOutcome === undefined) state.lastLootOutcome = null;
   if (!state.clearedAt) state.clearedAt = {};
+  if (!state.quests) {
+    state.quests = { available: [], accepted: [], completedIds: [] };
+  }
+  if (!state.questItems) state.questItems = {};
   return state;
 }
