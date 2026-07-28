@@ -91,4 +91,11 @@ describe("unlockSkillNode", () => {
     expect(result.reason).toBe("unknown-node");
     expect(result.member).toEqual(member);
   });
+
+  it("short-circuits on an unresolvable classId without a stringly-typed lookup", () => {
+    const member = memberWith({ classId: "not-a-real-class" });
+    const result = unlockSkillNode(member, "any-node");
+    expect(result.reason).toBe("unknown-node");
+    expect(result.member).toEqual(member);
+  });
 });

@@ -57,6 +57,7 @@ export function unlockSkillNode(
   member: PartyMember,
   nodeId: string,
 ): UnlockSkillNodeResult {
-  const tree = findSkillTree(findClass(member.classId)?.treeId ?? "");
+  const treeId = findClass(member.classId)?.treeId;
+  const tree = treeId === undefined ? undefined : findSkillTree(treeId);
   return unlockNodeInTree(member, tree, nodeId);
 }
