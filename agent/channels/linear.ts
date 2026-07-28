@@ -1,4 +1,8 @@
-import { type HttpRouteDefinition, POST } from "eve/channels";
+import {
+  type HttpRouteDefinition,
+  POST,
+  type RouteHandlerArgs,
+} from "eve/channels";
 import {
   createLinearAgentActivity,
   defaultOnAgentSession,
@@ -12,6 +16,7 @@ import {
 } from "eve/channels/linear";
 
 import { linearAgentCredentials } from "../lib/credentials";
+import { checkpointedSessionId } from "../lib/linear/checkpoint";
 import { advanceIssueState } from "../lib/linear/issue-state";
 import { linearRenderer } from "../lib/linear/renderer";
 import {
@@ -95,19 +100,46 @@ const preDispatchEvent = async (
     : null;
 };
 
+/**
+ * Retires the eve session a `handoff` checkpoint marked, so eve's own dispatch
+ * re-creates it empty on the send that follows (see `lib/linear/checkpoint.ts`).
+ * Only the session named by the marker is reset, which is what keeps this a
+ * no-op on every webhook after the rotation instead of wiping live work.
+ *
+ * Best-effort: a failed lookup or reset leaves the accumulated session in place,
+ * which is exactly the pre-rotation behavior, and must not block dispatch.
+ */
+const rotateCheckpointedContext = async (
+  event: LinearAgentSessionEvent,
+  args: RouteHandlerArgs<LinearChannelState>,
+  continuationToken: string,
+): Promise<void> => {
+  const checkpointed = checkpointedSessionId(event.previousComments);
+  if (checkpointed === null) return;
+  try {
+    const active = await args.resolveActiveSession({ continuationToken });
+    if (active?.sessionId !== checkpointed) return;
+    await args.reset({ continuationToken, reason: "context checkpoint" });
+  } catch (error) {
+    console.warn("linear: context-checkpoint rotation failed", error);
+  }
+};
+
 export default {
   ...base,
   routes: [
     POST(baseRoute.path, async (request, args) => {
-      // Two things eve's Linear route does not do, both needing `cancel` before
-      // its handler dispatches: steer a live turn with the newest message, and
-      // honor the human `stop` signal (HAR-39). Everything else - verification,
-      // inbound images, default events, state - is eve's.
+      // Three things eve's Linear route does not do, all needing the
+      // continuation token before its handler dispatches: steer a live turn with
+      // the newest message, honor the human `stop` signal (HAR-39), and rotate a
+      // checkpointed context window. Everything else - verification, inbound
+      // images, default events, state - is eve's.
       const event = await preDispatchEvent(request.clone());
       if (event !== null) {
-        await args.cancel({
-          continuationToken: linearContinuationToken(event.agentSession.id),
-        });
+        const continuationToken = linearContinuationToken(
+          event.agentSession.id,
+        );
+        await args.cancel({ continuationToken });
         if (isStopSignal(event)) {
           await createLinearAgentActivity({
             credentials: linearAgentCredentials,
@@ -121,6 +153,7 @@ export default {
           });
           return Response.json({ ok: true });
         }
+        await rotateCheckpointedContext(event, args, continuationToken);
       }
       return baseRoute.handler(request, args);
     }),

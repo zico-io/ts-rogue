@@ -9,20 +9,34 @@ import { describe, expect, it, vi } from "vitest";
 // wrapper `agent/channels/linear.ts` puts around it. The rendering the channel
 // wires in is tested in `agent/lib/linear/renderer.test.ts`.
 
-const { order, cancelMock, sendMock, waitUntilTasks, webhookVerifier } =
-  vi.hoisted(() => ({
-    order: [] as string[],
-    cancelMock: vi.fn(async () => {
-      order.push("cancel");
-      return { status: "accepted" as const };
-    }),
-    sendMock: vi.fn(async () => {
-      order.push("send");
-      return {};
-    }),
-    waitUntilTasks: [] as Promise<unknown>[],
-    webhookVerifier: vi.fn(async () => true),
-  }));
+const {
+  order,
+  cancelMock,
+  resetMock,
+  resolveActiveSessionMock,
+  sendMock,
+  waitUntilTasks,
+  webhookVerifier,
+} = vi.hoisted(() => ({
+  order: [] as string[],
+  cancelMock: vi.fn(async () => {
+    order.push("cancel");
+    return { status: "accepted" as const };
+  }),
+  resetMock: vi.fn(async () => {
+    order.push("reset");
+    return { status: "reset" as const, previousSessionId: "eve-1" };
+  }),
+  resolveActiveSessionMock: vi.fn(
+    async () => undefined as { sessionId: string } | undefined,
+  ),
+  sendMock: vi.fn(async () => {
+    order.push("send");
+    return {};
+  }),
+  waitUntilTasks: [] as Promise<unknown>[],
+  webhookVerifier: vi.fn(async () => true),
+}));
 
 const { advanceIssueStateMock } = vi.hoisted(() => ({
   advanceIssueStateMock: vi.fn(async () => {
@@ -92,6 +106,9 @@ const reset = () => {
   cancelMock.mockClear();
   sendMock.mockClear();
   advanceIssueStateMock.mockClear();
+  resetMock.mockClear();
+  resolveActiveSessionMock.mockClear();
+  resolveActiveSessionMock.mockResolvedValue(undefined);
   waitUntilTasks.length = 0;
 };
 
@@ -106,8 +123,8 @@ const routeArgs = (
     params: {},
     receive: vi.fn(),
     requestIp: null,
-    reset: vi.fn(),
-    resolveActiveSession: vi.fn(),
+    reset: resetMock,
+    resolveActiveSession: resolveActiveSessionMock,
     send: sendMock,
     waitUntil,
   }) as unknown as RouteHandlerArgs<LinearChannelState>;
@@ -418,5 +435,101 @@ describe("inbound image dispatch", () => {
       { text: "see ", type: "text" },
       { data: Buffer.from([1, 2, 3]), mediaType: "image/png", type: "file" },
     ]);
+  });
+});
+
+// `handoff` posts the marker; the route retires the session it names so eve's
+// dispatch re-creates it empty. The session id in the marker is the whole
+// idempotency story, so these cover both directions of that comparison.
+describe("agent/channels/linear (context-checkpoint rotation)", () => {
+  const checkpoint = (eveSessionId: string) =>
+    `<!-- eve-checkpoint session=${eveSessionId} -->\n\nPR #12 open; next: review`;
+
+  const promptedWith = (previousComments: readonly string[]) =>
+    webhook({
+      action: "prompted",
+      agentActivity: {
+        id: "activity-1",
+        content: { body: "review came back", type: "prompt" },
+      },
+      previousComments,
+    });
+
+  it("retires the checkpointed session before eve dispatches, so the send starts fresh", async () => {
+    reset();
+    resolveActiveSessionMock.mockResolvedValue({ sessionId: "eve-1" });
+
+    await invoke(promptedWith(["earlier chatter", checkpoint("eve-1")]));
+
+    expect(resetMock).toHaveBeenCalledWith({
+      continuationToken: "agent-session:sess-1",
+      reason: "context checkpoint",
+    });
+    // Reset has to land between the steering cancel and eve's send: after it,
+    // so a live turn is stopped first; before it, so the send is what re-creates
+    // the session empty.
+    expect(order).toEqual(["cancel", "reset", "send"]);
+  });
+
+  it("leaves an unmarked thread alone and never looks a session up", async () => {
+    reset();
+
+    await invoke(promptedWith(["just a comment"]));
+
+    expect(resolveActiveSessionMock).not.toHaveBeenCalled();
+    expect(resetMock).not.toHaveBeenCalled();
+    expect(order).toEqual(["cancel", "send"]);
+  });
+
+  it("is a no-op once rotated, so a second message cannot wipe the fresh session", async () => {
+    reset();
+    // The token now belongs to the post-rotation session, not the one the
+    // checkpoint named.
+    resolveActiveSessionMock.mockResolvedValue({ sessionId: "eve-2" });
+
+    await invoke(promptedWith([checkpoint("eve-1")]));
+
+    expect(resetMock).not.toHaveBeenCalled();
+    expect(order).toEqual(["cancel", "send"]);
+  });
+
+  it("does not rotate when the token owns no session at all", async () => {
+    reset();
+    resolveActiveSessionMock.mockResolvedValue(undefined);
+
+    await invoke(promptedWith([checkpoint("eve-1")]));
+
+    expect(resetMock).not.toHaveBeenCalled();
+  });
+
+  it("dispatches anyway when the reset fails, leaving the old context in place", async () => {
+    reset();
+    resolveActiveSessionMock.mockResolvedValue({ sessionId: "eve-1" });
+    resetMock.mockRejectedValueOnce(new Error("runtime unavailable"));
+
+    const response = await invoke(promptedWith([checkpoint("eve-1")]));
+
+    expect(response.status).toBe(200);
+    expect(sendMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not rotate on a stop signal, which dispatches nothing to rotate into", async () => {
+    reset();
+    resolveActiveSessionMock.mockResolvedValue({ sessionId: "eve-1" });
+
+    await invoke(
+      webhook({
+        action: "prompted",
+        agentActivity: {
+          id: "activity-1",
+          content: { body: "stop", type: "prompt" },
+          signal: "stop",
+        },
+        previousComments: [checkpoint("eve-1")],
+      }),
+    );
+
+    expect(resetMock).not.toHaveBeenCalled();
+    expect(sendMock).not.toHaveBeenCalled();
   });
 });

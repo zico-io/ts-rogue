@@ -10,6 +10,7 @@ equivalent public capability. Recheck every row when upgrading Eve.
 | GitHub inline-review wake-up | `lib/github/wake-policy.ts` | Providing `onComment` replaces the built-in mention gate, whose helpers are not exported |
 | Coarse `pull_request_review` verdicts (HAR-49) | `channels/github.ts`, `lib/github/` | `githubChannel` never dispatches on the `pull_request_review` webhook event, so a bare approve/request-changes is dropped |
 | Fresh-session handoff | `tools/handoff.ts` | Token-quota continuation is not overridable and Linear comment creation is not public |
+| Per-phase context rotation via checkpoint comments | `lib/linear/checkpoint.ts`, `channels/linear.ts`, `tools/handoff.ts` | `linearChannel`'s dispatch hardcodes `linearContinuationToken(agentSession.id)`, so a channel cannot key a fresh context window itself; rotation has to go through `reset` from the route |
 | GitHub token refresh | `lib/sandbox/` | Brokered tokens expire mid-session and eve does not re-mint the network policy |
 | Vercel traces and sandbox inspection | `connections/vercel-api.ts` | The Vercel MCP server does not expose every required read operation |
 | Linear Agent Session activities | `channels/linear.ts`, `lib/agent-plan.ts`, `tools/session_update.ts`, `tools/handoff.ts` | The Linear MCP connection does not expose Agent Session mutations |

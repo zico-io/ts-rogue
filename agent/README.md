@@ -118,7 +118,7 @@ closed, so its transcript grows across every wake and tool round-trip. A
 2026-07-27 production analysis found this dominated spend: long sessions
 re-read a near-1M-token transcript on each of a turn's ~14 tool round-trips
 (~14M input tokens/turn), and multi-hour idle gaps blew the prompt cache so
-afternoon PR/merge hooks paid to rebuild it. Two knobs bound that cost:
+afternoon PR/merge hooks paid to rebuild it. Three knobs bound that cost:
 
 - **Earlier compaction** - `agent.ts` sets `modelContextWindowTokens`, which is
   a compaction *trigger*, not a hard cap: eve compacts at
@@ -131,6 +131,16 @@ afternoon PR/merge hooks paid to rebuild it. Two knobs bound that cost:
   wrapped `bash`/`web_fetch` tools keep head+tail with an elision pointer so
   high-volume output stops riding every subsequent round-trip. This is distinct
   from `lib/truncate.ts`, which is display-only for Linear activity chips.
+- **Per-phase context rotation** - at a phase boundary (right after opening the
+  pull request, say) `handoff` posts a checkpoint comment naming its own eve
+  session instead of opening a second Linear session, and the Linear route
+  retires that session with eve's `reset` on the next inbound event, so eve's own
+  dispatch re-creates it empty (see `lib/linear/checkpoint.ts`). Linear sees one
+  continuous Agent Session; only the context window behind it turns over. The
+  session id in the marker is what makes it idempotent - once rotated, the token
+  belongs to a different session and later events are no-ops - and rotation
+  simply does not engage if Linear omits app-authored comments from
+  `previousComments`.
 
 ## Sandbox and credentials
 

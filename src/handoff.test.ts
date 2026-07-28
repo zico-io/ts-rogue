@@ -27,12 +27,14 @@ const handoffTool = (await import("../agent/tools/handoff"))
         existingSessionId: string;
         existingSessionUrl: string | null;
       }
+    | { checkpointed: true; checkpointCommentId: string }
   >;
 };
 const { createLinearComment } = await import("../agent/tools/handoff");
 
 const toolCtx = (agentSessionId?: string) => ({
   session: {
+    id: "eve-session-1",
     auth: {
       current:
         agentSessionId === undefined
@@ -194,7 +196,7 @@ describe("handoff duplicate-session guard", () => {
     expect(createSessionOnComment).not.toHaveBeenCalled();
   });
 
-  it("proceeds when the only live session is the caller's own (self-continuation)", async () => {
+  it("checkpoints in place when the only live session is the caller's own (self-continuation)", async () => {
     mockGraphQL({
       sessions: [
         {
@@ -206,16 +208,26 @@ describe("handoff duplicate-session guard", () => {
       ],
       commentId: "comment-2",
     });
-    createSessionOnComment.mockResolvedValue({ id: "session-next" });
 
     const result = await handoffTool.execute(
-      { issueId: "issue-uuid", brief: "continuation packet" },
+      {
+        issueId: "issue-uuid",
+        brief: "**Agent handoff**\n\nPR #12 open; next: review",
+      },
       toolCtx("session-self"),
     );
 
-    expect(result).toMatchObject({ handoffSessionId: "session-next" });
-    expect(createSessionOnComment).toHaveBeenCalledWith(
-      expect.objectContaining({ commentId: "comment-2" }),
+    // The same Linear Agent Session continues, so no second one is created; the
+    // comment carries the marker naming this eve session for the channel to
+    // retire, and the brief itself stays headerless human prose.
+    expect(result).toEqual({
+      checkpointed: true,
+      checkpointCommentId: "comment-2",
+    });
+    expect(createSessionOnComment).not.toHaveBeenCalled();
+    const commentBody = commentCreateCall()?.variables.input.body;
+    expect(commentBody).toBe(
+      "<!-- eve-checkpoint session=eve-session-1 -->\n\nPR #12 open; next: review",
     );
   });
 
