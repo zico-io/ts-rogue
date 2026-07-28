@@ -14,6 +14,7 @@ import {
   type BattleUiState,
 } from "../../ui/screens/battle/interaction";
 import { packEnemyColumns } from "../../ui/screens/battle/render";
+import { battleHighlight } from "../../ui/screens/battle/targetPreview";
 import { theme, toPixiColor } from "../../ui/theme";
 import { ParticleField, type ParticleHandle } from "./particles";
 
@@ -74,6 +75,8 @@ const FIELD_PADDING_PX = 16;
 
 const HIGHLIGHT_PAD_PX = 6;
 
+const BACK_ROW_LABEL_HEIGHT_PX = 18;
+
 const MENU_ROW_HEIGHT_PX = 18;
 const MENU_PADDING_PX = 8;
 
@@ -125,9 +128,14 @@ type ArtHandle =
   | { kind: "sprite"; handle: BattleSpriteHandle }
   | { kind: "rect"; handle: BattleRectHandle };
 
-function enemyDisplayColor(enemy: BattleEnemy, selected: boolean): string {
+function enemyDisplayColor(
+  enemy: BattleEnemy,
+  selected: boolean,
+  meleeUnreachable: boolean,
+): string {
   if (enemy.hp <= 0) return theme.textFaint;
   if (selected) return theme.accent;
+  if (meleeUnreachable) return theme.textMuted;
   return enemy.color ?? theme.text;
 }
 
@@ -149,7 +157,8 @@ export class BattleSceneView {
 
   private artPx = MIN_ART_PX;
 
-  private targetHighlight: BattleRectHandle | undefined;
+  private targetHighlights: BattleRectHandle[] = [];
+  private backRowLabel: BattleTextHandle | undefined;
   private actorHeader: BattleTextHandle | undefined;
   private actorStatus: BattleTextHandle | undefined;
   private menuLines: BattleTextHandle[] = [];
@@ -177,10 +186,29 @@ export class BattleSceneView {
     const usableItems = state.inventory.filter((entryItem) =>
       isUsableBattleItem(entryItem.itemId),
     );
+    const aliveEnemies = bs.enemies.filter((enemy) => enemy.hp > 0);
+    // Same battleHighlight the terminal's BattleScreen.tsx uses (TER-3), so
+    // the two renderers can never show different highlight sets for the
+    // same battleUi state.
+    const highlight = battleHighlight({
+      mode: battleUi.mode,
+      knownSkills,
+      skillCursor: battleUi.skillCursor,
+      pendingSkillId: battleUi.pendingSkill,
+      targetCursor: battleUi.targetCursor,
+      enemies: bs.enemies,
+      aliveEnemies,
+    });
 
-    const menuRows = buildMenuRows(battleUi, actor, knownSkills, usableItems);
+    const menuRows = buildMenuRows(
+      battleUi,
+      actor,
+      knownSkills,
+      usableItems,
+      highlight.indicator,
+    );
 
-    this.drawEnemies(bs, battleUi, pixelSize);
+    this.drawEnemies(bs, highlight.highlightedIds, pixelSize);
     this.drawActorStatus(actor, pixelSize, menuRows.length);
     this.drawMenu(menuRows, actor, pixelSize);
   }
@@ -345,22 +373,15 @@ export class BattleSceneView {
 
   private drawEnemies(
     bs: BattleState,
-    battleUi: BattleUiState,
+    highlightedIds: ReadonlySet<string>,
     pixelSize: PixelSize,
   ): void {
-    const aliveEnemies = bs.enemies.filter((enemy) => enemy.hp > 0);
-    const packed = packEnemyColumns(
-      bs.enemies,
-      aliveEnemies,
-      battleUi.mode === "target",
-      battleUi.targetCursor,
-      {
-        columns: Math.max(this.artPx, pixelSize.width - FIELD_PADDING_PX * 2),
-        gap: ENEMY_GAP_PX,
-        rowGap: ROW_GAP_PX,
-        artSize: { width: this.artPx, height: this.artPx },
-      },
-    );
+    const packed = packEnemyColumns(bs.enemies, highlightedIds, {
+      columns: Math.max(this.artPx, pixelSize.width - FIELD_PADDING_PX * 2),
+      gap: ENEMY_GAP_PX,
+      rowGap: ROW_GAP_PX,
+      artSize: { width: this.artPx, height: this.artPx },
+    });
 
     const startX = Math.max(
       FIELD_PADDING_PX,
@@ -369,33 +390,58 @@ export class BattleSceneView {
     const columnHeight = this.artPx + NAME_ROW_PX + HP_ROW_PX;
 
     const seen = new Set<string>();
-    let selected: { x: number; y: number } | undefined;
+    const selected: { x: number; y: number }[] = [];
 
     let y = FIELD_PADDING_PX;
-    for (const row of packed.rows) {
+    for (const [rowIndex, row] of packed.rows.entries()) {
+      if (rowIndex === packed.formationBreakIndex) {
+        this.drawBackRowLabel(startX, y);
+        y += BACK_ROW_LABEL_HEIGHT_PX;
+      }
       let x = startX;
       for (const col of row) {
         seen.add(col.enemy.id);
-        this.drawEnemyColumn(col.enemy, col.selected, x, y);
-        if (col.selected) selected = { x, y };
+        this.drawEnemyColumn(
+          col.enemy,
+          col.selected,
+          col.meleeUnreachable,
+          x,
+          y,
+        );
+        if (col.selected) selected.push({ x, y });
         x += col.width + ENEMY_GAP_PX;
       }
       y += columnHeight + ROW_GAP_PX;
     }
+    if (packed.formationBreakIndex === null) this.parkBackRowLabel();
 
     this.pruneEnemyHandles(seen);
-    this.updateSelectionHighlight(selected);
+    this.updateSelectionHighlights(selected);
+  }
+
+  private drawBackRowLabel(x: number, y: number): void {
+    if (!this.backRowLabel) this.backRowLabel = this.factory.createText("");
+    this.backRowLabel.setText("-- back row --");
+    this.backRowLabel.setColor(toPixiColor(theme.textMuted));
+    this.backRowLabel.setPosition(x, y);
+  }
+
+  private parkBackRowLabel(): void {
+    this.backRowLabel?.setPosition(0, HIGHLIGHT_PARK_Y);
   }
 
   private drawEnemyColumn(
     enemy: BattleEnemy,
     selected: boolean,
+    meleeUnreachable: boolean,
     x: number,
     y: number,
   ): void {
     this.checkDamage(enemy.id, enemy.hp, x + this.artPx / 2, y, "enemy");
 
-    const baseColor = toPixiColor(enemyDisplayColor(enemy, selected));
+    const baseColor = toPixiColor(
+      enemyDisplayColor(enemy, selected, meleeUnreachable),
+    );
     this.normalTint.set(enemy.id, baseColor);
     const tint = this.flashes.has(enemy.id)
       ? toPixiColor(theme.danger)
@@ -408,7 +454,9 @@ export class BattleSceneView {
       name = this.factory.createText("");
       this.nameHandles.set(enemy.id, name);
     }
-    name.setText(`${enemy.name}${enemy.hp <= 0 ? " (defeated)" : ""}`);
+    const nameSuffix =
+      enemy.hp <= 0 ? " (defeated)" : meleeUnreachable ? " (unreachable)" : "";
+    name.setText(`${enemy.name}${nameSuffix}`);
     name.setColor(tint);
     name.setPosition(x, y + this.artPx);
 
@@ -473,23 +521,30 @@ export class BattleSceneView {
     }
   }
 
-  private updateSelectionHighlight(
-    selected: { x: number; y: number } | undefined,
+  // One rect per currently-highlighted enemy - a row/column/blast preview
+  // (TER-3) can highlight several at once, not just a single target-cursor
+  // pick. The pool only grows: unused rects from a smaller highlight set
+  // park off-canvas instead of being destroyed, so they're ready to reuse
+  // the next time a wider shape needs them.
+  private updateSelectionHighlights(
+    selected: readonly { x: number; y: number }[],
   ): void {
-    if (!this.targetHighlight) this.targetHighlight = this.factory.createRect();
-    if (!selected) {
-      this.targetHighlight.setPosition(0, HIGHLIGHT_PARK_Y);
-      return;
+    while (this.targetHighlights.length < Math.max(1, selected.length)) {
+      this.targetHighlights.push(this.factory.createRect());
     }
-    this.targetHighlight.setPosition(
-      selected.x - HIGHLIGHT_PAD_PX,
-      selected.y - HIGHLIGHT_PAD_PX,
-    );
-    this.targetHighlight.setSize(
-      this.artPx + HIGHLIGHT_PAD_PX * 2,
-      this.artPx + HIGHLIGHT_PAD_PX * 2,
-    );
-    this.targetHighlight.setColor(toPixiColor(theme.accent));
+    this.targetHighlights.forEach((handle, index) => {
+      const pos = selected[index];
+      if (!pos) {
+        handle.setPosition(0, HIGHLIGHT_PARK_Y);
+        return;
+      }
+      handle.setPosition(pos.x - HIGHLIGHT_PAD_PX, pos.y - HIGHLIGHT_PAD_PX);
+      handle.setSize(
+        this.artPx + HIGHLIGHT_PAD_PX * 2,
+        this.artPx + HIGHLIGHT_PAD_PX * 2,
+      );
+      handle.setColor(toPixiColor(theme.accent));
+    });
   }
 
   private menuTopY(pixelSize: PixelSize, rowCount: number): number {
@@ -557,23 +612,30 @@ function buildMenuRows(
   actor: PartyMember,
   knownSkills: readonly SkillDef[],
   usableItems: GameState["inventory"],
+  indicator: string | undefined,
 ): MenuRow[] {
   const mode: BattleMode = battleUi.mode;
+  const indicatorRow: MenuRow[] = indicator
+    ? [{ text: indicator, color: toPixiColor(theme.textMuted) }]
+    : [];
 
   if (mode === "skill") {
-    return knownSkills.map((skill, index) => {
-      const affordable = actor.mp >= skill.mpCost;
-      const selected = index === battleUi.skillCursor;
-      const color = selected
-        ? toPixiColor(theme.accent)
-        : affordable
-          ? toPixiColor(theme.text)
-          : toPixiColor(theme.textFaint);
-      return {
-        text: `${selected ? "> " : "  "}${skill.name} - ${skill.mpCost} MP${affordable ? "" : " (low MP)"}`,
-        color,
-      };
-    });
+    return [
+      ...knownSkills.map((skill, index) => {
+        const affordable = actor.mp >= skill.mpCost;
+        const selected = index === battleUi.skillCursor;
+        const color = selected
+          ? toPixiColor(theme.accent)
+          : affordable
+            ? toPixiColor(theme.text)
+            : toPixiColor(theme.textFaint);
+        return {
+          text: `${selected ? "> " : "  "}${skill.name} - ${skill.mpCost} MP${affordable ? "" : " (low MP)"}`,
+          color,
+        };
+      }),
+      ...indicatorRow,
+    ];
   }
 
   if (mode === "item") {
@@ -593,7 +655,10 @@ function buildMenuRows(
   }
 
   if (mode === "target") {
-    return [{ text: "Select a target", color: toPixiColor(theme.text) }];
+    return [
+      { text: "Select a target", color: toPixiColor(theme.text) },
+      ...indicatorRow,
+    ];
   }
 
   return ACTIONS.map((action, index) => {

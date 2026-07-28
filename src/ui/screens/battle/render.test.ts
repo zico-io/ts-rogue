@@ -15,6 +15,7 @@ function makeEnemy(
   ascii: readonly string[],
   hp = 12,
   maxHp = 12,
+  row?: "front" | "back",
 ): BattleEnemy {
   return {
     id,
@@ -26,6 +27,7 @@ function makeEnemy(
     ascii,
     xp: 1,
     gold: 1,
+    row,
   };
 }
 
@@ -58,6 +60,14 @@ describe("enemyNameLine / enemyHpLine", () => {
     expect(enemyNameLine(slime, false, true)).toBe("  Slime (defeated)");
   });
 
+  it("suffixes a melee-unreachable enemy, but defers to defeated", () => {
+    const slime = makeEnemy("slime-1", "Slime", SLIME_ASCII);
+    expect(enemyNameLine(slime, false, false, true)).toBe(
+      "  Slime (unreachable)",
+    );
+    expect(enemyNameLine(slime, false, true, true)).toBe("  Slime (defeated)");
+  });
+
   it("renders HP as current over max", () => {
     expect(enemyHpLine(makeEnemy("slime-1", "Slime", SLIME_ASCII))).toBe(
       "HP 12/12",
@@ -86,7 +96,7 @@ describe("enemyColumnWidth / enemyColumnHeight", () => {
 describe("packEnemyColumns", () => {
   it("keeps three enemies on one row on a wide terminal", () => {
     const enemies = slimes(3);
-    const packed = packEnemyColumns(enemies, enemies, false, 0, {
+    const packed = packEnemyColumns(enemies, new Set(), {
       columns: 64,
     });
     expect(packed.rows).toHaveLength(1);
@@ -94,11 +104,12 @@ describe("packEnemyColumns", () => {
 
     expect(packed.fieldWidth).toBe(35);
     expect(packed.fieldHeight).toBe(6);
+    expect(packed.formationBreakIndex).toBeNull();
   });
 
   it("wraps to one column per row when the terminal is narrow", () => {
     const enemies = goblins(3);
-    const packed = packEnemyColumns(enemies, enemies, false, 0, {
+    const packed = packEnemyColumns(enemies, new Set(), {
       columns: 20,
     });
 
@@ -111,7 +122,7 @@ describe("packEnemyColumns", () => {
 
   it("packs two per row then one when there is room for two", () => {
     const enemies = goblins(3);
-    const packed = packEnemyColumns(enemies, enemies, false, 0, {
+    const packed = packEnemyColumns(enemies, new Set(), {
       columns: 24,
     });
     expect(packed.rows).toHaveLength(2);
@@ -125,19 +136,31 @@ describe("packEnemyColumns", () => {
   it("never lets a row exceed the terminal width", () => {
     const enemies = goblins(4);
     for (const columns of [16, 20, 24, 40, 64, 120]) {
-      const packed = packEnemyColumns(enemies, enemies, false, 0, { columns });
+      const packed = packEnemyColumns(enemies, new Set(), { columns });
       expect(packed.fieldWidth).toBeLessThanOrEqual(columns);
     }
   });
 
-  it("marks the targeted enemy column as selected", () => {
+  it("marks every highlighted id as selected", () => {
     const enemies = slimes(3);
-    const packed = packEnemyColumns(enemies, enemies, true, 1, {
+    const packed = packEnemyColumns(enemies, new Set([enemies[1].id]), {
       columns: 64,
     });
     expect(packed.rows[0][0].selected).toBe(false);
     expect(packed.rows[0][1].selected).toBe(true);
     expect(packed.rows[0][1].nameLine).toBe("> Slime");
+  });
+
+  it("highlights a whole shape's target list at once", () => {
+    const enemies = slimes(3);
+    const packed = packEnemyColumns(
+      enemies,
+      new Set([enemies[0].id, enemies[2].id]),
+      { columns: 64 },
+    );
+    expect(packed.rows[0][0].selected).toBe(true);
+    expect(packed.rows[0][1].selected).toBe(false);
+    expect(packed.rows[0][2].selected).toBe(true);
   });
 
   it("handles a single boss enemy", () => {
@@ -155,12 +178,44 @@ describe("packEnemyColumns", () => {
       60,
       60,
     );
-    const packed = packEnemyColumns([guardian], [guardian], false, 0, {
+    const packed = packEnemyColumns([guardian], new Set(), {
       columns: 64,
     });
     expect(packed.rows).toHaveLength(1);
     expect(packed.rows[0]).toHaveLength(1);
     expect(packed.fieldHeight).toBe(6 + 2);
+  });
+
+  it("splits front and back row into separate visual blocks", () => {
+    const enemies = [
+      ...slimes(2).map((e) => ({ ...e, row: "front" as const })),
+      makeEnemy("goblin-1", "Goblin", GOBLIN_ASCII, 12, 12, "back"),
+    ];
+    const packed = packEnemyColumns(enemies, new Set(), { columns: 64 });
+    expect(packed.rows).toHaveLength(2);
+    expect(packed.rows[0].map((c) => c.enemy.id)).toEqual([
+      "slime-1",
+      "slime-2",
+    ]);
+    expect(packed.rows[1].map((c) => c.enemy.id)).toEqual(["goblin-1"]);
+    expect(packed.formationBreakIndex).toBe(1);
+    expect(packed.rows[0].every((c) => c.formationRow === "front")).toBe(true);
+    expect(packed.rows[1][0].formationRow).toBe("back");
+  });
+
+  it("flags a living back-row enemy as melee-unreachable while the front row lives", () => {
+    const enemies = [
+      makeEnemy("slime-1", "Slime", SLIME_ASCII, 12, 12, "front"),
+      makeEnemy("goblin-1", "Goblin", GOBLIN_ASCII, 12, 12, "back"),
+    ];
+    const packed = packEnemyColumns(enemies, new Set(), { columns: 64 });
+    expect(packed.rows[1][0].meleeUnreachable).toBe(true);
+
+    const frontDead = [{ ...enemies[0], hp: 0 }, enemies[1]];
+    const packedAfterFrontDies = packEnemyColumns(frontDead, new Set(), {
+      columns: 64,
+    });
+    expect(packedAfterFrontDies.rows[1][0].meleeUnreachable).toBe(false);
   });
 });
 

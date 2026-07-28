@@ -130,7 +130,16 @@ export function reduceBattleUi(
     if (intent.kind === "confirm") {
       const skill = ctx.knownSkills[state.skillCursor];
       if (skill && ctx.actorMp >= skill.mpCost) {
-        if (skill.target === "single") {
+        // single/row/column all need a target cursor: single picks the one
+        // enemy hit, row/column pick the anchor (row or lane) the shape
+        // expands from (TER-3). allEnemies/randomN have nothing to aim -
+        // they fire straight at the caster's own id, which the resolver
+        // ignores for those shapes.
+        if (
+          skill.target === "single" ||
+          skill.target === "row" ||
+          skill.target === "column"
+        ) {
           return {
             state: {
               ...state,

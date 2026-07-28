@@ -26,6 +26,33 @@ const healSkill: SkillDef = {
   power: 5,
 };
 
+const rowSkill: SkillDef = {
+  id: "hailstorm",
+  name: "Hailstorm",
+  mpCost: 9,
+  kind: "attack",
+  target: "row",
+  power: 10,
+};
+
+const columnSkill: SkillDef = {
+  id: "skewer",
+  name: "Skewer",
+  mpCost: 6,
+  kind: "attack",
+  target: "column",
+  power: 7,
+};
+
+const blastSkill: SkillDef = {
+  id: "meteor",
+  name: "Meteor",
+  mpCost: 12,
+  kind: "attack",
+  target: "allEnemies",
+  power: 9,
+};
+
 function ctx(overrides: Partial<BattleUiContext> = {}): BattleUiContext {
   return {
     actorId: "hero",
@@ -183,6 +210,42 @@ describe("reduceBattleUi - skill mode", () => {
     expect(result.effect).toEqual({
       type: "skill",
       skillId: "heal",
+      targetId: "hero",
+    });
+    expect(result.state).toEqual(INITIAL_BATTLE_UI_STATE);
+  });
+
+  it("a row-shaped skill moves to target mode with pendingSkill set (TER-3)", () => {
+    const result = reduceBattleUi(
+      skillState({ skillCursor: 0 }),
+      { kind: "confirm" },
+      ctx({ actorMp: 10, knownSkills: [rowSkill, healSkill] }),
+    );
+    expect(result.state.mode).toBe("target");
+    expect(result.state.targetCursor).toBe(0);
+    expect(result.state.pendingSkill).toBe("hailstorm");
+    expect(result.effect).toBeUndefined();
+  });
+
+  it("a column-shaped skill moves to target mode with pendingSkill set (TER-3)", () => {
+    const result = reduceBattleUi(
+      skillState({ skillCursor: 0 }),
+      { kind: "confirm" },
+      ctx({ actorMp: 10, knownSkills: [columnSkill, healSkill] }),
+    );
+    expect(result.state.mode).toBe("target");
+    expect(result.state.pendingSkill).toBe("skewer");
+  });
+
+  it("a blast (allEnemies) skill dispatches immediately at the caster's own id", () => {
+    const result = reduceBattleUi(
+      skillState({ skillCursor: 0 }),
+      { kind: "confirm" },
+      ctx({ actorMp: 20, knownSkills: [blastSkill, healSkill] }),
+    );
+    expect(result.effect).toEqual({
+      type: "skill",
+      skillId: "meteor",
       targetId: "hero",
     });
     expect(result.state).toEqual(INITIAL_BATTLE_UI_STATE);

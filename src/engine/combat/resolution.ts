@@ -357,7 +357,7 @@ function findAliveEnemy(
   return enemies.find((enemy) => enemy.id === id && enemy.hp > 0);
 }
 
-function enemyRow(enemy: BattleEnemy): EnemyRow {
+export function enemyRow(enemy: BattleEnemy): EnemyRow {
   return enemy.row ?? DEFAULT_ROW;
 }
 
@@ -454,10 +454,11 @@ function pickWithoutReplacement<T>(
 // a cast - a party member casting at `enemies`, or a monster casting at
 // `party` - by handing it whichever pool is the shape's side. `anchorId`
 // picks the row/lane/single target when it resolves to a living pool
-// member; otherwise it falls back to the pool's first living member (the
-// UI still sends the caster's own id for every non-"single" shape today -
-// real multi-target picking is TER-3, tracked separately).
-function resolveShapeTargets<T extends FormationSlot>(
+// member; otherwise it falls back to the pool's first living member.
+// Exported (TER-3) so the BattleScreen target-highlight preview
+// (src/ui/screens/battle/targetPreview.ts) can call the exact same
+// resolver the real cast uses instead of a parallel copy that could drift.
+export function resolveShapeTargets<T extends FormationSlot>(
   shape: SkillTarget,
   pool: readonly T[],
   anchorId: string,

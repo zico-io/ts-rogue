@@ -32,6 +32,7 @@ import {
   type PackedEnemies,
   packEnemyColumns,
 } from "./battle/render";
+import { battleHighlight } from "./battle/targetPreview";
 
 export interface BattleScreenProps {
   state: GameState;
@@ -133,6 +134,7 @@ export function BattleScreen({ state, dispatch }: BattleScreenProps) {
         skillCursor={battleUi.skillCursor}
         itemCursor={battleUi.itemCursor}
         targetCursor={battleUi.targetCursor}
+        pendingSkillId={battleUi.pendingSkill}
         skills={knownSkills}
       />
     </Screen>
@@ -150,6 +152,7 @@ interface BattleBodyProps {
   skillCursor: number;
   itemCursor: number;
   targetCursor: number;
+  pendingSkillId: string | null;
   skills: readonly SkillDef[];
 }
 
@@ -164,6 +167,7 @@ function BattleBody({
   skillCursor,
   itemCursor,
   targetCursor,
+  pendingSkillId,
   skills,
 }: BattleBodyProps) {
   const { width, height } = useScreenContent();
@@ -173,16 +177,20 @@ function BattleBody({
 
   const viewportHeight = Math.max(1, height - 2);
 
-  const packed = packEnemyColumns(
-    bs.enemies,
-    aliveEnemies,
-    mode === "target",
+  const { highlightedIds, indicator } = battleHighlight({
+    mode,
+    knownSkills: skills,
+    skillCursor,
+    pendingSkillId,
     targetCursor,
-    {
-      columns: Math.max(1, viewportWidth - 2),
-      gap: ENEMY_GAP,
-    },
-  );
+    enemies: bs.enemies,
+    aliveEnemies,
+  });
+
+  const packed = packEnemyColumns(bs.enemies, highlightedIds, {
+    columns: Math.max(1, viewportWidth - 2),
+    gap: ENEMY_GAP,
+  });
 
   return (
     <Box flexDirection="row" gap={LAYOUT_GAP} height={height}>
@@ -222,6 +230,7 @@ function BattleBody({
               heroMp={actor.mp}
               usableItems={usableItems}
               itemCursor={itemCursor}
+              indicator={indicator}
             />
           </Box>
         </Box>
@@ -253,28 +262,34 @@ function EnemyField({ packed }: { packed: PackedEnemies }) {
     <Box flexDirection="column" gap={1}>
       {packed.rows.map((row, rowIndex) => (
         <Box
-          key={row[0]?.enemy.id ?? rowIndex}
-          flexDirection="row"
-          gap={ENEMY_GAP}
-          justifyContent="center"
+          key={row[0]?.enemy.id ?? `row-${rowIndex}`}
+          flexDirection="column"
+          gap={1}
         >
-          {row.map((col) => {
-            const color = col.dead
-              ? theme.textFaint
-              : col.selected
-                ? theme.accent
-                : (col.enemy.color ?? theme.text);
-            return (
-              <Box key={col.enemy.id} flexDirection="column">
-                <Text color={color}>{col.enemy.ascii.join("\n")}</Text>
-                <Text bold color={color}>
-                  {col.nameLine}
-                </Text>
-                <Text color={color}>{col.hpLine}</Text>
-                <StatusBadgeRow badges={col.badges} />
-              </Box>
-            );
-          })}
+          {rowIndex === packed.formationBreakIndex && (
+            <Text color={theme.textMuted}>-- back row --</Text>
+          )}
+          <Box flexDirection="row" gap={ENEMY_GAP} justifyContent="center">
+            {row.map((col) => {
+              const color = col.dead
+                ? theme.textFaint
+                : col.selected
+                  ? theme.accent
+                  : col.meleeUnreachable
+                    ? theme.textMuted
+                    : (col.enemy.color ?? theme.text);
+              return (
+                <Box key={col.enemy.id} flexDirection="column">
+                  <Text color={color}>{col.enemy.ascii.join("\n")}</Text>
+                  <Text bold color={color}>
+                    {col.nameLine}
+                  </Text>
+                  <Text color={color}>{col.hpLine}</Text>
+                  <StatusBadgeRow badges={col.badges} />
+                </Box>
+              );
+            })}
+          </Box>
         </Box>
       ))}
     </Box>
@@ -303,6 +318,7 @@ interface ActionMenuProps {
   heroMp: number;
   usableItems: GameState["inventory"];
   itemCursor: number;
+  indicator?: string;
 }
 
 function ActionMenu({
@@ -314,6 +330,7 @@ function ActionMenu({
   heroMp,
   usableItems,
   itemCursor,
+  indicator,
 }: ActionMenuProps) {
   if (mode === "skill") {
     return (
@@ -336,6 +353,7 @@ function ActionMenu({
             </Text>
           );
         })}
+        {indicator && <Text color={theme.textMuted}>{indicator}</Text>}
       </Box>
     );
   }
@@ -368,6 +386,7 @@ function ActionMenu({
     return (
       <Box flexDirection="column">
         <Text bold>Select a target</Text>
+        {indicator && <Text color={theme.textMuted}>{indicator}</Text>}
       </Box>
     );
   }
