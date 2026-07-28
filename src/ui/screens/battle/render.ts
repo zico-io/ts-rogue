@@ -1,11 +1,19 @@
+import { enemyRow, isMeleeTargetable } from "../../../engine/combat/resolution";
 import type { EffectInstance } from "../../../engine/combat/statusEffects";
 import { findStatusEffect } from "../../../engine/combat/statusEffects";
-import type { BattleEnemy } from "../../../engine/combat/types";
+import type { BattleEnemy, EnemyRow } from "../../../engine/combat/types";
 
 export interface EnemyColumn {
   enemy: BattleEnemy;
   selected: boolean;
   dead: boolean;
+
+  // Back row while the front row still lives, per the melee reachability
+  // rule (ENG-29/ROG-78) - true only for a living back-row enemy a basic
+  // attack can't currently reach.
+  meleeUnreachable: boolean;
+  formationRow: EnemyRow;
+
   nameLine: string;
   hpLine: string;
   badges: EffectBadge[];
@@ -15,6 +23,11 @@ export interface EnemyColumn {
 
 export interface PackedEnemies {
   rows: EnemyColumn[][];
+
+  // Index into `rows` where the back-row formation block begins, so the
+  // caller can render a divider between front and back row. Null when
+  // every enemy is in the front row (no back-row block to separate).
+  formationBreakIndex: number | null;
 
   fieldHeight: number;
 
@@ -35,8 +48,14 @@ export function enemyNameLine(
   enemy: BattleEnemy,
   selected: boolean,
   dead: boolean,
+  meleeUnreachable = false,
 ): string {
-  return `${selected ? "> " : "  "}${enemy.name}${dead ? " (defeated)" : ""}`;
+  const suffix = dead
+    ? " (defeated)"
+    : meleeUnreachable
+      ? " (unreachable)"
+      : "";
+  return `${selected ? "> " : "  "}${enemy.name}${suffix}`;
 }
 
 export function enemyHpLine(enemy: BattleEnemy): string {
@@ -69,6 +88,7 @@ export function enemyColumnWidth(
   selected: boolean,
   dead: boolean,
   artWidth?: number,
+  meleeUnreachable = false,
 ): number {
   const asciiWidth =
     artWidth ??
@@ -78,7 +98,7 @@ export function enemyColumnWidth(
     .join("  ").length;
   return Math.max(
     asciiWidth,
-    enemyNameLine(enemy, selected, dead).length,
+    enemyNameLine(enemy, selected, dead, meleeUnreachable).length,
     enemyHpLine(enemy).length,
     badgeWidth,
   );
@@ -100,31 +120,11 @@ function rowHeight(row: EnemyColumn[]): number {
   return row.reduce((max, col) => Math.max(max, col.height), 0);
 }
 
-export function packEnemyColumns(
-  enemies: readonly BattleEnemy[],
-  aliveEnemies: readonly BattleEnemy[],
-  selectingTarget: boolean,
-  targetCursor: number,
-  options: PackOptions,
-): PackedEnemies {
-  const { columns, gap = 4, rowGap = 1, artSize } = options;
-
-  const cols: EnemyColumn[] = enemies.map((enemy) => {
-    const aliveIndex = aliveEnemies.findIndex((entry) => entry.id === enemy.id);
-    const selected = selectingTarget && aliveIndex === targetCursor;
-    const dead = enemy.hp <= 0;
-    return {
-      enemy,
-      selected,
-      dead,
-      nameLine: enemyNameLine(enemy, selected, dead),
-      hpLine: enemyHpLine(enemy),
-      badges: effectBadges(enemy.effects),
-      width: enemyColumnWidth(enemy, selected, dead, artSize?.width),
-      height: enemyColumnHeight(enemy, artSize?.height),
-    };
-  });
-
+function wrapIntoRows(
+  cols: readonly EnemyColumn[],
+  columns: number,
+  gap: number,
+): EnemyColumn[][] {
   const rows: EnemyColumn[][] = [];
   let current: EnemyColumn[] = [];
   let currentWidth = 0;
@@ -139,15 +139,69 @@ export function packEnemyColumns(
     }
   }
   if (current.length > 0) rows.push(current);
+  return rows;
+}
+
+// Packs the encounter's formation into visual rows for BattleScreen: the
+// front-row block wraps to the viewport width first, then the back-row
+// block wraps separately below it (TER-3) - the two never share a wrapped
+// line, so the front/back split always reads as a visual break, not just a
+// width-driven line wrap. `highlightedIds` drives which columns render as
+// selected; it's an id set rather than a single cursor index so a
+// row/column skill's whole target list can highlight at once.
+export function packEnemyColumns(
+  enemies: readonly BattleEnemy[],
+  highlightedIds: ReadonlySet<string>,
+  options: PackOptions,
+): PackedEnemies {
+  const { columns, gap = 4, rowGap = 1, artSize } = options;
+
+  function buildColumn(enemy: BattleEnemy): EnemyColumn {
+    const selected = highlightedIds.has(enemy.id);
+    const dead = enemy.hp <= 0;
+    const meleeUnreachable = !dead && !isMeleeTargetable(enemies, enemy);
+    return {
+      enemy,
+      selected,
+      dead,
+      meleeUnreachable,
+      formationRow: enemyRow(enemy),
+      nameLine: enemyNameLine(enemy, selected, dead, meleeUnreachable),
+      hpLine: enemyHpLine(enemy),
+      badges: effectBadges(enemy.effects),
+      width: enemyColumnWidth(
+        enemy,
+        selected,
+        dead,
+        artSize?.width,
+        meleeUnreachable,
+      ),
+      height: enemyColumnHeight(enemy, artSize?.height),
+    };
+  }
+
+  const frontCols = enemies
+    .filter((enemy) => enemyRow(enemy) === "front")
+    .map(buildColumn);
+  const backCols = enemies
+    .filter((enemy) => enemyRow(enemy) === "back")
+    .map(buildColumn);
+
+  const frontRows = wrapIntoRows(frontCols, columns, gap);
+  const backRows = wrapIntoRows(backCols, columns, gap);
+
+  const rows = [...frontRows, ...backRows];
+  const formationBreakIndex = backRows.length > 0 ? frontRows.length : null;
 
   const fieldWidth = rows.reduce(
     (max, row) => Math.max(max, rowWidth(row, gap)),
     0,
   );
-  const fieldHeight = rows.reduce(
-    (sum, row, index) => sum + rowHeight(row) + (index > 0 ? rowGap : 0),
-    0,
-  );
+  const fieldHeight =
+    rows.reduce(
+      (sum, row, index) => sum + rowHeight(row) + (index > 0 ? rowGap : 0),
+      0,
+    ) + (formationBreakIndex !== null ? 1 : 0);
 
-  return { rows, fieldHeight, fieldWidth };
+  return { rows, formationBreakIndex, fieldHeight, fieldWidth };
 }
