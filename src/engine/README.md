@@ -54,7 +54,9 @@ loot before returning to the originating scene.
   between landmarks (village, dungeon entrances) already visited this run.
   Neither triggers an encounter or advances the encounter meter.
 - Dungeons contain deterministic rooms, corridors, chests, stairs, wandering
-  encounters, and a boss floor.
+  encounters, and a boss floor. Stepping onto a story dungeon's entrance logs
+  its name and recommended level (resolved via `findDungeon`) instead of a
+  generic descend message.
 - Battles support Attack, Skill, Item, Defend, and Flee actions in a fixed
   initiative order for each round. Skills and monster attacks carry an
   element and may apply status effects (poison, burn, stun, slow, wet, oiled,

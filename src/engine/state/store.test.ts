@@ -20,7 +20,7 @@ import type {
   DungeonLayout,
   Point,
 } from "../world/types";
-import { dungeonWaypointId } from "../world/waypoints";
+import { dungeonWaypointId, storyDungeonForEntrance } from "../world/waypoints";
 import { GameStore, INN_COST_PER_MEMBER, newGame, reduce } from "./store";
 import type { GameEvent, GameState } from "./types";
 
@@ -295,8 +295,12 @@ describe("game store", () => {
         dx: approach.dx,
         dy: approach.dy,
       });
+      const def = storyDungeonForEntrance(0);
       expect(after.scene).toBe("dungeon");
       expect(after.worldState.player).toEqual(entrance);
+      expect(after.log.at(-2)?.text).toBe(
+        `You descend into ${def?.name} (recommended level ${def?.recommendedLevel})`,
+      );
       expect(after.log.at(-1)?.text).toBe(
         dungeonEntryFlavor(dungeonDefFor(dungeonWaypointId(0)).theme),
       );
@@ -310,6 +314,38 @@ describe("game store", () => {
         "village",
         dungeonWaypointId(0),
       ]);
+    });
+
+    it("entering a higher-tier entrance surfaces that entrance's own dungeon name and level", () => {
+      const seed = 1;
+      const map = generateOverworldMap(seed);
+      const entranceIndex = 2;
+      const entrance = map.dungeonEntrances[entranceIndex];
+      const approach = findPassableNeighbor(map, entrance);
+      const before = {
+        ...newGame(seed),
+        scene: "overworld" as const,
+        worldState: { player: approach.from, encounterMeter: 0 },
+      };
+      const after = reduce(before, {
+        type: "MoveOverworld",
+        dx: approach.dx,
+        dy: approach.dy,
+      });
+      const def = storyDungeonForEntrance(entranceIndex);
+      expect(def).toBeDefined();
+      expect(def?.name).not.toBe(storyDungeonForEntrance(0)?.name);
+      expect(after.log.at(-2)?.text).toBe(
+        `You descend into ${def?.name} (recommended level ${def?.recommendedLevel})`,
+      );
+      expect(after.log.at(-1)?.text).toBe(
+        dungeonEntryFlavor(
+          dungeonDefFor(dungeonWaypointId(entranceIndex)).theme,
+        ),
+      );
+      expect(after.dungeonState?.dungeonId).toBe(
+        dungeonWaypointId(entranceIndex),
+      );
     });
 
     it("re-entering an already-activated dungeon entrance does not duplicate its waypoint", () => {
@@ -444,6 +480,10 @@ describe("Dungeon", () => {
       state.dungeonState?.layout.entrance,
     );
     expect(state.dungeonState?.cleared).toBe(false);
+    const def = storyDungeonForEntrance(0);
+    expect(state.log.at(-2)?.text).toBe(
+      `You descend into ${def?.name} (recommended level ${def?.recommendedLevel})`,
+    );
     expect(state.log.at(-1)?.text).toBe(
       dungeonEntryFlavor(dungeonDefFor(dungeonWaypointId(0)).theme),
     );
