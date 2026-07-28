@@ -7,7 +7,7 @@ vi.mock("eve/channels/linear", () => ({
     createHmac("sha256", secret).update(body).digest("hex"),
 }));
 
-const { linearWebhook } = await import("./webhook");
+const { verifyLinearWebhook } = await import("./webhook");
 
 const sign = (body: string, secret: string) =>
   createHmac("sha256", secret).update(body).digest("hex");
@@ -24,88 +24,77 @@ const linearRequest = (body: string, signature?: string) =>
 const freshBody = (extra: Record<string, unknown> = {}) =>
   JSON.stringify({ webhookTimestamp: Date.now(), ...extra });
 
-describe("linearWebhook (signature path)", () => {
+describe("verifyLinearWebhook (signature path)", () => {
+  const verify = (body: string, signature?: string) =>
+    verifyLinearWebhook(linearRequest(body, signature), {
+      webhookSecret: "s3cret",
+    });
+
   it("returns the raw body for a correctly signed, fresh request", async () => {
     const body = freshBody({ action: "created" });
 
-    await expect(
-      linearWebhook({ webhookSecret: "s3cret" })(
-        linearRequest(body, sign(body, "s3cret")),
-      ),
-    ).resolves.toBe(body);
+    await expect(verify(body, sign(body, "s3cret"))).resolves.toBe(body);
   });
 
-  it("rejects a mismatched signature", async () => {
+  it("ignores a mismatched signature", async () => {
     const body = freshBody();
 
-    await expect(
-      linearWebhook({ webhookSecret: "s3cret" })(
-        linearRequest(body, sign(body, "wrong")),
-      ),
-    ).rejects.toThrow("signature mismatch");
+    await expect(verify(body, sign(body, "wrong"))).resolves.toBeNull();
   });
 
-  it("rejects a request with no signature header", async () => {
-    await expect(
-      linearWebhook({ webhookSecret: "s3cret" })(linearRequest(freshBody())),
-    ).rejects.toThrow("missing Linear-Signature");
+  it("ignores a request with no signature header", async () => {
+    await expect(verify(freshBody())).resolves.toBeNull();
   });
 
-  it("rejects a replay outside the allowed clock skew", async () => {
+  it("ignores a replay outside the allowed clock skew", async () => {
     const body = JSON.stringify({ webhookTimestamp: Date.now() - 120_000 });
 
-    await expect(
-      linearWebhook({ webhookSecret: "s3cret" })(
-        linearRequest(body, sign(body, "s3cret")),
-      ),
-    ).rejects.toThrow("timestamp outside allowed skew");
+    await expect(verify(body, sign(body, "s3cret"))).resolves.toBeNull();
   });
 
-  it("rejects a correctly signed body carrying no timestamp", async () => {
+  it("ignores a correctly signed body carrying no timestamp", async () => {
     const body = JSON.stringify({ action: "created" });
 
-    await expect(
-      linearWebhook({ webhookSecret: "s3cret" })(
-        linearRequest(body, sign(body, "s3cret")),
-      ),
-    ).rejects.toThrow("missing webhookTimestamp");
+    await expect(verify(body, sign(body, "s3cret"))).resolves.toBeNull();
   });
 
-  it("rejects when no secret is configured anywhere", async () => {
+  it("ignores the request when no secret is configured anywhere", async () => {
     vi.stubEnv("LINEAR_WEBHOOK_SECRET", "");
     try {
       const body = freshBody();
       await expect(
-        linearWebhook({})(linearRequest(body, sign(body, "s3cret"))),
-      ).rejects.toThrow("missing webhook secret");
+        verifyLinearWebhook(linearRequest(body, sign(body, "s3cret")), {}),
+      ).resolves.toBeNull();
     } finally {
       vi.unstubAllEnvs();
     }
   });
 });
 
-describe("linearWebhook (verifier path)", () => {
+describe("verifyLinearWebhook (verifier path)", () => {
   it("bypasses signature and timestamp checks when a verifier accepts", async () => {
     const body = JSON.stringify({ no: "timestamp needed" });
 
     await expect(
-      linearWebhook({ webhookVerifier: async () => true })(linearRequest(body)),
+      verifyLinearWebhook(linearRequest(body), {
+        webhookVerifier: async () => true,
+      }),
     ).resolves.toBe(body);
   });
 
   it("uses a verifier's returned string as the body", async () => {
     await expect(
-      linearWebhook({
+      verifyLinearWebhook(linearRequest("{}"), {
         webhookVerifier: async () => '{"rewritten":true}',
-      })(linearRequest("{}")),
+      }),
     ).resolves.toBe('{"rewritten":true}');
   });
 
-  it("rejects when the verifier rejects", async () => {
+  it("ignores the request when the verifier rejects", async () => {
     await expect(
-      linearWebhook({ webhookVerifier: async () => false })(
-        linearRequest("{}"),
-      ),
-    ).rejects.toThrow("linearChannel: inbound webhook verifier rejected");
+      verifyLinearWebhook(linearRequest("{}"), {
+        webhookVerifier: async () => false,
+      }),
+    ).resolves.toBeNull();
   });
 });

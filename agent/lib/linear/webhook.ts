@@ -1,89 +1,67 @@
 import { timingSafeEqual } from "node:crypto";
 
-import type {
-  LinearChannelConfig,
-  LinearWebhookSecret,
-} from "eve/channels/linear";
+import type { LinearChannelConfig } from "eve/channels/linear";
 import { signLinearWebhookBody } from "eve/channels/linear";
 
 import { isPlainObject } from "../narrow";
-import { verifyWebhook } from "../webhook";
 
-const LINEAR_WEBHOOK_MAX_SKEW_MS = 60_000;
+const MAX_SKEW_MS = 60_000;
 
-async function resolveLinearWebhookSecret(
-  secret: LinearWebhookSecret | undefined,
-): Promise<string> {
-  const resolved =
-    typeof secret === "function"
-      ? await secret()
-      : (secret ?? process.env.LINEAR_WEBHOOK_SECRET);
-  if (!resolved) {
-    throw new Error(
-      "linearChannel: missing webhook secret. Pass credentials.webhookSecret, set LINEAR_WEBHOOK_SECRET, or supply credentials.webhookVerifier.",
-    );
-  }
-  return resolved;
-}
-
-function constantTimeCompare(a: string, b: string): boolean {
+const constantTimeEqual = (a: string, b: string): boolean => {
   if (a.length !== b.length) return false;
   try {
     return timingSafeEqual(Buffer.from(a), Buffer.from(b));
   } catch {
     return false;
   }
-}
+};
 
-function verifyWebhookTimestamp(rawBody: string, maxSkewMs: number): void {
+/** A fresh timestamp guards the signature path against replay. */
+const isFresh = (rawBody: string): boolean => {
   let parsed: unknown;
   try {
     parsed = JSON.parse(rawBody);
   } catch {
-    throw new Error("linearChannel: inbound request body is not valid JSON.");
+    return false;
   }
   const timestamp = isPlainObject(parsed) ? parsed.webhookTimestamp : undefined;
-  if (typeof timestamp !== "number" || !Number.isFinite(timestamp)) {
-    throw new Error("linearChannel: inbound request missing webhookTimestamp.");
-  }
-  if (Math.abs(Date.now() - timestamp) > maxSkewMs) {
-    throw new Error(
-      "linearChannel: inbound request timestamp outside allowed skew.",
-    );
-  }
-}
+  return (
+    typeof timestamp === "number" &&
+    Number.isFinite(timestamp) &&
+    Math.abs(Date.now() - timestamp) <= MAX_SKEW_MS
+  );
+};
 
 /**
- * Linear's adaptation: an HMAC signature over the raw body plus a
- * timestamp-skew check. The skew check only guards the signature path - a
- * configured `webhookVerifier` owns replay protection itself.
+ * Verifies an inbound Linear webhook the way eve's own route does, for the one
+ * decision this channel makes ahead of eve's handler (see `channels/linear.ts`).
+ * Returns the verified body, or `null` when the request must be ignored - eve's
+ * handler verifies again and owns the 401, so this never throws.
+ *
+ * ponytail: eve's `verifyLinearRequest` already does exactly this; it is not
+ * exported. Delete this file the day it is.
  */
-export const linearWebhook =
-  (credentials: LinearChannelConfig["credentials"]) =>
-  (request: Request): Promise<string> =>
-    verifyWebhook({
-      channel: "linearChannel",
-      request,
-      verifier: credentials?.webhookVerifier,
-      fallback: async (req, rawBody) => {
-        const secret = await resolveLinearWebhookSecret(
-          credentials?.webhookSecret,
-        );
-        const signature = req.headers.get("linear-signature") ?? "";
-        if (!signature) {
-          throw new Error(
-            "linearChannel: inbound request missing Linear-Signature.",
-          );
-        }
-        if (
-          !constantTimeCompare(
-            signLinearWebhookBody(rawBody, secret),
-            signature,
-          )
-        ) {
-          throw new Error("linearChannel: inbound request signature mismatch.");
-        }
-        verifyWebhookTimestamp(rawBody, LINEAR_WEBHOOK_MAX_SKEW_MS);
-        return rawBody;
-      },
-    });
+export const verifyLinearWebhook = async (
+  request: Request,
+  credentials: LinearChannelConfig["credentials"],
+): Promise<string | null> => {
+  const rawBody = await request.text();
+
+  const verifier = credentials?.webhookVerifier;
+  if (verifier !== undefined) {
+    const result = await verifier(request, rawBody);
+    if (!result) return null;
+    return typeof result === "string" ? result : rawBody;
+  }
+
+  const secret =
+    typeof credentials?.webhookSecret === "function"
+      ? await credentials.webhookSecret()
+      : (credentials?.webhookSecret ?? process.env.LINEAR_WEBHOOK_SECRET);
+  const signature = request.headers.get("linear-signature");
+  if (!secret || !signature) return null;
+  return constantTimeEqual(signLinearWebhookBody(rawBody, secret), signature) &&
+    isFresh(rawBody)
+    ? rawBody
+    : null;
+};

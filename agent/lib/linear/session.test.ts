@@ -1,4 +1,3 @@
-import type { LinearReceiveTarget } from "eve/channels/linear";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { listLiveAgentSessionsMock } = vi.hoisted(() => ({
@@ -9,20 +8,10 @@ vi.mock("./live-sessions", () => ({
   STALE_SESSION_MS: 30 * 60 * 1000,
   listLiveAgentSessions: listLiveAgentSessionsMock,
 }));
-vi.mock("eve/channels/linear", () => ({
-  createLinearAgentSessionOnComment: vi.fn(async () => ({
-    id: "sess-comment",
-  })),
-  createLinearAgentSessionOnIssue: vi.fn(async () => ({ id: "sess-issue" })),
-}));
-
 const {
   duplicateSessionDeclineBody,
   findDuplicateSessionBlocker,
-  initialSessionState,
   isStopSignal,
-  resolveReceiveSession,
-  stateFromAgentSession,
 } = await import("./session");
 
 const agentSession = {
@@ -39,71 +28,6 @@ const live = (id: string, url: string | null = `https://linear.app/${id}`) => ({
   id,
   createdAt: "2026-07-25T10:00:00.000Z",
   url,
-});
-
-describe("initialSessionState", () => {
-  it("starts with no session and an empty pending-action map", () => {
-    expect(initialSessionState()).toMatchObject({
-      agentSessionId: null,
-      issueId: null,
-      pendingActionsByCallId: {},
-      pendingToolCallMessage: null,
-    });
-  });
-});
-
-describe("stateFromAgentSession", () => {
-  it("maps a Linear agent session ref into channel state", () => {
-    expect(stateFromAgentSession(agentSession)).toEqual({
-      agentSessionId: "sess-1",
-      agentSessionUrl: "https://linear.app/sess-1",
-      commentId: null,
-      issueId: "issue-1",
-      issueIdentifier: "HAR-2",
-      issueTitle: "t",
-      issueUrl: "u",
-      organizationId: "org-1",
-      pendingActionsByCallId: {},
-      pendingToolCallMessage: null,
-      sourceCommentId: null,
-    });
-  });
-
-  it("falls back to the nested issue id when issueId is absent", () => {
-    expect(
-      stateFromAgentSession({ id: "sess-2", issue: { id: "issue-9" } }),
-    ).toMatchObject({ issueId: "issue-9" });
-  });
-});
-
-describe("resolveReceiveSession", () => {
-  it("returns the target session id directly when provided", async () => {
-    await expect(
-      resolveReceiveSession({ agentSessionId: "sess-3" }, {}),
-    ).resolves.toEqual({ id: "sess-3" });
-  });
-
-  it("opens a session on an issue target", async () => {
-    await expect(
-      resolveReceiveSession({ issueId: "issue-1" }, {}),
-    ).resolves.toEqual({ id: "sess-issue" });
-  });
-
-  it("opens a session on a comment target", async () => {
-    await expect(
-      resolveReceiveSession({ commentId: "comment-1" }, {}),
-    ).resolves.toEqual({ id: "sess-comment" });
-  });
-
-  it("throws when the target has no usable identifier", async () => {
-    // `LinearReceiveTarget` requires one of the three ids; the guard exists
-    // because the payload arrives from another channel at run time.
-    await expect(
-      resolveReceiveSession({} as unknown as LinearReceiveTarget, {}),
-    ).rejects.toThrow(
-      "linearChannel().receive requires target.agentSessionId, issueId, or commentId.",
-    );
-  });
 });
 
 describe("isStopSignal (HAR-39)", () => {

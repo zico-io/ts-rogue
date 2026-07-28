@@ -4,7 +4,6 @@ import type {
   GitHubChannelState,
 } from "eve/channels/github";
 import type { SessionAuthContext } from "eve/context";
-import { verifyWebhook } from "../webhook";
 import { pullRequestReviewVerdictContext } from "./dispatch-context";
 import type { GitHubPullRequestReviewWebhookPayload } from "./pull-request";
 import {
@@ -85,23 +84,18 @@ export const handlePullRequestReviewWebhook = async (
   args: Pick<RouteHandlerArgs<GitHubChannelState>, "send">,
   credentials: GitHubChannelCredentials,
 ): Promise<Response> => {
-  let rawBody: string;
-  try {
-    // No fallback: this repo always configures `connectGitHubCredentials`,
-    // which always sets `webhookVerifier`, so an absent verifier is a
-    // misconfiguration to reject rather than a path to implement.
-    rawBody = await verifyWebhook({
-      channel: "githubChannel",
-      request,
-      verifier: credentials.webhookVerifier,
-    });
-  } catch {
-    return new Response("unauthorized", { status: 401 });
-  }
+  // This repo always configures `connectGitHubCredentials`, which always sets
+  // `webhookVerifier`, so an absent verifier is a misconfiguration to reject
+  // rather than a path to implement. A verifier returning a string replaces the
+  // body; any other truthy result accepts the one already read.
+  const rawBody = await request.text();
+  const verified = await credentials.webhookVerifier?.(request, rawBody);
+  if (!verified) return new Response("unauthorized", { status: 401 });
+  const body = typeof verified === "string" ? verified : rawBody;
 
   let parsedJson: unknown;
   try {
-    parsedJson = JSON.parse(rawBody);
+    parsedJson = JSON.parse(body);
   } catch {
     return Response.json({ ignored: true, ok: true });
   }
