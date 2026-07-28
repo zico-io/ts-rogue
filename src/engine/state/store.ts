@@ -1056,20 +1056,6 @@ function turnInQuest(state: GameState, questId: string): GameState {
   };
 }
 
-function refreshQuests(state: GameState): GameState {
-  const heroLevel = state.party[0]?.level ?? 1;
-  const acceptedIds = new Set(
-    state.quests.accepted.map((quest) => quest.def.id),
-  );
-  const available = QUESTS.filter(
-    (def) =>
-      def.minLevel <= heroLevel &&
-      !acceptedIds.has(def.id) &&
-      (def.repeatable || !state.quests.completedIds.includes(def.id)),
-  );
-  return { ...state, quests: { ...state.quests, available } };
-}
-
 /** Pure state transition. Rejected events return the original state unchanged. */
 export function reduce(state: GameState, event: GameEvent): GameState {
   switch (event.type) {
@@ -1140,8 +1126,6 @@ export function reduce(state: GameState, event: GameEvent): GameState {
       return acceptQuest(state, event.questId);
     case "TurnInQuest":
       return turnInQuest(state, event.questId);
-    case "RefreshQuests":
-      return refreshQuests(state);
     case "BattleAttack":
     case "BattleSkill":
     case "BattleItem":
