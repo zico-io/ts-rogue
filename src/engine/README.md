@@ -5,7 +5,7 @@ The engine owns deterministic, UI-independent game state and rules.
 ## Architecture
 
 `GameState` is a serializable tree containing the seed and RNG state, party,
-economy, inventory, world, dungeon, battle, log, and run flags. `reduce` applies
+economy, inventory, world, dungeon, battle, quests, log, and run flags. `reduce` applies
 typed events without I/O, while `GameStore` validates each result and retains a
 bounded debug journal.
 
@@ -17,7 +17,7 @@ bounded debug journal.
 | [`combat/`](combat/) | Initiative, actions, damage, rewards, and defeat handling |
 | [`loot/`](loot/) | Item generation, affixes, monster-specific drops, and equipment |
 | [`entities/`](entities/) | Party and inventory models |
-| [`../data/`](../data/) | Typed classes, monsters, shops, dungeons, items, affixes, and loot tables |
+| [`../data/`](../data/) | Typed classes, monsters, shops, dungeons, items, affixes, loot tables, and quests |
 | [`../persistence/`](../persistence/) | Single-slot SQLite save/load for the complete state |
 
 The engine may read static definitions from `src/data`, but it never imports
@@ -54,7 +54,9 @@ loot before returning to the originating scene.
   between landmarks (village, dungeon entrances) already visited this run.
   Neither triggers an encounter or advances the encounter meter.
 - Dungeons contain deterministic rooms, corridors, chests, stairs, wandering
-  encounters, and a boss floor.
+  encounters, and a boss floor. Stepping onto a story dungeon's entrance logs
+  its name and recommended level (resolved via `findDungeon`) instead of a
+  generic descend message.
 - Battles support Attack, Skill, Item, Defend, and Flee actions in a fixed
   initiative order for each round. Skills and monster attacks carry an
   element and may apply status effects (poison, burn, stun, slow, wet, oiled,
@@ -82,6 +84,17 @@ loot before returning to the originating scene.
   Cleave/Meteor) instead of a basic attack.
 - Loot combines item bases, rarity, prefixes, suffixes, and optional
   monster-specific implicit properties.
+- The Guild quest board (`quests.ts`) accepts up to 3 quests at once
+  (`AcceptQuest`), pays out gold/xp/item rewards and decrements a fetch
+  quest's item count on turn-in (`TurnInQuest`), and repopulates
+  `quests.available` from quests the party's level qualifies for and hasn't
+  already taken or completed (`RefreshQuests`). `advanceQuestsOnVictory`
+  advances every accepted quest's progress inside `finalizeWon`: kill quests
+  tally defeated `enemy.defId` matches capped at the target count, clear
+  quests set progress to 1 on a boss victory in the matching dungeon, and
+  fetch quests roll `dropChance` into `questItems` only for kills an
+  incomplete accepted quest still needs, so no RNG is spent on quests nobody
+  has taken.
 - Village events cover resting, buying, selling, and equipment; saving stays at
   the UI and persistence boundary.
 

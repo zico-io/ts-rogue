@@ -129,7 +129,7 @@ export class DungeonSceneView {
     const camera = poseFromState(ds);
     const columns = castWallColumns(ds, camera, pixelSize);
     const billboards = castBillboards(ds, camera, pixelSize, columns);
-    const ramp = dungeonRamp(ds.dungeonId);
+    const ramp = dungeonRamp(ds.theme);
 
     this.drawSky(pixelSize, ramp);
     this.drawColumns(columns, ramp);

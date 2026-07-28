@@ -39,12 +39,22 @@ describe("bar", () => {
 });
 
 describe("dungeonRamp", () => {
-  it("keys off the dungeon index and wraps", () => {
-    expect(dungeonRamp("dungeon-0")).toBe(DUNGEON_RAMPS[0]);
-    expect(dungeonRamp("dungeon-2")).toBe(DUNGEON_RAMPS[2]);
-    expect(dungeonRamp(`dungeon-${DUNGEON_RAMPS.length}`)).toBe(
-      DUNGEON_RAMPS[0],
-    );
-    expect(dungeonRamp("garbage")).toBe(DUNGEON_RAMPS[0]);
+  it("maps each story theme id to its own accent ramp", () => {
+    expect(dungeonRamp("crypt")).toBe(DUNGEON_RAMPS.crypt);
+    expect(dungeonRamp("cave")).toBe(DUNGEON_RAMPS.cave);
+    expect(dungeonRamp("ruins")).toBe(DUNGEON_RAMPS.ruins);
+  });
+
+  it("falls back to the crypt ramp for an unmapped theme", () => {
+    expect(dungeonRamp("garbage")).toBe(DUNGEON_RAMPS.crypt);
+  });
+
+  it("gives the three story themes visibly distinct ramps", () => {
+    const ramps = [
+      dungeonRamp("crypt"),
+      dungeonRamp("cave"),
+      dungeonRamp("ruins"),
+    ];
+    expect(new Set(ramps).size).toBe(3);
   });
 });

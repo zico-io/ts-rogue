@@ -3,9 +3,14 @@ import {
   chestLootFor,
   chestLootMessage,
   dungeonDefFor,
+  dungeonDescendFlavor,
+  dungeonEntryFlavor,
+  findDungeon,
 } from "../../data/dungeons";
-import { findShopItem, sellPriceFor } from "../../data/shops";
-import { resolveBattleEvent, startBattle } from "../combat/resolution";
+import { findItemBase } from "../../data/itemBases";
+import { QUESTS } from "../../data/quests";
+import { findShopItem, isGearShopItem, sellPriceFor } from "../../data/shops";
+import { grantXp, resolveBattleEvent, startBattle } from "../combat/resolution";
 import type { InventoryItem, PartyMember } from "../entities/party";
 import { createStartingHero, MAX_PARTY } from "../entities/party";
 import {
@@ -16,7 +21,7 @@ import {
 import { consumeItem, healAmount, isHealItem } from "../loot/consumables";
 import { type EquipmentSlotName, equipTargetSlot } from "../loot/equipment";
 import { FIELD_BACKPACK_CAP, isFieldBackpackFull } from "../loot/inventory";
-import { describeItem, itemSellPrice } from "../loot/items";
+import { describeItem, itemSellPrice, rolledItemPrice } from "../loot/items";
 import { EMPTY_LOOT_FILTER, type LootFilterRules } from "../loot/lootFilter";
 import {
   applyLootPickupWithFilter,
@@ -24,7 +29,10 @@ import {
   lootLogEntries,
   queueLootTriage,
 } from "../loot/pickup";
-import { rollChestLoot } from "../loot/resolution";
+import { rollChestLoot, rollShopStock } from "../loot/resolution";
+import type { ItemInstance } from "../loot/types";
+import { isQuestComplete, MAX_ACCEPTED_QUESTS } from "../quests";
+import { generateBounties } from "../quests/bounties";
 import { Rng } from "../rng/rng";
 import {
   createInitialDungeonState,
@@ -108,15 +116,67 @@ export function newGame(seed: number, options?: NewGameOptions): GameState {
     pendingLootTriage: null,
     lootFilter: EMPTY_LOOT_FILTER,
     lastLootOutcome: null,
+    shopStock: [],
+    quests: { available: [], accepted: [], completedIds: [] },
+    questItems: {},
   };
 
-  return rollRecruits(base);
+  return rollQuests(rollRecruits(base));
+}
+
+function highestPartyLevel(party: readonly PartyMember[]): number {
+  return Math.max(...party.map((member) => member.level));
 }
 
 function rollRecruits(state: GameState): GameState {
   const rng = new Rng(state.seed, state.rngState);
   const recruits = generateRecruits(rng, state.party[0]?.level ?? 1);
   return { ...state, recruits, rngState: rng.getState() };
+}
+
+// Rebuilds `available` from the level-filtered static QUESTS table (minus
+// completedIds and quests already accepted) plus a fresh batch of procedural
+// bounties (ENG-37). Used both by newGame's initial board and RefreshQuests.
+function rollQuests(state: GameState): GameState {
+  // Reads the current rngState to seed the bounty roll but deliberately does
+  // not persist the advanced state back (unlike rollRecruits). Every other
+  // subsystem -- movement encounters, combat rolls, chest loot -- draws from
+  // the same shared stream, and a huge amount of seeded test coverage pins
+  // exact outcomes for specific seeds. Spending draws here would shift every
+  // one of those downstream rolls for no player-visible benefit. The board
+  // still varies across visits because other actions (walking, fighting)
+  // naturally advance rngState between refreshes.
+  const rng = new Rng(state.seed, state.rngState);
+  const heroLevel = state.party[0]?.level ?? 1;
+  const acceptedIds = new Set(state.quests.accepted.map((q) => q.def.id));
+  const staticQuests = QUESTS.filter(
+    (quest) =>
+      quest.minLevel <= heroLevel &&
+      !state.quests.completedIds.includes(quest.id) &&
+      !acceptedIds.has(quest.id),
+  );
+  const bounties = generateBounties(rng, heroLevel);
+  return {
+    ...state,
+    quests: { ...state.quests, available: [...staticQuests, ...bounties] },
+  };
+}
+
+// Rare-stock restock cadence (ENG-41): fires alongside the tavern recruit
+// reroll (inn rest) so both rotating pools share one predictable cadence.
+function restockShop(state: GameState): GameState {
+  const rng = new Rng(state.seed, state.rngState);
+  const stock = rollShopStock(
+    rng,
+    highestPartyLevel(state.party),
+    state.nextItemId,
+  );
+  return {
+    ...state,
+    shopStock: stock.items,
+    nextItemId: stock.nextId,
+    rngState: rng.getState(),
+  };
 }
 
 function addItem(
@@ -153,7 +213,7 @@ function innHeal(state: GameState): GameState {
     log: [...state.log, entry(`Healed the party for ${cost} gold`)],
   };
 
-  return rollRecruits(healed);
+  return restockShop(rollRecruits(healed));
 }
 
 function storeBuy(
@@ -168,6 +228,12 @@ function storeBuy(
       log: [...state.log, entry(`Cannot buy unknown item "${itemId}"`)],
     };
   }
+  if (item.minLevel > highestPartyLevel(state.party)) {
+    return {
+      ...state,
+      log: [...state.log, entry(`${item.name} is not in stock yet`)],
+    };
+  }
   const cost = item.price * quantity;
   if (state.gold < cost) {
     return {
@@ -178,6 +244,39 @@ function storeBuy(
       ],
     };
   }
+  if (isGearShopItem(itemId)) {
+    const base = findItemBase(itemId);
+    if (!base) {
+      return {
+        ...state,
+        log: [...state.log, entry(`Cannot buy unknown item "${itemId}"`)],
+      };
+    }
+    let nextItemId = state.nextItemId;
+    const minted: ItemInstance[] = [];
+    for (let i = 0; i < quantity; i++) {
+      minted.push({
+        instanceId: `itm-${nextItemId}`,
+        baseId: base.id,
+        rarity: "common",
+        ilvl: base.ilvl,
+        prefixes: [],
+        suffixes: [],
+        implicit: null,
+      });
+      nextItemId += 1;
+    }
+    return {
+      ...state,
+      gold: state.gold - cost,
+      items: [...state.items, ...minted],
+      nextItemId,
+      log: [
+        ...state.log,
+        entry(`Bought ${quantity} ${item.name} for ${cost} gold`, "loot"),
+      ],
+    };
+  }
   return {
     ...state,
     gold: state.gold - cost,
@@ -185,6 +284,38 @@ function storeBuy(
     log: [
       ...state.log,
       entry(`Bought ${quantity} ${item.name} for ${cost} gold`, "loot"),
+    ],
+  };
+}
+
+function storeBuyRolled(state: GameState, instanceId: string): GameState {
+  const item = state.shopStock.find((entry) => entry.instanceId === instanceId);
+  if (!item) {
+    return {
+      ...state,
+      log: [...state.log, entry("That item is no longer in stock")],
+    };
+  }
+  const cost = rolledItemPrice(item);
+  if (state.gold < cost) {
+    return {
+      ...state,
+      log: [
+        ...state.log,
+        entry(`Not enough gold to buy ${describeItem(item)}`),
+      ],
+    };
+  }
+  return {
+    ...state,
+    gold: state.gold - cost,
+    items: [...state.items, item],
+    shopStock: state.shopStock.filter(
+      (entry) => entry.instanceId !== instanceId,
+    ),
+    log: [
+      ...state.log,
+      entry(`Bought ${describeItem(item)} for ${cost} gold`, "loot"),
     ],
   };
 }
@@ -258,13 +389,22 @@ function moveOverworld(
       (point) => point.x === target.x && point.y === target.y,
     );
     const dungeonId = dungeonWaypointId(entranceIndex);
+    const dungeonDef = findDungeon(dungeonId);
+    const descendMessage = dungeonDef
+      ? `You descend into ${dungeonDef.name} (recommended level ${dungeonDef.recommendedLevel})`
+      : "You descend into the dungeon";
+    const dungeonState = createInitialDungeonState(state.seed, dungeonId, 1);
     return {
       ...state,
       scene: "dungeon",
       worldState: { ...state.worldState, player: target },
-      dungeonState: createInitialDungeonState(state.seed, dungeonId, 1),
+      dungeonState,
       activatedWaypoints: activateWaypoint(state.activatedWaypoints, dungeonId),
-      log: [...state.log, entry("You descend into the dungeon", "quest")],
+      log: [
+        ...state.log,
+        entry(descendMessage, "quest"),
+        entry(dungeonEntryFlavor(dungeonState.theme), "quest"),
+      ],
     };
   }
 
@@ -460,7 +600,10 @@ function descendStairs(state: GameState): GameState {
   return {
     ...state,
     dungeonState: next,
-    log: [...state.log, entry(`You descend to floor ${nextFloor}`, "quest")],
+    log: [
+      ...state.log,
+      entry(dungeonDescendFlavor(next.theme, nextFloor), "quest"),
+    ],
   };
 }
 
@@ -848,6 +991,85 @@ function setLootFilter(state: GameState, rules: LootFilterRules): GameState {
   return { ...state, lootFilter: rules };
 }
 
+function acceptQuest(state: GameState, questId: string): GameState {
+  const { quests } = state;
+  if (quests.accepted.length >= MAX_ACCEPTED_QUESTS) return state;
+  const def = quests.available.find((quest) => quest.id === questId);
+  if (!def) return state;
+  return {
+    ...state,
+    quests: {
+      ...quests,
+      available: quests.available.filter((quest) => quest.id !== questId),
+      accepted: [...quests.accepted, { def, progress: 0 }],
+    },
+  };
+}
+
+function turnInQuest(state: GameState, questId: string): GameState {
+  const { quests, questItems } = state;
+  const accepted = quests.accepted.find((quest) => quest.def.id === questId);
+  if (!accepted || !isQuestComplete(accepted, questItems)) return state;
+
+  const { def } = accepted;
+  const party = state.party.map((member) =>
+    member.hp > 0 ? grantXp(member, def.reward.xp).member : member,
+  );
+  const inventory = def.reward.itemId
+    ? addItem(state.inventory, def.reward.itemId, 1)
+    : state.inventory;
+  const nextQuestItems =
+    def.objective.type === "fetch"
+      ? {
+          ...questItems,
+          [def.objective.questItemId]: Math.max(
+            0,
+            (questItems[def.objective.questItemId] ?? 0) - def.objective.count,
+          ),
+        }
+      : questItems;
+  const completedIds = def.repeatable
+    ? quests.completedIds
+    : [...quests.completedIds, def.id];
+  const itemName = def.reward.itemId
+    ? `, ${findShopItem(def.reward.itemId)?.name ?? def.reward.itemId}`
+    : "";
+
+  return {
+    ...state,
+    gold: state.gold + def.reward.gold,
+    party,
+    inventory,
+    questItems: nextQuestItems,
+    quests: {
+      ...quests,
+      accepted: quests.accepted.filter((quest) => quest.def.id !== questId),
+      completedIds,
+    },
+    log: [
+      ...state.log,
+      entry(
+        `Turned in "${def.title}" - +${def.reward.gold} gold, +${def.reward.xp} XP${itemName}`,
+        "quest",
+      ),
+    ],
+  };
+}
+
+function refreshQuests(state: GameState): GameState {
+  const heroLevel = state.party[0]?.level ?? 1;
+  const acceptedIds = new Set(
+    state.quests.accepted.map((quest) => quest.def.id),
+  );
+  const available = QUESTS.filter(
+    (def) =>
+      def.minLevel <= heroLevel &&
+      !acceptedIds.has(def.id) &&
+      (def.repeatable || !state.quests.completedIds.includes(def.id)),
+  );
+  return { ...state, quests: { ...state.quests, available } };
+}
+
 /** Pure state transition. Rejected events return the original state unchanged. */
 export function reduce(state: GameState, event: GameEvent): GameState {
   switch (event.type) {
@@ -870,6 +1092,10 @@ export function reduce(state: GameState, event: GameEvent): GameState {
       return storeBuy(state, event.itemId, event.quantity);
     case "StoreSell":
       return storeSell(state, event.itemId, event.quantity);
+    case "StoreBuyRolled":
+      return storeBuyRolled(state, event.instanceId);
+    case "RefreshShopStock":
+      return restockShop(state);
     case "EquipItem":
       return equipItem(state, event.instanceId, event.memberId);
     case "UnequipItem":
@@ -880,6 +1106,8 @@ export function reduce(state: GameState, event: GameEvent): GameState {
       return recruitMember(state, event.classId);
     case "RefreshRecruits":
       return rollRecruits(state);
+    case "RefreshQuests":
+      return rollQuests(state);
     case "HireRecruit":
       return hireRecruit(state, event.index);
     case "DismissMember":
@@ -908,6 +1136,12 @@ export function reduce(state: GameState, event: GameEvent): GameState {
       return resolveLootTriage(state, event);
     case "SetLootFilter":
       return setLootFilter(state, event.rules);
+    case "AcceptQuest":
+      return acceptQuest(state, event.questId);
+    case "TurnInQuest":
+      return turnInQuest(state, event.questId);
+    case "RefreshQuests":
+      return refreshQuests(state);
     case "BattleAttack":
     case "BattleSkill":
     case "BattleItem":

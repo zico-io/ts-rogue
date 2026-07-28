@@ -242,6 +242,7 @@ export function createInitialDungeonState(
   );
   return {
     dungeonId,
+    theme: dungeonDefFor(dungeonId).theme,
     floor,
     layout,
     player: { ...layout.entrance },

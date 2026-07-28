@@ -19,6 +19,7 @@ import {
 } from "../loot/pickup";
 import { rollVictoryLoot, weightedPick } from "../loot/resolution";
 import type { ItemInstance } from "../loot/types";
+import { advanceQuestsOnVictory } from "../quests";
 import { Rng, type RngState } from "../rng/rng";
 import {
   entry,
@@ -1157,6 +1158,19 @@ function finalizeWon(
   const goldGain = enemies.reduce((sum, e) => sum + e.gold, 0);
 
   const wasBossVictory = state.dungeonState?.encounter?.kind === "boss";
+  const dungeonId = state.dungeonState
+    ? dungeonDefFor(state.dungeonState.dungeonId).id
+    : null;
+  const rng = new Rng(state.seed, rngState);
+  const questAdvance = advanceQuestsOnVictory(
+    state.quests,
+    state.questItems,
+    enemies,
+    wasBossVictory,
+    dungeonId,
+    rng,
+  );
+  const finalRngState = rng.getState();
   const levelUpLogs: LogEntry[] = [];
   const finalParty = party.map((member) => {
     if (member.hp <= 0) return member;
@@ -1181,6 +1195,7 @@ function finalizeWon(
       entry("The dungeon guardian falls. The dungeon is cleared!", "quest"),
     );
   }
+  finalLogs.push(...questAdvance.logs);
 
   const filterContext = buildLootFilterContext(
     state.party,
@@ -1230,7 +1245,7 @@ function finalizeWon(
       : state.clearedAt;
   return {
     ...state,
-    rngState,
+    rngState: finalRngState,
     scene: bs.returnScene,
     party: finalParty,
     gold: state.gold + goldGain + pickup.outcome.goldGained,
@@ -1238,6 +1253,8 @@ function finalizeWon(
     items: pickup.items,
     nextItemId,
     lastLootOutcome: pickup.outcome,
+    quests: questAdvance.quests,
+    questItems: questAdvance.questItems,
     pendingLootTriage,
     dungeonState,
     clearedAt,

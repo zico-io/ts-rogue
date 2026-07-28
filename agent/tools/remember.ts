@@ -1,13 +1,14 @@
 import { defineTool } from "eve/tools";
 
-import { rememberExecute, rememberInputSchema } from "../lib/memory-tools";
+import { memoryStore } from "../lib/memory/store";
+import { rememberInputSchema } from "../lib/memory/tools";
 
 export default defineTool({
   description:
     "Save one durable operational fact to Eve's cross-session runtime memory - " +
     "a debugging insight, a workaround, an entity-dedup note, or similar " +
     "low-stakes context that would help a future session. This is not the " +
-    'reviewed shipped-behavior record (`.botfile/memory/domain/product.md`). ' +
+    "reviewed shipped-behavior record (`.botfile/memory/domain/`). " +
     "`category` must be one of the allowed values. A value that looks like a " +
     "password, access token, private key, or other credential or personal " +
     "data is rejected, not merely discouraged. Writing is autonomous and " +
@@ -15,7 +16,5 @@ export default defineTool({
     "value, category, and source. The store keeps a bounded number of " +
     "memories and silently drops the least-recently-updated one once full.",
   inputSchema: rememberInputSchema,
-  async execute(input) {
-    return await rememberExecute(input);
-  },
+  execute: (input) => memoryStore.put(input),
 });

@@ -1,6 +1,6 @@
 import { Application, Container, type ParticleContainer, Text } from "pixi.js";
 import { CLASSES } from "../data/classes";
-import { SHOP_ITEMS, sellPriceFor } from "../data/shops";
+import { isGearShopItem, nextLockedTier, sellPriceFor } from "../data/shops";
 import { atkFrom, defFrom, spdFrom } from "../engine/combat/resolution";
 import { recruitClassName, recruitCost } from "../engine/entities/recruits";
 import { compareItem, equipTargetSlot } from "../engine/loot/equipment";
@@ -8,6 +8,7 @@ import {
   describeItem,
   itemSellPrice,
   itemStatLine,
+  rolledItemPrice,
 } from "../engine/loot/items";
 import type { GameIncident } from "../engine/state/incidents";
 import { GameStore, INN_COST_PER_MEMBER, newGame } from "../engine/state/store";
@@ -29,6 +30,7 @@ import {
 } from "../ui/screens/title/interaction";
 import {
   buildPackEntries,
+  buildShopRows,
   EQUIP_SLOTS,
   OPTIONS,
   type OverviewUiState,
@@ -786,14 +788,52 @@ export async function bootGame(
     ];
 
     if (storeUi.mode === "shop") {
-      for (const [index, item] of SHOP_ITEMS.entries()) {
-        const selected = index === storeUi.shopCursor;
-        const owned =
-          state.inventory.find((entry) => entry.itemId === item.id)?.quantity ??
-          0;
+      const highestLevel = Math.max(...state.party.map((p) => p.level));
+      const shopRows = buildShopRows(highestLevel, state.shopStock);
+      const shopIndex = Math.min(storeUi.shopCursor, shopRows.length - 1);
+      const rareStart = shopRows.findIndex((row) => row.kind === "rolled");
+      for (const [index, row] of shopRows.entries()) {
+        const selected = index === shopIndex;
+        if (rareStart !== -1 && index === rareStart) {
+          lines.push({
+            text: "Rare Stock",
+            color: toPixiColor(theme.textMuted),
+          });
+        }
+        if (row.kind === "catalog") {
+          const item = row.item;
+          const owned = isGearShopItem(item.id)
+            ? state.items.filter((entry) => entry.baseId === item.id).length
+            : (state.inventory.find((entry) => entry.itemId === item.id)
+                ?.quantity ?? 0);
+          lines.push({
+            text: `${selected ? "> " : "  "}${item.name} - buy ${item.price}g / sell ${sellPriceFor(item)}g (owned ${owned})`,
+            color: selected ? toPixiColor(theme.accent) : undefined,
+          });
+        } else {
+          lines.push({
+            text: `${selected ? "> " : "  "}${describeItem(row.item)} - ${itemStatLine(row.item)} - buy ${rolledItemPrice(row.item)}g`,
+            color: selected
+              ? toPixiColor(theme.accent)
+              : toPixiColor(theme.rarity[row.item.rarity]),
+          });
+        }
+      }
+      const lockedTier = nextLockedTier(highestLevel);
+      if (lockedTier !== undefined) {
         lines.push({
-          text: `${selected ? "> " : "  "}${item.name} - buy ${item.price}g / sell ${sellPriceFor(item)}g (owned ${owned})`,
-          color: selected ? toPixiColor(theme.accent) : undefined,
+          text: `Locked: more stock unlocks at level ${lockedTier}.`,
+          color: toPixiColor(theme.textFaint),
+        });
+      }
+      const selectedRow = shopRows[shopIndex];
+      if (selectedRow?.kind === "rolled") {
+        const target = equipTargetSlot(member, selectedRow.item);
+        const targetLabel =
+          EQUIP_SLOTS.find((entry) => entry.slot === target)?.label ?? "?";
+        lines.push({
+          text: `Equipping into ${targetLabel}: ${deltaLine(compareItem(member, selectedRow.item))}`,
+          color: toPixiColor(theme.gold),
         });
       }
       lines.push({ text: "" });

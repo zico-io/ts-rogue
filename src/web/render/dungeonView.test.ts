@@ -28,6 +28,7 @@ function buildState(
 ): DungeonState {
   return {
     dungeonId: "dungeon-0",
+    theme: "crypt",
     floor: 1,
     layout,
     player,

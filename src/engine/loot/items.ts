@@ -56,6 +56,17 @@ export function itemSellPrice(item: ItemInstance): number {
   );
 }
 
+// Shop buy price for a rolled item (ENG-41): a straight markup on the same
+// itemSellPrice a player would get selling it back, so raising or lowering
+// the sell-side formula (baseValue + rarity multiplier + affix value sum)
+// automatically keeps the buy side honest instead of drifting via a second,
+// parallel price formula.
+const SHOP_BUY_MARKUP = 2;
+
+export function rolledItemPrice(item: ItemInstance): number {
+  return itemSellPrice(item) * SHOP_BUY_MARKUP;
+}
+
 export function itemBaseSlot(item: ItemInstance): ItemSlot | undefined {
   return findItemBase(item.baseId)?.slot;
 }

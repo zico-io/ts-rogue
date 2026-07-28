@@ -20,6 +20,9 @@
     "enabled": true,
     "rules": {
       "preset": "recommended",
+      "suspicious": {
+        "noExplicitAny": "error"
+      },
       "style": {
         "noRestrictedImports": {
           "level": "error",

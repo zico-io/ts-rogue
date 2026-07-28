@@ -12,6 +12,7 @@ import {
   rollImplicitPool,
   rollLootTable,
   rollRarity,
+  rollShopStock,
   rollVictoryLoot,
 } from "./resolution";
 import type { Rarity, RarityWeights } from "./types";
@@ -337,5 +338,44 @@ describe("DEFAULT_RARITY_WEIGHTS", () => {
   it("is defined", () => {
     expect(DEFAULT_RARITY_WEIGHTS).toBeDefined();
     expect(DEFAULT_RARITY_WEIGHTS.unique).toBe(1);
+  });
+});
+
+describe("rollShopStock (ENG-41 rotating rare stock)", () => {
+  it("rolls 2-3 items, all magic or rare, all with at least one affix", () => {
+    for (let seed = 1; seed <= 50; seed++) {
+      const result = rollShopStock(new Rng(seed), 1, 1);
+      expect(result.items.length).toBeGreaterThanOrEqual(2);
+      expect(result.items.length).toBeLessThanOrEqual(3);
+      for (const item of result.items) {
+        expect(["magic", "rare"]).toContain(item.rarity);
+        expect(item.prefixes.length + item.suffixes.length).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it("stamps sequential instance ids from startId", () => {
+    const result = rollShopStock(new Rng(42), 1, 10);
+    expect(result.nextId).toBe(10 + result.items.length);
+    result.items.forEach((item, index) => {
+      expect(item.instanceId).toBe(`itm-${10 + index}`);
+    });
+  });
+
+  it("draws from the tier-1 pool below level 5 and tier-3 at level 10+", () => {
+    const low = rollShopStock(new Rng(7), 1, 1);
+    const high = rollShopStock(new Rng(7), 10, 1);
+    const tier1Bases =
+      findLootTable("tier-1")?.items.map((i) => i.baseId) ?? [];
+    const tier3Bases =
+      findLootTable("tier-3")?.items.map((i) => i.baseId) ?? [];
+    for (const item of low.items) expect(tier1Bases).toContain(item.baseId);
+    for (const item of high.items) expect(tier3Bases).toContain(item.baseId);
+  });
+
+  it("is deterministic for a fixed seed and level", () => {
+    const a = rollShopStock(new Rng(99), 5, 1);
+    const b = rollShopStock(new Rng(99), 5, 1);
+    expect(a).toEqual(b);
   });
 });

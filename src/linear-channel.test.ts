@@ -1,20 +1,42 @@
+import type { HttpRouteDefinition, RouteHandlerArgs } from "eve/channels";
+import type { LinearChannelState } from "eve/channels/linear";
 import { describe, expect, it, vi } from "vitest";
 
-const { order, cancelMock, sendMock, waitUntilTasks, webhookVerifier } =
-  vi.hoisted(() => ({
-    order: [] as string[],
-    cancelMock: vi.fn(async () => {
-      order.push("cancel");
-      return { status: "accepted" as const };
-    }),
-    sendMock: vi.fn(async () => {
-      order.push("send");
-      return {};
-    }),
-    waitUntilTasks: [] as Promise<unknown>[],
+// This file drives the real `eve/channels/linear`: real `linearChannel`, real
+// webhook verification and parsing, real inbound-image attachment, real
+// GraphQL layer. Only two things are stubbed - the Connect credential broker
+// and the network - so what is asserted here is eve's actual behavior plus the
+// wrapper `agent/channels/linear.ts` puts around it. The rendering the channel
+// wires in is tested in `agent/lib/linear/renderer.test.ts`.
 
-    webhookVerifier: vi.fn(async () => true),
-  }));
+const {
+  order,
+  cancelMock,
+  resetMock,
+  resolveActiveSessionMock,
+  sendMock,
+  waitUntilTasks,
+  webhookVerifier,
+} = vi.hoisted(() => ({
+  order: [] as string[],
+  cancelMock: vi.fn(async () => {
+    order.push("cancel");
+    return { status: "accepted" as const };
+  }),
+  resetMock: vi.fn(async () => {
+    order.push("reset");
+    return { status: "reset" as const, previousSessionId: "eve-1" };
+  }),
+  resolveActiveSessionMock: vi.fn(
+    async () => undefined as { sessionId: string } | undefined,
+  ),
+  sendMock: vi.fn(async () => {
+    order.push("send");
+    return {};
+  }),
+  waitUntilTasks: [] as Promise<unknown>[],
+  webhookVerifier: vi.fn(async () => true),
+}));
 
 const { advanceIssueStateMock } = vi.hoisted(() => ({
   advanceIssueStateMock: vi.fn(async () => {
@@ -22,82 +44,90 @@ const { advanceIssueStateMock } = vi.hoisted(() => ({
   }),
 }));
 
-vi.mock("../agent/lib/issue-state", () => ({
+vi.mock("../agent/lib/linear/issue-state", () => ({
   advanceIssueState: advanceIssueStateMock,
 }));
 
 vi.mock("@vercel/connect/eve", () => ({
+  connectGitHubCredentials: () => ({}),
   connectLinearCredentials: () => ({
     accessToken: () => "connect-token",
     webhookVerifier,
   }),
 }));
 
-vi.mock("eve/channels", () => ({
-  defineChannel: (definition: unknown) => definition,
-  POST: (path: string, handler: unknown) => ({ method: "POST", path, handler }),
-}));
+/**
+ * Linear's GraphQL endpoint. Every mutation and query the channel makes lands
+ * here, so assertions read what eve really put on the wire.
+ */
+const graphql: { queryName: string; variables: Record<string, unknown> }[] = [];
+let liveSessionNodes: readonly unknown[] = [];
 
-vi.mock("eve/channels/linear", () => ({
-  callLinearGraphQL: vi.fn(async () => ({})),
-  createLinearAgentActivity: vi.fn(async () => ({ id: "a", success: true })),
-  createLinearAgentSessionOnComment: vi.fn(async () => ({ id: "sess-new" })),
-  createLinearAgentSessionOnIssue: vi.fn(async () => ({ id: "sess-new" })),
-  defaultOnAgentSession: vi.fn(() => ({ auth: null })),
-  formatLinearContextBlock: vi.fn(() => "context-block"),
-  LINEAR_CHANNEL_DEFAULT_ROUTE: "/eve/v1/linear",
-  linearContinuationToken: vi.fn(
-    (agentSessionId: string) => `linear:${agentSessionId}`,
-  ),
-  linearInputRequestSignal: vi.fn(() => ({})),
-  listLinearAgentSessionActivities: vi.fn(async () => []),
-  messageFromLinearAgentSessionEvent: vi.fn(() => "message"),
-  parseLinearWebhookEvent: vi.fn(({ body }: { body: string }) =>
-    JSON.parse(body),
-  ),
-  renderLinearInputRequests: vi.fn(() => "elicitation"),
-  signLinearWebhookBody: vi.fn(
-    () => "unused-because-webhookVerifier-bypasses-it",
-  ),
-  updateLinearAgentSession: vi.fn(async () => ({ success: true })),
-}));
+vi.stubGlobal(
+  "fetch",
+  vi.fn(async (url: string, init: { body?: string }) => {
+    if (String(url).includes("uploads.linear.app")) {
+      return new Response(new Uint8Array([1, 2, 3]), {
+        headers: { "content-type": "image/png" },
+      });
+    }
+    const { query, variables } = JSON.parse(init.body ?? "{}");
+    const queryName = /(?:mutation|query)\s+(\w+)/.exec(query)?.[1] ?? "";
+    graphql.push({ queryName, variables });
+    const data: Record<string, unknown> = {
+      AgentActivityCreate: {
+        agentActivityCreate: { success: true, agentActivity: { id: "a" } },
+      },
+      AgentSessionUpdate: { agentSessionUpdate: { success: true } },
+      IssueLiveAgentSessions: {
+        issue: { agentSessions: { nodes: liveSessionNodes } },
+      },
+    };
+    return Response.json({ data: data[queryName] ?? {} });
+  }),
+);
 
-const {
-  default: channel,
-  attachLinearInboundImages,
-  planFromTodoToolOutput,
-  resolveReceiveSession,
-  stateFromAgentSession,
-} = await import("../agent/channels/linear");
-const {
-  callLinearGraphQL,
-  createLinearAgentActivity,
-  linearInputRequestSignal,
-  messageFromLinearAgentSessionEvent,
-  renderLinearInputRequests,
-  updateLinearAgentSession,
-} = await import("eve/channels/linear");
+const { default: channel } = await import("../agent/channels/linear");
 
-// biome-ignore lint/suspicious/noExplicitAny: reaching into the mocked channel shape for tests
-const route = (channel as any).routes[0] as {
-  handler: (
-    req: Request,
-    args: {
-      // biome-ignore lint/suspicious/noExplicitAny: mocked handler args
-      send: any;
-      // biome-ignore lint/suspicious/noExplicitAny: mocked handler args
-      cancel: any;
-      // biome-ignore lint/suspicious/noExplicitAny: mocked handler args
-      waitUntil: any;
-      // biome-ignore lint/suspicious/noExplicitAny: mocked handler args
-      getSession: any;
-      // biome-ignore lint/suspicious/noExplicitAny: mocked handler args
-      receive: any;
-      params: Record<string, string>;
-      requestIp: string | null;
-    },
-  ) => Promise<Response>;
+const route = channel.routes[0] as HttpRouteDefinition<LinearChannelState>;
+
+/** The Agent Activities posted during a test, in eve's own input shape. */
+const activities = () =>
+  graphql
+    .filter((call) => call.queryName === "AgentActivityCreate")
+    .map(
+      (call) => (call.variables as { input: Record<string, unknown> }).input,
+    );
+
+const reset = () => {
+  order.length = 0;
+  graphql.length = 0;
+  liveSessionNodes = [];
+  cancelMock.mockClear();
+  sendMock.mockClear();
+  advanceIssueStateMock.mockClear();
+  resetMock.mockClear();
+  resolveActiveSessionMock.mockClear();
+  resolveActiveSessionMock.mockResolvedValue(undefined);
+  waitUntilTasks.length = 0;
 };
+
+// The mocks answer with the shape each assertion reads, not a whole eve
+// `Session` / `RouteHandlerArgs`; one cast keeps the seam honest about that.
+const routeArgs = (
+  waitUntil: (task: Promise<unknown>) => void,
+): RouteHandlerArgs<LinearChannelState> =>
+  ({
+    cancel: cancelMock,
+    getSession: vi.fn(),
+    params: {},
+    receive: vi.fn(),
+    requestIp: null,
+    reset: resetMock,
+    resolveActiveSession: resolveActiveSessionMock,
+    send: sendMock,
+    waitUntil,
+  }) as unknown as RouteHandlerArgs<LinearChannelState>;
 
 const agentSession = {
   id: "sess-1",
@@ -109,56 +139,62 @@ const agentSession = {
   sourceCommentId: null,
 };
 
-const createdEvent = {
-  kind: "agent_session",
+/** A real Linear `AgentSessionEvent` webhook body. */
+const webhook = (overrides: Record<string, unknown> = {}) => ({
+  type: "AgentSessionEvent",
   action: "created",
   agentSession,
-  delivery: { event: "AgentSessionEvent", id: "delivery-1" },
+  organizationId: "org-1",
   previousComments: [],
-  raw: {},
-};
+  ...overrides,
+});
 
-const promptedEvent = {
-  kind: "agent_session",
+const createdEvent = webhook();
+
+const promptedEvent = webhook({
   action: "prompted",
-  agentSession,
   agentActivity: {
-    body: "actually, cancel and redo it",
-    content: {},
     id: "activity-1",
+    content: { body: "actually, cancel and redo it", type: "prompt" },
   },
-  delivery: { event: "AgentSessionEvent", id: "delivery-2" },
-  previousComments: [],
-  raw: {},
-};
+});
+
+const stoppedEvent = webhook({
+  action: "prompted",
+  agentActivity: {
+    id: "activity-1",
+    content: { body: "stop", type: "prompt" },
+    signal: "stop",
+  },
+});
+
+const liveSession = (id: string, createdAt: string, url: string | null) => ({
+  id,
+  status: "active",
+  createdAt,
+  url,
+  activities: { nodes: [{ updatedAt: new Date().toISOString() }] },
+});
 
 const invoke = async (event: unknown) => {
   const req = new Request("http://localhost/eve/v1/linear", {
     method: "POST",
     body: JSON.stringify(event),
+    headers: {
+      "linear-delivery": "delivery-1",
+      "linear-event": "AgentSession",
+    },
   });
   const waitUntil = vi.fn((task: Promise<unknown>) => {
     waitUntilTasks.push(task);
   });
-  const response = await route.handler(req, {
-    send: sendMock,
-    cancel: cancelMock,
-    waitUntil,
-    getSession: vi.fn(),
-    receive: vi.fn(),
-    params: {},
-    requestIp: null,
-  });
+  const response = await route.handler(req, routeArgs(waitUntil));
   await Promise.all(waitUntilTasks);
   return response;
 };
-
 describe("agent/channels/linear (cancel-before-send)", () => {
   it("cancels the in-flight turn before dispatching a prompted webhook", async () => {
-    order.length = 0;
-    cancelMock.mockClear();
-    sendMock.mockClear();
-    waitUntilTasks.length = 0;
+    reset();
 
     const response = await invoke(promptedEvent);
 
@@ -169,34 +205,28 @@ describe("agent/channels/linear (cancel-before-send)", () => {
   });
 
   it("also cancels before dispatching a created webhook", async () => {
-    order.length = 0;
-    cancelMock.mockClear();
-    sendMock.mockClear();
-    waitUntilTasks.length = 0;
+    reset();
 
     const response = await invoke(createdEvent);
 
     expect(response.status).toBe(200);
     expect(cancelMock).toHaveBeenCalledTimes(1);
     expect(sendMock).toHaveBeenCalledTimes(1);
-    expect(order).toEqual(["cancel", "send", "advance"]);
+    expect(order).toEqual(["cancel", "advance", "send"]);
   });
 
   it("cancels with the continuation token for the event's agent session id", async () => {
-    order.length = 0;
-    cancelMock.mockClear();
-    sendMock.mockClear();
-    waitUntilTasks.length = 0;
+    reset();
 
     await invoke(promptedEvent);
 
     expect(cancelMock).toHaveBeenCalledWith({
-      continuationToken: `linear:${agentSession.id}`,
+      continuationToken: `agent-session:${agentSession.id}`,
     });
   });
 
   it("returns 401 and never dispatches when the webhook fails verification", async () => {
-    webhookVerifier.mockResolvedValueOnce(false);
+    webhookVerifier.mockResolvedValue(false);
     cancelMock.mockClear();
     sendMock.mockClear();
     waitUntilTasks.length = 0;
@@ -208,40 +238,17 @@ describe("agent/channels/linear (cancel-before-send)", () => {
     const waitUntil = vi.fn((task: Promise<unknown>) =>
       waitUntilTasks.push(task),
     );
-    const response = await route.handler(req, {
-      send: sendMock,
-      cancel: cancelMock,
-      waitUntil,
-      getSession: vi.fn(),
-      receive: vi.fn(),
-      params: {},
-      requestIp: null,
-    });
+    const response = await route.handler(req, routeArgs(waitUntil));
     await Promise.all(waitUntilTasks);
 
     expect(response.status).toBe(401);
     expect(cancelMock).not.toHaveBeenCalled();
     expect(sendMock).not.toHaveBeenCalled();
+    webhookVerifier.mockResolvedValue(true);
   });
 });
 
-const stoppedEvent = {
-  ...promptedEvent,
-  agentActivity: {
-    ...promptedEvent.agentActivity,
-    signal: "stop",
-  },
-};
-
 describe("human-to-agent stop signal (HAR-39)", () => {
-  const reset = () => {
-    order.length = 0;
-    cancelMock.mockClear();
-    sendMock.mockClear();
-    waitUntilTasks.length = 0;
-    vi.mocked(createLinearAgentActivity).mockClear();
-  };
-
   it("cancels the turn and posts a response activity without dispatching on stop signal", async () => {
     reset();
 
@@ -249,12 +256,10 @@ describe("human-to-agent stop signal (HAR-39)", () => {
 
     expect(cancelMock).toHaveBeenCalledTimes(1);
     expect(cancelMock).toHaveBeenCalledWith({
-      continuationToken: "linear:sess-1",
+      continuationToken: "agent-session:sess-1",
     });
     expect(sendMock).not.toHaveBeenCalled();
-    const activity = vi
-      .mocked(createLinearAgentActivity)
-      .mock.calls.at(-1)?.[0].activity;
+    const activity = activities().at(-1);
     expect(activity).toMatchObject({
       agentSessionId: "sess-1",
       content: { type: "response" },
@@ -277,60 +282,30 @@ describe("human-to-agent stop signal (HAR-39)", () => {
 });
 
 describe("duplicate created-session guard", () => {
-  const reset = () => {
-    order.length = 0;
-    cancelMock.mockClear();
-    sendMock.mockClear();
-    waitUntilTasks.length = 0;
-    vi.mocked(callLinearGraphQL).mockClear();
-    vi.mocked(createLinearAgentActivity).mockClear();
-  };
-
-  const liveSessions = (nodes: readonly unknown[]) => ({
-    issue: {
-      agentSessions: {
-        nodes: nodes.map((node) =>
-          node && typeof node === "object" && !("activities" in node)
-            ? {
-                ...node,
-                activities: {
-                  nodes: [
-                    { updatedAt: new Date(Date.now() - 60_000).toISOString() },
-                  ],
-                },
-              }
-            : node,
-        ),
-      },
-    },
-  });
-
   it("declines a created session when an older session is already live on the issue", async () => {
     reset();
-    vi.mocked(callLinearGraphQL).mockResolvedValueOnce(
-      liveSessions([
-        {
-          id: "sess-0",
-          status: "active",
-          createdAt: "2026-07-25T10:00:00.000Z",
-          url: "https://linear.app/sess-0",
-        },
-        {
-          id: "sess-1",
-          status: "pending",
-          createdAt: "2026-07-25T11:00:00.000Z",
-          url: "https://linear.app/sess-1",
-        },
-      ]),
-    );
+    liveSessionNodes = [
+      liveSession(
+        "sess-0",
+        "2026-07-25T10:00:00.000Z",
+        "https://linear.app/sess-0",
+      ),
+      liveSession(
+        "sess-1",
+        "2026-07-25T11:00:00.000Z",
+        "https://linear.app/sess-1",
+      ),
+    ];
 
     await invoke(createdEvent);
 
-    expect(cancelMock).not.toHaveBeenCalled();
+    // The wrapper cancels ahead of eve's dispatch, so a declined duplicate
+    // still cancels - against its own continuation token, which owns no turn.
+    expect(cancelMock).toHaveBeenCalledWith({
+      continuationToken: "agent-session:sess-1",
+    });
     expect(sendMock).not.toHaveBeenCalled();
-    const activity = vi
-      .mocked(createLinearAgentActivity)
-      .mock.calls.at(-1)?.[0].activity;
+    const activity = activities().at(-1);
     expect(activity).toMatchObject({
       agentSessionId: "sess-1",
       content: { type: "response" },
@@ -340,69 +315,24 @@ describe("duplicate created-session guard", () => {
     );
   });
 
-  it("dispatches when the only older session is stale (idle past the threshold)", async () => {
-    reset();
-    vi.mocked(callLinearGraphQL).mockResolvedValueOnce(
-      liveSessions([
-        {
-          id: "sess-0",
-          status: "active",
-          createdAt: "2026-07-25T10:00:00.000Z",
-          url: "https://linear.app/sess-0",
-
-          activities: {
-            nodes: [
-              { updatedAt: new Date(Date.now() - 60 * 60_000).toISOString() },
-            ],
-          },
-        },
-      ]),
-    );
-
-    await invoke(createdEvent);
-
-    expect(order).toEqual(["cancel", "send", "advance"]);
-    expect(createLinearAgentActivity).not.toHaveBeenCalled();
-  });
-
   it("dispatches when the created session is the oldest live one", async () => {
     reset();
-    vi.mocked(callLinearGraphQL).mockResolvedValueOnce(
-      liveSessions([
-        {
-          id: "sess-1",
-          status: "pending",
-          createdAt: "2026-07-25T10:00:00.000Z",
-          url: "https://linear.app/sess-1",
-        },
-        {
-          id: "sess-9",
-          status: "pending",
-          createdAt: "2026-07-25T11:00:00.000Z",
-          url: "https://linear.app/sess-9",
-        },
-      ]),
-    );
+    liveSessionNodes = [
+      liveSession(
+        "sess-1",
+        "2026-07-25T10:00:00.000Z",
+        "https://linear.app/sess-1",
+      ),
+      liveSession(
+        "sess-9",
+        "2026-07-25T11:00:00.000Z",
+        "https://linear.app/sess-9",
+      ),
+    ];
 
     await invoke(createdEvent);
 
-    expect(order).toEqual(["cancel", "send", "advance"]);
-  });
-
-  it("exempts agent-created sessions (handoff successors) without querying", async () => {
-    reset();
-
-    await invoke({
-      ...createdEvent,
-      agentSession: {
-        ...agentSession,
-        appUserId: "app-user-1",
-        creatorId: "app-user-1",
-      },
-    });
-
-    expect(callLinearGraphQL).not.toHaveBeenCalled();
-    expect(order).toEqual(["cancel", "send", "advance"]);
+    expect(order).toEqual(["cancel", "advance", "send"]);
   });
 
   it("never guards prompted events", async () => {
@@ -410,45 +340,14 @@ describe("duplicate created-session guard", () => {
 
     await invoke(promptedEvent);
 
-    expect(callLinearGraphQL).not.toHaveBeenCalled();
-    expect(order).toEqual(["cancel", "send"]);
-  });
-
-  it("fails open when the live-session query errors", async () => {
-    reset();
-    vi.mocked(callLinearGraphQL).mockRejectedValueOnce(
-      new Error("Linear is down"),
+    expect(graphql.map((call) => call.queryName)).not.toContain(
+      "IssueLiveAgentSessions",
     );
-
-    await invoke(createdEvent);
-
-    expect(order).toEqual(["cancel", "send", "advance"]);
-  });
-
-  it("fails open when the session carries no issue id", async () => {
-    reset();
-
-    await invoke({
-      ...createdEvent,
-      agentSession: { ...agentSession, issue: null, issueId: null },
-    });
-
-    expect(callLinearGraphQL).not.toHaveBeenCalled();
     expect(order).toEqual(["cancel", "send"]);
   });
 });
 
 describe("issue lifecycle sync on dispatch", () => {
-  const reset = () => {
-    order.length = 0;
-    cancelMock.mockClear();
-    sendMock.mockClear();
-    waitUntilTasks.length = 0;
-    vi.mocked(callLinearGraphQL).mockClear();
-    vi.mocked(createLinearAgentActivity).mockClear();
-    advanceIssueStateMock.mockClear();
-  };
-
   it("moves the issue to In Progress after dispatching a created session", async () => {
     reset();
 
@@ -458,7 +357,7 @@ describe("issue lifecycle sync on dispatch", () => {
     expect(advanceIssueStateMock).toHaveBeenCalledWith(
       expect.objectContaining({ issueRef: "issue-1", target: "inProgress" }),
     );
-    expect(order).toEqual(["cancel", "send", "advance"]);
+    expect(order).toEqual(["cancel", "advance", "send"]);
   });
 
   it("never syncs on prompted events", async () => {
@@ -471,26 +370,9 @@ describe("issue lifecycle sync on dispatch", () => {
 
   it("never syncs a guard-declined duplicate session", async () => {
     reset();
-    vi.mocked(callLinearGraphQL).mockResolvedValueOnce({
-      issue: {
-        agentSessions: {
-          nodes: [
-            {
-              id: "sess-0",
-              status: "active",
-              createdAt: "2026-07-25T10:00:00.000Z",
-              url: null,
-
-              activities: {
-                nodes: [
-                  { updatedAt: new Date(Date.now() - 60_000).toISOString() },
-                ],
-              },
-            },
-          ],
-        },
-      },
-    });
+    liveSessionNodes = [
+      liveSession("sess-0", "2026-07-25T10:00:00.000Z", null),
+    ];
 
     await invoke(createdEvent);
 
@@ -528,520 +410,22 @@ describe("issue lifecycle sync on dispatch", () => {
   });
 });
 
-describe("issue lifecycle sync on session failure", () => {
-  const failureData = { message: "boom", details: {} };
-  const channelCtx = (issueId: string | null) => ({
-    state: { agentSessionId: "sess-1", issueId, pendingToolCallMessage: null },
-  });
+describe("inbound image dispatch", () => {
+  it("sends the Linear upload as an inline image part, and still cancels first", async () => {
+    reset();
 
-  it("moves the issue to Blocked on session.failed", async () => {
-    advanceIssueStateMock.mockClear();
-    // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handler directly
-    await (channel as any).events["session.failed"](
-      failureData,
-      channelCtx("issue-1"),
-    );
-
-    expect(advanceIssueStateMock).toHaveBeenCalledWith(
-      expect.objectContaining({ issueRef: "issue-1", target: "blocked" }),
-    );
-  });
-
-  it("skips the sync when the failed session has no issue", async () => {
-    advanceIssueStateMock.mockClear();
-    // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handler directly
-    await (channel as any).events["session.failed"](
-      failureData,
-      channelCtx(null),
-    );
-
-    expect(advanceIssueStateMock).not.toHaveBeenCalled();
-  });
-
-  it("never syncs on turn.failed (recoverable)", async () => {
-    advanceIssueStateMock.mockClear();
-    // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handler directly
-    await (channel as any).events["turn.failed"](
-      failureData,
-      channelCtx("issue-1"),
-    );
-
-    expect(advanceIssueStateMock).not.toHaveBeenCalled();
-  });
-});
-
-describe("actions.requested ephemeral render", () => {
-  const postAction = async (action: unknown) => {
-    vi.mocked(createLinearAgentActivity).mockClear();
-    // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handler directly
-    await (channel as any).events["actions.requested"](
-      { actions: [action] },
-      { state: { agentSessionId: "sess-1", pendingToolCallMessage: null } },
-    );
-    return vi.mocked(createLinearAgentActivity).mock.calls[0]?.[0].activity;
-  };
-
-  it("labels a subagent-call with the delegation packet's lead line, not the static tool description", async () => {
-    const activity = await postAction({
-      kind: "subagent-call",
-      name: "agent",
-      description: "Delegate a focused subtask to a fresh copy of yourself.",
-      input: {
-        message: "issue: ROG-65 - Add depth to the overworld\nscope: ...",
-      },
-    });
-    expect(activity?.content).toEqual({
-      action: "subagent-call",
-      parameter: "issue: ROG-65 - Add depth to the overworld",
-      type: "action",
-    });
-    expect(activity?.ephemeral).toBe(true);
-  });
-
-  it("falls back to the description when a subagent-call has no usable message", async () => {
-    const activity = await postAction({
-      kind: "subagent-call",
-      name: "agent",
-      description: "Delegate a focused subtask to a fresh copy of yourself.",
-      input: { message: "   \n  " },
-    });
-    expect(activity?.content).toMatchObject({
-      parameter: "Delegate a focused subtask to a fresh copy of yourself.",
-    });
-  });
-
-  it("renders a plain tool call as a humanized label and readable parameter, not a JSON blob", async () => {
-    const activity = await postAction({
-      kind: "tool-call",
-      callId: "c1",
-      toolName: "bash",
-      input: { command: "git status" },
-    });
-    expect(activity?.content).toEqual({
-      action: "Bash",
-      parameter: "git status",
-      type: "action",
-    });
-  });
-});
-
-describe("actions.requested prose durability (HAR-68)", () => {
-  const fireActionsRequested = async (
-    actions: unknown[],
-    pendingToolCallMessage: string | null,
-  ) => {
-    vi.mocked(createLinearAgentActivity).mockClear();
-    const state: Record<string, unknown> = {
-      agentSessionId: "sess-1",
-      pendingToolCallMessage,
-    };
-    // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handler directly
-    await (channel as any).events["actions.requested"]({ actions }, { state });
-    return {
-      calls: vi
-        .mocked(createLinearAgentActivity)
-        .mock.calls.map((call) => call[0].activity),
-      state,
-    };
-  };
-  const bashAction = {
-    kind: "tool-call",
-    callId: "c1",
-    toolName: "bash",
-    input: { command: "git status" },
-  };
-
-  it("posts prose buffered ahead of a tool call as a durable thought, not an ephemeral one", async () => {
-    const { calls } = await fireActionsRequested(
-      [bashAction],
-      "Let me check the current git status.",
-    );
-    expect(calls[0]).toMatchObject({
-      content: {
-        body: "Let me check the current git status.",
-        type: "thought",
-      },
-    });
-    expect(calls[0]?.ephemeral).not.toBe(true);
-  });
-
-  it("still posts the ephemeral action chip for the tool call that followed the prose", async () => {
-    const { calls, state } = await fireActionsRequested(
-      [bashAction],
-      "Let me check the current git status.",
-    );
-    expect(calls).toHaveLength(2);
-    expect(calls[1]).toMatchObject({
-      content: { action: "Bash", parameter: "git status", type: "action" },
-      ephemeral: true,
-    });
-    expect(state.pendingActionsByCallId).toMatchObject({
-      c1: { action: "Bash", parameter: "git status" },
-    });
-  });
-
-  it("posts only the ephemeral action chip when there is no buffered prose", async () => {
-    const { calls } = await fireActionsRequested([bashAction], null);
-    expect(calls).toHaveLength(1);
-    expect(calls[0]?.content).toMatchObject({ type: "action" });
-  });
-});
-
-describe("message.completed narration buffering (HAR-78)", () => {
-  const fireMessageCompleted = async (data: {
-    message: string | null;
-    finishReason: string;
-  }) => {
-    const state: Record<string, unknown> = {
-      agentSessionId: "sess-1",
-      pendingToolCallMessage: null,
-    };
-    // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handler directly
-    await (channel as any).events["message.completed"](data, { state });
-    return state;
-  };
-
-  it("buffers the full multi-line narration ahead of a tool call, not just its first line", async () => {
-    const proposal = [
-      'Create the "Skill Trees" project with these 5 sequenced tickets:',
-      "1. Skill tree data model",
-      "2. Skill points & node state",
-      "3. Skill tree UI",
-      "4. Battle skill menu",
-      "5. Starter trees for Warrior/Rogue/Wizard",
-    ].join("\n");
-
-    const state = await fireMessageCompleted({
-      message: proposal,
-      finishReason: "tool-calls",
-    });
-
-    expect(state.pendingToolCallMessage).toBe(proposal);
-  });
-
-  it("clears the buffer and posts nothing when the tool-call narration is empty", async () => {
-    const state = await fireMessageCompleted({
-      message: null,
-      finishReason: "tool-calls",
-    });
-
-    expect(state.pendingToolCallMessage).toBeNull();
-  });
-
-  it("still posts a terminal reply in full and clears the buffer", async () => {
-    vi.mocked(createLinearAgentActivity).mockClear();
-    const state = await fireMessageCompleted({
-      message: "Done. Five tickets created.",
-      finishReason: "stop",
-    });
-
-    expect(state.pendingToolCallMessage).toBeNull();
-    const activity = vi.mocked(createLinearAgentActivity).mock.calls[0]?.[0]
-      .activity;
-    expect(activity?.content).toMatchObject({
-      body: "Done. Five tickets created.",
-      type: "response",
-    });
-  });
-});
-
-describe("ask_question confirmation gate stays self-contained (HAR-78)", () => {
-  it("keeps the full proposal visible ahead of a terse ask_question prompt, in order", async () => {
-    vi.mocked(createLinearAgentActivity).mockClear();
-    vi.mocked(renderLinearInputRequests).mockReturnValueOnce(
-      "Create it as described?\n\n1. Yes, create it as described\n2. Don't do this",
-    );
-    vi.mocked(linearInputRequestSignal).mockReturnValueOnce({
-      signal: "select",
-      signalMetadata: {
-        options: [{ label: "Yes, create it as described", value: "approve" }],
-      },
-    });
-
-    const proposal = [
-      'Create the "Skill Trees" project with these 5 sequenced tickets:',
-      "1. Skill tree data model",
-      "2. Skill points & node state",
-      "3. Skill tree UI",
-      "4. Battle skill menu",
-      "5. Starter trees for Warrior/Rogue/Wizard",
-    ].join("\n");
-    const askQuestionAction = {
-      kind: "tool-call",
-      callId: "c1",
-      toolName: "ask_question",
-      input: { prompt: "Create it as described?" },
-    };
-    const state: Record<string, unknown> = {
-      agentSessionId: "sess-1",
-      pendingToolCallMessage: null,
-    };
-
-    // The model narrates the full proposal, then calls `ask_question` with
-    // only a short recap - the same shape as the reported ENG-26 session.
-    // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handlers directly
-    await (channel as any).events["message.completed"](
-      { message: proposal, finishReason: "tool-calls" },
-      { state },
-    );
-    // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handlers directly
-    await (channel as any).events["actions.requested"](
-      { actions: [askQuestionAction] },
-      { state },
-    );
-    // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handlers directly
-    await (channel as any).events["input.requested"](
-      {
-        requests: [
-          {
-            requestId: "req-1",
-            prompt: "Create it as described?",
-            options: [{ id: "approve", label: "Yes, create it as described" }],
-          },
-        ],
-      },
-      { state },
-    );
-
-    const posted = vi
-      .mocked(createLinearAgentActivity)
-      .mock.calls.map((call) => call[0].activity.content);
-
-    // The full ticket-by-ticket proposal must be posted as its own durable
-    // activity before the terse elicitation - Linear folds narration into a
-    // preceding tool call's collapsed activity, so the elicitation prompt
-    // alone is not enough for a reviewer to see what they are approving.
-    const thoughtIndex = posted.findIndex(
-      (content) => content.type === "thought" && content.body === proposal,
-    );
-    const elicitationIndex = posted.findIndex(
-      (content) => content.type === "elicitation",
-    );
-    expect(thoughtIndex).toBeGreaterThanOrEqual(0);
-    expect(elicitationIndex).toBeGreaterThan(thoughtIndex);
-  });
-});
-
-describe("input.requested elicitation (HAR-17)", () => {
-  it("posts a clean elicitation body with Linear's native select signal, not a hidden tracking marker", async () => {
-    vi.mocked(createLinearAgentActivity).mockClear();
-    vi.mocked(renderLinearInputRequests).mockReturnValueOnce(
-      "Approve this breakdown?\n\n1. Approve\n2. Revise",
-    );
-    vi.mocked(linearInputRequestSignal).mockReturnValueOnce({
-      signal: "select",
-      signalMetadata: {
-        options: [
-          { label: "Approve", value: "approve" },
-          { label: "Revise", value: "revise" },
-        ],
-      },
-    });
-    const requests = [
-      {
-        requestId: "req-1",
-        prompt: "Approve this breakdown?",
-        options: [
-          { id: "approve", label: "Approve" },
-          { id: "revise", label: "Revise" },
-        ],
-      },
-    ];
-
-    await // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handler directly
-    (channel as any).events["input.requested"](
-      { requests },
-      { state: { agentSessionId: "sess-1" } },
-    );
-
-    expect(renderLinearInputRequests).toHaveBeenCalledWith(requests);
-    expect(linearInputRequestSignal).toHaveBeenCalledWith(requests);
-    const activity = vi.mocked(createLinearAgentActivity).mock.calls[0]?.[0]
-      .activity;
-    expect(activity).toMatchObject({
-      content: {
-        body: "Approve this breakdown?\n\n1. Approve\n2. Revise",
-        type: "elicitation",
-      },
-      signal: "select",
-      signalMetadata: {
-        options: [
-          { label: "Approve", value: "approve" },
-          { label: "Revise", value: "revise" },
-        ],
-      },
-    });
-    expect((activity?.content as { body?: string })?.body).not.toMatch(
-      /eve-input/,
-    );
-  });
-});
-
-describe("attachLinearInboundImages", () => {
-  const UPLOAD_URL = "https://uploads.linear.app/abc/shot.png";
-  const pngResponse = () =>
-    new Response(new Uint8Array([137, 80, 78, 71]), {
-      status: 200,
-      headers: { "content-type": "image/png" },
-    });
-
-  it("returns text without image references unchanged and never fetches", async () => {
-    const fetchMock = vi.fn();
-    await expect(
-      attachLinearInboundImages({
-        content: "no images here",
-        credentials: { accessToken: "tok" },
-        fetch: fetchMock,
-      }),
-    ).resolves.toBe("no images here");
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it("fetches a trusted upload with Bearer auth and replaces its markdown with alt text plus a file part", async () => {
-    const fetchMock = vi.fn(async () => pngResponse());
-    const result = await attachLinearInboundImages({
-      content: `see ![screenshot](${UPLOAD_URL}) here`,
-      credentials: { accessToken: "tok" },
-      fetch: fetchMock,
-    });
-    expect(fetchMock).toHaveBeenCalledWith(UPLOAD_URL, {
-      credentials: "omit",
-      headers: { accept: "image/*", authorization: "Bearer tok" },
-      redirect: "manual",
-    });
-    expect(result).toEqual([
-      { text: "see screenshot here", type: "text" },
-      {
-        data: Buffer.from([137, 80, 78, 71]),
-        mediaType: "image/png",
-        type: "file",
-      },
-    ]);
-  });
-
-  it("returns file parts alone when the message is only an image", async () => {
-    const result = await attachLinearInboundImages({
-      content: `![](${UPLOAD_URL})`,
-      credentials: { accessToken: "tok" },
-      fetch: vi.fn(async () => pngResponse()),
-    });
-    expect(result).toEqual([
-      {
-        data: Buffer.from([137, 80, 78, 71]),
-        mediaType: "image/png",
-        type: "file",
-      },
-    ]);
-  });
-
-  it("never fetches untrusted origins or credentialed URLs", async () => {
-    const fetchMock = vi.fn();
-    const content =
-      "![a](https://evil.example/x.png) ![b](https://user:pw@uploads.linear.app/x.png)";
-    await expect(
-      attachLinearInboundImages({
-        content,
-        credentials: { accessToken: "tok" },
-        fetch: fetchMock,
-      }),
-    ).resolves.toBe(content);
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it("keeps a failed reference's markdown while attaching the successful one", async () => {
-    const failedUrl = "https://uploads.linear.app/abc/missing.png";
-    const fetchMock = vi.fn(async (url: RequestInfo | URL) =>
-      url === UPLOAD_URL ? pngResponse() : new Response(null, { status: 404 }),
-    );
-    const result = await attachLinearInboundImages({
-      content: `![ok](${UPLOAD_URL}) and ![gone](${failedUrl})`,
-      credentials: { accessToken: "tok" },
-      fetch: fetchMock,
-    });
-    expect(result).toEqual([
-      { text: `ok and ![gone](${failedUrl})`, type: "text" },
-      {
-        data: Buffer.from([137, 80, 78, 71]),
-        mediaType: "image/png",
-        type: "file",
-      },
-    ]);
-  });
-
-  it("treats a non-image content-type as failure", async () => {
-    const content = `![x](${UPLOAD_URL})`;
-    await expect(
-      attachLinearInboundImages({
-        content,
-        credentials: { accessToken: "tok" },
-        fetch: vi.fn(
-          async () =>
-            new Response("<html></html>", {
-              status: 200,
-              headers: { "content-type": "text/html" },
-            }),
-        ),
-      }),
-    ).resolves.toBe(content);
-  });
-
-  it("returns the raw text when no access token resolves", async () => {
-    vi.stubEnv("LINEAR_AGENT_ACCESS_TOKEN", "");
-    vi.stubEnv("LINEAR_ACCESS_TOKEN", "");
-    vi.stubEnv("LINEAR_API_KEY", "");
-    vi.stubEnv("LINEAR_API_TOKEN", "");
-    try {
-      const fetchMock = vi.fn();
-      const content = `![x](${UPLOAD_URL})`;
-      await expect(
-        attachLinearInboundImages({ content, fetch: fetchMock }),
-      ).resolves.toBe(content);
-      expect(fetchMock).not.toHaveBeenCalled();
-    } finally {
-      vi.unstubAllEnvs();
-    }
-  });
-
-  it("returns the raw text when the access token thunk throws", async () => {
-    const content = `![x](${UPLOAD_URL})`;
-    await expect(
-      attachLinearInboundImages({
-        content,
-        credentials: {
-          accessToken: () => {
-            throw new Error("connect unavailable");
+    await invoke(
+      webhook({
+        action: "prompted",
+        agentActivity: {
+          id: "activity-1",
+          content: {
+            body: "see ![](https://uploads.linear.app/abc/shot.png)",
+            type: "prompt",
           },
         },
-        fetch: vi.fn(),
       }),
-    ).resolves.toBe(content);
-  });
-});
-
-describe("inbound image dispatch integration", () => {
-  it("sends a multimodal message and still cancels before send", async () => {
-    order.length = 0;
-    cancelMock.mockClear();
-    sendMock.mockClear();
-    waitUntilTasks.length = 0;
-    vi.mocked(messageFromLinearAgentSessionEvent).mockReturnValueOnce(
-      "see ![](https://uploads.linear.app/abc/shot.png)",
     );
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(
-        async () =>
-          new Response(new Uint8Array([1, 2, 3]), {
-            status: 200,
-            headers: { "content-type": "image/png" },
-          }),
-      ),
-    );
-    try {
-      await invoke(promptedEvent);
-    } finally {
-      vi.unstubAllGlobals();
-    }
 
     expect(order).toEqual(["cancel", "send"]);
     const payload = (sendMock.mock.calls[0] as unknown[])?.[0] as {
@@ -1054,502 +438,98 @@ describe("inbound image dispatch integration", () => {
   });
 });
 
-describe("stateFromAgentSession", () => {
-  it("maps a Linear agent session ref into channel state", () => {
-    expect(stateFromAgentSession(agentSession)).toEqual({
-      agentSessionId: "sess-1",
-      agentSessionUrl: "https://linear.app/sess-1",
-      commentId: null,
-      issueId: "issue-1",
-      issueIdentifier: "HAR-2",
-      issueTitle: "t",
-      issueUrl: "u",
-      organizationId: "org-1",
-      pendingActionsByCallId: {},
-      pendingToolCallMessage: null,
-      sourceCommentId: null,
+// `handoff` posts the marker; the route retires the session it names so eve's
+// dispatch re-creates it empty. The session id in the marker is the whole
+// idempotency story, so these cover both directions of that comparison.
+describe("agent/channels/linear (context-checkpoint rotation)", () => {
+  const checkpoint = (eveSessionId: string) =>
+    `<!-- eve-checkpoint session=${eveSessionId} -->\n\nPR #12 open; next: review`;
+
+  const promptedWith = (previousComments: readonly string[]) =>
+    webhook({
+      action: "prompted",
+      agentActivity: {
+        id: "activity-1",
+        content: { body: "review came back", type: "prompt" },
+      },
+      previousComments,
     });
+
+  it("retires the checkpointed session before eve dispatches, so the send starts fresh", async () => {
+    reset();
+    resolveActiveSessionMock.mockResolvedValue({ sessionId: "eve-1" });
+
+    await invoke(promptedWith(["earlier chatter", checkpoint("eve-1")]));
+
+    expect(resetMock).toHaveBeenCalledWith({
+      continuationToken: "agent-session:sess-1",
+      reason: "context checkpoint",
+    });
+    // Reset has to land between the steering cancel and eve's send: after it,
+    // so a live turn is stopped first; before it, so the send is what re-creates
+    // the session empty.
+    expect(order).toEqual(["cancel", "reset", "send"]);
   });
 
-  it("falls back to the nested issue id when issueId is absent", () => {
-    expect(
-      stateFromAgentSession({ id: "sess-2", issue: { id: "issue-9" } }),
-    ).toMatchObject({ issueId: "issue-9" });
-  });
-});
+  it("leaves an unmarked thread alone and never looks a session up", async () => {
+    reset();
 
-describe("resolveReceiveSession", () => {
-  it("returns the target session id directly when provided", async () => {
-    await expect(
-      resolveReceiveSession({ agentSessionId: "sess-3" }, {}),
-    ).resolves.toEqual({ id: "sess-3" });
+    await invoke(promptedWith(["just a comment"]));
+
+    expect(resolveActiveSessionMock).not.toHaveBeenCalled();
+    expect(resetMock).not.toHaveBeenCalled();
+    expect(order).toEqual(["cancel", "send"]);
   });
 
-  it("throws when the target has no usable identifier", async () => {
-    // biome-ignore lint/suspicious/noExplicitAny: exercising the runtime guard for an invalid target
-    await expect(resolveReceiveSession({} as any, {})).rejects.toThrow(
-      "linearChannel().receive requires target.agentSessionId, issueId, or commentId.",
-    );
-  });
-});
+  it("is a no-op once rotated, so a second message cannot wipe the fresh session", async () => {
+    reset();
+    // The token now belongs to the post-rotation session, not the one the
+    // checkpoint named.
+    resolveActiveSessionMock.mockResolvedValue({ sessionId: "eve-2" });
 
-describe("planFromTodoToolOutput", () => {
-  it("maps todo tool output into Linear plan entries", () => {
-    expect(
-      planFromTodoToolOutput({
-        counts: {
-          cancelled: 1,
-          completed: 1,
-          in_progress: 1,
-          pending: 1,
-          total: 4,
+    await invoke(promptedWith([checkpoint("eve-1")]));
+
+    expect(resetMock).not.toHaveBeenCalled();
+    expect(order).toEqual(["cancel", "send"]);
+  });
+
+  it("does not rotate when the token owns no session at all", async () => {
+    reset();
+    resolveActiveSessionMock.mockResolvedValue(undefined);
+
+    await invoke(promptedWith([checkpoint("eve-1")]));
+
+    expect(resetMock).not.toHaveBeenCalled();
+  });
+
+  it("dispatches anyway when the reset fails, leaving the old context in place", async () => {
+    reset();
+    resolveActiveSessionMock.mockResolvedValue({ sessionId: "eve-1" });
+    resetMock.mockRejectedValueOnce(new Error("runtime unavailable"));
+
+    const response = await invoke(promptedWith([checkpoint("eve-1")]));
+
+    expect(response.status).toBe(200);
+    expect(sendMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not rotate on a stop signal, which dispatches nothing to rotate into", async () => {
+    reset();
+    resolveActiveSessionMock.mockResolvedValue({ sessionId: "eve-1" });
+
+    await invoke(
+      webhook({
+        action: "prompted",
+        agentActivity: {
+          id: "activity-1",
+          content: { body: "stop", type: "prompt" },
+          signal: "stop",
         },
-        todos: [
-          {
-            content: "Read orientation",
-            priority: "high",
-            status: "completed",
-          },
-          {
-            content: "Implement change",
-            priority: "high",
-            status: "in_progress",
-          },
-          { content: "Open PR", priority: "medium", status: "pending" },
-          { content: "Skip this", priority: "low", status: "cancelled" },
-        ],
+        previousComments: [checkpoint("eve-1")],
       }),
-    ).toEqual([
-      { content: "Read orientation", status: "completed" },
-      { content: "Implement change", status: "inProgress" },
-      { content: "Open PR", status: "pending" },
-      { content: "Skip this", status: "canceled" },
-    ]);
-  });
-
-  it("drops malformed entries and returns null for a non-object output", () => {
-    expect(
-      planFromTodoToolOutput({
-        todos: [
-          { content: "ok", status: "pending" },
-          { content: 42, status: "pending" },
-          { content: "bad status", status: "unknown" },
-        ],
-      }),
-    ).toEqual([{ content: "ok", status: "pending" }]);
-    expect(planFromTodoToolOutput("not an object")).toBeNull();
-    expect(planFromTodoToolOutput({})).toBeNull();
-  });
-});
-
-describe("action.result plan sync", () => {
-  const postActionResult = async (data: unknown) => {
-    vi.mocked(updateLinearAgentSession).mockClear();
-    // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handler directly
-    await (channel as any).events["action.result"](data, {
-      linear: {
-        updateSession: (update: unknown) =>
-          updateLinearAgentSession({ id: "sess-1", update } as never),
-      },
-      state: { agentSessionId: "sess-1" },
-    });
-    return vi.mocked(updateLinearAgentSession).mock.calls[0]?.[0];
-  };
-
-  it("pushes the todo tool's list into the session's Linear plan", async () => {
-    const call = await postActionResult({
-      status: "completed",
-      result: {
-        kind: "tool-result",
-        toolName: "todo",
-        output: {
-          todos: [
-            { content: "Ship it", priority: "high", status: "in_progress" },
-          ],
-        },
-      },
-    });
-    expect(call).toMatchObject({
-      id: "sess-1",
-      update: { plan: [{ content: "Ship it", status: "inProgress" }] },
-    });
-  });
-
-  it("ignores action results for tools other than todo", async () => {
-    await postActionResult({
-      status: "completed",
-      result: { kind: "tool-result", toolName: "bash", output: {} },
-    });
-    expect(updateLinearAgentSession).not.toHaveBeenCalled();
-  });
-
-  it("ignores a failed or errored todo call", async () => {
-    await postActionResult({
-      status: "failed",
-      result: { kind: "tool-result", toolName: "todo", output: { todos: [] } },
-    });
-    await postActionResult({
-      status: "completed",
-      result: {
-        kind: "tool-result",
-        toolName: "todo",
-        isError: true,
-        output: { todos: [] },
-      },
-    });
-    expect(updateLinearAgentSession).not.toHaveBeenCalled();
-  });
-});
-
-describe("action.result durable chip promotion (HAR-45, preserved through HAR-68)", () => {
-  const fireActionResult = async (
-    data: unknown,
-    pendingActionsByCallId: Record<string, unknown> = {},
-  ) => {
-    vi.mocked(createLinearAgentActivity).mockClear();
-    // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handler directly
-    await (channel as any).events["action.result"](data, {
-      linear: {
-        updateSession: vi.fn(),
-      },
-      state: {
-        agentSessionId: "sess-1",
-        pendingActionsByCallId,
-      },
-    });
-  };
-
-  it("posts a durable action with the stashed action, parameter, and result when a tracked tool-call completes", async () => {
-    await fireActionResult(
-      {
-        status: "completed",
-        result: {
-          kind: "tool-result",
-          callId: "c1",
-          toolName: "bash",
-          output: { stdout: "hello" },
-        },
-      },
-      { c1: { action: "bash", parameter: '{"command":"echo hello"}' } },
     );
 
-    expect(createLinearAgentActivity).toHaveBeenCalledTimes(1);
-    const call = vi.mocked(createLinearAgentActivity).mock.calls[0]?.[0];
-    expect(call.activity.ephemeral).toBeUndefined();
-    expect(call.activity.content).toEqual({
-      type: "action",
-      action: "bash",
-      parameter: '{"command":"echo hello"}',
-      // The stashed action/parameter are reused verbatim; only the result is
-      // now a readable summary instead of raw JSON (bash output has no exitCode
-      // here, so it reads as "done" plus the stdout line count).
-      result: "✓ done · 1 line",
-    });
-  });
-
-  it("posts nothing for an untracked callId (no prior actions.requested stash)", async () => {
-    await fireActionResult(
-      {
-        status: "completed",
-        result: {
-          kind: "tool-result",
-          callId: "unknown",
-          toolName: "bash",
-          output: { stdout: "ok" },
-        },
-      },
-      { c1: { action: "other", parameter: "x" } },
-    );
-
-    expect(createLinearAgentActivity).not.toHaveBeenCalled();
-  });
-
-  it("uses error.message as the result when the tool call failed", async () => {
-    await fireActionResult(
-      {
-        status: "failed",
-        result: {
-          kind: "tool-result",
-          callId: "c2",
-          toolName: "bash",
-          isError: true,
-          output: {},
-        },
-        error: { code: "TOOL_ERROR", message: "Command not found" },
-      },
-      { c2: { action: "bash", parameter: '{"command":"invalid"}' } },
-    );
-
-    expect(createLinearAgentActivity).toHaveBeenCalledTimes(1);
-    const content = vi.mocked(createLinearAgentActivity).mock.calls[0]?.[0]
-      .activity.content as Record<string, unknown>;
-    expect(content.result).toBe("Command not found");
-  });
-
-  it("consumes the pending entry so a second action.result for the same callId posts nothing", async () => {
-    vi.mocked(createLinearAgentActivity).mockClear();
-    // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handler directly
-    await (channel as any).events["action.result"](
-      {
-        status: "completed",
-        result: {
-          kind: "tool-result",
-          callId: "c3",
-          toolName: "bash",
-          output: { stdout: "done" },
-        },
-      },
-      {
-        linear: { updateSession: vi.fn() },
-        state: {
-          agentSessionId: "sess-1",
-          pendingActionsByCallId: {
-            c3: { action: "bash", parameter: '{"cmd":"test"}' },
-          },
-        },
-      },
-    );
-
-    expect(createLinearAgentActivity).toHaveBeenCalledTimes(1);
-
-    // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handler directly
-    await (channel as any).events["action.result"](
-      {
-        status: "completed",
-        result: {
-          kind: "tool-result",
-          callId: "c3",
-          toolName: "bash",
-          output: { stdout: "done" },
-        },
-      },
-      {
-        linear: { updateSession: vi.fn() },
-        state: {
-          agentSessionId: "sess-1",
-
-          pendingActionsByCallId: {},
-        },
-      },
-    );
-
-    expect(createLinearAgentActivity).toHaveBeenCalledTimes(1);
-  });
-
-  it("promotes a tracked subagent-call to durable on subagent-result", async () => {
-    await fireActionResult(
-      {
-        status: "completed",
-        result: {
-          kind: "subagent-result",
-          callId: "sub-c1",
-          subagentName: "coder",
-          output: { summary: "Implemented all changes" },
-        },
-      },
-      {
-        "sub-c1": {
-          action: "subagent-call",
-          parameter: "issue: HAR-48 - Add durable subagent_calls action",
-        },
-      },
-    );
-
-    expect(createLinearAgentActivity).toHaveBeenCalledTimes(1);
-    const call = vi.mocked(createLinearAgentActivity).mock.calls[0]?.[0];
-    expect(call.activity.ephemeral).toBeUndefined();
-    expect(call.activity.content).toEqual({
-      type: "action",
-      action: "subagent-call",
-      parameter: "issue: HAR-48 - Add durable subagent_calls action",
-      result: JSON.stringify({ summary: "Implemented all changes" }),
-    });
-  });
-
-  it("promotes a remote-agent-call request followed by subagent-result to durable", async () => {
-    await fireActionResult(
-      {
-        status: "completed",
-        result: {
-          kind: "subagent-result",
-          callId: "remote-c1",
-          subagentName: "scout",
-          output: { notes: "Found 3 issues" },
-        },
-      },
-      {
-        "remote-c1": {
-          action: "remote-agent-call",
-          parameter: "issue: HAR-47 - Scout the codebase",
-        },
-      },
-    );
-
-    expect(createLinearAgentActivity).toHaveBeenCalledTimes(1);
-    const content = vi.mocked(createLinearAgentActivity).mock.calls[0]?.[0]
-      .activity.content as Record<string, unknown>;
-    expect(content.action).toBe("remote-agent-call");
-    expect(content.parameter).toBe("issue: HAR-47 - Scout the codebase");
-    expect(content.result).toBe(JSON.stringify({ notes: "Found 3 issues" }));
-  });
-
-  it("posts nothing for an untracked callId on a subagent-result", async () => {
-    await fireActionResult(
-      {
-        status: "completed",
-        result: {
-          kind: "subagent-result",
-          callId: "unknown-sub",
-          subagentName: "coder",
-          output: { summary: "Done" },
-        },
-      },
-      { "sub-c1": { action: "subagent-call", parameter: "real work" } },
-    );
-
-    expect(createLinearAgentActivity).not.toHaveBeenCalled();
-  });
-
-  it("uses error.message as the result when a subagent call failed", async () => {
-    await fireActionResult(
-      {
-        status: "failed",
-        result: {
-          kind: "subagent-result",
-          callId: "sub-c2",
-          subagentName: "coder",
-          output: {},
-        },
-        error: {
-          code: "SUBAGENT_ERROR",
-          message: "The subagent encountered an error",
-        },
-      },
-      {
-        "sub-c2": {
-          action: "subagent-call",
-          parameter: "issue: HAR-48 - Add durable subagent_calls action",
-        },
-      },
-    );
-
-    expect(createLinearAgentActivity).toHaveBeenCalledTimes(1);
-    const content = vi.mocked(createLinearAgentActivity).mock.calls[0]?.[0]
-      .activity.content as Record<string, unknown>;
-    expect(content.result).toBe("The subagent encountered an error");
-  });
-});
-
-describe("authorization events surface the OAuth challenge", () => {
-  const linearUserAuth = {
-    attributes: {},
-    authenticator: "linear-agent-webhook",
-    issuer: "linear:org-1",
-    principalId: "linear:user-1",
-    principalType: "user",
-    subject: "user-1",
-  };
-  const ctx = { session: { auth: { current: linearUserAuth } } };
-
-  const fire = (event: string, data: unknown, eventCtx: unknown = ctx) =>
-    // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handler directly
-    (channel as any).events[event](
-      data,
-      { state: { agentSessionId: "sess-1" } },
-      eventCtx,
-    );
-
-  const lastActivity = () =>
-    vi.mocked(createLinearAgentActivity).mock.calls.at(-1)?.[0].activity;
-
-  it("posts an elicitation with Linear's native auth signal and the challenge URL", async () => {
-    vi.mocked(createLinearAgentActivity).mockClear();
-    await fire("authorization.required", {
-      authorization: {
-        displayName: "Linear MCP",
-        url: "https://example.com/oauth",
-      },
-      description: "Authorize the linear connection",
-      name: "linear",
-    });
-    expect(lastActivity()).toMatchObject({
-      agentSessionId: "sess-1",
-      content: {
-        body: "I need you to connect Linear MCP before I can continue.",
-        type: "elicitation",
-      },
-      signal: "auth",
-      signalMetadata: {
-        providerName: "Linear MCP",
-        url: "https://example.com/oauth",
-        userId: "user-1",
-      },
-    });
-    expect(lastActivity()?.ephemeral).not.toBe(true);
-  });
-
-  it("title-cases the connection name and omits userId for a non-Linear principal", async () => {
-    vi.mocked(createLinearAgentActivity).mockClear();
-    await fire(
-      "authorization.required",
-      {
-        authorization: { url: "https://example.com/oauth" },
-        description: "Authorize the vercel connection",
-        name: "vercel",
-      },
-      { session: { auth: { current: null } } },
-    );
-    const activity = lastActivity();
-    expect(activity?.signalMetadata).toEqual({
-      providerName: "Vercel",
-      url: "https://example.com/oauth",
-    });
-  });
-
-  it("falls back to a plain elicitation with instructions when the challenge has no URL", async () => {
-    vi.mocked(createLinearAgentActivity).mockClear();
-    await fire("authorization.required", {
-      authorization: {
-        instructions: "Approve the sign-in request on your phone.",
-        userCode: "ABCD-1234",
-      },
-      description: "Authorize the linear connection",
-      name: "linear",
-    });
-    const activity = lastActivity();
-    expect(activity?.signal).toBeUndefined();
-    expect(activity?.content).toMatchObject({ type: "elicitation" });
-    const body = (activity?.content as { body?: string })?.body ?? "";
-    expect(body).toContain("Approve the sign-in request on your phone.");
-    expect(body).toContain("Code: ABCD-1234");
-  });
-
-  it("posts an ephemeral resuming thought once authorization completes", async () => {
-    vi.mocked(createLinearAgentActivity).mockClear();
-    await fire("authorization.completed", {
-      authorization: { displayName: "Linear MCP" },
-      name: "linear",
-      outcome: "authorized",
-    });
-    expect(lastActivity()).toMatchObject({
-      content: { body: "Connected to Linear MCP. Resuming.", type: "thought" },
-      ephemeral: true,
-    });
-  });
-
-  it("reports a non-authorized outcome durably", async () => {
-    vi.mocked(createLinearAgentActivity).mockClear();
-    await fire("authorization.completed", {
-      name: "linear",
-      outcome: "timed-out",
-      reason: "challenge expired",
-    });
-    expect(lastActivity()).toMatchObject({
-      content: {
-        body: "Authorization for Linear timed out: challenge expired",
-        type: "thought",
-      },
-    });
-    expect(lastActivity()?.ephemeral).not.toBe(true);
+    expect(resetMock).not.toHaveBeenCalled();
+    expect(sendMock).not.toHaveBeenCalled();
   });
 });

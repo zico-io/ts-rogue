@@ -121,6 +121,7 @@ export function validateGameState(value: unknown): asserts value is GameState {
     throw new StateInvariantError("party is required");
   requireArray(state.inventory, "inventory");
   requireArray(state.items, "items");
+  requireArray(state.shopStock, "shopStock");
   requireArray(state.activatedWaypoints, "activatedWaypoints");
   requireObject(state.worldState, "worldState");
   requireObject(state.flags, "flags");

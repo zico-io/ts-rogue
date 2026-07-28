@@ -13,7 +13,7 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src", "scripts"],
+  "include": ["agent", "src", "scripts"],
   "exclude": [
     "node_modules",
     "dist",

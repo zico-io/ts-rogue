@@ -1,3 +1,4 @@
+import type { QuestDef } from "../../data/quests";
 import type { BattleEvent, BattleState } from "../combat/types";
 import type { InventoryItem, PartyMember } from "../entities/party";
 import type { LogEntry, LogKind } from "../log";
@@ -17,6 +18,19 @@ export interface GameFlags {
   gameOver: boolean;
 }
 
+// A snapshot of the def taken at accept time, not a live reference into
+// QUESTS -- procedural bounties (ENG-37) never exist in the static table.
+export interface AcceptedQuest {
+  def: QuestDef;
+  progress: number;
+}
+
+export interface QuestState {
+  available: QuestDef[];
+  accepted: AcceptedQuest[];
+  completedIds: string[];
+}
+
 export interface GameState {
   seed: number;
   rngState: RngState;
@@ -26,6 +40,10 @@ export interface GameState {
 
   recruits: PartyMember[];
   gold: number;
+
+  // Rotating rare-gear section (ENG-41); restocks on the same cadence as
+  // the tavern recruit pool (inn rest) so save/load never rerolls it.
+  shopStock: ItemInstance[];
 
   inventory: InventoryItem[];
 
@@ -54,6 +72,12 @@ export interface GameState {
   lootFilter: LootFilterRules;
 
   lastLootOutcome: LootPickupOutcome | null;
+
+  quests: QuestState;
+
+  // Fetch-quest turn-in counts, keyed by QuestItemDef id (see
+  // src/data/questItems.ts).
+  questItems: Record<string, number>;
 }
 
 export type MoveDelta = -1 | 0 | 1;
@@ -75,11 +99,14 @@ export type GameEvent =
   | { type: "InnHeal" }
   | { type: "StoreBuy"; itemId: string; quantity: number }
   | { type: "StoreSell"; itemId: string; quantity: number }
+  | { type: "StoreBuyRolled"; instanceId: string }
+  | { type: "RefreshShopStock" }
   | { type: "EquipItem"; instanceId: string; memberId: string }
   | { type: "UnequipItem"; slot: EquipmentSlotName; memberId: string }
   | { type: "SellItem"; instanceId: string }
   | { type: "RecruitMember"; classId: string }
   | { type: "RefreshRecruits" }
+  | { type: "RefreshQuests" }
   | { type: "HireRecruit"; index: number }
   | { type: "DismissMember"; memberId: string }
   | { type: "MoveOverworld"; dx: MoveDelta; dy: MoveDelta }
@@ -99,4 +126,7 @@ export type GameEvent =
     }
   | { type: "ResolveLootTriage"; action: "dismantleDrop" }
   | { type: "SetLootFilter"; rules: LootFilterRules }
+  | { type: "AcceptQuest"; questId: string }
+  | { type: "TurnInQuest"; questId: string }
+  | { type: "RefreshQuests" }
   | BattleEvent;

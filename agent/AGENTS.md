@@ -16,8 +16,27 @@
   promptly, expose meaningful state, honor disengagement, and keep a human
   accountable.
 - Keep issue workflow transitions forward-only and fail-open in
-  `lib/issue-state.ts`.
-- Keep sandbox prewarm and token refresh failures from blocking useful startup.
+  `lib/linear/issue-state.ts`.
+- Keep token refresh failures from blocking useful startup.
+- Keep `lib/` modules channel-agnostic when they are flat. A module that names
+  one platform, or imports one platform's types, belongs in `lib/linear/` or
+  `lib/github/` - directory names the channel, file names the concept. Platform
+  limits (message length, activity size) belong to whoever posts: a channel
+  renderer or a hook, never a shared module. Import those modules directly;
+  they carry no barrel, so a caller loads only what it names.
+- Add a channel as one file under `channels/`: a `ChannelRenderer` from
+  `lib/channel.ts` (`textRenderer` already covers any channel whose only
+  surface is posted text), wired with `sessionEvents` from `lib/session.ts`.
+  Spread that table and set a key to `undefined` to keep Eve's own default for
+  an event. Reaching a session from outside a handler - workflow progress, say
+  - needs a poster like `lib/linear/poster.ts`, dispatched on the channel kind
+  by the caller and imported lazily so one channel's credentials never reach
+  another's process.
 - Test channel transforms, hooks, tools, lifecycle changes, and sandbox behavior.
+- Colocate tests inside `lib/` only. Eve's discovery treats every file under
+  `channels/`, `connections/`, `tools/`, `hooks/`, and `schedules/` as an
+  authored module, so a `*.test.ts` there fails `eve info` with a name-invalid
+  error; those tests live in `src/`. `lib/` likewise accepts no non-TypeScript
+  files, which is why this rule is here and not in a `lib/AGENTS.md`.
 - Keep `README.md` evergreen and update it when the architecture or workflow
   changes.

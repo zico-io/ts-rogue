@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { findQuest } from "../data/quests";
 import type { ItemInstance } from "../engine/loot/types";
 import { newGame, reduce } from "../engine/state/store";
 import type { GameState } from "../engine/state/types";
@@ -191,5 +192,38 @@ describe("deserialize backfills clearedAt for older saves (ROG-91)", () => {
     const state = { ...newGame(42), clearedAt: { "sunken-crypt": 5 } };
     const restored = deserialize(serialize(state));
     expect(restored.clearedAt).toEqual({ "sunken-crypt": 5 });
+  });
+});
+
+describe("deserialize backfills quests/questItems for older saves (ENG-38)", () => {
+  it("defaults a save missing quests/questItems to empty state", () => {
+    const modern = newGame(42);
+    const older: Record<string, unknown> = { ...modern };
+    delete older.quests;
+    delete older.questItems;
+    const restored = deserialize(JSON.stringify(older));
+    expect(restored.quests).toEqual({
+      available: [],
+      accepted: [],
+      completedIds: [],
+    });
+    expect(restored.questItems).toEqual({});
+  });
+
+  it("round-trips an accepted quest, its progress, and fetch-bag counts", () => {
+    const questDef = findQuest("slime-cull");
+    if (!questDef) throw new Error("slime-cull missing from QUESTS");
+    const state: GameState = {
+      ...newGame(42),
+      quests: {
+        available: [],
+        accepted: [{ def: questDef, progress: 2 }],
+        completedIds: ["fetch-slime-gel"],
+      },
+      questItems: { "slime-gel": 1 },
+    };
+    const restored = deserialize(serialize(state));
+    expect(restored.quests).toEqual(state.quests);
+    expect(restored.questItems).toEqual({ "slime-gel": 1 });
   });
 });

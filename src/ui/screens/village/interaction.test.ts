@@ -3,6 +3,7 @@ import { createStartingHero } from "../../../engine/entities/party";
 import type { ItemInstance } from "../../../engine/loot/types";
 import {
   buildPackEntries,
+  buildShopRows,
   INITIAL_STORE_UI_STATE,
   INITIAL_TAVERN_UI_STATE,
   OPTIONS,
@@ -158,6 +159,7 @@ function storeCtx(overrides: Partial<StoreUiContext> = {}): StoreUiContext {
     partyLength: 1,
     memberId: "hero-1",
     packEntries: buildPackEntries(createStartingHero(), []),
+    shopRows: buildShopRows(1, []),
     ...overrides,
   };
 }
@@ -252,6 +254,45 @@ describe("reduceStoreUi", () => {
       storeCtx(),
     );
     expect(sell.effect).toEqual({ type: "storeSell", itemId: "potion" });
+  });
+
+  it("buys rolled rare stock by instanceId and ignores sell on it (ENG-41)", () => {
+    const rolled = item({ instanceId: "rare-1", rarity: "magic" });
+    const ctx = storeCtx({ shopRows: buildShopRows(1, [rolled]) });
+    const rowIndex = ctx.shopRows.findIndex((row) => row.kind === "rolled");
+
+    const buy = reduceStoreUi(
+      storeState({ shopCursor: rowIndex }),
+      { kind: "buy" },
+      ctx,
+    );
+    expect(buy.effect).toEqual({
+      type: "storeBuyRolled",
+      instanceId: "rare-1",
+    });
+
+    const sell = reduceStoreUi(
+      storeState({ shopCursor: rowIndex }),
+      { kind: "sell" },
+      ctx,
+    );
+    expect(sell.effect).toBeUndefined();
+  });
+
+  it("buildShopRows only lists tiers unlocked by level (ENG-41)", () => {
+    const level1 = buildShopRows(1, []);
+    expect(
+      level1.some(
+        (row) => row.kind === "catalog" && row.item.id === "war-blade",
+      ),
+    ).toBe(false);
+
+    const level10 = buildShopRows(10, []);
+    expect(
+      level10.some(
+        (row) => row.kind === "catalog" && row.item.id === "war-blade",
+      ),
+    ).toBe(true);
   });
 
   it("pack mode sells a backpack entry, and no longer equips/unequips (see inventory/interaction.test.ts)", () => {
