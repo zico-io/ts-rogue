@@ -4,7 +4,7 @@ import {
   buildOrientationBrief,
   parseGitFacts,
   parseScreenshotToolingStatus,
-} from "../agent/lib/orientation";
+} from "./orientation";
 
 describe("parseGitFacts", () => {
   it("splits branch, sha, cleanliness, and commits from the command output", () => {

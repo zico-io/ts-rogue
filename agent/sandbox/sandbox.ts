@@ -2,63 +2,27 @@ import { defineSandbox } from "eve/sandbox";
 import { vercel } from "eve/sandbox/vercel";
 
 import {
+  AUTO_RECOVER_PUSH_COMMAND,
+  buildBootstrapCommand,
   buildOrientationBrief,
+  dependencyRevalidationKey,
   GIT_FACTS_COMMAND,
+  initialTokenRefreshDelayMs,
+  keepTokenFresh,
+  mintFreshPolicy,
+  mintFreshPolicyWithExpiry,
   parseGitFacts,
   parseScreenshotToolingStatus,
-  SCREENSHOT_STATUS_PATH,
-} from "../lib/orientation";
-import {
-  AUTO_RECOVER_PUSH_COMMAND,
-  buildBootstrapCommand,
-  dependencyRevalidationKey,
-  initialTokenRefreshDelayMs,
-  keepTokenFresh,
-  MAX_MINT_FAILURES,
-  MAX_SET_POLICY_FAILURES,
-  MIN_TOKEN_REFRESH_MS,
-  type MintedGitHubPolicy,
-  mintFreshPolicy,
-  mintFreshPolicyWithExpiry,
-  nextRefreshDelayMs,
   resolveBootstrapNetworkPolicy,
   resolveStartupAuth,
-  resolveStartupNetworkPolicy,
   SANDBOX_TIMEOUT_MS,
-  TOKEN_EXPIRY_BUFFER_MS,
-  TOKEN_MINT_TIMEOUT_MS,
-  TOKEN_REFRESH_MS,
-  TOKEN_RETRY_MS,
-  type TokenRefreshTiming,
+  SCREENSHOT_STATUS_PATH,
   WORKSPACE_GIT_CONFIG_ENV,
-  withTimeout,
 } from "../lib/sandbox";
 
-export {
-  AUTO_RECOVER_PUSH_COMMAND,
-  buildBootstrapCommand,
-  dependencyRevalidationKey,
-  initialTokenRefreshDelayMs,
-  keepTokenFresh,
-  MAX_MINT_FAILURES,
-  MAX_SET_POLICY_FAILURES,
-  MIN_TOKEN_REFRESH_MS,
-  type MintedGitHubPolicy,
-  mintFreshPolicy,
-  mintFreshPolicyWithExpiry,
-  nextRefreshDelayMs,
-  resolveBootstrapNetworkPolicy,
-  resolveStartupAuth,
-  resolveStartupNetworkPolicy,
-  SANDBOX_TIMEOUT_MS,
-  TOKEN_EXPIRY_BUFFER_MS,
-  TOKEN_MINT_TIMEOUT_MS,
-  TOKEN_REFRESH_MS,
-  TOKEN_RETRY_MS,
-  type TokenRefreshTiming,
-  WORKSPACE_GIT_CONFIG_ENV,
-  withTimeout,
-};
+// `hooks/prewarm-sandbox.ts` mints through this module so the hook and the
+// recipe agree on one sandbox definition.
+export { mintFreshPolicy };
 
 const READ_SCREENSHOT_STATUS_COMMAND = `cat ${SCREENSHOT_STATUS_PATH} 2>/dev/null || true`;
 
