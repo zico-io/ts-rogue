@@ -79,6 +79,7 @@ export function buildBootstrapCommand(options?: {
 
     "(pi install git:github.com/DietrichGebert/ponytail || true)",
     "(npm install -g @ast-grep/cli || true)",
+    "(npm install -g mex-agent@0.7.0 || true)",
 
     ...(seedGitHubConfig
       ? ["git config --global --add safe.directory '*'"]
@@ -89,6 +90,7 @@ export function buildBootstrapCommand(options?: {
     "git fetch --depth 1 origin main",
     "git reset --hard origin/main",
     "corepack pnpm install --frozen-lockfile",
+    "(mex graph || true)",
     ...(screenshotTooling ? [installScreenshotTooling] : []),
   ].join(" && ");
 }
@@ -129,7 +131,7 @@ export function buildSandboxDefinition(
   return {
     backend: vercel({
       timeout: SANDBOX_TIMEOUT_MS,
-      env: WORKSPACE_GIT_CONFIG_ENV,
+      env: { ...WORKSPACE_GIT_CONFIG_ENV, DO_NOT_TRACK: "1" },
     }),
     revalidationKey: dependencyRevalidationKey,
     async bootstrap({ use }) {

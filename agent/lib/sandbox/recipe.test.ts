@@ -89,6 +89,18 @@ describe("buildBootstrapCommand", () => {
     expect(command).toContain("git init -q -b main .");
   });
 
+  it("installs mex and builds the graph after the checkout that lands .mex/", () => {
+    const command = buildBootstrapCommand();
+    expect(command).toContain("npm install -g mex-agent@0.7.0");
+
+    const graphBuildIndex = command.indexOf("mex graph");
+    const resetIndex = command.indexOf("git reset --hard origin/main");
+    const installIndex = command.indexOf("pnpm install --frozen-lockfile");
+    expect(graphBuildIndex).toBeGreaterThan(-1);
+    expect(graphBuildIndex).toBeGreaterThan(resetIndex);
+    expect(graphBuildIndex).toBeGreaterThan(installIndex);
+  });
+
   it("installs the ponytail ruleset into pi (HAR-3)", () => {
     const command = buildBootstrapCommand();
     expect(command).toContain(
