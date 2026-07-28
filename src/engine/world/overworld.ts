@@ -1,3 +1,4 @@
+import { DUNGEONS } from "../../data/dungeons";
 import { Rng } from "../rng/rng";
 import {
   footprintIsClear,
@@ -16,7 +17,9 @@ export const MINIMAP_SCALE = 3;
 
 export const ENCOUNTER_THRESHOLD = 100;
 
-const DUNGEON_ENTRANCE_COUNT = 3;
+// One entrance per story dungeon (src/data/dungeons.ts), so adding a new
+// DungeonDef automatically gets a placed entrance with zero engine edits.
+const DUNGEON_ENTRANCE_COUNT = DUNGEONS.length;
 const VILLAGE_SAFE_RADIUS = 2;
 const MIN_ENTRANCE_DISTANCE = 10;
 
