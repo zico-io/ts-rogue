@@ -1,7 +1,7 @@
 # Eve project agent
 
 Eve takes ts-rogue work from Linear issues to reviewed GitHub pull requests in
-pre-warmed Vercel Sandboxes.
+Vercel Sandboxes.
 
 ## Quick start
 
@@ -60,7 +60,6 @@ context. Blocking relations in Linear determine readiness.
 | `instructions.md` | Stable identity, safety boundaries, and delivery contract |
 | `channels/` | Eve, Linear, and GitHub message adapters. Translation only: each wraps Eve's own channel with the platform rendering and the one or two route behaviors Eve does not provide (see `WORKAROUNDS.md`). Every decision they render comes from `lib/` |
 | `connections/` | Allow-listed Linear and read-only Vercel capabilities |
-| `hooks/prewarm-sandbox.ts` | Starts sandbox creation and refreshes brokered GitHub auth |
 | `hooks/workflow-progress.ts` | Streams per-call `Workflow` progress to whichever channel owns the session |
 | `sandbox/` and `lib/sandbox/` | One Vercel Sandbox recipe shared by the root agent and both subagents, its bootstrap, GitHub network policy and token refresh, and the `ORIENTATION.md` brief |
 | `lib/credentials.ts` | The agent's brokered Linear and GitHub identities, shared by channels and tools, plus Linear access-token resolution |

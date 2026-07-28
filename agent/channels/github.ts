@@ -32,8 +32,8 @@ const baseChannel = githubChannel({
   credentials: githubAgentCredentials,
   events: {
     // Deliberately silences eve's default, which would 👀-react and check the
-    // repository out again on every turn - `hooks/prewarm-sandbox.ts` already
-    // provisions the sandbox this agent works in.
+    // repository out again on every turn - the sandbox recipe's `onSession`
+    // already provisions the checkout this agent works in.
     "turn.started": () => {},
     "message.completed": (data, channel, ctx) =>
       githubSession.messageCompleted(data, channel, ctx),

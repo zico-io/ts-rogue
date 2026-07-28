@@ -282,7 +282,3 @@ export function keepTokenFresh(
 
 export const mintFreshPolicyWithExpiry = () =>
   withTimeout(mintGitHubTokenPolicy(), TOKEN_MINT_TIMEOUT_MS);
-
-/** For a caller that only installs the policy and never schedules off its expiry. */
-export const mintFreshPolicy = async (): Promise<SandboxNetworkPolicy> =>
-  (await mintFreshPolicyWithExpiry()).policy;

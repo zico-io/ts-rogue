@@ -17,7 +17,7 @@
   accountable.
 - Keep issue workflow transitions forward-only and fail-open in
   `lib/linear/issue-state.ts`.
-- Keep sandbox prewarm and token refresh failures from blocking useful startup.
+- Keep token refresh failures from blocking useful startup.
 - Keep `lib/` modules channel-agnostic when they are flat. A module that names
   one platform, or imports one platform's types, belongs in `lib/linear/` or
   `lib/github/` - directory names the channel, file names the concept. Platform

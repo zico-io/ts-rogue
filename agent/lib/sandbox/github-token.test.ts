@@ -17,7 +17,6 @@ import {
   MAX_SET_POLICY_FAILURES,
   MIN_TOKEN_REFRESH_MS,
   type MintedGitHubPolicy,
-  mintFreshPolicy,
   mintFreshPolicyWithExpiry,
   nextRefreshDelayMs,
   resolveBootstrapNetworkPolicy,
@@ -289,10 +288,10 @@ describe("keepTokenFresh", () => {
   });
 });
 
-describe("mintFreshPolicy and mintFreshPolicyWithExpiry", () => {
+describe("mintFreshPolicyWithExpiry", () => {
   it("bypasses @vercel/connect's token cache with forceRefresh", async () => {
     vi.mocked(getTokenResponse).mockClear();
-    const policy = await mintFreshPolicy();
+    const { policy } = await mintFreshPolicyWithExpiry();
 
     expect(getTokenResponse).toHaveBeenCalledWith(
       "github/ts-rogue-eve-github",

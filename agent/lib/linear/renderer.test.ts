@@ -19,7 +19,6 @@ vi.mock("@vercel/connect/eve", () => ({
 
 const { linearRenderer } = await import("./renderer");
 const { AgentSession, sessionEvents } = await import("../session");
-const { toolLabel } = await import("../tool-activity");
 
 import type {
   ActionRequest,
@@ -691,8 +690,6 @@ describe("authorization events surface the OAuth challenge", () => {
       eventChannel({ agentSessionId: "sess-1" }),
       ctx,
     );
-
-  const lastActivity = () => postedActivities().at(-1);
 
   it("posts an elicitation with Linear's native auth signal and the challenge URL", async () => {
     createActivity.mockClear();
