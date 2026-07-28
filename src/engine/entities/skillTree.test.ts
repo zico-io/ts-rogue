@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { SkillTreeDef } from "../../data/skillTrees";
 import { createStartingHero, type PartyMember } from "./party";
 import {
+  memberSkillTree,
+  skillNodeState,
   unlockedNodeDefs,
   unlockNodeInTree,
   unlockSkillNode,
@@ -123,5 +125,34 @@ describe("unlockedNodeDefs", () => {
     expect(unlockedNodeDefs(memberWith({ unlockedNodes: ["root"] }))).toEqual(
       [],
     );
+  });
+});
+
+describe("memberSkillTree", () => {
+  it("resolves undefined until a class has a treeId with a matching entry (ENG-35)", () => {
+    const member = memberWith();
+    expect(memberSkillTree(member)).toBeUndefined();
+  });
+});
+
+describe("skillNodeState", () => {
+  it("is unlockable when prereqs are met and points suffice", () => {
+    const member = memberWith();
+    expect(skillNodeState(member, TREE.nodes[0])).toBe("unlockable");
+  });
+
+  it("is locked when a prerequisite is missing, even with enough points", () => {
+    const member = memberWith();
+    expect(skillNodeState(member, TREE.nodes[1])).toBe("locked");
+  });
+
+  it("is locked when prereqs are met but points are insufficient", () => {
+    const member = memberWith({ unlockedNodes: ["root"], skillPoints: 0 });
+    expect(skillNodeState(member, TREE.nodes[1])).toBe("locked");
+  });
+
+  it("is unlocked once the node id is recorded on the member", () => {
+    const member = memberWith({ unlockedNodes: ["root"] });
+    expect(skillNodeState(member, TREE.nodes[0])).toBe("unlocked");
   });
 });

@@ -109,6 +109,7 @@ export type GameEvent =
   | { type: "RefreshQuests" }
   | { type: "HireRecruit"; index: number }
   | { type: "DismissMember"; memberId: string }
+  | { type: "UnlockSkillNode"; memberId: string; nodeId: string }
   | { type: "MoveOverworld"; dx: MoveDelta; dy: MoveDelta }
   | { type: "TurnDungeon"; direction: TurnDirection }
   | { type: "StepDungeon"; direction: StepDirection }

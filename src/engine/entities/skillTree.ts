@@ -41,6 +41,10 @@ export function unlockedNodeDefs(
   return tree.nodes.filter((node) => member.unlockedNodes.includes(node.id));
 }
 
+function hasPrereqs(member: PartyMember, node: SkillNodeDef): boolean {
+  return node.prereqs.every((prereq) => member.unlockedNodes.includes(prereq));
+}
+
 // Core validation against an explicit tree, decoupled from the class/tree
 // data lookup so it can be exercised directly against a fixture tree while
 // SKILL_TREES itself is still empty (starter content ships in ENG-35). Never
@@ -58,10 +62,9 @@ export function unlockNodeInTree(
     return { member, reason: "already-unlocked" };
   }
 
-  const hasAllPrereqs = node.prereqs.every((prereq) =>
-    member.unlockedNodes.includes(prereq),
-  );
-  if (!hasAllPrereqs) return { member, reason: "missing-prerequisite" };
+  if (!hasPrereqs(member, node)) {
+    return { member, reason: "missing-prerequisite" };
+  }
 
   if (member.skillPoints < node.cost) {
     return { member, reason: "insufficient-points" };
@@ -84,4 +87,18 @@ export function unlockSkillNode(
   nodeId: string,
 ): UnlockSkillNodeResult {
   return unlockNodeInTree(member, memberSkillTree(member), nodeId);
+}
+
+// Display state for a node, coarser than UnlockSkillNodeReason: the UI only
+// ever needs to know whether a node can be confirmed right now, not which of
+// the several reasons block it.
+export type SkillNodeState = "locked" | "unlockable" | "unlocked";
+
+export function skillNodeState(
+  member: PartyMember,
+  node: SkillNodeDef,
+): SkillNodeState {
+  if (member.unlockedNodes.includes(node.id)) return "unlocked";
+  if (!hasPrereqs(member, node)) return "locked";
+  return member.skillPoints >= node.cost ? "unlockable" : "locked";
 }

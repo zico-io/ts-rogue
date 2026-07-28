@@ -38,6 +38,7 @@ import { InventoryScreen } from "./ui/screens/InventoryScreen";
 import { LootTriageScreen } from "./ui/screens/LootTriageScreen";
 import { OverworldScreen } from "./ui/screens/OverworldScreen";
 import { SettingsScreen } from "./ui/screens/SettingsScreen";
+import { SkillTreeScreen } from "./ui/screens/SkillTreeScreen";
 import { TitleScreen } from "./ui/screens/TitleScreen";
 import {
   reduceTitleUi,
@@ -81,6 +82,7 @@ function App({
   const [zoomOpen, setZoomOpen] = useState(false);
   const [inventoryOpen, setInventoryOpen] = useState(false);
   const [characterSheetOpen, setCharacterSheetOpen] = useState(false);
+  const [skillTreeOpen, setSkillTreeOpen] = useState(false);
   const [consoleOutput, setConsoleOutput] = useState<string[]>([]);
   const [fatal, setFatal] = useState<IncidentDisplay | undefined>(() =>
     pipeline.getFatal(),
@@ -180,6 +182,11 @@ function App({
           setCharacterSheetOpen(true);
         }
       }
+      if (intent.kind === "openSkillTree") {
+        if (state.scene !== "battle") {
+          setSkillTreeOpen(true);
+        }
+      }
     },
     {
       isActive:
@@ -190,6 +197,7 @@ function App({
         !zoomOpen &&
         !inventoryOpen &&
         !characterSheetOpen &&
+        !skillTreeOpen &&
         !lootTriagePending,
     },
   );
@@ -276,6 +284,14 @@ function App({
     content = (
       <CharacterSheetScreen
         onClose={() => setCharacterSheetOpen(false)}
+        state={state}
+      />
+    );
+  } else if (skillTreeOpen) {
+    content = (
+      <SkillTreeScreen
+        dispatch={dispatch}
+        onClose={() => setSkillTreeOpen(false)}
         state={state}
       />
     );

@@ -51,7 +51,7 @@ pure darks downsample to invisible ANSI black; that is why `border` and
 
 | Context | Controls |
 | --- | --- |
-| Global | `q` or Ctrl+C exits; backtick switches the developer console in dev mode; `z` opens fast travel from the overworld/village; `v` opens the Inventory screen anywhere outside battle; `C` (Shift+C) opens the Character Sheet screen anywhere outside battle |
+| Global | `q` or Ctrl+C exits; backtick switches the developer console in dev mode; `z` opens fast travel from the overworld/village; `v` opens the Inventory screen anywhere outside battle; `C` (Shift+C) opens the Character Sheet screen anywhere outside battle; `K` (Shift+K) opens the Skill Tree screen anywhere outside battle |
 | New game | Up/Down and Enter select a class, then Normal or Permadeath mode; Esc returns to class selection |
 | Village | Up/Down and Enter select; `i`, `c`, `s`, `t`, `x`, `o` open buildings or leave; Esc returns |
 | Overworld | Arrows or `h`, `j`, `k`, `l` move; Esc returns to the village |

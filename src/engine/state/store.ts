@@ -18,6 +18,7 @@ import {
   recruitClassName,
   recruitCost,
 } from "../entities/recruits";
+import { memberSkillTree, unlockSkillNode } from "../entities/skillTree";
 import { consumeItem, healAmount, isHealItem } from "../loot/consumables";
 import { type EquipmentSlotName, equipTargetSlot } from "../loot/equipment";
 import { FIELD_BACKPACK_CAP, isFieldBackpackFull } from "../loot/inventory";
@@ -792,6 +793,31 @@ function unequipItem(
   };
 }
 
+function unlockSkillNodeAction(
+  state: GameState,
+  memberId: string,
+  nodeId: string,
+): GameState {
+  const memberIndex = state.party.findIndex((m) => m.id === memberId);
+  if (memberIndex === -1) return state;
+
+  const member = state.party[memberIndex];
+  const result = unlockSkillNode(member, nodeId);
+  if (result.reason) return state;
+
+  const nodeName =
+    memberSkillTree(member)?.nodes.find((candidate) => candidate.id === nodeId)
+      ?.name ?? nodeId;
+  const party = state.party.map((entry, index) =>
+    index === memberIndex ? result.member : entry,
+  );
+  return {
+    ...state,
+    party,
+    log: [...state.log, entry(`${member.name} unlocks ${nodeName}.`)],
+  };
+}
+
 function recruitMember(state: GameState, classId: string): GameState {
   if (state.party.length >= MAX_PARTY) {
     return {
@@ -1098,6 +1124,8 @@ export function reduce(state: GameState, event: GameEvent): GameState {
       return hireRecruit(state, event.index);
     case "DismissMember":
       return dismissMember(state, event.memberId);
+    case "UnlockSkillNode":
+      return unlockSkillNodeAction(state, event.memberId, event.nodeId);
     case "MoveOverworld":
       return moveOverworld(state, event.dx, event.dy);
     case "TurnDungeon":
