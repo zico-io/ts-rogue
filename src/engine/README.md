@@ -84,6 +84,17 @@ loot before returning to the originating scene.
   Cleave/Meteor) instead of a basic attack.
 - Loot combines item bases, rarity, prefixes, suffixes, and optional
   monster-specific implicit properties.
+- The Guild quest board (`quests.ts`) accepts up to 3 quests at once
+  (`AcceptQuest`), pays out gold/xp/item rewards and decrements a fetch
+  quest's item count on turn-in (`TurnInQuest`), and repopulates
+  `quests.available` from quests the party's level qualifies for and hasn't
+  already taken or completed (`RefreshQuests`). `advanceQuestsOnVictory`
+  advances every accepted quest's progress inside `finalizeWon`: kill quests
+  tally defeated `enemy.defId` matches capped at the target count, clear
+  quests set progress to 1 on a boss victory in the matching dungeon, and
+  fetch quests roll `dropChance` into `questItems` only for kills an
+  incomplete accepted quest still needs, so no RNG is spent on quests nobody
+  has taken.
 - Village events cover resting, buying, selling, and equipment; saving stays at
   the UI and persistence boundary.
 

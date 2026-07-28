@@ -188,7 +188,7 @@ autonomous read/write access to that store for low-stakes operational facts;
 `instructions/memory.ts` loads up to 50 recent memories on every `turn.started`
 and feeds them back as JSON-encoded, explicitly untrusted stored data, per
 eve's `patterns/multi-tenant-memory.md`. `instructions.md` tells the model what
-belongs there instead of `.botfile/memory/domain/product.md`.
+belongs there instead of the golden product SSOT under `.botfile/memory/domain/`.
 
 `lib/memory/tools.ts` enforces the store's bounds and provenance rules
 (HAR-75) as input validation, not just prose: `key` is a restricted-charset,

@@ -91,6 +91,7 @@ export const DUNGEON_RAMPS: Record<string, readonly string[]> = {
   crypt: ["#1c2b39", "#2c5a5f", "#5c9a7b", "#f3b45a"],
   cave: ["#232043", "#453f7a", "#8a6f9c", "#f5b563"],
   ruins: ["#2a1f22", "#5c2f2c", "#a94f3a", "#f9b355"],
+  temple: ["#0d2b2e", "#12474a", "#2f7a72", "#8fe3c9"],
 };
 
 export function dungeonRamp(theme: string): readonly string[] {

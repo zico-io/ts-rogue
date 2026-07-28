@@ -6,7 +6,7 @@
 2. Create a branch using Linear's suggested name when available.
 3. Implement the smallest complete vertical change.
 4. Update each affected contextual README when shipped behavior, commands, requirements, or repository layout changes.
-5. Upsert the golden product SSOT `.botfile/memory/domain/product.md` when product behavior changes; `pnpm docs:lint` reports drift (warn-only).
+5. Upsert the relevant topic file(s) in the golden product SSOT under `.botfile/memory/domain/` (see `index.md`) when product behavior changes; `pnpm docs:lint` reports drift (warn-only).
 6. Run `pnpm changeset` for a release-facing change.
 7. Run `pnpm check`.
 8. Open a GitHub pull request and include the Linear issue identifier.
