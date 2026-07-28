@@ -5,7 +5,7 @@
 >
 > This document scaffolds the TypeScript implementation. It is a *playable-loop* plan, not a full-game GDD. Everything here is scoped to prove the loop is fun and structurally sound before adding depth.
 >
-> **Roadmap only.** Shipped product truth lives in the golden SSOT `.botfile/memory/domain/product.md`; this file is the original plan and its checklists are historical.
+> **Roadmap only.** Shipped product truth lives in the golden SSOT under `.botfile/memory/domain/` (see `index.md`); this file is the original plan and its checklists are historical.
 
 ---
 

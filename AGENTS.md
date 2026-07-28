@@ -52,8 +52,9 @@ Eve also has a separate runtime memory store (`remember`/`recall`/`forget`,
 see `agent/README.md`) for low-stakes operational facts - a debugging
 insight, a workaround, an entity-dedup note. It is written autonomously with
 no PR, bounded in size, and never holds credentials or personal data. Nothing
-durable enough to belong in `.botfile/memory/domain/product.md` should live
-there instead; when in doubt, it goes through the reviewed path above.
+durable enough to belong in the golden product SSOT under
+`.botfile/memory/domain/` should live there instead; when in doubt, it goes
+through the reviewed path above.
 
 ## Git, GitHub, and Linear
 
