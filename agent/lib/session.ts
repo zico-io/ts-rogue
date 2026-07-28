@@ -4,6 +4,12 @@ import type { SessionContext } from "eve/tools";
 import { type PlanEntry, planFromActionResult } from "./agent-plan";
 import type { ChannelRenderer } from "./channel";
 import { stripLeadingProseHeader } from "./prose";
+import type {
+  ActionResultData,
+  ActionsRequestedData,
+  InputRequest,
+  InputRequestedData,
+} from "./session-event";
 import {
   actionLabel,
   actionParameter,
@@ -39,8 +45,7 @@ export type SessionUpdate =
       readonly displayName: string;
       readonly url?: string;
     }
-  // biome-ignore lint/suspicious/noExplicitAny: eve's input-request shape, passed through untouched
-  | { readonly kind: "inputPrompt"; readonly requests: readonly any[] }
+  | { readonly kind: "inputPrompt"; readonly requests: readonly InputRequest[] }
   | { readonly kind: "plan"; readonly steps: readonly PlanEntry[] };
 
 /** An announced action still awaiting its result. */
@@ -122,8 +127,7 @@ export class AgentSession<Channel> {
   }
 
   async actionsRequested(
-    // biome-ignore lint/suspicious/noExplicitAny: mirrors the union of runtime action request shapes (see turn-report.ts)
-    data: { readonly actions: readonly any[] },
+    data: Pick<ActionsRequestedData, "actions">,
     channel: Channel,
     ctx?: SessionContext,
   ): Promise<void> {
@@ -170,8 +174,7 @@ export class AgentSession<Channel> {
   }
 
   async inputRequested(
-    // biome-ignore lint/suspicious/noExplicitAny: eve's input-request shape, passed through untouched
-    data: { readonly requests: readonly any[] },
+    data: Pick<InputRequestedData, "requests">,
     channel: Channel,
     ctx?: SessionContext,
   ): Promise<void> {
@@ -207,12 +210,7 @@ export class AgentSession<Channel> {
   }
 
   async actionResult(
-    data: {
-      readonly error?: { readonly message?: string } | null;
-      readonly status?: string;
-      // biome-ignore lint/suspicious/noExplicitAny: mirrors the union of runtime action result shapes
-      readonly result: any;
-    },
+    data: Pick<ActionResultData, "error" | "result" | "status">,
     channel: Channel,
     ctx?: SessionContext,
   ): Promise<void> {

@@ -1,3 +1,5 @@
+import type { RouteHandlerArgs } from "eve/channels";
+import type { GitHubChannelState } from "eve/channels/github";
 import { describe, expect, it, vi } from "vitest";
 
 // The state-sync behavior itself is covered in agent/lib/github/pull-request.test.ts.
@@ -45,8 +47,12 @@ const post = (event: string) =>
     headers: { "x-github-event": event },
   });
 
-// biome-ignore lint/suspicious/noExplicitAny: reaching into the mocked channel shape
-const route = channel.routes[0] as any;
+const route = channel.routes[0];
+
+// The override only reads `send`; the rest of `RouteHandlerArgs` is unused here.
+const routeArgs = {
+  send: async () => {},
+} as unknown as RouteHandlerArgs<GitHubChannelState>;
 
 describe("channel wiring", () => {
   it("registers the state-syncing pull-request handler, not the bare wake decision", () => {
@@ -67,14 +73,13 @@ describe("channel wiring", () => {
 
     // The override reaches `handlePullRequestReviewWebhook`, which rejects the
     // mocked credentials (no webhookVerifier) rather than reaching eve.
-    const intercepted = await route.handler(post("pull_request_review"), {
-      send: async () => {},
-    });
+    const intercepted = await route.handler(
+      post("pull_request_review"),
+      routeArgs,
+    );
     expect(intercepted.status).toBe(401);
 
-    const passthrough = await route.handler(post("pull_request"), {
-      send: async () => {},
-    });
+    const passthrough = await route.handler(post("pull_request"), routeArgs);
     expect(await passthrough.text()).toBe("mock");
   });
 });

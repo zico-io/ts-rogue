@@ -1,3 +1,4 @@
+import type { LinearReceiveTarget } from "eve/channels/linear";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { listLiveAgentSessionsMock } = vi.hoisted(() => ({
@@ -95,8 +96,11 @@ describe("resolveReceiveSession", () => {
   });
 
   it("throws when the target has no usable identifier", async () => {
-    // biome-ignore lint/suspicious/noExplicitAny: exercising the runtime guard for an invalid target
-    await expect(resolveReceiveSession({} as any, {})).rejects.toThrow(
+    // `LinearReceiveTarget` requires one of the three ids; the guard exists
+    // because the payload arrives from another channel at run time.
+    await expect(
+      resolveReceiveSession({} as unknown as LinearReceiveTarget, {}),
+    ).rejects.toThrow(
       "linearChannel().receive requires target.agentSessionId, issueId, or commentId.",
     );
   });

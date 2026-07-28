@@ -1,11 +1,17 @@
+import type { LinearAgentActivityCreateInput } from "eve/channels/linear";
+import type { HookContext, HookEvent } from "eve/hooks";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // The hook fires on the root session's own stream while a `Workflow` step
 // runs. These mocks stand in for the eve runtime scope so the handlers can
 // be driven and their Linear posts asserted without a live session.
 const { createActivity, stateBox } = vi.hoisted(() => ({
-  // biome-ignore lint/suspicious/noExplicitAny: mock captures the Linear activity payload
-  createActivity: vi.fn(async (_input: any) => ({ id: "a", success: true })),
+  createActivity: vi.fn(
+    async (_input: { readonly activity: LinearAgentActivityCreateInput }) => ({
+      id: "a",
+      success: true,
+    }),
+  ),
   stateBox: {
     value: {} as Record<string, { action: string; parameter: string }>,
   },
@@ -17,7 +23,9 @@ vi.mock("@vercel/connect/eve", () => ({
   connectLinearCredentials: () => ({}),
 }));
 vi.mock("eve/channels/linear", () => ({
-  createLinearAgentActivity: (input: unknown) => createActivity(input),
+  createLinearAgentActivity: (input: {
+    readonly activity: LinearAgentActivityCreateInput;
+  }) => createActivity(input),
 }));
 vi.mock("eve/hooks", () => ({ defineHook: (def: unknown) => def }));
 vi.mock("eve/context", () => ({
@@ -32,61 +40,74 @@ vi.mock("eve/context", () => ({
   },
 }));
 
-const events =
-  // biome-ignore lint/suspicious/noExplicitAny: driving mocked hook handlers in a test
-  (await import("../agent/hooks/workflow-progress")).default.events as any;
+const hook = (await import("../agent/hooks/workflow-progress")).default;
+
+const subagentCalled = (
+  event: HookEvent<"subagent.called">,
+  ctx: HookContext,
+) => hook.events?.["subagent.called"]?.(event, ctx);
+
+const subagentCompleted = (
+  event: HookEvent<"subagent.completed">,
+  ctx: HookContext,
+) => hook.events?.["subagent.completed"]?.(event, ctx);
 
 const freshState = (): PendingCalls => ({});
 
-const linearCtx = (continuationToken = "agent-session:sess-1") => ({
-  session: {},
-  channel: { continuationToken, kind: "linear" },
-});
+// The hook reads only `ctx.channel`; these stand in for a whole `HookContext`.
+const hookCtx = (channel: HookContext["channel"]): HookContext =>
+  ({ channel, session: {} }) as unknown as HookContext;
+
+const linearCtx = (continuationToken = "agent-session:sess-1") =>
+  hookCtx({ continuationToken, kind: "linear" });
 
 // A channel with no out-of-band posting surface, e.g. a merge-woken GitHub
 // session. The hook posts the same update; nothing shows.
-const unpostableCtx = () => ({
-  session: {},
-  channel: { continuationToken: "issue:42", kind: "github" },
-});
+const unpostableCtx = () =>
+  hookCtx({ continuationToken: "issue:42", kind: "github" });
 
 // A Linear session the hook cannot address, because the runtime handed it no
 // continuation token.
-const unaddressableCtx = () => ({
-  session: {},
-  channel: { kind: "linear" },
-});
+const unaddressableCtx = () => hookCtx({ kind: "linear" });
 
 const contentOf = (call: number) =>
-  createActivity.mock.calls[call]?.[0].activity.content;
+  createActivity.mock.calls[call][0].activity.content;
+
+/** The posted chip's result, which only an `action` activity carries. */
+const resultOf = (call: number): string | undefined => {
+  const content = contentOf(call);
+  return content.type === "action" ? content.result : undefined;
+};
 
 const called = (input: {
   callId: string;
   sequence: number;
   name?: string;
-}) => ({
+}): HookEvent<"subagent.called"> => ({
   data: {
     callId: input.callId,
     childSessionId: `child-${input.callId}`,
-    sessionId: "root",
-    sequence: input.sequence,
     name: input.name ?? "agent",
+    sequence: input.sequence,
+    sessionId: "root",
     toolName: input.name ?? "agent",
     turnId: "turn-1",
     workflowId: "wf-1",
   },
+  type: "subagent.called",
 });
 
 const completed = (input: {
   callId: string;
   output: string;
   subagentName?: string;
-}) => ({
+}): HookEvent<"subagent.completed"> => ({
   data: {
     callId: input.callId,
     output: input.output,
     subagentName: input.subagentName ?? "agent",
   },
+  type: "subagent.completed",
 });
 
 describe("workflow-progress hook", () => {
@@ -97,7 +118,7 @@ describe("workflow-progress hook", () => {
   });
 
   it("posts an ephemeral chip when a workflow call dispatches", async () => {
-    await events["subagent.called"](
+    await subagentCalled(
       called({ callId: "call_1", sequence: 0 }),
       linearCtx(),
     );
@@ -115,11 +136,11 @@ describe("workflow-progress hook", () => {
   });
 
   it("posts a durable chip with the truncated result when a workflow call completes", async () => {
-    await events["subagent.called"](
+    await subagentCalled(
       called({ callId: "call_2", sequence: 1 }),
       linearCtx(),
     );
-    await events["subagent.completed"](
+    await subagentCompleted(
       completed({ callId: "call_2", output: "found the answer" }),
       linearCtx(),
     );
@@ -137,21 +158,21 @@ describe("workflow-progress hook", () => {
   });
 
   it("labels each concurrent call by its own sequence and clears state once completed", async () => {
-    await events["subagent.called"](
+    await subagentCalled(
       called({ callId: "call_1", sequence: 0 }),
       linearCtx(),
     );
-    await events["subagent.called"](
+    await subagentCalled(
       called({ callId: "call_2", sequence: 1 }),
       linearCtx(),
     );
-    await events["subagent.called"](
+    await subagentCalled(
       called({ callId: "call_3", sequence: 2 }),
       linearCtx(),
     );
     expect(Object.keys(stateBox.value)).toEqual(["call_1", "call_2", "call_3"]);
 
-    await events["subagent.completed"](
+    await subagentCompleted(
       completed({ callId: "call_2", output: "middle finished first" }),
       linearCtx(),
     );
@@ -161,7 +182,7 @@ describe("workflow-progress hook", () => {
   });
 
   it("falls back to the subagent name when a completion has no matching dispatch", async () => {
-    await events["subagent.completed"](
+    await subagentCompleted(
       completed({ callId: "unknown", output: "done", subagentName: "agent" }),
       linearCtx(),
     );
@@ -176,11 +197,11 @@ describe("workflow-progress hook", () => {
   });
 
   it("does nothing on a channel with no poster (e.g. a merge-woken GitHub session)", async () => {
-    await events["subagent.called"](
+    await subagentCalled(
       called({ callId: "call_1", sequence: 0 }),
       unpostableCtx(),
     );
-    await events["subagent.completed"](
+    await subagentCompleted(
       completed({ callId: "call_1", output: "done" }),
       unpostableCtx(),
     );
@@ -189,7 +210,7 @@ describe("workflow-progress hook", () => {
   });
 
   it("does nothing without a continuation token to address the session", async () => {
-    await events["subagent.called"](
+    await subagentCalled(
       called({ callId: "call_1", sequence: 0 }),
       unaddressableCtx(),
     );
@@ -199,7 +220,7 @@ describe("workflow-progress hook", () => {
 
   it("warns instead of failing the workflow step when a Linear post errors", async () => {
     createActivity.mockRejectedValueOnce(new Error("linear down"));
-    await events["subagent.called"](
+    await subagentCalled(
       called({ callId: "call_1", sequence: 0 }),
       linearCtx(),
     );
@@ -211,17 +232,17 @@ describe("workflow-progress hook", () => {
   });
 
   it("truncates an oversized result", async () => {
-    await events["subagent.called"](
+    await subagentCalled(
       called({ callId: "call_1", sequence: 0 }),
       linearCtx(),
     );
-    await events["subagent.completed"](
+    await subagentCompleted(
       completed({ callId: "call_1", output: "x".repeat(500) }),
       linearCtx(),
     );
 
-    const { result } = contentOf(1);
-    expect(result.length).toBeLessThanOrEqual(300);
-    expect(result.endsWith("…")).toBe(true);
+    const result = resultOf(1);
+    expect(result?.length).toBeLessThanOrEqual(300);
+    expect(result?.endsWith("…")).toBe(true);
   });
 });

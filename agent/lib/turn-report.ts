@@ -1,5 +1,6 @@
 import { isPlainObject } from "./narrow";
 import { firstNonEmptyLine } from "./prose";
+import type { ActionRequest, ActionResultData } from "./session-event";
 import {
   toolActionParameter,
   toolActionResult,
@@ -74,42 +75,30 @@ export const turnFailureBody = (data: FailureData): string =>
     "Please try again, rephrase, or reach out if it keeps failing.",
   );
 
-// biome-ignore lint/suspicious/noExplicitAny: mirrors the union of runtime action request shapes (load-skill / remote-agent-call / subagent-call / tool-call)
-export const actionLabel = (action: any): string =>
-  action.kind === "tool-call" && action.toolName
-    ? toolLabel(action.toolName)
-    : action.kind;
+export const actionLabel = (action: ActionRequest): string =>
+  action.kind === "tool-call" ? toolLabel(action.toolName) : action.kind;
 
-// biome-ignore lint/suspicious/noExplicitAny: see actionLabel
-export const actionParameter = (action: any): string => {
-  if (action.kind === "subagent-call" && typeof action.input === "object") {
-    const message = action.input?.message;
+export const actionParameter = (action: ActionRequest): string => {
+  if (action.kind === "subagent-call") {
+    const message = action.input.message;
     if (typeof message === "string") {
       const lead = firstNonEmptyLine(message);
       if (lead) return lead;
     }
   }
-  if (action.kind === "tool-call" && action.toolName) {
+  if (action.kind === "tool-call") {
     return toolActionParameter(action.toolName, action.input);
   }
-  if (action.description) return action.description;
-  if (action.name) return action.name;
-  if (action.input !== undefined) {
-    try {
-      return JSON.stringify(action.input);
-    } catch {
-      return "";
-    }
-  }
-  return "";
+  // Only a subagent-call or a remote-agent-call carries a description; what is
+  // left after those two is a load-skill, whose input is all it has to show.
+  if ("description" in action) return action.description;
+  return JSON.stringify(action.input);
 };
 
 /** The human-readable outcome of a completed action, error message first. */
-export const actionResultText = (data: {
-  readonly error?: { readonly message?: string } | null;
-  // biome-ignore lint/suspicious/noExplicitAny: mirrors the union of runtime action result shapes
-  readonly result: any;
-}): string => {
+export const actionResultText = (
+  data: Pick<ActionResultData, "error" | "result">,
+): string => {
   if (data.error?.message) return data.error.message;
   if (data.result.kind === "tool-result") {
     return toolActionResult(
@@ -118,10 +107,5 @@ export const actionResultText = (data: {
       data.result.isError,
     );
   }
-  try {
-    // `JSON.stringify(undefined)` is `undefined`, not a string.
-    return JSON.stringify(data.result.output) ?? "";
-  } catch {
-    return "";
-  }
+  return JSON.stringify(data.result.output);
 };

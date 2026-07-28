@@ -1,4 +1,4 @@
-import { type CancelFn, defineChannel, POST } from "eve/channels";
+import { type CancelFn, defineChannel, POST, type SendFn } from "eve/channels";
 import {
   createLinearAgentActivity,
   defaultOnAgentSession,
@@ -257,8 +257,7 @@ async function dispatchAgentSession(input: {
   readonly config: LinearChannelConfig;
   readonly event: LinearAgentSessionEvent;
   readonly onAgentSession: NonNullable<LinearChannelConfig["onAgentSession"]>;
-  // biome-ignore lint/suspicious/noExplicitAny: mirrors eve's own SendFn generic default
-  readonly send: (payload: any, options: any) => Promise<unknown>;
+  readonly send: SendFn<LinearChannelState>;
 }) {
   const { cancel, config, event, onAgentSession, send } = input;
   const ctx = {

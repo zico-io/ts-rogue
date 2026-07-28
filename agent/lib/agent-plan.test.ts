@@ -1,23 +1,30 @@
 import { describe, expect, it } from "vitest";
 
 import { planFromActionResult } from "./agent-plan";
+import type { ActionResult, ActionResultData } from "./session-event";
 
 describe("planFromActionResult", () => {
-  const todoResult = (overrides: Record<string, unknown> = {}) => ({
-    status: "completed",
+  const todoResult = (
+    overrides: {
+      readonly isError?: boolean;
+      readonly output?: ActionResult["output"];
+    } = {},
+  ): Pick<ActionResultData, "result" | "status"> => ({
     result: {
+      callId: "c1",
       kind: "tool-result",
-      toolName: "todo",
       output: {
         todos: [
           { content: "Ship it", priority: "high", status: "in_progress" },
         ],
       },
+      toolName: "todo",
       ...overrides,
     },
+    status: "completed",
   });
 
-  const planFrom = (output: unknown) =>
+  const planFrom = (output: ActionResult["output"]) =>
     planFromActionResult(todoResult({ output }));
 
   it("maps every todo status onto its Linear plan equivalent", () => {
@@ -77,7 +84,12 @@ describe("planFromActionResult", () => {
     expect(
       planFromActionResult({
         status: "completed",
-        result: { kind: "tool-result", toolName: "bash", output: {} },
+        result: {
+          callId: "c1",
+          kind: "tool-result",
+          output: {},
+          toolName: "bash",
+        },
       }),
     ).toBeNull();
   });
@@ -87,9 +99,10 @@ describe("planFromActionResult", () => {
       planFromActionResult({
         status: "failed",
         result: {
+          callId: "c1",
           kind: "tool-result",
-          toolName: "todo",
           output: { todos: [] },
+          toolName: "todo",
         },
       }),
     ).toBeNull();
@@ -101,9 +114,10 @@ describe("planFromActionResult", () => {
       planFromActionResult({
         status: "completed",
         result: {
+          callId: "c1",
           kind: "tool-result",
-          toolName: "todo",
           output: { todos: [] },
+          toolName: "todo",
         },
       }),
     ).toBeNull();
@@ -113,7 +127,12 @@ describe("planFromActionResult", () => {
     expect(
       planFromActionResult({
         status: "completed",
-        result: { kind: "subagent-result", output: { todos: [] } },
+        result: {
+          callId: "c1",
+          kind: "subagent-result",
+          output: { todos: [] },
+          subagentName: "agent",
+        },
       }),
     ).toBeNull();
   });

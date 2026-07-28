@@ -1,4 +1,26 @@
+import type {
+  ChannelDefinition,
+  ChannelEvents,
+  HttpRouteDefinition,
+  RouteHandlerArgs,
+} from "eve/channels";
+import type {
+  LinearChannelContext,
+  LinearChannelState,
+  LinearEventContext,
+  LinearHandle,
+  LinearInstrumentationMetadata,
+  LinearReceiveTarget,
+} from "eve/channels/linear";
+import type { SessionContext } from "eve/tools";
 import { describe, expect, it, vi } from "vitest";
+
+import type { LinearStateWithPending } from "../agent/lib/linear/session";
+import type {
+  ActionRequest,
+  ActionResultData,
+  InputRequest,
+} from "../agent/lib/session-event";
 
 const { order, cancelMock, sendMock, waitUntilTasks, webhookVerifier } =
   vi.hoisted(() => ({
@@ -79,26 +101,74 @@ const {
   updateLinearAgentSession,
 } = await import("eve/channels/linear");
 
-// biome-ignore lint/suspicious/noExplicitAny: reaching into the mocked channel shape for tests
-const route = (channel as any).routes[0] as {
-  handler: (
-    req: Request,
-    args: {
-      // biome-ignore lint/suspicious/noExplicitAny: mocked handler args
-      send: any;
-      // biome-ignore lint/suspicious/noExplicitAny: mocked handler args
-      cancel: any;
-      // biome-ignore lint/suspicious/noExplicitAny: mocked handler args
-      waitUntil: any;
-      // biome-ignore lint/suspicious/noExplicitAny: mocked handler args
-      getSession: any;
-      // biome-ignore lint/suspicious/noExplicitAny: mocked handler args
-      receive: any;
-      params: Record<string, string>;
-      requestIp: string | null;
-    },
-  ) => Promise<Response>;
-};
+// `defineChannel` is mocked identity-style above, so `channel` is really the
+// definition it was handed - `events` and a concrete route, neither of which the
+// opaque `Channel` type exposes.
+const definition = channel as unknown as ChannelDefinition<
+  LinearChannelState,
+  LinearChannelContext,
+  LinearReceiveTarget,
+  LinearInstrumentationMetadata
+>;
+const route = definition.routes[0] as HttpRouteDefinition<LinearChannelState>;
+const events: ChannelEvents<LinearChannelContext> = definition.events ?? {};
+
+// The mocks answer with the shape each assertion reads, not a whole eve
+// `Session` / `RouteHandlerArgs`; one cast keeps the seam honest about that.
+const routeArgs = (
+  waitUntil: (task: Promise<unknown>) => void,
+): RouteHandlerArgs<LinearChannelState> =>
+  ({
+    cancel: cancelMock,
+    getSession: vi.fn(),
+    params: {},
+    receive: vi.fn(),
+    requestIp: null,
+    reset: vi.fn(),
+    resolveActiveSession: vi.fn(),
+    send: sendMock,
+    waitUntil,
+  }) as unknown as RouteHandlerArgs<LinearChannelState>;
+
+const eventChannel = (
+  state: Partial<LinearStateWithPending> = {},
+  linear: Partial<LinearHandle> = {},
+): LinearEventContext =>
+  ({
+    continuationToken: "linear:sess-1",
+    linear,
+    setContinuationToken: vi.fn(),
+    state,
+  }) as unknown as LinearEventContext;
+
+/** Every event payload carries these; no assertion here reads them. */
+const turnMeta = { sequence: 0, stepIndex: 0, turnId: "turn-1" };
+
+type EventDataOf<K extends keyof ChannelEvents<LinearChannelContext>> =
+  Parameters<NonNullable<ChannelEvents<LinearChannelContext>[K]>>[0];
+
+type MessageCompletedData = EventDataOf<"message.completed">;
+type AuthorizationRequiredData = EventDataOf<"authorization.required">;
+type AuthorizationCompletedData = EventDataOf<"authorization.completed">;
+
+const bashAction = {
+  callId: "c1",
+  input: { command: "git status" },
+  kind: "tool-call",
+  toolName: "bash",
+} satisfies ActionRequest;
+
+const subagentCall = {
+  callId: "c1",
+  description: "Delegate a focused subtask to a fresh copy of yourself.",
+  input: { message: "" },
+  kind: "subagent-call",
+  name: "agent",
+  nodeId: "n1",
+  subagentName: "agent",
+} satisfies ActionRequest;
+
+const sessionCtx = {} as unknown as SessionContext;
 
 const agentSession = {
   id: "sess-1",
@@ -141,15 +211,7 @@ const invoke = async (event: unknown) => {
   const waitUntil = vi.fn((task: Promise<unknown>) => {
     waitUntilTasks.push(task);
   });
-  const response = await route.handler(req, {
-    send: sendMock,
-    cancel: cancelMock,
-    waitUntil,
-    getSession: vi.fn(),
-    receive: vi.fn(),
-    params: {},
-    requestIp: null,
-  });
+  const response = await route.handler(req, routeArgs(waitUntil));
   await Promise.all(waitUntilTasks);
   return response;
 };
@@ -209,15 +271,7 @@ describe("agent/channels/linear (cancel-before-send)", () => {
     const waitUntil = vi.fn((task: Promise<unknown>) =>
       waitUntilTasks.push(task),
     );
-    const response = await route.handler(req, {
-      send: sendMock,
-      cancel: cancelMock,
-      waitUntil,
-      getSession: vi.fn(),
-      receive: vi.fn(),
-      params: {},
-      requestIp: null,
-    });
+    const response = await route.handler(req, routeArgs(waitUntil));
     await Promise.all(waitUntilTasks);
 
     expect(response.status).toBe(401);
@@ -466,18 +520,28 @@ describe("issue lifecycle sync on dispatch", () => {
 });
 
 describe("issue lifecycle sync on session failure", () => {
-  const failureData = { message: "boom", details: {} };
-  const channelCtx = (issueId: string | null) => ({
-    state: { agentSessionId: "sess-1", issueId, pendingToolCallMessage: null },
-  });
+  const sessionFailure = {
+    code: "unrecoverable",
+    details: {},
+    message: "boom",
+    sessionId: "sess-1",
+  };
+  const turnFailure = {
+    ...turnMeta,
+    code: "turn_failed",
+    details: {},
+    message: "boom",
+  };
+  const channelCtx = (issueId: string | null) =>
+    eventChannel({
+      agentSessionId: "sess-1",
+      issueId,
+      pendingToolCallMessage: null,
+    });
 
   it("moves the issue to Blocked on session.failed", async () => {
     advanceIssueStateMock.mockClear();
-    // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handler directly
-    await (channel as any).events["session.failed"](
-      failureData,
-      channelCtx("issue-1"),
-    );
+    await events["session.failed"]?.(sessionFailure, channelCtx("issue-1"));
 
     expect(advanceIssueStateMock).toHaveBeenCalledWith(
       expect.objectContaining({ issueRef: "issue-1", target: "blocked" }),
@@ -486,21 +550,17 @@ describe("issue lifecycle sync on session failure", () => {
 
   it("skips the sync when the failed session has no issue", async () => {
     advanceIssueStateMock.mockClear();
-    // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handler directly
-    await (channel as any).events["session.failed"](
-      failureData,
-      channelCtx(null),
-    );
+    await events["session.failed"]?.(sessionFailure, channelCtx(null));
 
     expect(advanceIssueStateMock).not.toHaveBeenCalled();
   });
 
   it("never syncs on turn.failed (recoverable)", async () => {
     advanceIssueStateMock.mockClear();
-    // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handler directly
-    await (channel as any).events["turn.failed"](
-      failureData,
+    await events["turn.failed"]?.(
+      turnFailure,
       channelCtx("issue-1"),
+      sessionCtx,
     );
 
     expect(advanceIssueStateMock).not.toHaveBeenCalled();
@@ -508,21 +568,19 @@ describe("issue lifecycle sync on session failure", () => {
 });
 
 describe("actions.requested ephemeral render", () => {
-  const postAction = async (action: unknown) => {
+  const postAction = async (action: ActionRequest) => {
     vi.mocked(createLinearAgentActivity).mockClear();
-    // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handler directly
-    await (channel as any).events["actions.requested"](
-      { actions: [action] },
-      { state: { agentSessionId: "sess-1", pendingToolCallMessage: null } },
+    await events["actions.requested"]?.(
+      { ...turnMeta, actions: [action] },
+      eventChannel({ agentSessionId: "sess-1", pendingToolCallMessage: null }),
+      sessionCtx,
     );
     return vi.mocked(createLinearAgentActivity).mock.calls[0]?.[0].activity;
   };
 
   it("labels a subagent-call with the delegation packet's lead line, not the static tool description", async () => {
     const activity = await postAction({
-      kind: "subagent-call",
-      name: "agent",
-      description: "Delegate a focused subtask to a fresh copy of yourself.",
+      ...subagentCall,
       input: {
         message: "issue: ROG-65 - Add depth to the overworld\nscope: ...",
       },
@@ -537,9 +595,7 @@ describe("actions.requested ephemeral render", () => {
 
   it("falls back to the description when a subagent-call has no usable message", async () => {
     const activity = await postAction({
-      kind: "subagent-call",
-      name: "agent",
-      description: "Delegate a focused subtask to a fresh copy of yourself.",
+      ...subagentCall,
       input: { message: "   \n  " },
     });
     expect(activity?.content).toMatchObject({
@@ -548,12 +604,7 @@ describe("actions.requested ephemeral render", () => {
   });
 
   it("renders a plain tool call as a humanized label and readable parameter, not a JSON blob", async () => {
-    const activity = await postAction({
-      kind: "tool-call",
-      callId: "c1",
-      toolName: "bash",
-      input: { command: "git status" },
-    });
+    const activity = await postAction(bashAction);
     expect(activity?.content).toEqual({
       action: "Bash",
       parameter: "git status",
@@ -564,28 +615,25 @@ describe("actions.requested ephemeral render", () => {
 
 describe("actions.requested prose durability (HAR-68)", () => {
   const fireActionsRequested = async (
-    actions: unknown[],
+    actions: readonly ActionRequest[],
     pendingToolCallMessage: string | null,
   ) => {
     vi.mocked(createLinearAgentActivity).mockClear();
-    const state: Record<string, unknown> = {
+    const state: Partial<LinearStateWithPending> = {
       agentSessionId: "sess-1",
       pendingToolCallMessage,
     };
-    // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handler directly
-    await (channel as any).events["actions.requested"]({ actions }, { state });
+    await events["actions.requested"]?.(
+      { ...turnMeta, actions },
+      eventChannel(state),
+      sessionCtx,
+    );
     return {
       calls: vi
         .mocked(createLinearAgentActivity)
         .mock.calls.map((call) => call[0].activity),
       state,
     };
-  };
-  const bashAction = {
-    kind: "tool-call",
-    callId: "c1",
-    toolName: "bash",
-    input: { command: "git status" },
   };
 
   it("posts prose buffered ahead of a tool call as a durable thought, not an ephemeral one", async () => {
@@ -625,16 +673,18 @@ describe("actions.requested prose durability (HAR-68)", () => {
 });
 
 describe("message.completed narration buffering (HAR-78)", () => {
-  const fireMessageCompleted = async (data: {
-    message: string | null;
-    finishReason: string;
-  }) => {
-    const state: Record<string, unknown> = {
+  const fireMessageCompleted = async (
+    data: Pick<MessageCompletedData, "finishReason" | "message">,
+  ) => {
+    const state: Partial<LinearStateWithPending> = {
       agentSessionId: "sess-1",
       pendingToolCallMessage: null,
     };
-    // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handler directly
-    await (channel as any).events["message.completed"](data, { state });
+    await events["message.completed"]?.(
+      { ...turnMeta, ...data },
+      eventChannel(state),
+      sessionCtx,
+    );
     return state;
   };
 
@@ -704,40 +754,41 @@ describe("ask_question confirmation gate stays self-contained (HAR-78)", () => {
       "5. Starter trees for Warrior/Rogue/Wizard",
     ].join("\n");
     const askQuestionAction = {
-      kind: "tool-call",
-      callId: "c1",
-      toolName: "ask_question",
+      ...bashAction,
       input: { prompt: "Create it as described?" },
-    };
-    const state: Record<string, unknown> = {
+      toolName: "ask_question",
+    } satisfies ActionRequest;
+    const state: Partial<LinearStateWithPending> = {
       agentSessionId: "sess-1",
       pendingToolCallMessage: null,
     };
 
     // The model narrates the full proposal, then calls `ask_question` with
     // only a short recap - the same shape as the reported ENG-26 session.
-    // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handlers directly
-    await (channel as any).events["message.completed"](
-      { message: proposal, finishReason: "tool-calls" },
-      { state },
+    await events["message.completed"]?.(
+      { ...turnMeta, finishReason: "tool-calls", message: proposal },
+      eventChannel(state),
+      sessionCtx,
     );
-    // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handlers directly
-    await (channel as any).events["actions.requested"](
-      { actions: [askQuestionAction] },
-      { state },
+    await events["actions.requested"]?.(
+      { ...turnMeta, actions: [askQuestionAction] },
+      eventChannel(state),
+      sessionCtx,
     );
-    // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handlers directly
-    await (channel as any).events["input.requested"](
+    await events["input.requested"]?.(
       {
+        ...turnMeta,
         requests: [
           {
-            requestId: "req-1",
-            prompt: "Create it as described?",
+            action: askQuestionAction,
             options: [{ id: "approve", label: "Yes, create it as described" }],
+            prompt: "Create it as described?",
+            requestId: "req-1",
           },
         ],
       },
-      { state },
+      eventChannel(state),
+      sessionCtx,
     );
 
     const posted = vi
@@ -774,21 +825,22 @@ describe("input.requested elicitation (HAR-17)", () => {
         ],
       },
     });
-    const requests = [
+    const requests: readonly InputRequest[] = [
       {
-        requestId: "req-1",
-        prompt: "Approve this breakdown?",
+        action: bashAction,
         options: [
           { id: "approve", label: "Approve" },
           { id: "revise", label: "Revise" },
         ],
+        prompt: "Approve this breakdown?",
+        requestId: "req-1",
       },
     ];
 
-    await // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handler directly
-    (channel as any).events["input.requested"](
-      { requests },
-      { state: { agentSessionId: "sess-1" } },
+    await events["input.requested"]?.(
+      { ...turnMeta, requests },
+      eventChannel({ agentSessionId: "sess-1" }),
+      sessionCtx,
     );
 
     expect(renderLinearInputRequests).toHaveBeenCalledWith(requests);
@@ -851,16 +903,21 @@ describe("inbound image dispatch integration", () => {
 });
 
 describe("action.result plan sync", () => {
-  const postActionResult = async (data: unknown) => {
+  const postActionResult = async (
+    data: Pick<ActionResultData, "result" | "status">,
+  ) => {
     vi.mocked(updateLinearAgentSession).mockClear();
-    // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handler directly
-    await (channel as any).events["action.result"](data, {
-      linear: {
-        updateSession: (update: unknown) =>
-          updateLinearAgentSession({ id: "sess-1", update } as never),
-      },
-      state: { agentSessionId: "sess-1" },
-    });
+    await events["action.result"]?.(
+      { ...turnMeta, ...data },
+      eventChannel(
+        { agentSessionId: "sess-1" },
+        {
+          updateSession: (update) =>
+            updateLinearAgentSession({ id: "sess-1", update } as never),
+        },
+      ),
+      sessionCtx,
+    );
     return vi.mocked(updateLinearAgentSession).mock.calls[0]?.[0];
   };
 
@@ -868,13 +925,14 @@ describe("action.result plan sync", () => {
     const call = await postActionResult({
       status: "completed",
       result: {
+        callId: "c1",
         kind: "tool-result",
-        toolName: "todo",
         output: {
           todos: [
             { content: "Ship it", priority: "high", status: "in_progress" },
           ],
         },
+        toolName: "todo",
       },
     });
     expect(call).toMatchObject({
@@ -886,7 +944,12 @@ describe("action.result plan sync", () => {
   it("never touches the Linear plan when the result carries none", async () => {
     await postActionResult({
       status: "completed",
-      result: { kind: "tool-result", toolName: "bash", output: {} },
+      result: {
+        callId: "c1",
+        kind: "tool-result",
+        output: {},
+        toolName: "bash",
+      },
     });
     expect(updateLinearAgentSession).not.toHaveBeenCalled();
   });
@@ -894,20 +957,18 @@ describe("action.result plan sync", () => {
 
 describe("action.result durable chip promotion (HAR-45, preserved through HAR-68)", () => {
   const fireActionResult = async (
-    data: unknown,
-    pendingActionsByCallId: Record<string, unknown> = {},
+    data: Pick<ActionResultData, "error" | "result" | "status">,
+    pendingActionsByCallId: LinearStateWithPending["pendingActionsByCallId"] = {},
   ) => {
     vi.mocked(createLinearAgentActivity).mockClear();
-    // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handler directly
-    await (channel as any).events["action.result"](data, {
-      linear: {
-        updateSession: vi.fn(),
-      },
-      state: {
-        agentSessionId: "sess-1",
-        pendingActionsByCallId,
-      },
-    });
+    await events["action.result"]?.(
+      { ...turnMeta, ...data },
+      eventChannel(
+        { agentSessionId: "sess-1", pendingActionsByCallId },
+        { updateSession: vi.fn() },
+      ),
+      sessionCtx,
+    );
   };
 
   it("posts a durable action with the stashed action, parameter, and result when a tracked tool-call completes", async () => {
@@ -1004,50 +1065,41 @@ describe("action.result durable chip promotion (HAR-45, preserved through HAR-68
   });
 
   it("consumes the pending entry so a second action.result for the same callId posts nothing", async () => {
-    vi.mocked(createLinearAgentActivity).mockClear();
-    // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handler directly
-    await (channel as any).events["action.result"](
-      {
-        status: "completed",
-        result: {
-          kind: "tool-result",
-          callId: "c3",
-          toolName: "bash",
-          output: { stdout: "done" },
-        },
+    const doneOnC3 = {
+      ...turnMeta,
+      result: {
+        callId: "c3",
+        kind: "tool-result",
+        output: { stdout: "done" },
+        toolName: "bash",
       },
-      {
-        linear: { updateSession: vi.fn() },
-        state: {
+      status: "completed",
+    } satisfies ActionResultData;
+
+    vi.mocked(createLinearAgentActivity).mockClear();
+    await events["action.result"]?.(
+      doneOnC3,
+      eventChannel(
+        {
           agentSessionId: "sess-1",
           pendingActionsByCallId: {
             c3: { action: "bash", parameter: '{"cmd":"test"}' },
           },
         },
-      },
+        { updateSession: vi.fn() },
+      ),
+      sessionCtx,
     );
 
     expect(createLinearAgentActivity).toHaveBeenCalledTimes(1);
 
-    // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handler directly
-    await (channel as any).events["action.result"](
-      {
-        status: "completed",
-        result: {
-          kind: "tool-result",
-          callId: "c3",
-          toolName: "bash",
-          output: { stdout: "done" },
-        },
-      },
-      {
-        linear: { updateSession: vi.fn() },
-        state: {
-          agentSessionId: "sess-1",
-
-          pendingActionsByCallId: {},
-        },
-      },
+    await events["action.result"]?.(
+      doneOnC3,
+      eventChannel(
+        { agentSessionId: "sess-1", pendingActionsByCallId: {} },
+        { updateSession: vi.fn() },
+      ),
+      sessionCtx,
     );
 
     expect(createLinearAgentActivity).toHaveBeenCalledTimes(1);
@@ -1166,14 +1218,28 @@ describe("authorization events surface the OAuth challenge", () => {
     principalType: "user",
     subject: "user-1",
   };
-  const ctx = { session: { auth: { current: linearUserAuth } } };
+  // The handlers read only `session.auth.current`, not a whole SessionContext.
+  const authCtx = (current: typeof linearUserAuth | null): SessionContext =>
+    ({ session: { auth: { current } } }) as unknown as SessionContext;
+  const ctx = authCtx(linearUserAuth);
 
-  const fire = (event: string, data: unknown, eventCtx: unknown = ctx) =>
-    // biome-ignore lint/suspicious/noExplicitAny: driving the channel's event handler directly
-    (channel as any).events[event](
-      data,
-      { state: { agentSessionId: "sess-1" } },
+  const fireAuthorizationRequired = (
+    data: Omit<AuthorizationRequiredData, keyof typeof turnMeta>,
+    eventCtx: SessionContext = ctx,
+  ) =>
+    events["authorization.required"]?.(
+      { ...turnMeta, ...data },
+      eventChannel({ agentSessionId: "sess-1" }),
       eventCtx,
+    );
+
+  const fireAuthorizationCompleted = (
+    data: Omit<AuthorizationCompletedData, keyof typeof turnMeta>,
+  ) =>
+    events["authorization.completed"]?.(
+      { ...turnMeta, ...data },
+      eventChannel({ agentSessionId: "sess-1" }),
+      ctx,
     );
 
   const lastActivity = () =>
@@ -1181,7 +1247,7 @@ describe("authorization events surface the OAuth challenge", () => {
 
   it("posts an elicitation with Linear's native auth signal and the challenge URL", async () => {
     vi.mocked(createLinearAgentActivity).mockClear();
-    await fire("authorization.required", {
+    await fireAuthorizationRequired({
       authorization: {
         displayName: "Linear MCP",
         url: "https://example.com/oauth",
@@ -1207,14 +1273,13 @@ describe("authorization events surface the OAuth challenge", () => {
 
   it("title-cases the connection name and omits userId for a non-Linear principal", async () => {
     vi.mocked(createLinearAgentActivity).mockClear();
-    await fire(
-      "authorization.required",
+    await fireAuthorizationRequired(
       {
         authorization: { url: "https://example.com/oauth" },
         description: "Authorize the vercel connection",
         name: "vercel",
       },
-      { session: { auth: { current: null } } },
+      authCtx(null),
     );
     const activity = lastActivity();
     expect(activity?.signalMetadata).toEqual({
@@ -1225,7 +1290,7 @@ describe("authorization events surface the OAuth challenge", () => {
 
   it("falls back to a plain elicitation with instructions when the challenge has no URL", async () => {
     vi.mocked(createLinearAgentActivity).mockClear();
-    await fire("authorization.required", {
+    await fireAuthorizationRequired({
       authorization: {
         instructions: "Approve the sign-in request on your phone.",
         userCode: "ABCD-1234",
@@ -1243,7 +1308,7 @@ describe("authorization events surface the OAuth challenge", () => {
 
   it("posts an ephemeral resuming thought once authorization completes", async () => {
     vi.mocked(createLinearAgentActivity).mockClear();
-    await fire("authorization.completed", {
+    await fireAuthorizationCompleted({
       authorization: { displayName: "Linear MCP" },
       name: "linear",
       outcome: "authorized",
@@ -1256,7 +1321,7 @@ describe("authorization events surface the OAuth challenge", () => {
 
   it("reports a non-authorized outcome durably", async () => {
     vi.mocked(createLinearAgentActivity).mockClear();
-    await fire("authorization.completed", {
+    await fireAuthorizationCompleted({
       name: "linear",
       outcome: "timed-out",
       reason: "challenge expired",

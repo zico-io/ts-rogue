@@ -6,6 +6,11 @@ import {
   type SessionScratch,
   type SessionUpdate,
 } from "./session";
+import type {
+  ActionRequest,
+  ActionResultData,
+  InputRequest,
+} from "./session-event";
 
 interface Channel {
   readonly scratch: SessionScratch;
@@ -41,7 +46,7 @@ const bashAction = {
   input: { command: "git status" },
   kind: "tool-call",
   toolName: "bash",
-};
+} satisfies ActionRequest;
 
 describe("turn.started", () => {
   it("announces the turn transiently and clears stale buffered narration", async () => {
@@ -190,7 +195,7 @@ describe("action.result", () => {
       toolName: "bash",
     },
     status: "completed",
-  };
+  } satisfies Pick<ActionResultData, "result" | "status">;
 
   it("promotes the stashed chip to a durable one carrying the result", async () => {
     const { channel, session, updates } = setup();
@@ -232,7 +237,7 @@ describe("action.result", () => {
     await session.actionResult(
       {
         ...completedBash,
-        error: { message: "Command not found" },
+        error: { code: "tool_execution_failed", message: "Command not found" },
         status: "failed",
       },
       channel,
@@ -278,7 +283,9 @@ describe("action.result", () => {
 describe("input.requested", () => {
   it("passes the requests through untouched for the channel to render natively", async () => {
     const { channel, session, updates } = setup();
-    const requests = [{ prompt: "Approve?", requestId: "req-1" }];
+    const requests: readonly InputRequest[] = [
+      { action: bashAction, prompt: "Approve?", requestId: "req-1" },
+    ];
 
     await session.inputRequested({ requests }, channel);
 

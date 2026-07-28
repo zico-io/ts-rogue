@@ -1,3 +1,4 @@
+import type { HookContext, HookEvent } from "eve/hooks";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("eve/hooks", () => ({ defineHook: (def: unknown) => def }));
@@ -8,20 +9,26 @@ vi.mock("../agent/sandbox/sandbox", () => ({
 }));
 
 const { mintFreshPolicy } = await import("../agent/sandbox/sandbox");
-const events =
-  // biome-ignore lint/suspicious/noExplicitAny: driving mocked hook handlers in a test
-  (await import("../agent/hooks/prewarm-sandbox")).default.events as any;
+const hook = (await import("../agent/hooks/prewarm-sandbox")).default;
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
-const rootCtx = (getSandbox: unknown) => ({
-  getSandbox,
-  session: { parent: undefined },
-});
-const subagentCtx = (getSandbox: unknown) => ({
-  getSandbox,
-  session: { parent: { sessionId: "root-session" } },
-});
+// The hook reads only `getSandbox()` and `session.parent`; the fakes answer
+// with what it touches, not a whole `HookContext` or eve `SandboxSession`.
+const hookCtx = (
+  getSandbox: () => Promise<unknown>,
+  parent?: { readonly sessionId: string },
+): HookContext =>
+  ({ getSandbox, session: { parent } }) as unknown as HookContext;
+
+const rootCtx = (getSandbox: () => Promise<unknown>) => hookCtx(getSandbox);
+const subagentCtx = (getSandbox: () => Promise<unknown>) =>
+  hookCtx(getSandbox, { sessionId: "root-session" });
+
+const turnStartedEvent = {} as unknown as HookEvent<"turn.started">;
+
+const turnStarted = (ctx: HookContext): Promise<void> =>
+  Promise.resolve(hook.events?.["turn.started"]?.(turnStartedEvent, ctx));
 
 describe("prewarm-sandbox hook", () => {
   it("kicks sandbox creation at turn start without awaiting it (root)", () => {
@@ -35,7 +42,7 @@ describe("prewarm-sandbox hook", () => {
           }, 20),
         ),
     );
-    events["turn.started"]({}, rootCtx(getSandbox));
+    turnStarted(rootCtx(getSandbox));
     expect(getSandbox).toHaveBeenCalledTimes(1);
 
     expect(settled).toBe(false);
@@ -43,10 +50,7 @@ describe("prewarm-sandbox hook", () => {
 
   it("re-mints and re-installs the auth header once the sandbox resolves", async () => {
     const setNetworkPolicy = vi.fn(() => Promise.resolve());
-    events["turn.started"](
-      {},
-      rootCtx(() => Promise.resolve({ setNetworkPolicy })),
-    );
+    turnStarted(rootCtx(() => Promise.resolve({ setNetworkPolicy })));
     await flush();
     expect(mintFreshPolicy).toHaveBeenCalled();
     expect(setNetworkPolicy).toHaveBeenCalledWith(FRESH_POLICY);
@@ -63,19 +67,13 @@ describe("prewarm-sandbox hook", () => {
           }, 10),
         ),
     );
-    await events["turn.started"](
-      {},
-      subagentCtx(() => Promise.resolve({ setNetworkPolicy })),
-    );
+    await turnStarted(subagentCtx(() => Promise.resolve({ setNetworkPolicy })));
     expect(installed).toBe(true);
     expect(setNetworkPolicy).toHaveBeenCalledWith(FRESH_POLICY);
   });
 
   it("swallows a rejected creation instead of failing the turn", async () => {
-    events["turn.started"](
-      {},
-      rootCtx(() => Promise.reject(new Error("backend down"))),
-    );
+    turnStarted(rootCtx(() => Promise.reject(new Error("backend down"))));
 
     await flush();
   });
@@ -85,10 +83,7 @@ describe("prewarm-sandbox hook", () => {
       new Error("token service down"),
     );
     const setNetworkPolicy = vi.fn(() => Promise.resolve());
-    events["turn.started"](
-      {},
-      rootCtx(() => Promise.resolve({ setNetworkPolicy })),
-    );
+    turnStarted(rootCtx(() => Promise.resolve({ setNetworkPolicy })));
     await flush();
     expect(setNetworkPolicy).not.toHaveBeenCalled();
   });
@@ -98,11 +93,9 @@ describe("prewarm-sandbox hook", () => {
       Promise.resolve({
         setNetworkPolicy: () => Promise.reject(new Error("torn down")),
       });
-    events["turn.started"]({}, rootCtx(failing));
+    turnStarted(rootCtx(failing));
 
-    await expect(
-      events["turn.started"]({}, subagentCtx(failing)),
-    ).resolves.toBeUndefined();
+    await expect(turnStarted(subagentCtx(failing))).resolves.toBeUndefined();
     await flush();
   });
 
@@ -110,6 +103,6 @@ describe("prewarm-sandbox hook", () => {
     const getSandbox = () => {
       throw new Error("eve sandbox runtime access is unavailable");
     };
-    expect(() => events["turn.started"]({}, rootCtx(getSandbox))).not.toThrow();
+    expect(() => turnStarted(rootCtx(getSandbox))).not.toThrow();
   });
 });

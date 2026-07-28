@@ -1,20 +1,33 @@
+import type { LinearAgentActivityCreateInput } from "eve/channels/linear";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { createActivity } = vi.hoisted(() => ({
-  // biome-ignore lint/suspicious/noExplicitAny: mock captures the Linear activity payload
-  createActivity: vi.fn(async (_input: any) => ({ id: "a", success: true })),
+  createActivity: vi.fn(
+    async (_input: { readonly activity: LinearAgentActivityCreateInput }) => ({
+      id: "a",
+      success: true,
+    }),
+  ),
 }));
 
 vi.mock("@vercel/connect/eve", () => ({
   connectLinearCredentials: () => ({}),
 }));
 vi.mock("eve/channels/linear", () => ({
-  createLinearAgentActivity: (input: unknown) => createActivity(input),
+  createLinearAgentActivity: (input: {
+    readonly activity: LinearAgentActivityCreateInput;
+  }) => createActivity(input),
 }));
 
 const { postLinearUpdate } = await import("./poster");
 
-const activity = (call = 0) => createActivity.mock.calls[call]?.[0].activity;
+const activity = (call = 0) => createActivity.mock.calls[call][0].activity;
+
+/** The posted chip's result, which only an `action` activity carries. */
+const activityResult = (call = 0): string | undefined => {
+  const { content } = activity(call);
+  return content.type === "action" ? content.result : undefined;
+};
 
 beforeEach(() => {
   createActivity.mockClear();
@@ -47,8 +60,8 @@ describe("postLinearUpdate", () => {
       result: "x".repeat(400),
     });
 
-    expect(activity().content.result).toHaveLength(300);
-    expect(activity().content.result.endsWith("…")).toBe(true);
+    expect(activityResult()).toHaveLength(300);
+    expect(activityResult()?.endsWith("…")).toBe(true);
   });
 
   it("posts prose as its own activity type", async () => {

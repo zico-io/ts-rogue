@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import type { ActionRequest, ActionResult } from "./session-event";
 import {
   actionLabel,
   actionParameter,
@@ -8,13 +9,37 @@ import {
   turnFailureBody,
 } from "./turn-report";
 
+const subagentCall = {
+  callId: "c1",
+  description: "Delegate a focused subtask to a fresh copy of yourself.",
+  input: { message: "" },
+  kind: "subagent-call",
+  name: "agent",
+  nodeId: "n1",
+  subagentName: "agent",
+} satisfies ActionRequest;
+
+const toolResult = {
+  callId: "c1",
+  kind: "tool-result",
+  output: { stdout: "hello" },
+  toolName: "bash",
+} satisfies ActionResult;
+
 describe("actionLabel", () => {
   it("humanizes a tool call and passes other action kinds through", () => {
-    expect(actionLabel({ kind: "tool-call", toolName: "bash" })).toBe("Bash");
-    expect(actionLabel({ kind: "subagent-call", name: "agent" })).toBe(
-      "subagent-call",
+    expect(
+      actionLabel({
+        callId: "c1",
+        input: { command: "git status" },
+        kind: "tool-call",
+        toolName: "bash",
+      }),
+    ).toBe("Bash");
+    expect(actionLabel(subagentCall)).toBe("subagent-call");
+    expect(actionLabel({ callId: "c1", input: {}, kind: "load-skill" })).toBe(
+      "load-skill",
     );
-    expect(actionLabel({ kind: "load-skill" })).toBe("load-skill");
   });
 });
 
@@ -22,9 +47,7 @@ describe("actionParameter", () => {
   it("labels a subagent-call with the delegation packet's lead line, not the static tool description", () => {
     expect(
       actionParameter({
-        kind: "subagent-call",
-        name: "agent",
-        description: "Delegate a focused subtask to a fresh copy of yourself.",
+        ...subagentCall,
         input: {
           message: "issue: ROG-65 - Add depth to the overworld\nscope: ...",
         },
@@ -34,58 +57,38 @@ describe("actionParameter", () => {
 
   it("falls back to the description when a subagent-call has no usable message", () => {
     expect(
-      actionParameter({
-        kind: "subagent-call",
-        name: "agent",
-        description: "Delegate a focused subtask to a fresh copy of yourself.",
-        input: { message: "   \n  " },
-      }),
+      actionParameter({ ...subagentCall, input: { message: "   \n  " } }),
     ).toBe("Delegate a focused subtask to a fresh copy of yourself.");
   });
 
   it("renders a plain tool call as a readable parameter, not a JSON blob", () => {
     expect(
       actionParameter({
-        kind: "tool-call",
         callId: "c1",
-        toolName: "bash",
         input: { command: "git status" },
+        kind: "tool-call",
+        toolName: "bash",
       }),
     ).toBe("git status");
   });
 
-  it("falls back to the name, then the serialized input, then empty", () => {
-    expect(actionParameter({ kind: "load-skill", name: "eve" })).toBe("eve");
-    expect(actionParameter({ kind: "load-skill", input: { a: 1 } })).toBe(
-      '{"a":1}',
-    );
-    expect(actionParameter({ kind: "load-skill" })).toBe("");
+  it("serializes the input of a load-skill, the one kind carrying nothing else", () => {
+    expect(
+      actionParameter({ callId: "c1", input: { a: 1 }, kind: "load-skill" }),
+    ).toBe('{"a":1}');
   });
 });
 
 describe("actionResultText", () => {
   it("summarizes a tool result rather than dumping raw JSON", () => {
-    expect(
-      actionResultText({
-        result: {
-          kind: "tool-result",
-          toolName: "bash",
-          output: { stdout: "hello" },
-        },
-      }),
-    ).toBe("✓ done · 1 line");
+    expect(actionResultText({ result: toolResult })).toBe("✓ done · 1 line");
   });
 
   it("prefers the error message when the action failed", () => {
     expect(
       actionResultText({
-        error: { message: "Command not found" },
-        result: {
-          kind: "tool-result",
-          toolName: "bash",
-          isError: true,
-          output: {},
-        },
+        error: { code: "tool_execution_failed", message: "Command not found" },
+        result: { ...toolResult, isError: true, output: {} },
       }),
     ).toBe("Command not found");
   });
@@ -94,23 +97,13 @@ describe("actionResultText", () => {
     expect(
       actionResultText({
         result: {
+          callId: "c1",
           kind: "subagent-result",
           output: { summary: "Implemented all changes" },
+          subagentName: "agent",
         },
       }),
     ).toBe(JSON.stringify({ summary: "Implemented all changes" }));
-  });
-
-  it("returns an empty string for an unserializable or absent output", () => {
-    const circular: Record<string, unknown> = {};
-    circular.self = circular;
-
-    expect(
-      actionResultText({
-        result: { kind: "subagent-result", output: circular },
-      }),
-    ).toBe("");
-    expect(actionResultText({ result: { kind: "subagent-result" } })).toBe("");
   });
 });
 

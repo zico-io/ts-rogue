@@ -1,4 +1,5 @@
 import { isPlainObject } from "./narrow";
+import type { ActionResultData } from "./session-event";
 
 const TODO_STATUS_TO_PLAN_STATUS: Record<
   string,
@@ -35,11 +36,9 @@ const planFromTodoToolOutput = (output: unknown): readonly PlanEntry[] => {
  * no usable plan. Only a successful `todo` tool result sets the plan, and an
  * empty one is ignored rather than blanking out a real plan.
  */
-export const planFromActionResult = (data: {
-  readonly status?: string;
-  // biome-ignore lint/suspicious/noExplicitAny: mirrors the union of runtime action result shapes
-  readonly result: any;
-}): readonly PlanEntry[] | null => {
+export const planFromActionResult = (
+  data: Pick<ActionResultData, "result" | "status">,
+): readonly PlanEntry[] | null => {
   if (data.status !== "completed") return null;
   const { result } = data;
   if (
