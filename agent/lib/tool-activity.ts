@@ -1,21 +1,35 @@
-import { isPlainObject } from "./is-plain-object";
-import { toolOperation } from "./tool-label";
-import { MAX_ACTIVITY_TEXT_LENGTH, truncatePreservingTrailingUrl } from "./truncate";
+import { isPlainObject, nonEmptyString } from "./narrow";
+import { firstNonEmptyLine } from "./prose";
 
-// Formatter for the `parameter` and `result` fields of a Linear Agent
-// Activity `action` chip, used by `channels/linear.ts`. Without it, chips
-// render as `bash {"command":"..."}` (raw tool name + a `JSON.stringify(input)`
-// blob) with a raw `JSON.stringify(output)` result; with it they read
-// `Bash <command>` + `exit 0 · N lines`, which is what Linear's native
-// tool-call UI is built to show. (The chip's `action` label comes from
-// `toolLabel`; the channel already correlates a call's input to its result
-// by callId in its own state, so this module is pure formatting.)
+// How an action chip reads: its label, its parameter, and its result. Without
+// this a chip is `bash {"command":"..."}` (raw tool name + a
+// `JSON.stringify(input)` blob) with a raw `JSON.stringify(output)` result;
+// with it, `Bash <command>` + `exit 0 · N lines`. Reached from
+// `turn-report.ts`; the base session already pairs a call's input to its
+// result by callId, so this module is pure formatting. Text is returned in
+// full - each channel applies its own limit when it posts.
 
-const asString = (value: unknown): string | undefined =>
-  typeof value === "string" && value.length > 0 ? value : undefined;
+// The point at which a single-line result stops being worth showing verbatim
+// and becomes a size summary. A readability threshold, not a platform limit.
+const INLINE_RESULT_MAX = 300;
 
-const firstLine = (value: string): string =>
-  value.split(/\r?\n/, 1)[0] ?? value;
+/** An MCP tool arrives as `server__operation`; the operation is what reads. */
+export const toolOperation = (toolName: string): string =>
+  toolName.split("__").at(-1) ?? toolName;
+
+export const toolLabel = (toolName: string) => {
+  const operation = toolOperation(toolName);
+  const labels: Record<string, string> = {
+    create_issue_label: "Create an issue label",
+    save_document: "Create or update a document",
+    save_issue: "Create or update an issue",
+    save_milestone: "Create or update a milestone",
+    save_project: "Create or update a project",
+    save_status_update: "Post a project status update",
+  };
+  const label = labels[operation] ?? operation.replaceAll("_", " ");
+  return label.charAt(0).toUpperCase() + label.slice(1);
+};
 
 const lineCount = (text: string): number =>
   text.length === 0 ? 0 : text.split(/\r?\n/).length;
@@ -40,16 +54,6 @@ const fenceIfMultiline = (text: string): string => {
   return `\`\`\`\n${text}\n\`\`\``;
 };
 
-/**
- * Truncation can cut a fenced code block in half, leaving an open ``` with
- * no matching close - Linear would then render the rest of the chip as code.
- * Re-close an odd (unclosed) fence count after truncation.
- */
-const closeDanglingFence = (text: string): string => {
-  const fenceCount = (text.match(/```/g) ?? []).length;
-  return fenceCount % 2 === 1 ? `${text}\n\`\`\`` : text;
-};
-
 type ParamFormatter = (input: Record<string, unknown>) => string | undefined;
 
 // Subagent tool calls (the declared `playtester` subagent and the built-in
@@ -59,8 +63,10 @@ type ParamFormatter = (input: Record<string, unknown>) => string | undefined;
 const subagentFormatter =
   (label: string): ParamFormatter =>
   (input) => {
-    const message = asString(input.message);
-    return message === undefined ? undefined : `${label} - ${firstLine(message)}`;
+    const message = nonEmptyString(input.message);
+    return message === undefined
+      ? undefined
+      : `${label} - ${firstNonEmptyLine(message)}`;
   };
 
 const SUBAGENT_LABELS: Record<string, string> = {
@@ -69,27 +75,29 @@ const SUBAGENT_LABELS: Record<string, string> = {
 };
 
 const PARAMETER_FORMATTERS: Record<string, ParamFormatter> = {
-  bash: (input) => asString(input.command),
+  bash: (input) => nonEmptyString(input.command),
   read_file: (input) => {
-    const path = asString(input.filePath);
+    const path = nonEmptyString(input.filePath);
     if (path === undefined) return undefined;
     return typeof input.offset === "number" ? `${path}:${input.offset}` : path;
   },
-  write_file: (input) => asString(input.filePath),
+  write_file: (input) => nonEmptyString(input.filePath),
   grep: (input) => {
-    const pattern = asString(input.pattern);
+    const pattern = nonEmptyString(input.pattern);
     if (pattern === undefined) return undefined;
-    const glob = asString(input.glob);
+    const glob = nonEmptyString(input.glob);
     return glob === undefined ? pattern : `${pattern} in ${glob}`;
   },
-  glob: (input) => asString(input.pattern),
-  web_fetch: (input) => asString(input.url),
+  glob: (input) => nonEmptyString(input.pattern),
+  web_fetch: (input) => nonEmptyString(input.url),
   web_search: (input) =>
-    asString(input.query) ??
+    nonEmptyString(input.query) ??
     (Array.isArray(input.queries)
-      ? asString(input.queries.filter((q) => typeof q === "string").join(", "))
+      ? nonEmptyString(
+          input.queries.filter((q) => typeof q === "string").join(", "),
+        )
       : undefined),
-  load_skill: (input) => asString(input.skill),
+  load_skill: (input) => nonEmptyString(input.skill),
   // The list already mirrors to Linear's native Agent Plan; the chip is just a marker.
   todo: () => "Updated plan",
   ...Object.fromEntries(
@@ -106,12 +114,9 @@ export const toolActionParameter = (
 ): string => {
   const formatter = PARAMETER_FORMATTERS[toolOperation(toolName)];
   const formatted = formatter?.(isPlainObject(input) ? input : {});
-  // ponytail: unknown/MCP tools fall back to truncated JSON of the input;
-  // add a per-tool formatter above if one reads badly.
-  return truncatePreservingTrailingUrl(
-    formatted ?? compactJson(input),
-    MAX_ACTIVITY_TEXT_LENGTH,
-  );
+  // ponytail: unknown/MCP tools fall back to raw JSON of the input; add a
+  // per-tool formatter above if one reads badly.
+  return formatted ?? compactJson(input);
 };
 
 const RESULT_NOUNS: Record<string, [one: string, many: string]> = {
@@ -121,13 +126,13 @@ const RESULT_NOUNS: Record<string, [one: string, many: string]> = {
 };
 
 const errorText = (output: unknown): string | undefined => {
-  if (typeof output === "string") return asString(firstLine(output.trim()));
+  if (typeof output === "string") return firstNonEmptyLine(output);
   if (isPlainObject(output)) {
     const message =
-      asString(output.message) ??
-      asString(output.error) ??
-      asString(output.stderr);
-    if (message !== undefined) return firstLine(message.trim());
+      nonEmptyString(output.message) ??
+      nonEmptyString(output.error) ??
+      nonEmptyString(output.stderr);
+    if (message !== undefined) return firstNonEmptyLine(message);
   }
   return undefined;
 };
@@ -145,14 +150,14 @@ const bashResult = (output: unknown): string => {
   // both success and failure; "done" is only for a code-less output.
   const parts: string[] = [code === undefined ? "done" : `exit ${code}`];
 
-  const lines = lineCount(asString(output.stdout) ?? "");
+  const lines = lineCount(nonEmptyString(output.stdout) ?? "");
   if (lines > 0) parts.push(plural(lines, "line", "lines"));
   if (output.truncated === true) parts.push("truncated");
   const summary = parts.join(" · ");
 
   if (code !== undefined && code !== 0) {
-    const stderr = asString((asString(output.stderr) ?? "").trim());
-    if (stderr !== undefined) {
+    const stderr = nonEmptyString(output.stderr)?.trim();
+    if (stderr) {
       // Return the glyph, summary, and the (possibly fenced) stderr text
       return `${glyph} ${summary}\n${fenceIfMultiline(stderr)}`;
     }
@@ -181,13 +186,13 @@ const rawResult = (toolName: string, output: unknown): string => {
     }
 
     // Single-line text: show it if short, otherwise summary
-    return trimmed.length <= MAX_ACTIVITY_TEXT_LENGTH
+    return trimmed.length <= INLINE_RESULT_MAX
       ? trimmed
       : plural(output.length, "char", "chars");
   }
 
   if (op === "read_file" && isPlainObject(output)) {
-    const content = asString(output.content);
+    const content = nonEmptyString(output.content);
     if (content !== undefined)
       return plural(lineCount(content), "line", "lines");
   }
@@ -202,15 +207,7 @@ export const toolActionResult = (
 ): string => {
   if (isError === true) {
     const message = errorText(output);
-    const errorMessage =
-      message === undefined ? "✗ error" : `✗ ${message}`;
-    return truncatePreservingTrailingUrl(
-      errorMessage,
-      MAX_ACTIVITY_TEXT_LENGTH,
-    );
+    return message === undefined ? "✗ error" : `✗ ${message}`;
   }
-  const result = rawResult(toolName, output);
-  return closeDanglingFence(
-    truncatePreservingTrailingUrl(result, MAX_ACTIVITY_TEXT_LENGTH),
-  );
+  return rawResult(toolName, output);
 };

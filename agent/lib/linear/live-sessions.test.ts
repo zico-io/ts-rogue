@@ -7,7 +7,7 @@ vi.mock("eve/channels/linear", () => ({
 }));
 
 const { listLiveAgentSessions, STALE_SESSION_MS } = await import(
-  "../agent/lib/live-sessions"
+  "./live-sessions"
 );
 
 const NOW = Date.parse("2026-07-25T10:00:00.000Z");

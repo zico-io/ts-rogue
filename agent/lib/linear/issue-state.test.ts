@@ -7,10 +7,10 @@ vi.mock("eve/channels/linear", () => ({
 }));
 
 const { advanceIssueState, pickTargetState, shouldMove } = await import(
-  "../agent/lib/issue-state"
+  "./issue-state"
 );
 
-import type { WorkflowState } from "../agent/lib/issue-state";
+import type { WorkflowState } from "./issue-state";
 
 const state = (
   id: string,

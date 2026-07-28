@@ -1,7 +1,7 @@
 import type { LinearChannelConfig } from "eve/channels/linear";
 import { callLinearGraphQL } from "eve/channels/linear";
 
-import { isPlainObject } from "./is-plain-object";
+import { isPlainObject } from "../narrow";
 
 export type IssueStateTarget = "inProgress" | "inReview" | "done" | "blocked";
 

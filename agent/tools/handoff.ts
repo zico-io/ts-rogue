@@ -7,7 +7,7 @@ import type { ToolContext } from "eve/tools";
 import { defineTool } from "eve/tools";
 import { z } from "zod";
 
-import { listLiveAgentSessions } from "../lib/live-sessions";
+import { listLiveAgentSessions } from "../lib/linear/live-sessions";
 import { stripLeadingProseHeader } from "../lib/prose";
 
 const credentials = connectLinearCredentials("linear/ts-rogue-eve");

@@ -22,11 +22,12 @@ const { advanceIssueStateMock } = vi.hoisted(() => ({
   }),
 }));
 
-vi.mock("../agent/lib/issue-state", () => ({
+vi.mock("../agent/lib/linear/issue-state", () => ({
   advanceIssueState: advanceIssueStateMock,
 }));
 
 vi.mock("@vercel/connect/eve", () => ({
+  connectGitHubCredentials: () => ({}),
   connectLinearCredentials: () => ({
     accessToken: () => "connect-token",
     webhookVerifier,
@@ -62,13 +63,13 @@ vi.mock("eve/channels/linear", () => ({
   updateLinearAgentSession: vi.fn(async () => ({ success: true })),
 }));
 
-const {
-  default: channel,
-  attachLinearInboundImages,
-  planFromTodoToolOutput,
-  resolveReceiveSession,
-  stateFromAgentSession,
-} = await import("../agent/channels/linear");
+// The decisions these handlers render live in agent/lib, tested beside their
+// modules - agent/lib/{turn-report,agent-plan,authorization,session,webhook}
+// .test.ts and agent/lib/linear/. What is left here is the adapter's own job:
+// what gets posted, whether it is ephemeral, and in what order relative to
+// `cancel`/`send`. It stays in src/ because eve's discovery rejects a
+// `*.test.ts` under agent/channels/ (see agent/AGENTS.md).
+const { default: channel } = await import("../agent/channels/linear");
 const {
   callLinearGraphQL,
   createLinearAgentActivity,
@@ -340,31 +341,6 @@ describe("duplicate created-session guard", () => {
     );
   });
 
-  it("dispatches when the only older session is stale (idle past the threshold)", async () => {
-    reset();
-    vi.mocked(callLinearGraphQL).mockResolvedValueOnce(
-      liveSessions([
-        {
-          id: "sess-0",
-          status: "active",
-          createdAt: "2026-07-25T10:00:00.000Z",
-          url: "https://linear.app/sess-0",
-
-          activities: {
-            nodes: [
-              { updatedAt: new Date(Date.now() - 60 * 60_000).toISOString() },
-            ],
-          },
-        },
-      ]),
-    );
-
-    await invoke(createdEvent);
-
-    expect(order).toEqual(["cancel", "send", "advance"]);
-    expect(createLinearAgentActivity).not.toHaveBeenCalled();
-  });
-
   it("dispatches when the created session is the oldest live one", async () => {
     reset();
     vi.mocked(callLinearGraphQL).mockResolvedValueOnce(
@@ -389,49 +365,10 @@ describe("duplicate created-session guard", () => {
     expect(order).toEqual(["cancel", "send", "advance"]);
   });
 
-  it("exempts agent-created sessions (handoff successors) without querying", async () => {
-    reset();
-
-    await invoke({
-      ...createdEvent,
-      agentSession: {
-        ...agentSession,
-        appUserId: "app-user-1",
-        creatorId: "app-user-1",
-      },
-    });
-
-    expect(callLinearGraphQL).not.toHaveBeenCalled();
-    expect(order).toEqual(["cancel", "send", "advance"]);
-  });
-
   it("never guards prompted events", async () => {
     reset();
 
     await invoke(promptedEvent);
-
-    expect(callLinearGraphQL).not.toHaveBeenCalled();
-    expect(order).toEqual(["cancel", "send"]);
-  });
-
-  it("fails open when the live-session query errors", async () => {
-    reset();
-    vi.mocked(callLinearGraphQL).mockRejectedValueOnce(
-      new Error("Linear is down"),
-    );
-
-    await invoke(createdEvent);
-
-    expect(order).toEqual(["cancel", "send", "advance"]);
-  });
-
-  it("fails open when the session carries no issue id", async () => {
-    reset();
-
-    await invoke({
-      ...createdEvent,
-      agentSession: { ...agentSession, issue: null, issueId: null },
-    });
 
     expect(callLinearGraphQL).not.toHaveBeenCalled();
     expect(order).toEqual(["cancel", "send"]);
@@ -877,147 +814,6 @@ describe("input.requested elicitation (HAR-17)", () => {
   });
 });
 
-describe("attachLinearInboundImages", () => {
-  const UPLOAD_URL = "https://uploads.linear.app/abc/shot.png";
-  const pngResponse = () =>
-    new Response(new Uint8Array([137, 80, 78, 71]), {
-      status: 200,
-      headers: { "content-type": "image/png" },
-    });
-
-  it("returns text without image references unchanged and never fetches", async () => {
-    const fetchMock = vi.fn();
-    await expect(
-      attachLinearInboundImages({
-        content: "no images here",
-        credentials: { accessToken: "tok" },
-        fetch: fetchMock,
-      }),
-    ).resolves.toBe("no images here");
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it("fetches a trusted upload with Bearer auth and replaces its markdown with alt text plus a file part", async () => {
-    const fetchMock = vi.fn(async () => pngResponse());
-    const result = await attachLinearInboundImages({
-      content: `see ![screenshot](${UPLOAD_URL}) here`,
-      credentials: { accessToken: "tok" },
-      fetch: fetchMock,
-    });
-    expect(fetchMock).toHaveBeenCalledWith(UPLOAD_URL, {
-      credentials: "omit",
-      headers: { accept: "image/*", authorization: "Bearer tok" },
-      redirect: "manual",
-    });
-    expect(result).toEqual([
-      { text: "see screenshot here", type: "text" },
-      {
-        data: Buffer.from([137, 80, 78, 71]),
-        mediaType: "image/png",
-        type: "file",
-      },
-    ]);
-  });
-
-  it("returns file parts alone when the message is only an image", async () => {
-    const result = await attachLinearInboundImages({
-      content: `![](${UPLOAD_URL})`,
-      credentials: { accessToken: "tok" },
-      fetch: vi.fn(async () => pngResponse()),
-    });
-    expect(result).toEqual([
-      {
-        data: Buffer.from([137, 80, 78, 71]),
-        mediaType: "image/png",
-        type: "file",
-      },
-    ]);
-  });
-
-  it("never fetches untrusted origins or credentialed URLs", async () => {
-    const fetchMock = vi.fn();
-    const content =
-      "![a](https://evil.example/x.png) ![b](https://user:pw@uploads.linear.app/x.png)";
-    await expect(
-      attachLinearInboundImages({
-        content,
-        credentials: { accessToken: "tok" },
-        fetch: fetchMock,
-      }),
-    ).resolves.toBe(content);
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it("keeps a failed reference's markdown while attaching the successful one", async () => {
-    const failedUrl = "https://uploads.linear.app/abc/missing.png";
-    const fetchMock = vi.fn(async (url: RequestInfo | URL) =>
-      url === UPLOAD_URL ? pngResponse() : new Response(null, { status: 404 }),
-    );
-    const result = await attachLinearInboundImages({
-      content: `![ok](${UPLOAD_URL}) and ![gone](${failedUrl})`,
-      credentials: { accessToken: "tok" },
-      fetch: fetchMock,
-    });
-    expect(result).toEqual([
-      { text: `ok and ![gone](${failedUrl})`, type: "text" },
-      {
-        data: Buffer.from([137, 80, 78, 71]),
-        mediaType: "image/png",
-        type: "file",
-      },
-    ]);
-  });
-
-  it("treats a non-image content-type as failure", async () => {
-    const content = `![x](${UPLOAD_URL})`;
-    await expect(
-      attachLinearInboundImages({
-        content,
-        credentials: { accessToken: "tok" },
-        fetch: vi.fn(
-          async () =>
-            new Response("<html></html>", {
-              status: 200,
-              headers: { "content-type": "text/html" },
-            }),
-        ),
-      }),
-    ).resolves.toBe(content);
-  });
-
-  it("returns the raw text when no access token resolves", async () => {
-    vi.stubEnv("LINEAR_AGENT_ACCESS_TOKEN", "");
-    vi.stubEnv("LINEAR_ACCESS_TOKEN", "");
-    vi.stubEnv("LINEAR_API_KEY", "");
-    vi.stubEnv("LINEAR_API_TOKEN", "");
-    try {
-      const fetchMock = vi.fn();
-      const content = `![x](${UPLOAD_URL})`;
-      await expect(
-        attachLinearInboundImages({ content, fetch: fetchMock }),
-      ).resolves.toBe(content);
-      expect(fetchMock).not.toHaveBeenCalled();
-    } finally {
-      vi.unstubAllEnvs();
-    }
-  });
-
-  it("returns the raw text when the access token thunk throws", async () => {
-    const content = `![x](${UPLOAD_URL})`;
-    await expect(
-      attachLinearInboundImages({
-        content,
-        credentials: {
-          accessToken: () => {
-            throw new Error("connect unavailable");
-          },
-        },
-        fetch: vi.fn(),
-      }),
-    ).resolves.toBe(content);
-  });
-});
-
 describe("inbound image dispatch integration", () => {
   it("sends a multimodal message and still cancels before send", async () => {
     order.length = 0;
@@ -1054,94 +850,6 @@ describe("inbound image dispatch integration", () => {
   });
 });
 
-describe("stateFromAgentSession", () => {
-  it("maps a Linear agent session ref into channel state", () => {
-    expect(stateFromAgentSession(agentSession)).toEqual({
-      agentSessionId: "sess-1",
-      agentSessionUrl: "https://linear.app/sess-1",
-      commentId: null,
-      issueId: "issue-1",
-      issueIdentifier: "HAR-2",
-      issueTitle: "t",
-      issueUrl: "u",
-      organizationId: "org-1",
-      pendingActionsByCallId: {},
-      pendingToolCallMessage: null,
-      sourceCommentId: null,
-    });
-  });
-
-  it("falls back to the nested issue id when issueId is absent", () => {
-    expect(
-      stateFromAgentSession({ id: "sess-2", issue: { id: "issue-9" } }),
-    ).toMatchObject({ issueId: "issue-9" });
-  });
-});
-
-describe("resolveReceiveSession", () => {
-  it("returns the target session id directly when provided", async () => {
-    await expect(
-      resolveReceiveSession({ agentSessionId: "sess-3" }, {}),
-    ).resolves.toEqual({ id: "sess-3" });
-  });
-
-  it("throws when the target has no usable identifier", async () => {
-    // biome-ignore lint/suspicious/noExplicitAny: exercising the runtime guard for an invalid target
-    await expect(resolveReceiveSession({} as any, {})).rejects.toThrow(
-      "linearChannel().receive requires target.agentSessionId, issueId, or commentId.",
-    );
-  });
-});
-
-describe("planFromTodoToolOutput", () => {
-  it("maps todo tool output into Linear plan entries", () => {
-    expect(
-      planFromTodoToolOutput({
-        counts: {
-          cancelled: 1,
-          completed: 1,
-          in_progress: 1,
-          pending: 1,
-          total: 4,
-        },
-        todos: [
-          {
-            content: "Read orientation",
-            priority: "high",
-            status: "completed",
-          },
-          {
-            content: "Implement change",
-            priority: "high",
-            status: "in_progress",
-          },
-          { content: "Open PR", priority: "medium", status: "pending" },
-          { content: "Skip this", priority: "low", status: "cancelled" },
-        ],
-      }),
-    ).toEqual([
-      { content: "Read orientation", status: "completed" },
-      { content: "Implement change", status: "inProgress" },
-      { content: "Open PR", status: "pending" },
-      { content: "Skip this", status: "canceled" },
-    ]);
-  });
-
-  it("drops malformed entries and returns null for a non-object output", () => {
-    expect(
-      planFromTodoToolOutput({
-        todos: [
-          { content: "ok", status: "pending" },
-          { content: 42, status: "pending" },
-          { content: "bad status", status: "unknown" },
-        ],
-      }),
-    ).toEqual([{ content: "ok", status: "pending" }]);
-    expect(planFromTodoToolOutput("not an object")).toBeNull();
-    expect(planFromTodoToolOutput({})).toBeNull();
-  });
-});
-
 describe("action.result plan sync", () => {
   const postActionResult = async (data: unknown) => {
     vi.mocked(updateLinearAgentSession).mockClear();
@@ -1175,27 +883,10 @@ describe("action.result plan sync", () => {
     });
   });
 
-  it("ignores action results for tools other than todo", async () => {
+  it("never touches the Linear plan when the result carries none", async () => {
     await postActionResult({
       status: "completed",
       result: { kind: "tool-result", toolName: "bash", output: {} },
-    });
-    expect(updateLinearAgentSession).not.toHaveBeenCalled();
-  });
-
-  it("ignores a failed or errored todo call", async () => {
-    await postActionResult({
-      status: "failed",
-      result: { kind: "tool-result", toolName: "todo", output: { todos: [] } },
-    });
-    await postActionResult({
-      status: "completed",
-      result: {
-        kind: "tool-result",
-        toolName: "todo",
-        isError: true,
-        output: { todos: [] },
-      },
     });
     expect(updateLinearAgentSession).not.toHaveBeenCalled();
   });
@@ -1284,6 +975,32 @@ describe("action.result durable chip promotion (HAR-45, preserved through HAR-68
     const content = vi.mocked(createLinearAgentActivity).mock.calls[0]?.[0]
       .activity.content as Record<string, unknown>;
     expect(content.result).toBe("Command not found");
+  });
+
+  it("posts a long fenced result with the fence still closed and within the activity cap", async () => {
+    const stderr = Array.from(
+      { length: 60 },
+      (_, i) => `line ${i} of failing output`,
+    ).join("\n");
+    await fireActionResult(
+      {
+        status: "completed",
+        result: {
+          kind: "tool-result",
+          callId: "c9",
+          toolName: "bash",
+          output: { exitCode: 1, stdout: "", stderr },
+        },
+      },
+      { c9: { action: "bash", parameter: "bash script.sh" } },
+    );
+
+    const content = vi.mocked(createLinearAgentActivity).mock.calls[0]?.[0]
+      .activity.content as Record<string, string>;
+    // Truncating in lib and again here used to cut the closing fence back off,
+    // so Linear rendered the rest of the session as a code block.
+    expect((content.result.match(/```/g) ?? []).length % 2).toBe(0);
+    expect(content.result.length).toBeLessThanOrEqual(300);
   });
 
   it("consumes the pending entry so a second action.result for the same callId posts nothing", async () => {
@@ -1475,7 +1192,7 @@ describe("authorization events surface the OAuth challenge", () => {
     expect(lastActivity()).toMatchObject({
       agentSessionId: "sess-1",
       content: {
-        body: "I need you to connect Linear MCP before I can continue.",
+        body: "I need Linear MCP connected before I can continue.",
         type: "elicitation",
       },
       signal: "auth",
@@ -1521,7 +1238,7 @@ describe("authorization events surface the OAuth challenge", () => {
     expect(activity?.content).toMatchObject({ type: "elicitation" });
     const body = (activity?.content as { body?: string })?.body ?? "";
     expect(body).toContain("Approve the sign-in request on your phone.");
-    expect(body).toContain("Code: ABCD-1234");
+    expect(body).toContain("Code: `ABCD-1234`");
   });
 
   it("posts an ephemeral resuming thought once authorization completes", async () => {

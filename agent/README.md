@@ -58,16 +58,23 @@ context. Blocking relations in Linear determine readiness.
 | --- | --- |
 | `agent.ts` | Root model configuration |
 | `instructions.md` | Stable identity, safety boundaries, and delivery contract |
-| `channels/` | Eve, Linear, and GitHub message adapters |
+| `channels/` | Eve, Linear, and GitHub message adapters. Translation only: routes, platform rendering, and `send`/`cancel` orchestration. Every decision they render comes from `lib/` |
 | `connections/` | Allow-listed Linear and read-only Vercel capabilities |
 | `hooks/prewarm-sandbox.ts` | Starts sandbox creation and refreshes brokered GitHub auth |
-| `hooks/workflow-progress.ts` | Streams per-call `Workflow` progress to the Linear Agent Session |
-| `sandbox/` and `lib/sandbox.ts` | Vercel Sandbox bootstrap, network policy, token refresh, and recovery |
-| `lib/orientation.ts` | Builds the session's concise `ORIENTATION.md` brief |
-| `lib/memory.ts` | Mints the Vercel Connect credential for Eve's runtime memory store |
-| `lib/memory-store.ts` | libSQL-backed adapter and schema for Eve's runtime memory store, including the retention-cap eviction |
-| `lib/memory-tools.ts` | Validated read/write logic behind `remember`, `recall`, and `forget`, including the category allow-list and credential/PII rejection |
-| `lib/memory-instructions.ts` | Builds the untrusted-JSON memory preamble behind `instructions/memory.ts` |
+| `hooks/workflow-progress.ts` | Streams per-call `Workflow` progress to whichever channel owns the session |
+| `sandbox/` and `lib/sandbox/` | Vercel Sandbox recipe and bootstrap, GitHub network policy and token refresh, and the `ORIENTATION.md` brief |
+| `lib/credentials.ts` | The agent's brokered Linear and GitHub identities, shared by channels and tools, plus Linear access-token resolution |
+| `lib/webhook.ts` | The `Webhook` base class every channel instantiates for inbound request verification |
+| `lib/session.ts` | `AgentSession`, one turn lifecycle - what the agent says and when - plus `sessionEvents`, the table wiring it to Eve's lifecycle events |
+| `lib/channel.ts` | The `ChannelRenderer` contract each channel implements, and `textRenderer`, the shared rendering for channels whose only surface is posted text |
+| `lib/channel-registry.ts` | The one place that knows the set of channels: reaching a session by continuation token from a hook or schedule, where there is no channel context |
+| `lib/linear/` | Everything Linear-only: activity text limits, out-of-band activity posting, webhook verification, inbound dispatch (state mapping, receive targets, stop signal, duplicate-session guard), issue workflow transitions, live-session lookup, and inbound upload images |
+| `lib/github/` | Everything GitHub-only: the wake policy, pull-request state sync and Linear-ref extraction, dispatch prompt text, and the `pull_request_review` delivery eve never dispatches (HAR-49) |
+| `lib/turn-report.ts` | Action labels, parameters, results, and error narration for turn-lifecycle reporting |
+| `lib/tool-activity.ts` | How a tool call reads as a chip: its label, its parameter, and its result summary |
+| `lib/agent-plan.ts` | The `todo` tool's list mapped into an agent plan |
+| `lib/authorization.ts` | Shared connect-prompt naming and outcome wording for both channels |
+| `lib/memory/` | Eve's runtime memory store: the Connect credential, the libSQL adapter and schema with its retention cap, the validated `remember`/`recall`/`forget` logic, and the untrusted-JSON preamble |
 | `instructions/memory.ts` | Dynamic, per-turn instructions loading recent memories as untrusted JSON |
 | `skills/` | Optional Eve, Linear project, and README-hygiene procedures |
 | `subagents/playtester/` | Independent terminal and web acceptance verification |
@@ -137,8 +144,8 @@ The OpenAPI connection derives default team and project identifiers from
 them. Resuming a named sandbox is denied because it mutates external state.
 
 Turso is not an MCP or OpenAPI surface, so it has no file under `connections/`.
-`lib/memory.ts` mints its Connect credential the same way `VERCEL_TOKEN` is
-read for the OpenAPI connection above, and `lib/memory-store.ts` uses it to
+`lib/memory/connector.ts` mints its Connect credential the same way `VERCEL_TOKEN` is
+read for the OpenAPI connection above, and `lib/memory/store.ts` uses it to
 run the `memories` table's schema migration and CRUD through `@libsql/client`.
 The credential never reaches the sandbox, unlike GitHub's, because the memory
 store runs as ordinary application code rather than shell commands the agent
@@ -151,14 +158,14 @@ and feeds them back as JSON-encoded, explicitly untrusted stored data, per
 eve's `patterns/multi-tenant-memory.md`. `instructions.md` tells the model what
 belongs there instead of `.botfile/memory/domain/product.md`.
 
-`lib/memory-tools.ts` enforces the store's bounds and provenance rules
+`lib/memory/tools.ts` enforces the store's bounds and provenance rules
 (HAR-75) as input validation, not just prose: `key` is a restricted-charset,
 80-character slug, `value` is capped at 4000 characters, `category` must be
 one of a closed allow-list (`workaround`, `debugging-note`, `entity`), and
 `source` is required on every write. A `remember` call whose key, value, or
 source looks credential- or PII-shaped (API keys, PEM blocks, AWS/GitHub/Slack
 tokens, JWTs, SSNs, labeled `password:`/`secret:` values) is rejected outright
-rather than merely discouraged. `lib/memory-store.ts` bounds total store size
+rather than merely discouraged. `lib/memory/store.ts` bounds total store size
 by evicting the least-recently-updated memory on every write once the store
 holds more than 500 rows, so the table cannot grow unbounded.
 

@@ -40,12 +40,14 @@ const freshState = (): PendingCalls => ({});
 
 const linearCtx = (continuationToken = "agent-session:sess-1") => ({
   session: {},
-  channel: { continuationToken },
+  channel: { continuationToken, kind: "linear" },
 });
 
-const nonLinearCtx = () => ({
+// A channel `lib/channel-registry.ts` has no poster for, e.g. a merge-woken
+// GitHub session. The hook posts the same update; nothing shows.
+const unpostableCtx = () => ({
   session: {},
-  channel: {},
+  channel: { continuationToken: "issue:42", kind: "github" },
 });
 
 const contentOf = (call: number) =>
@@ -166,14 +168,14 @@ describe("workflow-progress hook", () => {
     });
   });
 
-  it("does nothing for a non-Linear continuation token (e.g. a merge-woken GitHub session)", async () => {
+  it("does nothing on a channel with no poster (e.g. a merge-woken GitHub session)", async () => {
     await events["subagent.called"](
       called({ callId: "call_1", sequence: 0 }),
-      nonLinearCtx(),
+      unpostableCtx(),
     );
     await events["subagent.completed"](
       completed({ callId: "call_1", output: "done" }),
-      nonLinearCtx(),
+      unpostableCtx(),
     );
 
     expect(createActivity).not.toHaveBeenCalled();
@@ -203,7 +205,7 @@ describe("workflow-progress hook", () => {
     );
 
     const { result } = contentOf(1);
-    expect(result.length).toBeLessThanOrEqual(301); // 300 + ellipsis
+    expect(result.length).toBeLessThanOrEqual(300);
     expect(result.endsWith("…")).toBe(true);
   });
 });
