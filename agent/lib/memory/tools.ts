@@ -1,14 +1,10 @@
 import { z } from "zod";
 
-import type { Memory, MemoryStore } from "./store";
-import { memoryStore } from "./store";
-
 /**
- * Validation and pass-through logic behind `agent/tools/remember.ts`,
- * `recall.ts`, and `forget.ts`. Lives here (rather than in `agent/tools/`)
- * so it can be unit tested: eve treats every file directly under
- * `agent/tools/` as a tool definition, so a colocated `*.test.ts` file
- * there fails discovery.
+ * Input validation behind `agent/tools/remember.ts`, `recall.ts`, and
+ * `forget.ts`. Lives here (rather than in `agent/tools/`) so it can be unit
+ * tested: eve treats every file directly under `agent/tools/` as a tool
+ * definition, so a colocated `*.test.ts` file there fails discovery.
  */
 
 /**
@@ -85,13 +81,6 @@ export const rememberInputSchema = z
   });
 export type RememberInput = z.infer<typeof rememberInputSchema>;
 
-export async function rememberExecute(
-  input: RememberInput,
-  store: MemoryStore = memoryStore,
-): Promise<Memory> {
-  return await store.put(input);
-}
-
 const DEFAULT_RECALL_LIMIT = 50;
 
 export const recallInputSchema = z.object({
@@ -103,20 +92,5 @@ export const recallInputSchema = z.object({
 });
 export type RecallInput = z.infer<typeof recallInputSchema>;
 
-export async function recallExecute(
-  { category, limit }: RecallInput,
-  store: MemoryStore = memoryStore,
-): Promise<Memory[]> {
-  return await store.list({ category, limit });
-}
-
 export const forgetInputSchema = z.object({ key: z.string().min(1).max(80) });
 export type ForgetInput = z.infer<typeof forgetInputSchema>;
-
-export async function forgetExecute(
-  { key }: ForgetInput,
-  store: MemoryStore = memoryStore,
-): Promise<{ deleted: boolean }> {
-  const deleted = await store.delete(key);
-  return { deleted };
-}

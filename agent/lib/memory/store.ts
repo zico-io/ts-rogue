@@ -18,17 +18,6 @@ export interface Memory {
   updatedAt: string;
 }
 
-export interface MemoryStore {
-  list(options: { category?: string; limit: number }): Promise<Memory[]>;
-  put(memory: {
-    key: string;
-    value: string;
-    category: string;
-    source: string;
-  }): Promise<Memory>;
-  delete(key: string): Promise<boolean>;
-}
-
 const MIGRATIONS = [
   `CREATE TABLE IF NOT EXISTS memories (
     key TEXT PRIMARY KEY,
@@ -95,7 +84,7 @@ async function mintMemoryClient(): Promise<Client> {
  * be requested fresh per use rather than cached across calls, and the
  * migration is cheap `CREATE ... IF NOT EXISTS` DDL.
  */
-export class LibsqlMemoryStore implements MemoryStore {
+export class LibsqlMemoryStore {
   constructor(
     private readonly getClient: MemoryClientFactory = mintMemoryClient,
     private readonly now: MemoryClock = () => new Date().toISOString(),
@@ -180,4 +169,7 @@ export class LibsqlMemoryStore implements MemoryStore {
 }
 
 /** Default store bound to Eve's runtime memory database (HAR-71/72). */
-export const memoryStore: MemoryStore = new LibsqlMemoryStore();
+export const memoryStore = new LibsqlMemoryStore();
+
+/** What the tools need of a store, so a test can pass a fake one. */
+export type MemoryStore = Pick<LibsqlMemoryStore, "list" | "put" | "delete">;

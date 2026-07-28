@@ -1,6 +1,7 @@
 import { defineTool } from "eve/tools";
 
-import { rememberExecute, rememberInputSchema } from "../lib/memory";
+import { memoryStore } from "../lib/memory/store";
+import { rememberInputSchema } from "../lib/memory/tools";
 
 export default defineTool({
   description:
@@ -15,7 +16,5 @@ export default defineTool({
     "value, category, and source. The store keeps a bounded number of " +
     "memories and silently drops the least-recently-updated one once full.",
   inputSchema: rememberInputSchema,
-  async execute(input) {
-    return await rememberExecute(input);
-  },
+  execute: (input) => memoryStore.put(input),
 });

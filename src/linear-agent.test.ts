@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import linearConnection from "../agent/connections/linear";
-import { sessionUpdateActivity } from "../agent/tools/session_update";
+import { stripLeadingProseHeader } from "../agent/lib/prose";
 
 describe("Linear agent interaction", () => {
   it("resolves Linear MCP auth as the agent itself, with no interactive consent flow", () => {
@@ -29,14 +29,11 @@ describe("Linear agent interaction", () => {
   });
 
   it("keeps Agent Session updates concise and headerless", () => {
+    // What `session_update` posts as an activity body.
     expect(
-      sessionUpdateActivity({
-        message: "## Review\n\nAdded village state.\n\n- `pnpm check` passes",
-        status: "review",
-      }),
-    ).toEqual({
-      body: "Added village state.\n\n- `pnpm check` passes",
-      type: "response",
-    });
+      stripLeadingProseHeader(
+        "## Review\n\nAdded village state.\n\n- `pnpm check` passes",
+      ),
+    ).toBe("Added village state.\n\n- `pnpm check` passes");
   });
 });

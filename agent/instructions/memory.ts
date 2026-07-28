@@ -1,6 +1,6 @@
 import { defineDynamic } from "eve/instructions";
 
-import { resolveMemoryInstructions } from "../lib/memory";
+import { resolveMemoryInstructions } from "../lib/memory/instructions";
 
 export default defineDynamic({
   events: {

@@ -14,20 +14,21 @@ import { firstNonEmptyLine } from "./prose";
 const INLINE_RESULT_MAX = 300;
 
 /** An MCP tool arrives as `server__operation`; the operation is what reads. */
-export const toolOperation = (toolName: string): string =>
+const toolOperation = (toolName: string): string =>
   toolName.split("__").at(-1) ?? toolName;
+
+const OPERATION_LABELS: Record<string, string> = {
+  create_issue_label: "Create an issue label",
+  save_document: "Create or update a document",
+  save_issue: "Create or update an issue",
+  save_milestone: "Create or update a milestone",
+  save_project: "Create or update a project",
+  save_status_update: "Post a project status update",
+};
 
 export const toolLabel = (toolName: string) => {
   const operation = toolOperation(toolName);
-  const labels: Record<string, string> = {
-    create_issue_label: "Create an issue label",
-    save_document: "Create or update a document",
-    save_issue: "Create or update an issue",
-    save_milestone: "Create or update a milestone",
-    save_project: "Create or update a project",
-    save_status_update: "Post a project status update",
-  };
-  const label = labels[operation] ?? operation.replaceAll("_", " ");
+  const label = OPERATION_LABELS[operation] ?? operation.replaceAll("_", " ");
   return label.charAt(0).toUpperCase() + label.slice(1);
 };
 
@@ -56,10 +57,9 @@ const fenceIfMultiline = (text: string): string => {
 
 type ParamFormatter = (input: Record<string, unknown>) => string | undefined;
 
-// Subagent tool calls (the declared `playtester` subagent and the built-in
-// `agent` delegation tool) take a single `input.message` task description;
-// render each as `<Subagent name> - <first line of the task>` rather than a
-// raw JSON blob.
+// The declared `playtester` subagent and the built-in `agent` delegation tool
+// each take a single `input.message` task description; render it as
+// `<Subagent name> - <first line of the task>` rather than a raw JSON blob.
 const subagentFormatter =
   (label: string): ParamFormatter =>
   (input) => {
@@ -69,12 +69,9 @@ const subagentFormatter =
       : `${label} - ${firstNonEmptyLine(message)}`;
   };
 
-const SUBAGENT_LABELS: Record<string, string> = {
-  playtester: "Playtester",
-  agent: "Agent",
-};
-
 const PARAMETER_FORMATTERS: Record<string, ParamFormatter> = {
+  agent: subagentFormatter("Agent"),
+  playtester: subagentFormatter("Playtester"),
   bash: (input) => nonEmptyString(input.command),
   read_file: (input) => {
     const path = nonEmptyString(input.filePath);
@@ -100,12 +97,6 @@ const PARAMETER_FORMATTERS: Record<string, ParamFormatter> = {
   load_skill: (input) => nonEmptyString(input.skill),
   // The list already mirrors to Linear's native Agent Plan; the chip is just a marker.
   todo: () => "Updated plan",
-  ...Object.fromEntries(
-    Object.entries(SUBAGENT_LABELS).map(([operation, label]) => [
-      operation,
-      subagentFormatter(label),
-    ]),
-  ),
 };
 
 export const toolActionParameter = (

@@ -58,21 +58,20 @@ context. Blocking relations in Linear determine readiness.
 | --- | --- |
 | `agent.ts` | Root model configuration |
 | `instructions.md` | Stable identity, safety boundaries, and delivery contract |
-| `channels/` | Eve, Linear, and GitHub message adapters. Translation only: routes, platform rendering, and `send`/`cancel` orchestration. Every decision they render comes from `lib/` |
+| `channels/` | Eve, Linear, and GitHub message adapters. Translation only: each wraps Eve's own channel with the platform rendering and the one or two route behaviors Eve does not provide (see `WORKAROUNDS.md`). Every decision they render comes from `lib/` |
 | `connections/` | Allow-listed Linear and read-only Vercel capabilities |
 | `hooks/prewarm-sandbox.ts` | Starts sandbox creation and refreshes brokered GitHub auth |
 | `hooks/workflow-progress.ts` | Streams per-call `Workflow` progress to whichever channel owns the session |
-| `sandbox/` and `lib/sandbox/` | Vercel Sandbox recipe and bootstrap, GitHub network policy and token refresh, and the `ORIENTATION.md` brief |
+| `sandbox/` and `lib/sandbox/` | One Vercel Sandbox recipe shared by the root agent and both subagents, its bootstrap, GitHub network policy and token refresh, and the `ORIENTATION.md` brief |
 | `lib/credentials.ts` | The agent's brokered Linear and GitHub identities, shared by channels and tools, plus Linear access-token resolution |
-| `lib/webhook.ts` | `verifyWebhook`, the inbound request verification every channel shares |
 | `lib/session.ts` | `AgentSession`, one turn lifecycle - what the agent says and when - plus `sessionEvents`, the table wiring it to Eve's lifecycle events, and the connect-prompt naming both channels word the same way |
 | `lib/channel.ts` | The `ChannelRenderer` contract each channel implements, and `textRenderer`, the shared rendering for channels whose only surface is posted text |
-| `lib/linear/` | Everything Linear-only: activity text limits, the out-of-band poster `hooks/workflow-progress.ts` reaches a session through, webhook verification, inbound dispatch (state mapping, receive targets, stop signal, duplicate-session guard), issue workflow transitions, live-session lookup, and inbound upload images |
+| `lib/linear/` | Everything Linear-only: activity text limits, the out-of-band poster `hooks/workflow-progress.ts` reaches a session through, webhook re-verification for the pre-dispatch decisions, the stop signal and duplicate-session guard, issue workflow transitions, and live-session lookup |
 | `lib/github/` | Everything GitHub-only: the wake policy, pull-request state sync and Linear-ref extraction, dispatch prompt text, and the `pull_request_review` delivery eve never dispatches (HAR-49) |
 | `lib/turn-report.ts` | Action labels, parameters, results, and error narration for turn-lifecycle reporting |
 | `lib/tool-activity.ts` | How a tool call reads as a chip: its label, its parameter, and its result summary |
 | `lib/agent-plan.ts` | The `todo` tool's list mapped into an agent plan |
-| `lib/memory/` | Eve's runtime memory store: the Connect credential, the libSQL adapter and schema with its retention cap, the validated `remember`/`recall`/`forget` logic, and the untrusted-JSON preamble |
+| `lib/memory/` | Eve's runtime memory store: the Connect credential, the libSQL adapter and schema with its retention cap, the `remember`/`recall`/`forget` input schemas, and the untrusted-JSON preamble |
 | `instructions/memory.ts` | Dynamic, per-turn instructions loading recent memories as untrusted JSON |
 | `skills/` | Optional Eve, Linear project, and README-hygiene procedures |
 | `subagents/playtester/` | Independent terminal and web acceptance verification |

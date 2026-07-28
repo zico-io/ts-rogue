@@ -34,7 +34,8 @@ const errorHint = (data: {
   return "";
 };
 
-interface FailureData {
+/** What eve reports about a failed turn or a dead session. */
+export interface FailureData {
   readonly details?: unknown;
   readonly message: string;
 }

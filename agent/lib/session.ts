@@ -14,6 +14,7 @@ import {
   actionLabel,
   actionParameter,
   actionResultText,
+  type FailureData,
   sessionFailureBody,
   turnFailureBody,
 } from "./turn-report";
@@ -58,11 +59,6 @@ export interface PendingAction {
 export interface SessionScratch {
   pendingToolCallMessage?: string | null;
   pendingActionsByCallId?: Record<string, PendingAction>;
-}
-
-interface FailureData {
-  readonly details?: unknown;
-  readonly message: string;
 }
 
 interface AuthorizationData {

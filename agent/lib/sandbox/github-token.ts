@@ -72,10 +72,6 @@ export async function mintGitHubTokenPolicy(): Promise<MintedGitHubPolicy> {
   };
 }
 
-export async function githubNetworkPolicy(): Promise<SandboxNetworkPolicy> {
-  return (await mintGitHubTokenPolicy()).policy;
-}
-
 export async function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
   void work.catch(() => {});
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -165,39 +161,12 @@ export async function resolveStartupAuth(
   }
 }
 
-/**
- * Resolves authenticated GitHub access, falling back to an open policy so an
- * existing workspace can still start. Used by bootstrap, which only needs
- * the policy and never tracks expiry, so this mints the plain policy
- * directly rather than going through `resolveStartupAuth`'s
- * `MintedGitHubPolicy` shape.
- */
-export async function resolveStartupNetworkPolicy(
-  mintPolicy: () => Promise<SandboxNetworkPolicy> = githubNetworkPolicy,
-  timeoutMs: number = TOKEN_MINT_TIMEOUT_MS,
-  attempts: number = STARTUP_MINT_ATTEMPTS,
-  gapMs: number = STARTUP_MINT_RETRY_GAP_MS,
-): Promise<{ policy: SandboxNetworkPolicy; authed: boolean }> {
-  try {
-    return {
-      policy: await mintWithRetries(mintPolicy, attempts, timeoutMs, gapMs),
-      authed: true,
-    };
-  } catch (err) {
-    console.warn(
-      "resolveStartupNetworkPolicy: GitHub token mint failed after retries; coming up on the unauthenticated OPEN network policy (git push/gh will fail until auth heals):",
-      err instanceof Error ? err.message : err,
-    );
-    return { policy: OPEN_NETWORK_POLICY, authed: false };
-  }
-}
-
 /** Requires authenticated GitHub access because bootstrap clones a private repository. */
 export async function resolveBootstrapNetworkPolicy(
   resolve: () => Promise<{
     policy: SandboxNetworkPolicy;
     authed: boolean;
-  }> = resolveStartupNetworkPolicy,
+  }> = resolveStartupAuth,
 ): Promise<SandboxNetworkPolicy> {
   const { policy, authed } = await resolve();
   if (!authed) {
@@ -259,16 +228,11 @@ export function initialTokenRefreshDelayMs(
 export function keepTokenFresh(
   sandbox: Pick<SandboxSession, "setNetworkPolicy">,
   mintPolicy: () => Promise<MintedGitHubPolicy> = mintFreshPolicyWithExpiry,
-  timing: number | TokenRefreshTiming = TOKEN_REFRESH_MS,
+  timing: TokenRefreshTiming = {},
 ) {
-  const refreshMs =
-    typeof timing === "number"
-      ? timing
-      : (timing.refreshMs ?? TOKEN_REFRESH_MS);
-  const retryMs =
-    typeof timing === "number" ? timing : (timing.retryMs ?? TOKEN_RETRY_MS);
-  const initialMs =
-    typeof timing === "number" ? timing : (timing.initialMs ?? refreshMs);
+  const refreshMs = timing.refreshMs ?? TOKEN_REFRESH_MS;
+  const retryMs = timing.retryMs ?? TOKEN_RETRY_MS;
+  const initialMs = timing.initialMs ?? refreshMs;
 
   let setPolicyFailures = 0;
   let mintFailures = 0;
@@ -316,8 +280,9 @@ export function keepTokenFresh(
   return schedule(initialMs);
 }
 
-export const mintFreshPolicy = () =>
-  withTimeout(githubNetworkPolicy(), TOKEN_MINT_TIMEOUT_MS);
-
 export const mintFreshPolicyWithExpiry = () =>
   withTimeout(mintGitHubTokenPolicy(), TOKEN_MINT_TIMEOUT_MS);
+
+/** For a caller that only installs the policy and never schedules off its expiry. */
+export const mintFreshPolicy = async (): Promise<SandboxNetworkPolicy> =>
+  (await mintFreshPolicyWithExpiry()).policy;

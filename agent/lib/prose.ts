@@ -7,10 +7,8 @@ export const stripLeadingProseHeader = (message: string): string => {
 };
 
 /** The first line with visible content, used to summarize multi-line prose. */
-export const firstNonEmptyLine = (value: string): string | undefined => {
-  for (const line of value.split(/\r?\n/u)) {
-    const trimmed = line.trim();
-    if (trimmed.length > 0) return trimmed;
-  }
-  return undefined;
-};
+export const firstNonEmptyLine = (value: string): string | undefined =>
+  value
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .find((line) => line.length > 0);

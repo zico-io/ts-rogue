@@ -22,7 +22,6 @@ import {
   nextRefreshDelayMs,
   resolveBootstrapNetworkPolicy,
   resolveStartupAuth,
-  resolveStartupNetworkPolicy,
   TOKEN_EXPIRY_BUFFER_MS,
   TOKEN_REFRESH_MS,
 } from "./github-token";
@@ -73,7 +72,9 @@ describe("keepTokenFresh", () => {
     ];
     let n = 0;
 
-    keepTokenFresh(sandbox, () => Promise.resolve(minted(policies[n++])), 1000);
+    keepTokenFresh(sandbox, () => Promise.resolve(minted(policies[n++])), {
+      refreshMs: 1000,
+    });
     await vi.advanceTimersByTimeAsync(1000);
     await vi.advanceTimersByTimeAsync(1000);
 
@@ -99,7 +100,7 @@ describe("keepTokenFresh", () => {
         : Promise.resolve(minted(good));
     };
 
-    keepTokenFresh(sandbox, mintPolicy, 1000);
+    keepTokenFresh(sandbox, mintPolicy, { refreshMs: 1000, retryMs: 1000 });
     await vi.advanceTimersByTimeAsync(1000);
     await vi.advanceTimersByTimeAsync(1000);
 
@@ -156,7 +157,10 @@ describe("keepTokenFresh", () => {
       },
     };
 
-    keepTokenFresh(sandbox, () => Promise.resolve(minted(good)), 1000);
+    keepTokenFresh(sandbox, () => Promise.resolve(minted(good)), {
+      refreshMs: 1000,
+      retryMs: 1000,
+    });
     await vi.advanceTimersByTimeAsync(1000);
     expect(applied).toEqual([]);
     await vi.advanceTimersByTimeAsync(1000);
@@ -179,7 +183,7 @@ describe("keepTokenFresh", () => {
     keepTokenFresh(
       sandbox,
       () => Promise.resolve(minted({ allow: {} } as SandboxNetworkPolicy)),
-      1000,
+      { refreshMs: 1000, retryMs: 1000 },
     );
 
     await vi.advanceTimersByTimeAsync(1000 * (MAX_SET_POLICY_FAILURES + 5));
@@ -199,7 +203,7 @@ describe("keepTokenFresh", () => {
         mints++;
         return Promise.reject(new Error("vc link refresh path"));
       },
-      1000,
+      { refreshMs: 1000, retryMs: 1000 },
     );
     await vi.advanceTimersByTimeAsync(1000 * (MAX_MINT_FAILURES + 5));
 
@@ -226,7 +230,7 @@ describe("keepTokenFresh", () => {
         : Promise.reject(new Error("still down"));
     };
 
-    keepTokenFresh(sandbox, mintPolicy, 1000);
+    keepTokenFresh(sandbox, mintPolicy, { refreshMs: 1000, retryMs: 1000 });
     await vi.advanceTimersByTimeAsync(1000 * (MAX_MINT_FAILURES + 2));
 
     expect(applied).toEqual([good]);
@@ -277,7 +281,7 @@ describe("keepTokenFresh", () => {
     const timer = keepTokenFresh(
       { setNetworkPolicy: () => Promise.resolve() },
       () => Promise.resolve(minted({ allow: {} } as SandboxNetworkPolicy)),
-      60_000,
+      { refreshMs: 60_000 },
     );
 
     expect(timer.hasRef()).toBe(false);
@@ -313,98 +317,6 @@ describe("mintFreshPolicy and mintFreshPolicyWithExpiry", () => {
     expect(
       (policy as { allow: Record<string, unknown> }).allow["github.com"],
     ).toBeDefined();
-  });
-});
-
-describe("resolveStartupNetworkPolicy", () => {
-  it("comes up authed when the token mint succeeds", async () => {
-    const authedPolicy = { allow: { x: [] } } as SandboxNetworkPolicy;
-    const res = await resolveStartupNetworkPolicy(
-      () => Promise.resolve(authedPolicy),
-      1000,
-    );
-    expect(res).toEqual({ policy: authedPolicy, authed: true });
-  });
-
-  it("falls back to an open, unauthenticated policy when every attempt fails", async () => {
-    const res = await resolveStartupNetworkPolicy(
-      () => Promise.reject(new Error("token down")),
-      1000,
-      1,
-    );
-    expect(res.authed).toBe(false);
-    expect(res.policy).toEqual({ allow: { "*": [] } });
-  });
-
-  it("falls back when the mint hangs past the timeout (no silent stall)", async () => {
-    vi.useFakeTimers();
-    const pending = resolveStartupNetworkPolicy(
-      () => new Promise<SandboxNetworkPolicy>(() => {}),
-      1000,
-      1,
-    );
-    await vi.advanceTimersByTimeAsync(1000);
-    const res = await pending;
-    expect(res.authed).toBe(false);
-    expect(res.policy).toEqual({ allow: { "*": [] } });
-    vi.useRealTimers();
-  });
-
-  it("retries a transient startup blip and comes up authed instead of falling back", async () => {
-    vi.useFakeTimers();
-    const good = { allow: { x: [] } } as SandboxNetworkPolicy;
-    let call = 0;
-    const mintPolicy = () => {
-      call++;
-      return call === 1
-        ? Promise.reject(new Error("startup blip"))
-        : Promise.resolve(good);
-    };
-
-    const pending = resolveStartupNetworkPolicy(mintPolicy, 1000, 2, 500);
-    await vi.advanceTimersByTimeAsync(1000);
-    await vi.advanceTimersByTimeAsync(500);
-    const res = await pending;
-
-    expect(res).toEqual({ policy: good, authed: true });
-    expect(call).toBe(2);
-    vi.useRealTimers();
-  });
-
-  it("falls back to open only after exhausting every retry attempt", async () => {
-    vi.useFakeTimers();
-    let call = 0;
-    const mintPolicy = () => {
-      call++;
-      return Promise.reject(new Error("still down"));
-    };
-
-    const pending = resolveStartupNetworkPolicy(mintPolicy, 1000, 3, 500);
-    await vi.advanceTimersByTimeAsync(1000);
-    await vi.advanceTimersByTimeAsync(500);
-    await vi.advanceTimersByTimeAsync(1000);
-    await vi.advanceTimersByTimeAsync(500);
-    await vi.advanceTimersByTimeAsync(1000);
-    const res = await pending;
-
-    expect(call).toBe(3);
-    expect(res.authed).toBe(false);
-    expect(res.policy).toEqual({ allow: { "*": [] } });
-    vi.useRealTimers();
-  });
-  it("warns once when it concedes the open fallback, so a silent downgrade is visible", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const mint = vi.fn(() => Promise.reject(new Error("token service down")));
-
-    const res = await resolveStartupNetworkPolicy(mint, 100, 2, 1);
-
-    expect(res.authed).toBe(false);
-    expect(mint).toHaveBeenCalledTimes(2);
-    expect(warn).toHaveBeenCalledTimes(1);
-    expect(String(warn.mock.calls[0]?.[0])).toContain(
-      "resolveStartupNetworkPolicy",
-    );
-    warn.mockRestore();
   });
 });
 
@@ -452,6 +364,78 @@ describe("resolveStartupAuth", () => {
 
     expect(initialMs).toBeLessThan(TOKEN_REFRESH_MS);
     expect(initialMs).toBe(5 * 60 * 1000);
+  });
+
+  it("falls back when the mint hangs past the timeout (no silent stall)", async () => {
+    vi.useFakeTimers();
+    const pending = resolveStartupAuth(
+      () => new Promise<MintedGitHubPolicy>(() => {}),
+      1000,
+      1,
+    );
+    await vi.advanceTimersByTimeAsync(1000);
+    const res = await pending;
+
+    expect(res.authed).toBe(false);
+    expect(res.policy).toEqual({ allow: { "*": [] } });
+    vi.useRealTimers();
+  });
+
+  it("retries a transient startup blip and comes up authed instead of falling back", async () => {
+    vi.useFakeTimers();
+    const good = { allow: { x: [] } } as SandboxNetworkPolicy;
+    let call = 0;
+    const mintPolicy = () => {
+      call++;
+      return call === 1
+        ? Promise.reject(new Error("startup blip"))
+        : Promise.resolve(minted(good));
+    };
+
+    const pending = resolveStartupAuth(mintPolicy, 1000, 2, 500);
+    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(500);
+    const res = await pending;
+
+    expect(res.policy).toEqual(good);
+    expect(res.authed).toBe(true);
+    expect(call).toBe(2);
+    vi.useRealTimers();
+  });
+
+  it("falls back to open only after exhausting every retry attempt", async () => {
+    vi.useFakeTimers();
+    let call = 0;
+    const mintPolicy = () => {
+      call++;
+      return Promise.reject(new Error("still down"));
+    };
+
+    const pending = resolveStartupAuth(mintPolicy, 1000, 3, 500);
+    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(500);
+    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(500);
+    await vi.advanceTimersByTimeAsync(1000);
+    const res = await pending;
+
+    expect(call).toBe(3);
+    expect(res.authed).toBe(false);
+    expect(res.policy).toEqual({ allow: { "*": [] } });
+    vi.useRealTimers();
+  });
+
+  it("warns once when it concedes the open fallback, so a silent downgrade is visible", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const mint = vi.fn(() => Promise.reject(new Error("token service down")));
+
+    const res = await resolveStartupAuth(mint, 100, 2, 1);
+
+    expect(res.authed).toBe(false);
+    expect(mint).toHaveBeenCalledTimes(2);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]?.[0])).toContain("resolveStartupAuth");
+    warn.mockRestore();
   });
 });
 

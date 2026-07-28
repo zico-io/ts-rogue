@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 
-import type { SandboxDefinition } from "eve/sandbox";
+import type { SandboxDefinition, SandboxSession } from "eve/sandbox";
 import {
   type VercelSandboxBootstrapUseOptions,
   type VercelSandboxSessionUseOptions,
@@ -11,18 +11,17 @@ import {
 import {
   initialTokenRefreshDelayMs,
   keepTokenFresh,
-  type MintedGitHubPolicy,
   mintFreshPolicyWithExpiry,
-  mintGitHubTokenPolicy,
-  OPEN_NETWORK_POLICY,
   resolveBootstrapNetworkPolicy,
   resolveStartupAuth,
-  STARTUP_MINT_ATTEMPTS,
-  STARTUP_MINT_RETRY_GAP_MS,
-  type StartupAuthResult,
-  TOKEN_MINT_TIMEOUT_MS,
 } from "./github-token";
-import { SCREENSHOT_STATUS_PATH } from "./orientation";
+import {
+  buildOrientationBrief,
+  GIT_FACTS_COMMAND,
+  parseGitFacts,
+  parseScreenshotToolingStatus,
+  SCREENSHOT_STATUS_PATH,
+} from "./orientation";
 
 /** How long a sandbox may live before Vercel reclaims it. */
 export const SANDBOX_TIMEOUT_MS = 5 * 60 * 60 * 1000;
@@ -113,34 +112,21 @@ export const AUTO_RECOVER_PUSH_COMMAND = [
     "fi",
 ].join(" ; ");
 
-export type GitAuthLevel = "none" | "read-only" | "push-capable";
-
 export interface SandboxRecipeOptions {
-  gitAuthLevel: GitAuthLevel;
+  /** Push access, plus the auto-recovery push and the orientation brief. */
+  push?: boolean;
 
   screenshotTooling?: boolean;
+
+  seedGitHubConfig?: boolean;
 }
 
 /**
- * Like `resolveStartupAuth`, but first honors `gitAuthLevel === "none"` by
- * skipping the mint entirely (used by the playtester subagent, which never
- * needs push access).
+ * The one sandbox recipe. The root agent takes the push-capable variant; a
+ * subagent that only reads takes the default.
  */
-export async function resolveSessionAuth(
-  gitAuthLevel: GitAuthLevel,
-  mintPolicy: () => Promise<MintedGitHubPolicy> = mintGitHubTokenPolicy,
-  timeoutMs: number = TOKEN_MINT_TIMEOUT_MS,
-  attempts: number = STARTUP_MINT_ATTEMPTS,
-  gapMs: number = STARTUP_MINT_RETRY_GAP_MS,
-): Promise<StartupAuthResult> {
-  if (gitAuthLevel === "none") {
-    return { policy: OPEN_NETWORK_POLICY, authed: false };
-  }
-  return resolveStartupAuth(mintPolicy, timeoutMs, attempts, gapMs);
-}
-
 export function buildSandboxDefinition(
-  options: SandboxRecipeOptions,
+  options: SandboxRecipeOptions = {},
 ): SandboxDefinition<
   VercelSandboxBootstrapUseOptions,
   VercelSandboxSessionUseOptions
@@ -157,27 +143,57 @@ export function buildSandboxDefinition(
       const setup = await sandbox.run({
         command: buildBootstrapCommand({
           screenshotTooling: options.screenshotTooling ?? false,
+          seedGitHubConfig: options.seedGitHubConfig ?? true,
         }),
       });
       if (setup.exitCode !== 0)
         throw new Error(setup.stderr || "Sandbox pre-warming failed");
     },
     async onSession({ use }) {
-      const auth = await resolveSessionAuth(options.gitAuthLevel);
+      // resolveStartupAuth (not just the policy) so keepTokenFresh gets this
+      // session's real token expiry - see StartupAuthResult.
+      const auth = await resolveStartupAuth();
       const sandbox = await use({
         networkPolicy: auth.policy,
         timeout: SANDBOX_TIMEOUT_MS,
       });
-      if (options.gitAuthLevel === "push-capable" && auth.authed) {
-        try {
-          await sandbox.run({ command: AUTO_RECOVER_PUSH_COMMAND });
-        } catch {}
+
+      if (options.push === true) {
+        if (auth.authed) {
+          try {
+            await sandbox.run({ command: AUTO_RECOVER_PUSH_COMMAND });
+          } catch {}
+        }
+        await writeOrientationBrief(sandbox, auth.authed);
       }
-      if (options.gitAuthLevel !== "none") {
-        keepTokenFresh(sandbox, mintFreshPolicyWithExpiry, {
-          initialMs: initialTokenRefreshDelayMs(auth),
-        });
-      }
+
+      keepTokenFresh(sandbox, mintFreshPolicyWithExpiry, {
+        initialMs: initialTokenRefreshDelayMs(auth),
+      });
     },
   };
+}
+
+const READ_SCREENSHOT_STATUS_COMMAND = `cat ${SCREENSHOT_STATUS_PATH} 2>/dev/null || true`;
+
+/** Best-effort: a session still starts when the brief cannot be written. */
+async function writeOrientationBrief(
+  sandbox: Pick<SandboxSession, "run" | "writeTextFile">,
+  githubAuthed: boolean,
+): Promise<void> {
+  try {
+    const facts = await sandbox.run({ command: GIT_FACTS_COMMAND });
+    const screenshotStatus = await sandbox.run({
+      command: READ_SCREENSHOT_STATUS_COMMAND,
+    });
+    if (facts.exitCode !== 0) return;
+    await sandbox.writeTextFile({
+      path: "ORIENTATION.md",
+      content: buildOrientationBrief(
+        parseGitFacts(facts.stdout),
+        parseScreenshotToolingStatus(screenshotStatus.stdout),
+        githubAuthed,
+      ),
+    });
+  } catch {}
 }
