@@ -9,6 +9,7 @@ dist/
 .vercel
 .env*
 /save.db
+/.mex/graph.db
 /dev-issues.jsonl
 /game-incidents.jsonl
 /.play-web.json

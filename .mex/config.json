@@ -1,0 +1,11 @@
+{
+  "aiTools": [
+    "claude",
+    "cursor",
+    "codex"
+  ],
+  "scaffold_id": "8231d45a-599f-415c-a945-8c10e5b01cf2",
+  "scaffold_name": "ts-rogue",
+  "origin": null,
+  "upstream": null
+}
