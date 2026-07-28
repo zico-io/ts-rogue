@@ -105,6 +105,28 @@ export const DUNGEONS: readonly DungeonDef[] = [
     recommendedLevel: 10,
     story: true,
   },
+  // Added purely as data (ROG-95's extensibility proof): no src/engine edit
+  // was needed beyond deriving the overworld's entrance count from
+  // DUNGEONS.length (see overworld.ts), which was previously a coincidental
+  // hardcoded 3.
+  {
+    id: "drowned-temple",
+    name: "Drowned Temple",
+    theme: "temple",
+    tier: 4,
+    floorCount: 6,
+    palette: [
+      { monsterId: "goblin", weight: 2 },
+      { monsterId: "slime", weight: 1 },
+    ],
+    bossId: "dungeon-guardian",
+    floorBands: [
+      { minFloor: 1, maxFloor: 2, lootTableRef: "tier-2" },
+      { minFloor: 3, maxFloor: 6, lootTableRef: "tier-3" },
+    ],
+    recommendedLevel: 15,
+    story: true,
+  },
 ];
 
 export function findDungeon(id: string): DungeonDef | undefined {
@@ -160,6 +182,12 @@ const THEME_FLAVOR: Record<string, DungeonThemeFlavor> = {
     enter: "Crumbling pillars and drifting dust mark the ruins' entrance.",
     descend:
       "Cracked stairs carry you further into the ruins, stone grinding underfoot.",
+  },
+  temple: {
+    enter:
+      "Brackish water laps at broken columns as you step into the drowned temple.",
+    descend:
+      "You wade deeper into the drowned temple, algae-slick steps vanishing into the dark.",
   },
 };
 

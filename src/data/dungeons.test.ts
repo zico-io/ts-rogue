@@ -12,8 +12,8 @@ import { findLootTable } from "./lootTables";
 import { findMonster } from "./monsters";
 
 describe("DUNGEONS data table", () => {
-  it("ships 3 story dungeons of distinct tiers", () => {
-    expect(DUNGEONS).toHaveLength(3);
+  it("ships 4 story dungeons of distinct tiers", () => {
+    expect(DUNGEONS).toHaveLength(4);
     expect(DUNGEONS.every((dungeon) => dungeon.story)).toBe(true);
     expect(new Set(DUNGEONS.map((dungeon) => dungeon.tier)).size).toBe(
       DUNGEONS.length,
