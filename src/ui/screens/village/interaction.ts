@@ -19,6 +19,7 @@ export const OPTIONS: readonly MenuOption[] = [
   { key: "store", label: "Store - buy and sell items", shortcut: "s" },
   { key: "tavern", label: "Tavern - recruit party members", shortcut: "t" },
   { key: "stash", label: "Stash - store gear for later", shortcut: "x" },
+  { key: "guild", label: "Guild - accept and turn in quests", shortcut: "g" },
   {
     key: "overworld",
     label: "Leave town - venture into the overworld",
@@ -48,6 +49,7 @@ const overviewKeymap: Keymap = {
   "char:s": { kind: "shortcut", char: "s" },
   "char:t": { kind: "shortcut", char: "t" },
   "char:x": { kind: "shortcut", char: "x" },
+  "char:g": { kind: "shortcut", char: "g" },
   "char:o": { kind: "shortcut", char: "o" },
 };
 
@@ -621,6 +623,122 @@ export function reduceStashUi(
           state,
           effect: { type: "withdraw", instanceId: selected.item.instanceId },
         }
+      : { state };
+  }
+  return { state };
+}
+
+export type GuildMode = "available" | "accepted";
+
+export interface GuildUiState {
+  mode: GuildMode;
+  availableCursor: number;
+  acceptedCursor: number;
+}
+
+export const INITIAL_GUILD_UI_STATE: GuildUiState = {
+  mode: "available",
+  availableCursor: 0,
+  acceptedCursor: 0,
+};
+
+export interface GuildAcceptedRow {
+  id: string;
+  complete: boolean;
+}
+
+export interface GuildUiContext {
+  availableIds: readonly string[];
+  acceptedQuests: readonly GuildAcceptedRow[];
+}
+
+export type GuildUiEffect =
+  | { type: "accept"; questId: string }
+  | { type: "turnIn"; questId: string }
+  | { type: "back" };
+
+export interface GuildUiResult {
+  state: GuildUiState;
+  effect?: GuildUiEffect;
+}
+
+const guildKeymap: Keymap = {
+  escape: { kind: "cancel" },
+  tab: { kind: "switchMode" },
+  up: { kind: "menuUp" },
+  down: { kind: "menuDown" },
+  enter: { kind: "confirm" },
+};
+
+export function resolveGuildIntent(key: KeyName): Intent | undefined {
+  return guildKeymap[key];
+}
+
+export function reduceGuildUi(
+  state: GuildUiState,
+  intent: Intent,
+  ctx: GuildUiContext,
+): GuildUiResult {
+  if (intent.kind === "cancel") return { state, effect: { type: "back" } };
+  if (intent.kind === "switchMode") {
+    return {
+      state: {
+        mode: state.mode === "available" ? "accepted" : "available",
+        availableCursor: 0,
+        acceptedCursor: 0,
+      },
+    };
+  }
+
+  if (state.mode === "available") {
+    const length = ctx.availableIds.length;
+    if (length === 0) return { state };
+    if (intent.kind === "menuUp") {
+      return {
+        state: {
+          ...state,
+          availableCursor: (state.availableCursor + length - 1) % length,
+        },
+      };
+    }
+    if (intent.kind === "menuDown") {
+      return {
+        state: {
+          ...state,
+          availableCursor: (state.availableCursor + 1) % length,
+        },
+      };
+    }
+    if (intent.kind === "confirm") {
+      const index = Math.min(state.availableCursor, length - 1);
+      const questId = ctx.availableIds[index];
+      return questId
+        ? { state, effect: { type: "accept", questId } }
+        : { state };
+    }
+    return { state };
+  }
+
+  const length = ctx.acceptedQuests.length;
+  if (length === 0) return { state };
+  if (intent.kind === "menuUp") {
+    return {
+      state: {
+        ...state,
+        acceptedCursor: (state.acceptedCursor + length - 1) % length,
+      },
+    };
+  }
+  if (intent.kind === "menuDown") {
+    return {
+      state: { ...state, acceptedCursor: (state.acceptedCursor + 1) % length },
+    };
+  }
+  if (intent.kind === "confirm") {
+    const index = Math.min(state.acceptedCursor, length - 1);
+    const row = ctx.acceptedQuests[index];
+    return row?.complete
+      ? { state, effect: { type: "turnIn", questId: row.id } }
       : { state };
   }
   return { state };

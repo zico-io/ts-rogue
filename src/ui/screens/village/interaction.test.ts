@@ -4,16 +4,21 @@ import type { ItemInstance } from "../../../engine/loot/types";
 import {
   buildPackEntries,
   buildShopRows,
+  type GuildUiContext,
+  type GuildUiState,
+  INITIAL_GUILD_UI_STATE,
   INITIAL_STORE_UI_STATE,
   INITIAL_TAVERN_UI_STATE,
   OPTIONS,
   type OverviewUiState,
   reduceChurchUi,
+  reduceGuildUi,
   reduceInnUi,
   reduceOverviewUi,
   reduceStoreUi,
   reduceTavernUi,
   resolveChurchIntent,
+  resolveGuildIntent,
   resolveInnIntent,
   resolveOverviewIntent,
   resolveStoreIntent,
@@ -472,5 +477,114 @@ describe("reduceTavernUi", () => {
       tavernCtx(),
     );
     expect(result.state.partyCursor).toBe(0);
+  });
+});
+
+function guildCtx(overrides: Partial<GuildUiContext> = {}): GuildUiContext {
+  return {
+    availableIds: ["slime-cull", "goblin-warband"],
+    acceptedQuests: [
+      { id: "fetch-slime-gel", complete: false },
+      { id: "clear-sunken-crypt", complete: true },
+    ],
+    ...overrides,
+  };
+}
+
+function guildState(overrides: Partial<GuildUiState> = {}): GuildUiState {
+  return { ...INITIAL_GUILD_UI_STATE, ...overrides };
+}
+
+describe("resolveGuildIntent", () => {
+  it("binds navigation, confirm, tab, and escape", () => {
+    expect(resolveGuildIntent("up")).toEqual({ kind: "menuUp" });
+    expect(resolveGuildIntent("down")).toEqual({ kind: "menuDown" });
+    expect(resolveGuildIntent("enter")).toEqual({ kind: "confirm" });
+    expect(resolveGuildIntent("tab")).toEqual({ kind: "switchMode" });
+    expect(resolveGuildIntent("escape")).toEqual({ kind: "cancel" });
+  });
+});
+
+describe("reduceGuildUi", () => {
+  it("Esc emits a back effect", () => {
+    const result = reduceGuildUi(guildState(), { kind: "cancel" }, guildCtx());
+    expect(result.effect).toEqual({ type: "back" });
+  });
+
+  it("Tab flips available/accepted and resets cursors", () => {
+    const result = reduceGuildUi(
+      guildState({ availableCursor: 1, acceptedCursor: 1 }),
+      { kind: "switchMode" },
+      guildCtx(),
+    );
+    expect(result.state).toEqual({
+      ...INITIAL_GUILD_UI_STATE,
+      mode: "accepted",
+    });
+  });
+
+  it("available mode is a no-op with an empty board", () => {
+    const result = reduceGuildUi(
+      guildState(),
+      { kind: "menuDown" },
+      guildCtx({ availableIds: [] }),
+    );
+    expect(result.state).toEqual(guildState());
+  });
+
+  it("available mode wraps the cursor and accepts on confirm", () => {
+    const wrapUp = reduceGuildUi(
+      guildState({ availableCursor: 0 }),
+      { kind: "menuUp" },
+      guildCtx(),
+    );
+    expect(wrapUp.state.availableCursor).toBe(1);
+
+    const accept = reduceGuildUi(
+      guildState({ availableCursor: 1 }),
+      { kind: "confirm" },
+      guildCtx(),
+    );
+    expect(accept.effect).toEqual({
+      type: "accept",
+      questId: "goblin-warband",
+    });
+  });
+
+  it("accepted mode navigates and only turns in a complete quest", () => {
+    const notReady = reduceGuildUi(
+      guildState({ mode: "accepted", acceptedCursor: 0 }),
+      { kind: "confirm" },
+      guildCtx(),
+    );
+    expect(notReady.effect).toBeUndefined();
+
+    const ready = reduceGuildUi(
+      guildState({ mode: "accepted", acceptedCursor: 1 }),
+      { kind: "confirm" },
+      guildCtx(),
+    );
+    expect(ready.effect).toEqual({
+      type: "turnIn",
+      questId: "clear-sunken-crypt",
+    });
+  });
+
+  it("accepted mode wraps the cursor over acceptedQuests.length", () => {
+    const result = reduceGuildUi(
+      guildState({ mode: "accepted", acceptedCursor: 1 }),
+      { kind: "menuDown" },
+      guildCtx(),
+    );
+    expect(result.state.acceptedCursor).toBe(0);
+  });
+
+  it("accepted mode is a no-op with no accepted quests", () => {
+    const result = reduceGuildUi(
+      guildState({ mode: "accepted" }),
+      { kind: "menuDown" },
+      guildCtx({ acceptedQuests: [] }),
+    );
+    expect(result.state).toEqual(guildState({ mode: "accepted" }));
   });
 });

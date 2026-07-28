@@ -53,13 +53,14 @@ pure darks downsample to invisible ANSI black; that is why `border` and
 | --- | --- |
 | Global | `q` or Ctrl+C exits; backtick switches the developer console in dev mode; `z` opens fast travel from the overworld/village; `v` opens the Inventory screen anywhere outside battle; `C` (Shift+C) opens the Character Sheet screen anywhere outside battle; `K` (Shift+K) opens the Skill Tree screen anywhere outside battle |
 | New game | Up/Down and Enter select a class, then Normal or Permadeath mode; Esc returns to class selection |
-| Village | Up/Down and Enter select; `i`, `c`, `s`, `t`, `x`, `o` open buildings or leave; Esc returns |
+| Village | Up/Down and Enter select; `i`, `c`, `s`, `t`, `x`, `g`, `o` open buildings or leave; Esc returns |
 | Overworld | Arrows or `h`, `j`, `k`, `l` move; Esc returns to the village |
 | Dungeon | Arrows, WASD, or HJKL move and turn; `o` opens; Enter or `>` descends; `<` opens an evac confirm (y/n or Enter/Esc) |
 | Battle | Up/Down selects an action; Enter confirms; Esc cancels targeting |
 | Fast travel | Up/Down selects a discovered waypoint; Enter travels; Esc cancels |
 | Inventory | Tab cycles gear/consumables/currency/quest/filter sections; in gear, Up/Down selects, Enter inspects full affix lines, `e`/`u` equip/unequip, `r` cycles the backpack sort (rarity/ilvl/slot/value), Left/Right switches party member; in consumables, Up/Down selects a stack, Left/Right retargets the party member, `u` uses a heal item on them (outside battle only - battle's own item command is unchanged); in the loot filter pane, Up/Down selects a rule row (minimum rarity per dungeon tier, minimum ilvl offset vs party level, affix-stat keep-list toggles) and Enter/Left/Right cycles or toggles its value, applying live via `SetLootFilter`; Esc closes |
 | Stash | Tab switches backpack/stash panes; Up/Down selects, `d` deposits (backpack pane), `w` withdraws (stash pane), `r` cycles sort (rarity/ilvl/slot/value); Esc returns |
+| Guild | Tab switches available/accepted panes; Up/Down selects, Enter accepts (available pane) or turns in a completed quest (accepted pane); Esc returns |
 | Backpack Full (loot triage) | `s` swaps (then Up/Down picks a carried item, Enter confirms dismantling it and taking the drop), `d` dismantles the drop itself; Esc from the swap picker returns to the choice |
 | Character Sheet | Left/Right switches party member; Esc closes and returns to the scene it was opened from |
 
