@@ -7,15 +7,10 @@ import {
   dungeonEntryFlavor,
   findDungeon,
 } from "../../data/dungeons";
-<<<<<<< HEAD
 import { findItemBase } from "../../data/itemBases";
-import { findShopItem, isGearShopItem, sellPriceFor } from "../../data/shops";
-import { resolveBattleEvent, startBattle } from "../combat/resolution";
-=======
 import { QUESTS } from "../../data/quests";
-import { findShopItem, sellPriceFor } from "../../data/shops";
+import { findShopItem, isGearShopItem, sellPriceFor } from "../../data/shops";
 import { grantXp, resolveBattleEvent, startBattle } from "../combat/resolution";
->>>>>>> origin/main
 import type { InventoryItem, PartyMember } from "../entities/party";
 import { createStartingHero, MAX_PARTY } from "../entities/party";
 import {
@@ -34,13 +29,10 @@ import {
   lootLogEntries,
   queueLootTriage,
 } from "../loot/pickup";
-<<<<<<< HEAD
 import { rollChestLoot, rollShopStock } from "../loot/resolution";
 import type { ItemInstance } from "../loot/types";
-=======
-import { rollChestLoot } from "../loot/resolution";
 import { isQuestComplete, MAX_ACCEPTED_QUESTS } from "../quests";
->>>>>>> origin/main
+import { generateBounties } from "../quests/bounties";
 import { Rng } from "../rng/rng";
 import {
   createInitialDungeonState,
@@ -124,18 +116,12 @@ export function newGame(seed: number, options?: NewGameOptions): GameState {
     pendingLootTriage: null,
     lootFilter: EMPTY_LOOT_FILTER,
     lastLootOutcome: null,
-<<<<<<< HEAD
     shopStock: [],
-=======
     quests: { available: [], accepted: [], completedIds: [] },
     questItems: {},
->>>>>>> origin/main
   };
 
-  // shopStock stays empty until the store is first visited or after an
-  // inn rest (restockShop) - eager-rolling it here would perturb the RNG
-  // stream every newGame test relies on for unrelated deterministic checks.
-  return rollRecruits(base);
+  return rollQuests(rollRecruits(base));
 }
 
 function highestPartyLevel(party: readonly PartyMember[]): number {
@@ -146,6 +132,34 @@ function rollRecruits(state: GameState): GameState {
   const rng = new Rng(state.seed, state.rngState);
   const recruits = generateRecruits(rng, state.party[0]?.level ?? 1);
   return { ...state, recruits, rngState: rng.getState() };
+}
+
+// Rebuilds `available` from the level-filtered static QUESTS table (minus
+// completedIds and quests already accepted) plus a fresh batch of procedural
+// bounties (ENG-37). Used both by newGame's initial board and RefreshQuests.
+function rollQuests(state: GameState): GameState {
+  // Reads the current rngState to seed the bounty roll but deliberately does
+  // not persist the advanced state back (unlike rollRecruits). Every other
+  // subsystem -- movement encounters, combat rolls, chest loot -- draws from
+  // the same shared stream, and a huge amount of seeded test coverage pins
+  // exact outcomes for specific seeds. Spending draws here would shift every
+  // one of those downstream rolls for no player-visible benefit. The board
+  // still varies across visits because other actions (walking, fighting)
+  // naturally advance rngState between refreshes.
+  const rng = new Rng(state.seed, state.rngState);
+  const heroLevel = state.party[0]?.level ?? 1;
+  const acceptedIds = new Set(state.quests.accepted.map((q) => q.def.id));
+  const staticQuests = QUESTS.filter(
+    (quest) =>
+      quest.minLevel <= heroLevel &&
+      !state.quests.completedIds.includes(quest.id) &&
+      !acceptedIds.has(quest.id),
+  );
+  const bounties = generateBounties(rng, heroLevel);
+  return {
+    ...state,
+    quests: { ...state.quests, available: [...staticQuests, ...bounties] },
+  };
 }
 
 // Rare-stock restock cadence (ENG-41): fires alongside the tavern recruit
@@ -1092,6 +1106,8 @@ export function reduce(state: GameState, event: GameEvent): GameState {
       return recruitMember(state, event.classId);
     case "RefreshRecruits":
       return rollRecruits(state);
+    case "RefreshQuests":
+      return rollQuests(state);
     case "HireRecruit":
       return hireRecruit(state, event.index);
     case "DismissMember":

@@ -106,6 +106,7 @@ export type GameEvent =
   | { type: "SellItem"; instanceId: string }
   | { type: "RecruitMember"; classId: string }
   | { type: "RefreshRecruits" }
+  | { type: "RefreshQuests" }
   | { type: "HireRecruit"; index: number }
   | { type: "DismissMember"; memberId: string }
   | { type: "MoveOverworld"; dx: MoveDelta; dy: MoveDelta }
