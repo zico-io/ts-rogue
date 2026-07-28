@@ -10,7 +10,7 @@ files.
 
 - `domain/architecture.md` - runtime stack, engine/UI boundary, and core game model. <source: repository code and READMEs, 2026-07-23>
 - `domain/world.md` - overworld, village, and dungeon-entrance navigation and placement. <source: repository code and READMEs, 2026-07-25>
-- `domain/combat.md` - battle status effects, elemental damage, formation, and skill targeting. <source: repository code and READMEs, 2026-07-26>
+- `domain/combat.md` - battle status effects, elemental damage, formation, skill targeting, and skill-point leveling/spend rules. <source: repository code and READMEs, 2026-07-28>
 - `domain/loot.md` - item generation, inventory management, and loot presentation. <source: repository code and READMEs, 2026-07-23>
 - `domain/presentation.md` - rendering and screen-level facts shared by the terminal and web renderers. <source: repository code and READMEs, 2026-07-23>
 - `tools/development.md` - local development and verification commands. <source: package.json, 2026-07-19>
