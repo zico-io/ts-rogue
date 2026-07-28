@@ -12,68 +12,57 @@
 // reads. Channel `action.result` handlers still receive the full, untruncated
 // output, so Linear chips are unaffected by anything here.
 
-export interface TruncateForContextOptions {
-  /** Lines kept from the start. Defaults to 200. */
-  readonly headLines?: number;
-  /** Lines kept from the end. Defaults to 100. */
-  readonly tailLines?: number;
-  /**
-   * Hard character ceiling applied independently of the line budget, so a
-   * single enormous line with no newlines is still capped. Defaults to 40,000.
-   */
-  readonly maxChars?: number;
-}
+/** Lines kept from the start of an over-long output. */
+const HEAD_LINES = 200;
 
-const DEFAULT_HEAD_LINES = 200;
-const DEFAULT_TAIL_LINES = 100;
-const DEFAULT_MAX_CHARS = 40_000;
+/** Lines kept from its end. */
+const TAIL_LINES = 100;
+
+/**
+ * Character ceiling enforced independently of the line budget, so a single
+ * enormous line with no newlines is still capped.
+ */
+const MAX_CHARS = 40_000;
 
 const count = (n: number): string => n.toLocaleString("en-US");
 
-// Character-level cap for text that overflows `maxChars` regardless of line
+// Character-level cap for text that overflows `MAX_CHARS` regardless of line
 // count (e.g. minified JSON, a base64 blob, one multi-megabyte line). Keeps a
 // head and a small tail so both ends stay visible.
-const capChars = (text: string, maxChars: number): string => {
-  if (text.length <= maxChars) return text;
-  const headChars = Math.ceil((maxChars * 2) / 3);
-  const tailChars = maxChars - headChars;
+const capChars = (text: string): string => {
+  if (text.length <= MAX_CHARS) return text;
+  const headChars = Math.ceil((MAX_CHARS * 2) / 3);
+  const tailChars = MAX_CHARS - headChars;
   const head = text.slice(0, headChars);
   const tail = tailChars > 0 ? text.slice(text.length - tailChars) : "";
   const elided = text.length - head.length - tail.length;
-  return `${head}\n… [${count(elided)} chars elided — re-read a specific range if needed] …\n${tail}`;
+  return `${head}\n… [${count(elided)} chars elided; re-read a specific range if needed] …\n${tail}`;
 };
 
 /**
  * Caps `text` to a head + tail window for the model transcript. Returns the
  * input unchanged when it is already within both the line budget and the
- * character ceiling. Otherwise keeps `headLines` from the top and `tailLines`
- * from the bottom joined by an elision marker naming how many lines and
- * characters were dropped, then enforces `maxChars` as an independent ceiling.
+ * character ceiling. Otherwise keeps the first `HEAD_LINES` and the last
+ * `TAIL_LINES` joined by an elision marker naming how many lines and characters
+ * were dropped, then enforces `MAX_CHARS` as an independent ceiling.
  */
-export const truncateForContext = (
-  text: string,
-  opts: TruncateForContextOptions = {},
-): string => {
-  const headLines = opts.headLines ?? DEFAULT_HEAD_LINES;
-  const tailLines = opts.tailLines ?? DEFAULT_TAIL_LINES;
-  const maxChars = opts.maxChars ?? DEFAULT_MAX_CHARS;
-
+export const truncateForContext = (text: string): string => {
   const lines = text.split("\n");
-  const withinLines = lines.length <= headLines + tailLines;
-  const withinChars = text.length <= maxChars;
+  const withinLines = lines.length <= HEAD_LINES + TAIL_LINES;
+  const withinChars = text.length <= MAX_CHARS;
   if (withinLines && withinChars) return text;
 
   let result = text;
   if (!withinLines) {
-    const head = lines.slice(0, headLines);
-    const middle = lines.slice(headLines, lines.length - tailLines);
-    const tail = lines.slice(lines.length - tailLines);
+    const head = lines.slice(0, HEAD_LINES);
+    const middle = lines.slice(HEAD_LINES, lines.length - TAIL_LINES);
+    const tail = lines.slice(lines.length - TAIL_LINES);
     const elidedChars = middle.join("\n").length;
-    const marker = `\n… [${count(middle.length)} lines / ${count(elidedChars)} chars elided — re-read a specific range if needed] …\n`;
+    const marker = `\n… [${count(middle.length)} lines / ${count(elidedChars)} chars elided; re-read a specific range if needed] …\n`;
     result = `${head.join("\n")}${marker}${tail.join("\n")}`;
   }
 
   // Independent char ceiling: catches a huge single line the line pass left
   // untouched, and a head+tail window whose retained lines are themselves long.
-  return capChars(result, maxChars);
+  return capChars(result);
 };

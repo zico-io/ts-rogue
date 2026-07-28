@@ -17,3 +17,11 @@ export type ActionResult = ActionResultData["result"];
 
 /** One request for human input, passed through to a channel untouched. */
 export type InputRequest = InputRequestedData["requests"][number];
+
+/** Why an assistant message ended; `"tool-calls"` means a tool call follows it. */
+export type MessageFinishReason =
+  HookEventMap["message.completed"]["data"]["finishReason"];
+
+/** How a connection authorization resolved. */
+export type AuthorizationOutcome =
+  HookEventMap["authorization.completed"]["data"]["outcome"];

@@ -12,12 +12,14 @@ describe("truncateForContext", () => {
     const lines = Array.from({ length: 5_000 }, (_, i) => `line ${i}`);
     const text = lines.join("\n");
 
-    const out = truncateForContext(text, { headLines: 10, tailLines: 5 });
+    const out = truncateForContext(text);
 
     // Much shorter than the original.
     expect(out.length).toBeLessThan(text.length);
-    // Head and tail survive; the interior does not.
+    // The first 200 and last 100 lines survive; the interior does not.
     expect(out).toContain("line 0");
+    expect(out).toContain("line 199");
+    expect(out).toContain("line 4900");
     expect(out).toContain("line 4999");
     expect(out).not.toContain("line 2500");
     // Elision marker names both dimensions that were dropped.
@@ -25,17 +27,32 @@ describe("truncateForContext", () => {
     expect(out).toContain("chars elided");
   });
 
+  it("keeps an output right at the line budget intact", () => {
+    const text = Array.from({ length: 300 }, (_, i) => `line ${i}`).join("\n");
+
+    expect(truncateForContext(text)).toBe(text);
+  });
+
   it("caps a single newline-free megastring by character count", () => {
     const text = "x".repeat(500_000);
 
-    const out = truncateForContext(text, { maxChars: 10_000 });
+    const out = truncateForContext(text);
 
     expect(out.length).toBeLessThan(text.length);
     // The line pass is a no-op (one line), so the char ceiling must fire.
     expect(out).toContain("chars elided");
-    // Retained content stays close to the requested ceiling.
+    // Retained content stays within the ceiling.
     expect(out.replace(/\n… \[.*?\] …\n/, "").length).toBeLessThanOrEqual(
-      10_000,
+      40_000,
     );
+  });
+
+  it("uses no em dash in the elision markers, per repo convention", () => {
+    const manyLines = Array.from({ length: 5_000 }, (_, i) => `l${i}`).join(
+      "\n",
+    );
+
+    expect(truncateForContext(manyLines)).not.toContain("—");
+    expect(truncateForContext("y".repeat(500_000))).not.toContain("—");
   });
 });

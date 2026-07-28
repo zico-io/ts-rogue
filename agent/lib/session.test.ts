@@ -396,16 +396,30 @@ describe("authorization.completed", () => {
     ]);
   });
 
+  // Only `timed-out` needs rewording; eve's other outcomes are already prose.
   it("passes an outcome that already reads as prose straight through", async () => {
     const { channel, session, updates } = setup();
 
     await session.authorizationCompleted(
-      { name: "linear", outcome: "denied" },
+      { name: "linear", outcome: "declined" },
       channel,
     );
 
     expect(updates).toEqual([
-      { body: "Authorization for Linear denied.", kind: "thought" },
+      { body: "Authorization for Linear declined.", kind: "thought" },
+    ]);
+  });
+
+  it("words eve's remaining outcome the same way", async () => {
+    const { channel, session, updates } = setup();
+
+    await session.authorizationCompleted(
+      { name: "linear", outcome: "failed" },
+      channel,
+    );
+
+    expect(updates).toEqual([
+      { body: "Authorization for Linear failed.", kind: "thought" },
     ]);
   });
 });

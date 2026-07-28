@@ -1,6 +1,7 @@
 import { defineTool } from "eve/tools";
 import { bash } from "eve/tools/defaults";
 
+import { flagField, scalarField, textField } from "../lib/tool-output";
 import { truncateForContext } from "../lib/truncate-for-context";
 
 // Overrides the framework `bash` tool (slug = filename): the resolver drops any
@@ -12,20 +13,18 @@ import { truncateForContext } from "../lib/truncate-for-context";
 //
 // `stdout`/`stderr` are the unbounded fields; `exitCode` and `truncated` are
 // small and kept verbatim so the model still sees the command's result and any
-// sandbox-level truncation flag.
-interface BashOutput {
-  readonly exitCode: number;
-  readonly stderr: string;
-  readonly stdout: string;
-  readonly truncated: boolean;
-}
-
+// sandbox-level truncation flag. eve types this output as `unknown`, so the
+// fields are read rather than asserted - see `lib/tool-output.ts`.
 export default defineTool({
   ...bash,
   toModelOutput(output) {
-    const { exitCode, stderr, stdout, truncated } = output as BashOutput;
+    const stderr = textField(output, "stderr");
+    const stdout = textField(output, "stdout");
+    const sandboxTruncated = flagField(output, "truncated")
+      ? " (output truncated by sandbox)"
+      : "";
     const sections = [
-      `exit code: ${exitCode}${truncated ? " (output truncated by sandbox)" : ""}`,
+      `exit code: ${scalarField(output, "exitCode")}${sandboxTruncated}`,
       `stdout:\n${stdout.length > 0 ? truncateForContext(stdout) : "(empty)"}`,
     ];
     if (stderr.length > 0) {

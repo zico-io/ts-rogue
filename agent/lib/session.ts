@@ -7,8 +7,10 @@ import { stripLeadingProseHeader } from "./prose";
 import type {
   ActionResultData,
   ActionsRequestedData,
+  AuthorizationOutcome,
   InputRequest,
   InputRequestedData,
+  MessageFinishReason,
 } from "./session-event";
 import {
   actionLabel,
@@ -72,12 +74,12 @@ interface AuthorizationData {
 }
 
 interface AuthorizationOutcomeData extends AuthorizationData {
-  readonly outcome: string;
+  readonly outcome: AuthorizationOutcome;
   readonly reason?: string | null;
 }
 
 interface MessageData {
-  readonly finishReason?: string;
+  readonly finishReason?: MessageFinishReason;
   readonly message: string | null;
 }
 
