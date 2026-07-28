@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { GameEvent, GameState } from "../../engine/state/types";
 import type { FailureBoundary } from "../../lib/incidents";
 import { ChurchView } from "./village/ChurchView";
+import { GuildView } from "./village/GuildView";
 import { InnView } from "./village/InnView";
 import { StashView } from "./village/StashView";
 import { StoreView } from "./village/StoreView";
@@ -42,6 +43,8 @@ export function VillageScreen({
       return <TavernView dispatch={dispatch} onBack={onBack} state={state} />;
     case "stash":
       return <StashView dispatch={dispatch} onBack={onBack} state={state} />;
+    case "guild":
+      return <GuildView dispatch={dispatch} onBack={onBack} state={state} />;
     case null:
       return (
         <VillageOverview
