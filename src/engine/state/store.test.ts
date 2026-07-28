@@ -2259,7 +2259,6 @@ describe("Phase 6: save/restore integrity", () => {
   });
 });
 
-
 describe("RefreshQuests reducer (ENG-37)", () => {
   it("excludes completed and accepted quests from the rebuilt board", () => {
     const base = newGame(1234);
