@@ -26,6 +26,9 @@ import {
 /** How long a sandbox may live before Vercel reclaims it. */
 export const SANDBOX_TIMEOUT_MS = 5 * 60 * 60 * 1000;
 
+/** Pinned so the bootstrap install and its test can't drift apart. */
+export const MEX_AGENT_VERSION = "0.7.0";
+
 /** Keys dependency snapshots by lockfile content, with the commit as a read-failure fallback. */
 export function dependencyRevalidationKey(): string {
   try {
@@ -79,6 +82,7 @@ export function buildBootstrapCommand(options?: {
 
     "(pi install git:github.com/DietrichGebert/ponytail || true)",
     "(npm install -g @ast-grep/cli || true)",
+    `(npm install -g mex-agent@${MEX_AGENT_VERSION} || true)`,
 
     ...(seedGitHubConfig
       ? ["git config --global --add safe.directory '*'"]
@@ -89,6 +93,7 @@ export function buildBootstrapCommand(options?: {
     "git fetch --depth 1 origin main",
     "git reset --hard origin/main",
     "corepack pnpm install --frozen-lockfile",
+    `(mex graph || echo 'bootstrap: code-graph build failed; retrieval falls back to grep/read' >&2)`,
     ...(screenshotTooling ? [installScreenshotTooling] : []),
   ].join(" && ");
 }
@@ -129,7 +134,7 @@ export function buildSandboxDefinition(
   return {
     backend: vercel({
       timeout: SANDBOX_TIMEOUT_MS,
-      env: WORKSPACE_GIT_CONFIG_ENV,
+      env: { ...WORKSPACE_GIT_CONFIG_ENV, DO_NOT_TRACK: "1" },
     }),
     revalidationKey: dependencyRevalidationKey,
     async bootstrap({ use }) {

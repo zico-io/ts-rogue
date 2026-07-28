@@ -9,6 +9,7 @@ import {
   AUTO_RECOVER_PUSH_COMMAND,
   buildBootstrapCommand,
   dependencyRevalidationKey,
+  MEX_AGENT_VERSION,
   WORKSPACE_GIT_CONFIG_ENV,
 } from "./recipe";
 
@@ -87,6 +88,18 @@ describe("buildBootstrapCommand", () => {
       "apt-get install -y tmux ripgrep fd-find bat eza gh",
     );
     expect(command).toContain("git init -q -b main .");
+  });
+
+  it("installs mex and builds the graph after the checkout that lands .mex/", () => {
+    const command = buildBootstrapCommand();
+    expect(command).toContain(`npm install -g mex-agent@${MEX_AGENT_VERSION}`);
+
+    const graphBuildIndex = command.indexOf("mex graph");
+    const resetIndex = command.indexOf("git reset --hard origin/main");
+    const installIndex = command.indexOf("pnpm install --frozen-lockfile");
+    expect(graphBuildIndex).toBeGreaterThan(-1);
+    expect(graphBuildIndex).toBeGreaterThan(resetIndex);
+    expect(graphBuildIndex).toBeGreaterThan(installIndex);
   });
 
   it("installs the ponytail ruleset into pi (HAR-3)", () => {
