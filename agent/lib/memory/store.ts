@@ -1,5 +1,5 @@
 import { type Client, createClient, type Row } from "@libsql/client";
-import { mintMemoryDatabaseCredential } from "./memory";
+import { mintMemoryDatabaseCredential } from "./connector";
 
 /**
  * One fact in Eve's runtime memory store (HAR-71). This is deliberately
@@ -44,7 +44,7 @@ const MIGRATIONS = [
 /**
  * Retention bound (HAR-75): the store keeps at most this many rows. Each row
  * is at most one 80-char key plus a 4000-char value (bounded by
- * `rememberInputSchema` in `memory-tools.ts`), so this also caps total store
+ * `rememberInputSchema` in `tools.ts`), so this also caps total store
  * size at a few megabytes. `put` evicts the least-recently-updated memory
  * once this cap is exceeded, so the store self-trims instead of growing
  * unbounded - there is no separate expiry timer to run.
@@ -61,9 +61,16 @@ function rowToMemory(row: Row): Memory {
     typeof created_at !== "string" ||
     typeof updated_at !== "string"
   ) {
-    throw new Error("memory-store: expected all memories columns to be text");
+    throw new Error("memory/store: expected all memories columns to be text");
   }
-  return { key, value, category, source, createdAt: created_at, updatedAt: updated_at };
+  return {
+    key,
+    value,
+    category,
+    source,
+    createdAt: created_at,
+    updatedAt: updated_at,
+  };
 }
 
 /** Produces a connected libSQL client. Called fresh for every store operation. */
@@ -131,7 +138,14 @@ export class LibsqlMemoryStore implements MemoryStore {
               category = excluded.category,
               source = excluded.source,
               updated_at = excluded.updated_at`,
-      args: [memory.key, memory.value, memory.category, memory.source, now, now],
+      args: [
+        memory.key,
+        memory.value,
+        memory.category,
+        memory.source,
+        now,
+        now,
+      ],
     });
     // Retention bound: drop the least-recently-updated rows beyond the cap.
     // The row just written is always the most recently updated, so it is
@@ -148,7 +162,9 @@ export class LibsqlMemoryStore implements MemoryStore {
     });
     const row = result.rows[0];
     if (!row) {
-      throw new Error(`memory-store: failed to read back "${memory.key}" after put`);
+      throw new Error(
+        `memory/store: failed to read back "${memory.key}" after put`,
+      );
     }
     return rowToMemory(row);
   }

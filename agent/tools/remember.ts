@@ -1,13 +1,13 @@
 import { defineTool } from "eve/tools";
 
-import { rememberExecute, rememberInputSchema } from "../lib/memory-tools";
+import { rememberExecute, rememberInputSchema } from "../lib/memory";
 
 export default defineTool({
   description:
     "Save one durable operational fact to Eve's cross-session runtime memory - " +
     "a debugging insight, a workaround, an entity-dedup note, or similar " +
     "low-stakes context that would help a future session. This is not the " +
-    'reviewed shipped-behavior record (`.botfile/memory/domain/product.md`). ' +
+    "reviewed shipped-behavior record (`.botfile/memory/domain/product.md`). " +
     "`category` must be one of the allowed values. A value that looks like a " +
     "password, access token, private key, or other credential or personal " +
     "data is rejected, not merely discouraged. Writing is autonomous and " +

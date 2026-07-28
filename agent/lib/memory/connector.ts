@@ -46,7 +46,7 @@ export interface MemoryDatabaseCredential {
  * agent runs directly inside its own sandbox (see ./sandbox.ts).
  */
 export async function mintMemoryDatabaseCredential(
-  env: NodeJS.ProcessEnv = process.env,
+  env: Readonly<Record<string, string | undefined>> = process.env,
 ): Promise<MemoryDatabaseCredential> {
   const url = env[MEMORY_DATABASE_URL_ENV];
   if (!url) {

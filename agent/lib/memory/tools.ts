@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-import type { Memory, MemoryStore } from "./memory-store";
-import { memoryStore } from "./memory-store";
+import type { Memory, MemoryStore } from "./store";
+import { memoryStore } from "./store";
 
 /**
  * Validation and pass-through logic behind `agent/tools/remember.ts`,
@@ -17,7 +17,11 @@ import { memoryStore } from "./memory-store";
  * `instructions.md` and `agent/README.md`. Extend deliberately - this is a
  * product decision, not free text the model can invent per call.
  */
-export const MEMORY_CATEGORIES = ["workaround", "debugging-note", "entity"] as const;
+export const MEMORY_CATEGORIES = [
+  "workaround",
+  "debugging-note",
+  "entity",
+] as const;
 export type MemoryCategory = (typeof MEMORY_CATEGORIES)[number];
 
 /**
@@ -52,9 +56,14 @@ export const rememberInputSchema = z
       .string()
       .min(1)
       .max(80)
-      .regex(/^[a-z0-9_.-]+$/, "use lowercase letters, digits, '.', '_', or '-'"),
+      .regex(
+        /^[a-z0-9_.-]+$/,
+        "use lowercase letters, digits, '.', '_', or '-'",
+      ),
     value: z.string().min(1).max(4000),
-    category: z.enum(MEMORY_CATEGORIES).describe(`One of: ${MEMORY_CATEGORIES.join(", ")}.`),
+    category: z
+      .enum(MEMORY_CATEGORIES)
+      .describe(`One of: ${MEMORY_CATEGORIES.join(", ")}.`),
     source: z
       .string()
       .min(1)
@@ -66,7 +75,11 @@ export const rememberInputSchema = z
   .superRefine((data, ctx) => {
     for (const field of ["key", "value", "source"] as const) {
       if (containsSensitiveContent(data[field])) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, path: [field], message: SENSITIVE_CONTENT_MESSAGE });
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [field],
+          message: SENSITIVE_CONTENT_MESSAGE,
+        });
       }
     }
   });

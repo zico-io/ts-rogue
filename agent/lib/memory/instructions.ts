@@ -1,7 +1,10 @@
-import { defineInstructions, type InstructionsDefinition } from "eve/instructions";
+import {
+  defineInstructions,
+  type InstructionsDefinition,
+} from "eve/instructions";
 
-import type { Memory } from "./memory-store";
-import { memoryStore } from "./memory-store";
+import type { Memory } from "./store";
+import { memoryStore } from "./store";
 
 /**
  * Logic behind `agent/instructions/memory.ts`. Lives here (rather than in

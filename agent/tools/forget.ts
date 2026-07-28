@@ -1,6 +1,6 @@
 import { defineTool } from "eve/tools";
 
-import { forgetExecute, forgetInputSchema } from "../lib/memory-tools";
+import { forgetExecute, forgetInputSchema } from "../lib/memory";
 
 export default defineTool({
   description:

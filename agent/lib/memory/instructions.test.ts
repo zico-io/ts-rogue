@@ -1,10 +1,9 @@
 import { describe, expect, it } from "vitest";
-
-import type { Memory } from "./memory-store";
 import {
   buildMemoryInstructionsMarkdown,
   resolveMemoryInstructions,
-} from "./memory-instructions";
+} from "./instructions";
+import type { Memory } from "./store";
 
 const SAMPLE_MEMORY: Memory = {
   key: "workaround.eve-sandbox-flake",

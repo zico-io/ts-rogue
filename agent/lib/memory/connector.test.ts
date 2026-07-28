@@ -7,7 +7,7 @@ import {
   MEMORY_DATABASE_CONNECTOR,
   MEMORY_DATABASE_URL_ENV,
   mintMemoryDatabaseCredential,
-} from "./memory";
+} from "./connector";
 
 describe("mintMemoryDatabaseCredential", () => {
   afterEach(() => vi.mocked(getTokenResponse).mockReset());
@@ -23,7 +23,11 @@ describe("mintMemoryDatabaseCredential", () => {
     vi.mocked(getTokenResponse).mockResolvedValueOnce({
       token: "minted-token",
       expiresAt: 1_234,
-      connector: { id: "conn_1", uid: MEMORY_DATABASE_CONNECTOR, type: "apikey" },
+      connector: {
+        id: "conn_1",
+        uid: MEMORY_DATABASE_CONNECTOR,
+        type: "apikey",
+      },
     });
 
     const credential = await mintMemoryDatabaseCredential({

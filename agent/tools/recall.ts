@@ -1,6 +1,6 @@
 import { defineTool } from "eve/tools";
 
-import { recallExecute, recallInputSchema } from "../lib/memory-tools";
+import { recallExecute, recallInputSchema } from "../lib/memory";
 
 export default defineTool({
   description:

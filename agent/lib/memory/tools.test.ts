@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { Memory, MemoryStore } from "./memory-store";
+import type { Memory, MemoryStore } from "./store";
 import {
   containsSensitiveContent,
   forgetExecute,
@@ -8,7 +8,7 @@ import {
   recallInputSchema,
   rememberExecute,
   rememberInputSchema,
-} from "./memory-tools";
+} from "./tools";
 
 const SAMPLE_MEMORY: Memory = {
   key: "workaround.eve-sandbox-flake",
@@ -92,7 +92,9 @@ describe("containsSensitiveContent", () => {
   });
 
   it("leaves plain text alone", () => {
-    expect(containsSensitiveContent("the sandbox flaked twice before stabilizing")).toBe(false);
+    expect(
+      containsSensitiveContent("the sandbox flaked twice before stabilizing"),
+    ).toBe(false);
   });
 });
 
@@ -126,11 +128,16 @@ describe("recallExecute", () => {
       recallInputSchema.parse({ category: "workaround", limit: 5 }),
       store,
     );
-    expect(store.list).toHaveBeenCalledWith({ category: "workaround", limit: 5 });
+    expect(store.list).toHaveBeenCalledWith({
+      category: "workaround",
+      limit: 5,
+    });
   });
 
   it("rejects a category outside the allow-list", () => {
-    expect(recallInputSchema.safeParse({ category: "wishlist" }).success).toBe(false);
+    expect(recallInputSchema.safeParse({ category: "wishlist" }).success).toBe(
+      false,
+    );
   });
 });
 
