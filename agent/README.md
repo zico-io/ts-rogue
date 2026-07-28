@@ -79,6 +79,8 @@ context. Blocking relations in Linear determine readiness.
 | `tools/workflow.ts` | Enables the `Workflow` tool to orchestrate `agent` calls as one durable step |
 | `tools/session_update.ts` | Posts blocked, review, and completion activities |
 | `tools/remember.ts`, `tools/recall.ts`, `tools/forget.ts` | Autonomous read/write access to the runtime memory store |
+| `tools/bash.ts`, `tools/web_fetch.ts` | eve's own tools with only `toModelOutput` replaced, so high-volume output stops riding every later round-trip |
+| `lib/truncate-for-context.ts` | The head+tail window those two tools show the model; `lib/truncate.ts` is the separate display-only cap for Linear chips |
 | `schedules/eve-version-check.ts` | Checks for Eve upgrades and audits framework workarounds |
 | `schedules/agent-run-analysis.ts` | Daily review of recent Eve/GitHub/Vercel activity that files Harness issues for real findings |
 
@@ -108,6 +110,27 @@ agent disclosure, native platform behavior, prompt feedback, visible state,
 immediate disengagement, and human accountability. These criteria live once in
 the root instructions and are mirrored by the `aig:` lens in
 `scripts/ci-review.ts`.
+
+## Session cost and context window
+
+A Linear issue maps to one long-lived eve session that is never explicitly
+closed, so its transcript grows across every wake and tool round-trip. A
+2026-07-27 production analysis found this dominated spend: long sessions
+re-read a near-1M-token transcript on each of a turn's ~14 tool round-trips
+(~14M input tokens/turn), and multi-hour idle gaps blew the prompt cache so
+afternoon PR/merge hooks paid to rebuild it. Two knobs bound that cost:
+
+- **Earlier compaction** - `agent.ts` sets `modelContextWindowTokens`, which is
+  a compaction *trigger*, not a hard cap: eve compacts at
+  `floor(modelContextWindowTokens * 0.9)` (see eve `createCompactionConfig` in
+  `execution/session.js`), summarizing the older transcript and keeping the
+  recent tail verbatim. Session *parking* is the separate `maxInputTokensPerSession`
+  knob (default 40M), left untouched. Lowering the trigger caps the per-turn
+  re-read; tune down if quality holds, up if summaries drop needed detail.
+- **In-context tool-result truncation** - `lib/truncate-for-context.ts` and the
+  wrapped `bash`/`web_fetch` tools keep head+tail with an elision pointer so
+  high-volume output stops riding every subsequent round-trip. This is distinct
+  from `lib/truncate.ts`, which is display-only for Linear activity chips.
 
 ## Sandbox and credentials
 
