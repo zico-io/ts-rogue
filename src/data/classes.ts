@@ -22,6 +22,11 @@ export interface ClassDef {
   growth: ClassGrowth;
 
   skills: readonly string[];
+
+  // Ref into SKILL_TREES (src/data/skillTrees.ts), mirroring the
+  // MonsterDef.lootTableRef idiom. Starter tree content ships in ENG-35;
+  // until then this id just reserves the class's slot in that table.
+  treeId: string;
 }
 
 export const DEFAULT_CLASS_ID = "warrior";
@@ -36,6 +41,7 @@ export const CLASSES: readonly ClassDef[] = [
     maxMp: 6,
     growth: { hp: 8, mp: 2, str: 2, agi: 1, vit: 2, int: 0 },
     skills: ["cleave", "second-wind", "skewer"],
+    treeId: "warrior",
   },
   {
     id: "rogue",
@@ -46,6 +52,7 @@ export const CLASSES: readonly ClassDef[] = [
     maxMp: 10,
     growth: { hp: 5, mp: 3, str: 1, agi: 2, vit: 1, int: 1 },
     skills: ["backstab", "pinpoint", "scattershot"],
+    treeId: "rogue",
   },
   {
     id: "wizard",
@@ -57,6 +64,7 @@ export const CLASSES: readonly ClassDef[] = [
     maxMp: 18,
     growth: { hp: 4, mp: 6, str: 0, agi: 1, vit: 1, int: 2 },
     skills: ["flame", "heal", "frost", "hailstorm", "meteor"],
+    treeId: "wizard",
   },
 ];
 

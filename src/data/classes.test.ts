@@ -56,6 +56,14 @@ describe("CLASSES data table", () => {
     const sets = CLASSES.map((cls) => cls.skills.slice().sort().join(","));
     expect(new Set(sets).size).toBe(CLASSES.length);
   });
+
+  it("each class references its own skill tree id (ENG-31 schema wiring; content ships in ENG-35)", () => {
+    for (const cls of CLASSES) {
+      expect(cls.treeId).toBe(cls.id);
+    }
+    const treeIds = CLASSES.map((cls) => cls.treeId);
+    expect(new Set(treeIds).size).toBe(CLASSES.length);
+  });
 });
 
 describe("createStartingHero", () => {
