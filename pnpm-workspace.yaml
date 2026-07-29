@@ -4,7 +4,7 @@ packages:
 
 catalog:
   # Root and web share this version because the web package builds the agent.
-  eve: "^0.27.8"
+  eve: "^0.27.12"
 
 allowBuilds:
   esbuild: true
