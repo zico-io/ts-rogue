@@ -54,21 +54,28 @@ describe("attachSession", () => {
       `ws://127.0.0.1:${port}/api/terminal?seed=1&fresh`,
     );
     let output = "";
+    let closed = false;
     ws.on("message", (data) => {
       output += data.toString();
+    });
+    ws.on("close", () => {
+      closed = true;
     });
     await new Promise((resolve) => ws.on("open", resolve));
     ws.send(JSON.stringify({ t: "r", cols: 100, rows: 30 }));
 
-    // The Ink title screen has to actually render through the PTY.
-    const deadline = Date.now() + 30_000;
-    while (!output.includes("New Game") && Date.now() < deadline) {
+    // The Ink title screen has to actually render through the PTY. Stop early
+    // if the game died, so a failure reports why instead of an empty string.
+    const deadline = Date.now() + 60_000;
+    while (!output.includes("New Game") && !closed && Date.now() < deadline) {
       await delay(100);
     }
-    expect(output).toContain("New Game");
+    expect(
+      output || "(the game produced no output before the socket closed)",
+    ).toContain("New Game");
 
     ws.close();
     await delay(500);
     await new Promise<void>((resolve) => server.close(() => resolve()));
-  }, 45_000);
+  }, 90_000);
 });

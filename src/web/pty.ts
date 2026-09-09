@@ -1,4 +1,5 @@
 import { mkdtempSync, rmSync } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,7 +8,14 @@ import type { WebSocket, WebSocketServer } from "ws";
 
 /** Repo root: the game is run as `tsx src/app.tsx` from there. */
 const REPO_ROOT = fileURLToPath(new URL("../..", import.meta.url));
-const TSX_BIN = join(REPO_ROOT, "node_modules/.bin/tsx");
+
+/**
+ * Resolve tsx's CLI module and run it under this same Node binary, rather than
+ * spawning `node_modules/.bin/tsx`. That path is a package-manager-generated
+ * shell shim whose layout varies by package manager and platform; resolving the
+ * module is exact everywhere.
+ */
+const TSX_CLI = createRequire(import.meta.url).resolve("tsx/cli");
 
 /** Ink's MinSizeGuard needs 64x24; the client resizes to its real size on connect. */
 const DEFAULT_COLS = 100;
@@ -67,18 +75,33 @@ export function attachSession(ws: WebSocket, url: string): void {
   const search = new URL(url, "http://localhost").searchParams;
   const saveDir = mkdtempSync(join(tmpdir(), "ts-rogue-"));
 
-  const term = pty.spawn(TSX_BIN, ["src/app.tsx", ...gameArgs(search)], {
-    name: "xterm-256color",
-    cols: DEFAULT_COLS,
-    rows: DEFAULT_ROWS,
-    cwd: REPO_ROOT,
-    env: {
-      ...process.env,
-      TS_ROGUE_SAVE_PATH: join(saveDir, "save.db"),
-      FORCE_COLOR: "3",
-      TERM: "xterm-256color",
-    },
-  });
+  let term: pty.IPty;
+  try {
+    term = pty.spawn(
+      process.execPath,
+      [TSX_CLI, "src/app.tsx", ...gameArgs(search)],
+      {
+        name: "xterm-256color",
+        cols: DEFAULT_COLS,
+        rows: DEFAULT_ROWS,
+        cwd: REPO_ROOT,
+        env: {
+          ...process.env,
+          TS_ROGUE_SAVE_PATH: join(saveDir, "save.db"),
+          FORCE_COLOR: "3",
+          TERM: "xterm-256color",
+        },
+      },
+    );
+  } catch (error) {
+    // Without this the browser just shows an empty terminal forever.
+    rmSync(saveDir, { recursive: true, force: true });
+    if (ws.readyState === ws.OPEN) {
+      ws.send(`\r\n[could not start the game: ${String(error)}]\r\n`);
+      ws.close();
+    }
+    return;
+  }
 
   let closed = false;
   const cleanup = () => {
@@ -95,9 +118,17 @@ export function attachSession(ws: WebSocket, url: string): void {
   term.onData((data) => {
     if (ws.readyState === ws.OPEN) ws.send(data);
   });
-  term.onExit(() => {
+  term.onExit(({ exitCode, signal }) => {
     cleanup();
-    if (ws.readyState === ws.OPEN) ws.close();
+    if (ws.readyState !== ws.OPEN) return;
+    // A game that dies before drawing would otherwise leave a blank terminal
+    // with no clue why, so say so on the way out.
+    if (exitCode !== 0) {
+      ws.send(
+        `\r\n[game exited: code ${exitCode}${signal ? `, signal ${signal}` : ""}]\r\n`,
+      );
+    }
+    ws.close();
   });
 
   ws.on("message", (raw) => {
