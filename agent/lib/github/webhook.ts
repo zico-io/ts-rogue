@@ -69,7 +69,7 @@ const pullRequestReviewState = (
 /** Wakes the PR's own turn when a verified delivery carries a dispatchable verdict. */
 export const handlePullRequestReviewWebhook = async (
   request: Request,
-  args: Pick<RouteHandlerArgs<GitHubChannelState>, "send">,
+  args: Pick<RouteHandlerArgs<GitHubChannelState>, "from">,
   credentials: GitHubChannelCredentials,
 ): Promise<Response> => {
   const rawBody = await request.text();
@@ -110,14 +110,16 @@ export const handlePullRequestReviewWebhook = async (
     },
   });
 
-  await args.send(pullRequestReviewVerdictContext(payload, verdict), {
-    auth,
-    continuationToken: pullRequestConversationToken(
-      payload.repository.id,
-      pullRequestNumber,
-    ),
-    state: pullRequestReviewState(payload),
-  });
+  const address = pullRequestConversationToken(
+    payload.repository.id,
+    pullRequestNumber,
+  );
+  await args
+    .from(address)
+    .send(pullRequestReviewVerdictContext(payload, verdict), {
+      auth,
+      state: pullRequestReviewState(payload),
+    });
 
   return Response.json({ ok: true });
 };

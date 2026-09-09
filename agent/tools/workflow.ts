@@ -1,4 +1,4 @@
-import { experimental_workflow } from "eve/tools";
+import { experimental_workflow } from "eve/tools/workflow";
 
 // Enables the experimental Workflow tool. No subagents are declared beyond
 // the built-in `agent` delegation tool, so `experimental_workflow()` defaults

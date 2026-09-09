@@ -25,6 +25,7 @@ import type {
   ActionResultData,
   InputRequest,
 } from "../session-event";
+import { subagentResult } from "../subagent-result.testkit";
 import type { LinearStateWithPending } from "./session";
 
 // The renderer posts through eve's `LinearHandle`; these record what it hands
@@ -294,6 +295,7 @@ describe("ask_question confirmation gate stays self-contained (HAR-78)", () => {
         requests: [
           {
             action: askQuestionAction,
+            kind: "question",
             options: [{ id: "approve", label: "Yes, create it as described" }],
             prompt: "Create it as described?",
             requestId: "req-1",
@@ -327,6 +329,7 @@ describe("input.requested elicitation (HAR-17)", () => {
     const requests: readonly InputRequest[] = [
       {
         action: bashAction,
+        kind: "tool-approval",
         options: [
           { id: "approve", label: "Approve" },
           { id: "revise", label: "Revise" },
@@ -560,12 +563,11 @@ describe("action.result durable chip promotion (HAR-45, preserved through HAR-68
     await fireActionResult(
       {
         status: "completed",
-        result: {
-          kind: "subagent-result",
+        result: subagentResult({
           callId: "sub-c1",
-          subagentName: "coder",
           output: { summary: "Implemented all changes" },
-        },
+          subagentName: "coder",
+        }),
       },
       {
         "sub-c1": {
@@ -590,12 +592,11 @@ describe("action.result durable chip promotion (HAR-45, preserved through HAR-68
     await fireActionResult(
       {
         status: "completed",
-        result: {
-          kind: "subagent-result",
+        result: subagentResult({
           callId: "remote-c1",
-          subagentName: "scout",
           output: { notes: "Found 3 issues" },
-        },
+          subagentName: "scout",
+        }),
       },
       {
         "remote-c1": {
@@ -616,12 +617,11 @@ describe("action.result durable chip promotion (HAR-45, preserved through HAR-68
     await fireActionResult(
       {
         status: "completed",
-        result: {
-          kind: "subagent-result",
+        result: subagentResult({
           callId: "unknown-sub",
-          subagentName: "coder",
           output: { summary: "Done" },
-        },
+          subagentName: "coder",
+        }),
       },
       { "sub-c1": { action: "subagent-call", parameter: "real work" } },
     );
@@ -633,12 +633,11 @@ describe("action.result durable chip promotion (HAR-45, preserved through HAR-68
     await fireActionResult(
       {
         status: "failed",
-        result: {
-          kind: "subagent-result",
+        result: subagentResult({
           callId: "sub-c2",
-          subagentName: "coder",
           output: {},
-        },
+          subagentName: "coder",
+        }),
         error: {
           code: "SUBAGENT_ERROR",
           message: "The subagent encountered an error",

@@ -99,9 +99,9 @@ const rotateCheckpointedContext = async (
   const checkpointed = checkpointedSessionId(event.previousComments);
   if (checkpointed === null) return;
   try {
-    const active = await args.resolveActiveSession({ continuationToken });
-    if (active?.sessionId !== checkpointed) return;
-    await args.reset({ continuationToken, reason: "context checkpoint" });
+    const active = await args.resolveSession(continuationToken);
+    if (active?.id !== checkpointed) return;
+    await args.from(continuationToken).reset({ reason: "context checkpoint" });
   } catch (error) {
     console.warn("linear: context-checkpoint rotation failed", error);
   }
@@ -116,7 +116,7 @@ export default {
         const continuationToken = linearContinuationToken(
           event.agentSession.id,
         );
-        await args.cancel({ continuationToken });
+        await args.from(continuationToken).cancel();
         if (isStopSignal(event)) {
           await createLinearAgentActivity({
             credentials: linearAgentCredentials,
