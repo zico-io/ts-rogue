@@ -1,1 +1,7 @@
-export type VillageBuilding = "inn" | "church" | "store" | "tavern" | "stash";
+export type VillageBuilding =
+  | "inn"
+  | "church"
+  | "store"
+  | "tavern"
+  | "stash"
+  | "guild";

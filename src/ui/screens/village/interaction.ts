@@ -19,6 +19,7 @@ export const OPTIONS: readonly MenuOption[] = [
   { key: "store", label: "Store - buy and sell items", shortcut: "s" },
   { key: "tavern", label: "Tavern - recruit party members", shortcut: "t" },
   { key: "stash", label: "Stash - store gear for later", shortcut: "x" },
+  { key: "guild", label: "Guild - accept and turn in quests", shortcut: "g" },
   {
     key: "overworld",
     label: "Leave town - venture into the overworld",
@@ -48,6 +49,7 @@ const overviewKeymap: Keymap = {
   "char:s": { kind: "shortcut", char: "s" },
   "char:t": { kind: "shortcut", char: "t" },
   "char:x": { kind: "shortcut", char: "x" },
+  "char:g": { kind: "shortcut", char: "g" },
   "char:o": { kind: "shortcut", char: "o" },
 };
 
@@ -621,6 +623,81 @@ export function reduceStashUi(
           state,
           effect: { type: "withdraw", instanceId: selected.item.instanceId },
         }
+      : { state };
+  }
+  return { state };
+}
+
+export type GuildRowKind = "accepted" | "available";
+
+export interface GuildRow {
+  kind: GuildRowKind;
+  id: string;
+
+  // Only meaningful for accepted rows; available rows are never turn-in ready.
+  complete: boolean;
+}
+
+export interface GuildUiState {
+  cursor: number;
+}
+
+export const INITIAL_GUILD_UI_STATE: GuildUiState = { cursor: 0 };
+
+export interface GuildUiContext {
+  rows: readonly GuildRow[];
+}
+
+export type GuildUiEffect =
+  | { type: "accept"; questId: string }
+  | { type: "turnIn"; questId: string }
+  | { type: "back" };
+
+export interface GuildUiResult {
+  state: GuildUiState;
+  effect?: GuildUiEffect;
+}
+
+const guildKeymap: Keymap = {
+  escape: { kind: "cancel" },
+  up: { kind: "menuUp" },
+  down: { kind: "menuDown" },
+  enter: { kind: "confirm" },
+};
+
+export function resolveGuildIntent(key: KeyName): Intent | undefined {
+  return guildKeymap[key];
+}
+
+/** Shared clamp so a stale cursor (e.g. after a quest is turned in and the
+ * combined row list shrinks) resolves to the same index in the reducer's
+ * confirm branch and in the view's render pass. */
+export function clampGuildCursor(cursor: number, rowCount: number): number {
+  return Math.min(cursor, Math.max(0, rowCount - 1));
+}
+
+export function reduceGuildUi(
+  state: GuildUiState,
+  intent: Intent,
+  ctx: GuildUiContext,
+): GuildUiResult {
+  if (intent.kind === "cancel") return { state, effect: { type: "back" } };
+  const length = ctx.rows.length;
+  if (length === 0) return { state };
+  if (intent.kind === "menuUp") {
+    return { state: { cursor: (state.cursor + length - 1) % length } };
+  }
+  if (intent.kind === "menuDown") {
+    return { state: { cursor: (state.cursor + 1) % length } };
+  }
+  if (intent.kind === "confirm") {
+    const row = ctx.rows[clampGuildCursor(state.cursor, length)];
+    if (!row) return { state };
+    if (row.kind === "available") {
+      return { state, effect: { type: "accept", questId: row.id } };
+    }
+    return row.complete
+      ? { state, effect: { type: "turnIn", questId: row.id } }
       : { state };
   }
   return { state };
