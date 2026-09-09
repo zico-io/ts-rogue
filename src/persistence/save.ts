@@ -4,7 +4,8 @@ import { clearSlot, readSlot, writeSlot } from "./sqliteStorage";
 
 export { deserialize, serialize };
 
-export const DEFAULT_SAVE_PATH = "./save.db";
+/** Overridable so one host can run several isolated sessions (the web PTY server). */
+export const DEFAULT_SAVE_PATH = process.env.TS_ROGUE_SAVE_PATH ?? "./save.db";
 
 export function saveGame(
   state: GameState,

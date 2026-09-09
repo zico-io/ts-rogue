@@ -40,25 +40,23 @@ last_updated: 2026-07-28
 ## Structure
 
 - The engine (`src/engine`) is pure and UI-independent. It may read `src/data`
-  but must never import `src/ui`, `ink`, or `pixi.js`.
+  but must never import `src/ui` or `ink`.
 - All state transitions go through [`reduce()`](mex://function:e96e0f8f03a354c7b531617f6be534a2)
   behind `GameStore.dispatch`. Renderers never mutate `GameState` or duplicate
   reducer logic - they dispatch a `GameEvent` and read `store.getState()`.
 - Input handling and menu/cursor state live in framework-free
-  `src/ui/screens/**/interaction.ts` reducers, shared by both renderers. Add
-  input logic there, not inside an Ink component or a Pixi view.
+  `src/ui/screens/**/interaction.ts` reducers. Add input logic there, not
+  inside an Ink component.
 - HUD chrome is built once, framework-free, by `buildChrome`
-  (`src/ui/scene/chrome.ts`); both `Screen.tsx` (Ink) and `sceneView.ts`
-  (Pixi) walk the same tree.
-- Renderer effects (damage numbers, particles, hit-flash) are derived from
-  state deltas observed across renders - never a new `GameEvent`; the engine
-  stays pure.
+  (`src/ui/scene/chrome.ts`); `Screen.tsx` walks that tree.
+- There is one renderer. The browser plays the same Ink app over a PTY
+  (`src/web`), so a UI change lands in both places at once.
 
 ## Patterns
 
-**New player action = engine first, then both renderers.** Add a `GameEvent`
-variant + a `reduce` case in the engine, then wire input in the shared
-`interaction.ts` and draw it in each renderer. Never special-case one renderer.
+**New player action = engine first.** Add a `GameEvent` variant + a `reduce`
+case in the engine, then wire input in the shared `interaction.ts` and draw it
+in the Ink screen.
 
 ```
 // Correct: closed event set, one reducer case
@@ -77,11 +75,8 @@ blocked/no-op actions are side-effect-free and consume no randomness. Never use
 
 Before presenting any code:
 - [ ] `pnpm check` passes (`typecheck` via `tsgo`, `test`, `lint` via biome).
-- [ ] Engine changes keep BOTH frontends working - run `pnpm game` (terminal)
-      and `pnpm web:dev` (browser); CI cannot see whether the change makes
-      sense in a Pixi container.
-- [ ] No cross-boundary import: no `pixi.js` in `src/app.tsx`/`src/ui`; no
-      `ink`/Node builtins/DOM globals in `src/web`.
+- [ ] UI changes were seen running - `pnpm game` (terminal) or `pnpm web:dev`
+      (browser); both show the same screens.
 - [ ] New player actions are a `GameEvent` + `reduce` case, not renderer-local
       state; `GameState` is never mutated in place.
 - [ ] No `Math.random` in engine or render variety - seeded RNG or coordinate

@@ -4,7 +4,11 @@ set -euo pipefail
 SESSION=rogue
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 KEYLOG="$ROOT/.play-keys.log"
-GAME_PANE="$SESSION:0.0"
+# Resolved at use time: tmux's base-index/pane-base-index are user config, so a
+# hardcoded "$SESSION:0.0" misses on any setup that starts numbering at 1.
+game_pane() {
+  tmux list-panes -t "$SESSION" -F '#{session_name}:#{window_index}.#{pane_index}' | head -n 1
+}
 
 require_tmux() {
   command -v tmux >/dev/null 2>&1 || {
@@ -56,10 +60,10 @@ tmux key names: Up Down Left Right Enter Escape Tab Space; single characters sen
   if [ -z "${AI_GATEWAY_API_KEY:-}" ] && ! grep -q vercel-ai-gateway ~/.pi/agent/auth.json 2>/dev/null; then
     echo "note: pi has no Vercel AI Gateway credential; run 'pi /login' (Vercel AI Gateway) or set AI_GATEWAY_API_KEY" >&2
   fi
-  tmux split-window -h -l 80 -t "$GAME_PANE" -c "$ROOT" \
+  tmux split-window -h -l 80 -t "$(game_pane)" -c "$ROOT" \
     "set -a; [ -f .env.local ] && . ./.env.local; set +a; \
      exec pi --provider vercel-ai-gateway --model '$pi_model' --append-system-prompt '$pi_prompt'"
-  tmux select-pane -t "$SESSION:0.1"
+  tmux select-pane -l
   echo "started dev layout on eve's provider ($pi_model, seed=$seed ${cols}x${rows}); attach: tmux attach -t $SESSION"
   ;;
 key)
@@ -69,16 +73,16 @@ key)
     echo "usage: scripts/play.sh key <tokens...>" >&2
     exit 1
   }
-  tmux send-keys -t "$GAME_PANE" "$@"
+  tmux send-keys -t "$(game_pane)" "$@"
   printf '%s\n' "$*" >>"$KEYLOG"
   ;;
 frame)
   require_tmux
   require_session
   if [ "${1:-}" = "--plain" ]; then
-    tmux capture-pane -t "$GAME_PANE" -p
+    tmux capture-pane -t "$(game_pane)" -p
   else
-    tmux capture-pane -t "$GAME_PANE" -p -e
+    tmux capture-pane -t "$(game_pane)" -p -e
   fi
   ;;
 stop)

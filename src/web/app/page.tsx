@@ -1,4 +1,4 @@
-import { GamePortal } from "./GamePortal";
+import { GameTerminal } from "./GameTerminal";
 
 const CONTROLS: ReadonlyArray<{ keys: string; label: string }> = [
   { keys: "↑ ↓ ← →", label: "move" },
@@ -21,7 +21,7 @@ export default function Page() {
           <span className="corner corner-tr" aria-hidden="true" />
           <span className="corner corner-bl" aria-hidden="true" />
           <span className="corner corner-br" aria-hidden="true" />
-          <GamePortal />
+          <GameTerminal />
         </div>
       </main>
 

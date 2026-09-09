@@ -17,7 +17,7 @@ edges:
   - target: context/engine.md
     condition: when the task touches game rules, state, combat, loot, skills, quests, or persistence
   - target: context/web-renderer.md
-    condition: when the task touches the PixiJS browser renderer
+    condition: when the task touches the web terminal
 last_updated: 2026-07-28
 ---
 
@@ -36,15 +36,13 @@ Then read this file fully before doing anything else in this session.
   rows/status/target-shapes, loot with affixes, Guild quests, fast travel.
 - Skill tree: data model, passive stat aggregation, battle skill menu, and the
   Skill Tree UI (view nodes/prerequisites, spend points) - ENG-33.
-- PixiJS browser renderer (`src/web`): all four playing scenes have real
-  content, atlas/art pipeline, IndexedDB save, dev console + crash overlay,
-  Next.js portal chrome, deployed alongside the eve agent.
+- Web terminal (`src/web`): the Ink game streamed over a WebSocket-attached
+  PTY to wterm in the browser, one isolated session per connection, Next.js
+  portal chrome, deployed alongside the eve agent.
 
 **Not yet built:**
-- Browser `SettingsScreen` (terminal has one; selecting Settings in the web
-  title is stashed/logged).
-- Animated Minifantasy spell-effect sprite sheets (particles stand in behind
-  the same factory seam).
+- A PTY host for deployed builds - the Vercel deployment serves the page but
+  has no terminal behind it until a Sandbox backend lands.
 - Harness data-access routes are behind a hard 401 until a real superadmin
   auth check lands (HAR-54).
 - Starter skill-tree node content (data model shipped; content in ENG-35).
@@ -61,7 +59,7 @@ Load the relevant file based on the current task. Always load `context/architect
 |-----------|------|
 | Understanding how the system works | `context/architecture.md` |
 | Game rules / state / combat / loot / skills / quests / persistence | `context/engine.md` |
-| PixiJS browser renderer / atlas / Next chrome | `context/web-renderer.md` |
+| Web terminal / wterm / PTY / Next chrome | `context/web-renderer.md` |
 | Working with a specific technology | `context/stack.md` |
 | Writing or reviewing code | `context/conventions.md` |
 | Making a design decision | `context/decisions.md` |

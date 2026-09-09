@@ -15,7 +15,7 @@ edges:
   - target: context/engine.md
     condition: when the work touches game state, combat, loot, skills, quests, world, or persistence
   - target: context/web-renderer.md
-    condition: when the work touches the PixiJS browser renderer or the Next.js chrome
+    condition: when the work touches the web terminal or the Next.js chrome
   - target: patterns/add-game-event.md
     condition: when adding a new player action or state transition
 grounds_to:
@@ -41,10 +41,10 @@ input (key)
   → renderer reads store.getState() and redraws
 ```
 
-Two renderers sit strictly downstream of `store.subscribe`: the Ink terminal UI
-(`src/app.tsx` + `src/ui`) and the PixiJS browser renderer (`src/web`). Neither
-mutates `GameState` or reimplements reducer logic; both only dispatch
-`GameEvent`s and read state. The engine ([`reduce()`](mex://function:e96e0f8f03a354c7b531617f6be534a2))
+One renderer sits strictly downstream of `store.subscribe`: the Ink terminal UI
+(`src/app.tsx` + `src/ui`). It never mutates `GameState` or reimplements reducer
+logic; it dispatches `GameEvent`s and reads state. The browser plays that same
+Ink app streamed over a PTY (`src/web`), so there is no second drawing layer. The engine ([`reduce()`](mex://function:e96e0f8f03a354c7b531617f6be534a2))
 is the single place an event becomes new state. Static content (classes,
 monsters, items, dungeons, quests) lives in `src/data`; the engine reads it but
 never imports UI.
@@ -60,19 +60,19 @@ never imports UI.
   Both frontends depend on it. See `context/decisions.md`.
 - **Ink terminal UI** (`src/app.tsx`, `src/ui`) - renders `GameState` to a
   terminal, owns terminal + Node I/O (SQLite save, Linear dev reports). Pure
-  render/interaction helpers under `src/ui/screens/**` are framework-free and
-  shared with the web renderer.
-- **PixiJS web renderer** (`src/web`) - a WebGL renderer + Next.js chrome that
-  boots the same engine in the browser. See `context/web-renderer.md`.
+  render/interaction helpers under `src/ui/screens/**` are framework-free.
+- **Web terminal** (`src/web`) - a Next.js custom server that runs this same Ink
+  app in a PTY and streams it to wterm in the browser. See
+  `context/web-renderer.md`.
 - **Eve agent** (`agent/`) - a durable backend AI agent deployed on the same
   Vercel project as the web game, mounted at `/eve/v1/*` (see `context/stack.md`).
 
 ## External Dependencies
 
-- **SQLite / IndexedDB (save slot)** - a single-slot whole-state-JSON save.
-  Terminal uses `node:sqlite` (`src/persistence/save.ts`, `save.db`); browser
-  uses IndexedDB (`src/persistence/browserSave.ts`). Both share
-  `serializer.ts`'s `serialize`/`deserialize` so the format stays portable.
+- **SQLite (save slot)** - a single-slot whole-state-JSON save via
+  `node:sqlite` (`src/persistence/save.ts`, `save.db`), serialized by
+  `serializer.ts`. `TS_ROGUE_SAVE_PATH` overrides the location so the web
+  server can give each session its own file.
 - **Vercel (deployment + Connect)** - the Next.js app hosts the game and the
   eve agent from one deployment. Vercel Connect supplies Linear credentials to
   the terminal dev console when `VERCEL_OIDC_TOKEN` is present.
@@ -82,13 +82,10 @@ never imports UI.
 
 ## What Does NOT Exist Here
 
-- No shared rendering layer between the two frontends - Ink and Pixi are
-  independent drawing layers glued to `GameStore`; the only shared code is the
-  framework-free `src/ui/screens/**/interaction.ts` reducers and
-  `src/ui/scene/chrome.ts`.
-- No floating combat text / animation concept in the engine - the engine is
-  pure; damage numbers and particles are derived by renderers from state deltas
-  across renders, never from a `GameEvent`.
+- No second renderer - the browser runs the Ink app itself, so there is no
+  parallel drawing layer that can drift from the terminal.
+- No animation concept in the engine - the engine is pure; anything time-based
+  is the renderer's own business, never a `GameEvent`.
 - No multi-slot saves, no networked/multiplayer state - one local save slot,
   single-player, fully reproducible from seed + RNG state.
 - No Linear/Node I/O in the browser bundle - dev-console issue filing is

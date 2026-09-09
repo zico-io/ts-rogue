@@ -123,19 +123,38 @@ body {
     0 0 60px -12px rgba(68, 79, 141, 0.55);
 }
 
-.portal {
+.portalFrame .terminal {
   position: absolute;
 
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
-  overflow: hidden;
-  background: #000;
+
+  /* The portal frame already supplies the border, glow, and ground, so the
+     terminal drops its own chrome and matches the game's own black. */
+  --term-bg: #000;
+  --term-fg: var(--parchment);
+  --term-cursor: var(--amber);
+  --term-font-family: var(--mono);
+
+  padding: 12px;
+  border-radius: 0;
+  box-shadow: none;
 }
 
-.portal canvas {
-  display: block;
+.offline {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  margin: 0;
+  color: var(--muted);
+  text-align: center;
+}
+
+.offline code {
+  color: var(--gold);
 }
 
 .corner {

@@ -8,6 +8,7 @@ catalog:
 
 allowBuilds:
   esbuild: true
+  node-pty: true
   sharp: false
 
 minimumReleaseAgeExclude:
