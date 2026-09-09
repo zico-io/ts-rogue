@@ -1,3 +1,5 @@
+import type { ChannelSource, RouteHandlerArgs } from "eve/channels";
+import type { GitHubChannelState } from "eve/channels/github";
 import { describe, expect, it, type Mock, vi } from "vitest";
 import { githubSession } from "../agent/channels/github";
 import { handlePullRequestReviewWebhook } from "../agent/lib/github/webhook";
@@ -216,11 +218,17 @@ describe("coarse pull_request_review webhook handler (HAR-49)", () => {
   // eve 0.52 replaced `args.send(msg, { continuationToken })` with
   // `args.from(address).send(msg, ...)`. The stub folds the bound address back
   // into the recorded options so a call still shows both in one place.
-  const fromStub = (sendFn: Mock<(...args: unknown[]) => unknown>) => ({
-    from: (address: string) => ({
-      send: (message: unknown, options: Record<string, unknown>) =>
-        sendFn(message, { ...options, address }),
-    }),
+  // Typed against the real parameter, so a drift in `from`'s own signature
+  // fails here. Only the bound handle is cast: these tests exercise `send`,
+  // and the rest of `ChannelSource` would be dead stubs.
+  const fromStub = (
+    sendFn: Mock<(...args: unknown[]) => unknown>,
+  ): Pick<RouteHandlerArgs<GitHubChannelState>, "from"> => ({
+    from: (address: string) =>
+      ({
+        send: (message: unknown, options: Record<string, unknown>) =>
+          sendFn(message, { ...options, address }),
+      }) as unknown as ChannelSource<GitHubChannelState>,
   });
 
   it("wakes a turn for an approval verdict with correct continuation token and state", async () => {
@@ -264,7 +272,7 @@ describe("coarse pull_request_review webhook handler (HAR-49)", () => {
 
     const response = await handlePullRequestReviewWebhook(
       request,
-      fromStub(sendFn) as never,
+      fromStub(sendFn),
       credentials,
     );
 
@@ -318,7 +326,7 @@ describe("coarse pull_request_review webhook handler (HAR-49)", () => {
 
     const response = await handlePullRequestReviewWebhook(
       request,
-      fromStub(sendFn) as never,
+      fromStub(sendFn),
       credentials,
     );
 
@@ -364,7 +372,7 @@ describe("coarse pull_request_review webhook handler (HAR-49)", () => {
 
     const response = await handlePullRequestReviewWebhook(
       request,
-      fromStub(sendFn) as never,
+      fromStub(sendFn),
       credentials,
     );
 
@@ -407,7 +415,7 @@ describe("coarse pull_request_review webhook handler (HAR-49)", () => {
 
     const response = await handlePullRequestReviewWebhook(
       request,
-      fromStub(sendFn) as never,
+      fromStub(sendFn),
       credentials,
     );
 
@@ -431,7 +439,7 @@ describe("coarse pull_request_review webhook handler (HAR-49)", () => {
 
     const response = await handlePullRequestReviewWebhook(
       request,
-      fromStub(sendFn) as never,
+      fromStub(sendFn),
       credentials,
     );
 
@@ -460,7 +468,7 @@ describe("coarse pull_request_review webhook handler (HAR-49)", () => {
 
     const response = await handlePullRequestReviewWebhook(
       request,
-      fromStub(sendFn) as never,
+      fromStub(sendFn),
       credentials,
     );
 
@@ -489,7 +497,7 @@ describe("coarse pull_request_review webhook handler (HAR-49)", () => {
 
     const response = await handlePullRequestReviewWebhook(
       request,
-      fromStub(sendFn) as never,
+      fromStub(sendFn),
       credentials,
     );
 

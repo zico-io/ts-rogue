@@ -121,21 +121,16 @@ const routeArgs = (
     // eve 0.52 binds the address once via `from(address)` instead of passing a
     // `continuationToken` per call; the stubs fold it back into each call so
     // the assertions still read one object per operation.
-    attachSession: vi.fn(),
     from: (address: string) => ({
       cancel: () => cancelMock({ continuationToken: address }),
-      clear: vi.fn(),
-      compact: vi.fn(),
       reset: (options?: { reason?: string }) =>
         resetMock({ ...options, continuationToken: address }),
-      respond: vi.fn(),
       send: (...args: unknown[]) => sendMock(...args),
     }),
     params: {},
     requestIp: null,
     resolveSession: (address: string) =>
       resolveActiveSessionMock({ continuationToken: address }),
-    to: vi.fn(),
     waitUntil,
   }) as unknown as RouteHandlerArgs<LinearChannelState>;
 
