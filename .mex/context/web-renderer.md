@@ -100,10 +100,10 @@ particles and stops new ones while legibility features keep rendering).
 ## Persistence + deployment
 
 Browser save is a single IndexedDB slot (`persistence/browserSave.ts`) sharing
-`serializer.ts` with the terminal's `node:sqlite` slot. The app ships as one
-Vercel deployment hosting both the game and the eve agent (`next.config.mjs`
-wraps config with `withEve`, mounting the agent at `/eve/v1/*`); set the Vercel
-project **Root Directory to `src/web`**.
+`serializer.ts` with the terminal's `node:sqlite` slot. The app ships as its own
+Vercel deployment carrying only the game; set the Vercel project **Root
+Directory to `src/web`**. The eve agent deploys separately (see
+`src/web/README.md#deployment`).
 
 ## Verify
 

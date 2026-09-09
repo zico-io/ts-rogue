@@ -627,24 +627,23 @@ reads as the same artifact as the game.
 
 ## Deployment
 
-The game ships as part of one Vercel deployment shared with the `eve` agent, and
-**this Next.js app is the host**. `next.config.mjs` wraps the config with
-`withEve` from `eve/next`, pointing `eveRoot` at the repo-root `agent/`. That
-mounts the agent at `/eve/v1/*`:
+This Next.js app deploys on its own and carries only the game. `src/web` is a
+pnpm workspace package (`@ts-rogue/web`) so Vercel detects it as a Next.js
+project: set the Vercel project **Root Directory to `src/web`**. There is no
+static export and no merge script - Next owns runtime routing.
 
-- **On Vercel**, `withEve` writes a Build Output `eve` *service* (which runs
-  `eve build` for the agent) plus a route sending `/eve/v1/**` to it ahead of
-  filesystem routing. Next stays the default app, so `/` serves the game (and
-  `/_next/*` and `/atlas/*` its assets), while `/eve/v1/*` and
-  `/.well-known/workflow/*` reach eve. One project, same origin, no CORS.
-- **Locally**, `withEve` boots an `eve dev` server beside `next dev` (and
-  `next build`/`next start`) and rewrites `/eve/**` to it.
-
-`src/web` is a pnpm workspace package (`@ts-rogue/web`) so Vercel detects it as a
-Next.js project: set the Vercel project **Root Directory to `src/web`**. Vercel's
-"Include files outside the root directory" (default on) makes the repo-root
-`agent/` available to the generated eve service build. There is no static export
-and no merge script - Next owns runtime routing.
+The `eve` agent under the repo-root `agent/` is **not** part of this build and
+gets its own Vercel project (`pnpm eve:dev` locally, `eve build`/`eve deploy`
+for the hosted one). It previously rode along here via `withEve` from
+`eve/next`, which mounted it at `/eve/v1/*` in this same deployment. That
+coupled the game's deploy to the agent's platform prerequisites: `eve build`
+prewarms the agent's sandbox templates, and their bootstrap clones a private
+repo, so a missing or unhealthy `github/ts-rogue-eve-github` Connect connector
+failed the *game's* deploy with `Connector not found` (see
+`agent/lib/sandbox/github-token.ts`). Deploying the two separately keeps a game
+deploy green regardless of agent credential state. Deploying them together
+again means recreating every `ts-rogue-eve-*` connector in whichever team hosts
+the project.
 
 ### The TypeScript toolchain the Next build needs
 

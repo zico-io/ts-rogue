@@ -84,9 +84,6 @@ importers:
 
   src/web:
     dependencies:
-      eve:
-        specifier: 'catalog:'
-        version: 0.52.4(ai@7.0.97(zod@4.4.3))
       next:
         specifier: ^15.5.21
         version: 15.5.21(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
