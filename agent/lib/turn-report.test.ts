@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { ActionRequest, ActionResult } from "./session-event";
+import { subagentResult } from "./subagent-result.testkit";
 import {
   actionLabel,
   actionParameter,
@@ -96,12 +97,11 @@ describe("actionResultText", () => {
   it("serializes a subagent result's output", () => {
     expect(
       actionResultText({
-        result: {
+        result: subagentResult({
           callId: "c1",
-          kind: "subagent-result",
           output: { summary: "Implemented all changes" },
           subagentName: "agent",
-        },
+        }),
       }),
     ).toBe(JSON.stringify({ summary: "Implemented all changes" }));
   });

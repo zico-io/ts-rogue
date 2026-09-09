@@ -284,7 +284,12 @@ describe("input.requested", () => {
   it("passes the requests through untouched for the channel to render natively", async () => {
     const { channel, session, updates } = setup();
     const requests: readonly InputRequest[] = [
-      { action: bashAction, prompt: "Approve?", requestId: "req-1" },
+      {
+        action: bashAction,
+        kind: "tool-approval",
+        prompt: "Approve?",
+        requestId: "req-1",
+      },
     ];
 
     await session.inputRequested({ requests }, channel);

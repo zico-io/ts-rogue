@@ -1,5 +1,5 @@
 import { defineOpenAPIConnection } from "eve/connections";
-import type { Approval } from "eve/tools/approval";
+import type { ApprovalPolicy } from "eve/tools/approval";
 
 export const decodeOidcIds = (
   token: string | undefined,
@@ -22,7 +22,7 @@ const teamId = process.env.VERCEL_TEAM_ID ?? oidcIds.teamId ?? "<unset>";
 const projectId =
   process.env.VERCEL_PROJECT_ID ?? oidcIds.projectId ?? "<unset>";
 
-export const vercelApiApproval: Approval = ({ toolName, toolInput }) => {
+export const vercelApiApproval: ApprovalPolicy = ({ toolName, toolInput }) => {
   if (toolName.endsWith("getNamedSandbox")) {
     const resume = toolInput?.resume;
     if (resume === true || resume === "true") return "denied";

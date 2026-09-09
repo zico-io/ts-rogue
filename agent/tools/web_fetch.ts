@@ -1,5 +1,5 @@
 import { defineTool } from "eve/tools";
-import { webFetch } from "eve/tools/defaults";
+import { webFetch } from "eve/tools/web_fetch";
 
 import { flagField, scalarField, textField } from "../lib/tool-output";
 import { truncateForContext } from "../lib/truncate-for-context";

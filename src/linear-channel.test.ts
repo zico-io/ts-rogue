@@ -19,18 +19,18 @@ const {
   webhookVerifier,
 } = vi.hoisted(() => ({
   order: [] as string[],
-  cancelMock: vi.fn(async () => {
+  cancelMock: vi.fn(async (_options?: unknown) => {
     order.push("cancel");
     return { status: "accepted" as const };
   }),
-  resetMock: vi.fn(async () => {
+  resetMock: vi.fn(async (_options?: unknown) => {
     order.push("reset");
     return { status: "reset" as const, previousSessionId: "eve-1" };
   }),
   resolveActiveSessionMock: vi.fn(
-    async () => undefined as { sessionId: string } | undefined,
+    async (_options?: unknown) => undefined as { id: string } | undefined,
   ),
-  sendMock: vi.fn(async () => {
+  sendMock: vi.fn(async (..._args: unknown[]) => {
     order.push("send");
     return {};
   }),
@@ -118,14 +118,24 @@ const routeArgs = (
   waitUntil: (task: Promise<unknown>) => void,
 ): RouteHandlerArgs<LinearChannelState> =>
   ({
-    cancel: cancelMock,
-    getSession: vi.fn(),
+    // eve 0.52 binds the address once via `from(address)` instead of passing a
+    // `continuationToken` per call; the stubs fold it back into each call so
+    // the assertions still read one object per operation.
+    attachSession: vi.fn(),
+    from: (address: string) => ({
+      cancel: () => cancelMock({ continuationToken: address }),
+      clear: vi.fn(),
+      compact: vi.fn(),
+      reset: (options?: { reason?: string }) =>
+        resetMock({ ...options, continuationToken: address }),
+      respond: vi.fn(),
+      send: (...args: unknown[]) => sendMock(...args),
+    }),
     params: {},
-    receive: vi.fn(),
     requestIp: null,
-    reset: resetMock,
-    resolveActiveSession: resolveActiveSessionMock,
-    send: sendMock,
+    resolveSession: (address: string) =>
+      resolveActiveSessionMock({ continuationToken: address }),
+    to: vi.fn(),
     waitUntil,
   }) as unknown as RouteHandlerArgs<LinearChannelState>;
 
@@ -428,10 +438,9 @@ describe("inbound image dispatch", () => {
     );
 
     expect(order).toEqual(["cancel", "send"]);
-    const payload = (sendMock.mock.calls[0] as unknown[])?.[0] as {
-      message: unknown;
-    };
-    expect(payload.message).toEqual([
+    // eve 0.52 passes the message as `send`'s first positional argument.
+    const message = (sendMock.mock.calls[0] as unknown[])?.[0];
+    expect(message).toEqual([
       { text: "see ", type: "text" },
       { data: Buffer.from([1, 2, 3]), mediaType: "image/png", type: "file" },
     ]);
@@ -457,7 +466,7 @@ describe("agent/channels/linear (context-checkpoint rotation)", () => {
 
   it("retires the checkpointed session before eve dispatches, so the send starts fresh", async () => {
     reset();
-    resolveActiveSessionMock.mockResolvedValue({ sessionId: "eve-1" });
+    resolveActiveSessionMock.mockResolvedValue({ id: "eve-1" });
 
     await invoke(promptedWith(["earlier chatter", checkpoint("eve-1")]));
 
@@ -485,7 +494,7 @@ describe("agent/channels/linear (context-checkpoint rotation)", () => {
     reset();
     // The token now belongs to the post-rotation session, not the one the
     // checkpoint named.
-    resolveActiveSessionMock.mockResolvedValue({ sessionId: "eve-2" });
+    resolveActiveSessionMock.mockResolvedValue({ id: "eve-2" });
 
     await invoke(promptedWith([checkpoint("eve-1")]));
 
@@ -504,7 +513,7 @@ describe("agent/channels/linear (context-checkpoint rotation)", () => {
 
   it("dispatches anyway when the reset fails, leaving the old context in place", async () => {
     reset();
-    resolveActiveSessionMock.mockResolvedValue({ sessionId: "eve-1" });
+    resolveActiveSessionMock.mockResolvedValue({ id: "eve-1" });
     resetMock.mockRejectedValueOnce(new Error("runtime unavailable"));
 
     const response = await invoke(promptedWith([checkpoint("eve-1")]));
@@ -515,7 +524,7 @@ describe("agent/channels/linear (context-checkpoint rotation)", () => {
 
   it("does not rotate on a stop signal, which dispatches nothing to rotate into", async () => {
     reset();
-    resolveActiveSessionMock.mockResolvedValue({ sessionId: "eve-1" });
+    resolveActiveSessionMock.mockResolvedValue({ id: "eve-1" });
 
     await invoke(
       webhook({

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, type Mock, vi } from "vitest";
 import { githubSession } from "../agent/channels/github";
 import { handlePullRequestReviewWebhook } from "../agent/lib/github/webhook";
 
@@ -213,6 +213,16 @@ describe("authorization events surface the OAuth challenge (HAR-33)", () => {
 });
 
 describe("coarse pull_request_review webhook handler (HAR-49)", () => {
+  // eve 0.52 replaced `args.send(msg, { continuationToken })` with
+  // `args.from(address).send(msg, ...)`. The stub folds the bound address back
+  // into the recorded options so a call still shows both in one place.
+  const fromStub = (sendFn: Mock<(...args: unknown[]) => unknown>) => ({
+    from: (address: string) => ({
+      send: (message: unknown, options: Record<string, unknown>) =>
+        sendFn(message, { ...options, address }),
+    }),
+  });
+
   it("wakes a turn for an approval verdict with correct continuation token and state", async () => {
     const sendFn = vi.fn().mockResolvedValue(undefined);
     const credentials = {
@@ -254,7 +264,7 @@ describe("coarse pull_request_review webhook handler (HAR-49)", () => {
 
     const response = await handlePullRequestReviewWebhook(
       request,
-      { send: sendFn },
+      fromStub(sendFn) as never,
       credentials,
     );
 
@@ -262,7 +272,7 @@ describe("coarse pull_request_review webhook handler (HAR-49)", () => {
     expect(sendFn).toHaveBeenCalledOnce();
     const call = sendFn.mock.calls[0];
     expect(call[0]).toContain("**Approved**");
-    expect(call[1].continuationToken).toBe("repo:7:pull:42");
+    expect(call[1].address).toBe("repo:7:pull:42");
     expect(call[1].state.pullRequestNumber).toBe(42);
     expect(call[1].state.baseSha).toBe("baseSha123");
     expect(call[1].state.headSha).toBe("headSha456");
@@ -308,7 +318,7 @@ describe("coarse pull_request_review webhook handler (HAR-49)", () => {
 
     const response = await handlePullRequestReviewWebhook(
       request,
-      { send: sendFn },
+      fromStub(sendFn) as never,
       credentials,
     );
 
@@ -316,7 +326,7 @@ describe("coarse pull_request_review webhook handler (HAR-49)", () => {
     expect(sendFn).toHaveBeenCalledOnce();
     const call = sendFn.mock.calls[0];
     expect(call[0]).toContain("**Changes requested**");
-    expect(call[1].continuationToken).toBe("repo:7:pull:99");
+    expect(call[1].address).toBe("repo:7:pull:99");
   });
 
   it("does not call send for a commented review", async () => {
@@ -354,7 +364,7 @@ describe("coarse pull_request_review webhook handler (HAR-49)", () => {
 
     const response = await handlePullRequestReviewWebhook(
       request,
-      { send: sendFn },
+      fromStub(sendFn) as never,
       credentials,
     );
 
@@ -397,7 +407,7 @@ describe("coarse pull_request_review webhook handler (HAR-49)", () => {
 
     const response = await handlePullRequestReviewWebhook(
       request,
-      { send: sendFn },
+      fromStub(sendFn) as never,
       credentials,
     );
 
@@ -421,7 +431,7 @@ describe("coarse pull_request_review webhook handler (HAR-49)", () => {
 
     const response = await handlePullRequestReviewWebhook(
       request,
-      { send: sendFn },
+      fromStub(sendFn) as never,
       credentials,
     );
 
@@ -450,7 +460,7 @@ describe("coarse pull_request_review webhook handler (HAR-49)", () => {
 
     const response = await handlePullRequestReviewWebhook(
       request,
-      { send: sendFn },
+      fromStub(sendFn) as never,
       credentials,
     );
 
@@ -479,7 +489,7 @@ describe("coarse pull_request_review webhook handler (HAR-49)", () => {
 
     const response = await handlePullRequestReviewWebhook(
       request,
-      { send: sendFn },
+      fromStub(sendFn) as never,
       credentials,
     );
 
