@@ -1,5 +1,5 @@
 import { defineTool } from "eve/tools";
-import { bash } from "eve/tools/defaults";
+import { bash } from "eve/tools/bash";
 
 import { flagField, scalarField, textField } from "../lib/tool-output";
 import { truncateForContext } from "../lib/truncate-for-context";

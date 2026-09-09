@@ -32,8 +32,8 @@ last_updated: 2026-07-28
   (`src/app.tsx`).
 - **wterm (`@wterm/react`, `@wterm/dom`)** - Zig/WASM terminal emulator rendering
   DOM rows in the browser; `node-pty` + `ws` stream the real game to it (`src/web`).
-- **Next.js** - app shell hosting the terminal and the eve
-  agent (`src/web/app`, workspace package `@ts-rogue/web`).
+- **Next.js** - app shell hosting the terminal (`src/web/app`, workspace
+  package `@ts-rogue/web`); the eve agent deploys separately.
 - **rot-js** - roguelike toolkit utilities (map/FOV primitives).
 
 ## Key Libraries

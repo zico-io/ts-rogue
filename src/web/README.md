@@ -51,8 +51,7 @@ passed on.
 ## Files
 
 - `server.ts` - Next.js custom server: `next()` + `createServer` + a
-  `WebSocketServer` on `/api/terminal`. Every existing Next route, including
-  the eve agent at `/eve/v1/*` (`next.config.mjs`, `withEve`), still goes
+  `WebSocketServer` on `/api/terminal`. Every existing Next route still goes
   through `app.getRequestHandler()`.
 - `pty.ts` - one game process per socket. Each gets a private `save.db` in a
   scratch dir via `TS_ROGUE_SAVE_PATH` (`src/persistence/save.ts`), so

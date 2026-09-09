@@ -38,7 +38,7 @@ Then read this file fully before doing anything else in this session.
   Skill Tree UI (view nodes/prerequisites, spend points) - ENG-33.
 - Web terminal (`src/web`): the Ink game streamed over a WebSocket-attached
   PTY to wterm in the browser, one isolated session per connection, Next.js
-  portal chrome, deployed alongside the eve agent.
+  portal chrome.
 
 **Not yet built:**
 - A PTY host for deployed builds - the Vercel deployment serves the page but

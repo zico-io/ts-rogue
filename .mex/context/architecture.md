@@ -64,8 +64,8 @@ never imports UI.
 - **Web terminal** (`src/web`) - a Next.js custom server that runs this same Ink
   app in a PTY and streams it to wterm in the browser. See
   `context/web-renderer.md`.
-- **Eve agent** (`agent/`) - a durable backend AI agent deployed on the same
-  Vercel project as the web game, mounted at `/eve/v1/*` (see `context/stack.md`).
+- **Eve agent** (`agent/`) - a durable backend AI agent, deployed separately
+  from the web game since #218 (see `context/stack.md`).
 
 ## External Dependencies
 
@@ -73,8 +73,8 @@ never imports UI.
   `node:sqlite` (`src/persistence/save.ts`, `save.db`), serialized by
   `serializer.ts`. `TS_ROGUE_SAVE_PATH` overrides the location so the web
   server can give each session its own file.
-- **Vercel (deployment + Connect)** - the Next.js app hosts the game and the
-  eve agent from one deployment. Vercel Connect supplies Linear credentials to
+- **Vercel (deployment + Connect)** - the Next.js app deploys the game; the
+  eve agent deploys separately. Vercel Connect supplies Linear credentials to
   the terminal dev console when `VERCEL_OIDC_TOKEN` is present.
 - **Linear** - the terminal `pnpm game:dev` dev console files issues to the
   `ROG` team (overridable via `LINEAR_TEAM_KEY`). Not contacted in production

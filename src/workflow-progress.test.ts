@@ -79,6 +79,9 @@ const resultOf = (call: number): string | undefined => {
   return content.type === "action" ? content.result : undefined;
 };
 
+// eve 0.52 requires a stamped `meta` envelope on every stream event.
+const EVENT_META = { at: "1970-01-01T00:00:00.000Z", id: "evt-1" } as const;
+
 const called = (input: {
   callId: string;
   sequence: number;
@@ -87,6 +90,7 @@ const called = (input: {
   data: {
     callId: input.callId,
     childSessionId: `child-${input.callId}`,
+    childStreamPath: `sessions/child-${input.callId}/stream`,
     name: input.name ?? "agent",
     sequence: input.sequence,
     sessionId: "root",
@@ -94,6 +98,7 @@ const called = (input: {
     turnId: "turn-1",
     workflowId: "wf-1",
   },
+  meta: EVENT_META,
   type: "subagent.called",
 });
 
@@ -107,6 +112,7 @@ const completed = (input: {
     output: input.output,
     subagentName: input.subagentName ?? "agent",
   },
+  meta: EVENT_META,
   type: "subagent.completed",
 });
 

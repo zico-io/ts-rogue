@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { planFromActionResult } from "./agent-plan";
 import type { ActionResult, ActionResultData } from "./session-event";
+import { subagentResult } from "./subagent-result.testkit";
 
 describe("planFromActionResult", () => {
   const todoResult = (
@@ -127,12 +128,11 @@ describe("planFromActionResult", () => {
     expect(
       planFromActionResult({
         status: "completed",
-        result: {
+        result: subagentResult({
           callId: "c1",
-          kind: "subagent-result",
           output: { todos: [] },
           subagentName: "agent",
-        },
+        }),
       }),
     ).toBeNull();
   });

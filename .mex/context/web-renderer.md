@@ -46,8 +46,8 @@ no `PtyBackend` interface - the protocol is the abstraction.
 ## Files
 
 - `server.ts` - Next custom server: `next()` + `createServer` + a
-  `WebSocketServer` on `/api/terminal`. Every Next route, including the eve
-  agent at `/eve/v1/*` (`withEve`), still runs via `getRequestHandler()`.
+  `WebSocketServer` on `/api/terminal`. Every Next route still runs via
+  `getRequestHandler()`. The eve agent is deployed separately (#218).
 - `pty.ts` - one game process per socket, each with a private `save.db` in a
   scratch dir (`TS_ROGUE_SAVE_PATH`), torn down with the socket. `gameArgs`
   validates query params **at the boundary** because they become process
