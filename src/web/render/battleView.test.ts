@@ -132,8 +132,8 @@ function makeEnemy(overrides: Partial<BattleEnemy> = {}): BattleEnemy {
   };
 }
 
-function stateInBattle(enemies: BattleEnemy[]): GameState {
-  const base = newGame(1);
+function stateInBattle(enemies: BattleEnemy[], classId?: string): GameState {
+  const base = newGame(1, classId ? { classId } : undefined);
   const actor = base.party[0];
   const battle: BattleState = {
     enemies,
@@ -263,6 +263,109 @@ describe("BattleSceneView", () => {
     const highlight = factory.rects.at(-1);
     const highlightPos = highlight?.setPosition.mock.calls.at(-1);
     expect(highlightPos?.[1]).toBeLessThan(-1000);
+  });
+
+  it("highlights every enemy in the target row for a row-shaped skill (TER-3)", () => {
+    const factory = fakeFactory(["slime", "goblin"]);
+    const view = new BattleSceneView(factory);
+    const state = stateInBattle(
+      [
+        makeEnemy({ id: "front-1", sprite: "slime", row: "front" }),
+        makeEnemy({ id: "front-2", sprite: "goblin", row: "front" }),
+        makeEnemy({ id: "back-1", sprite: "slime", row: "back" }),
+      ],
+      "wizard",
+    );
+
+    view.render(state, SIZE, {
+      ...INITIAL_BATTLE_UI_STATE,
+      mode: "target",
+      targetCursor: 0,
+      pendingSkill: "hailstorm",
+    });
+
+    const litRects = factory.rects.filter((rect) => {
+      const pos = rect.setPosition.mock.calls.at(-1);
+      return pos !== undefined && (pos[1] as number) > -1000;
+    });
+    expect(litRects).toHaveLength(2);
+  });
+
+  it("shows a hits-everyone indicator and highlights the whole field while browsing a blast skill (TER-3)", () => {
+    const factory = fakeFactory(["slime", "goblin"]);
+    const view = new BattleSceneView(factory);
+    const state = stateInBattle(
+      [
+        makeEnemy({ id: "front-1", sprite: "slime", row: "front" }),
+        makeEnemy({ id: "back-1", sprite: "goblin", row: "back" }),
+      ],
+      "wizard",
+    );
+
+    // wizard's skill list is flame/heal/frost/hailstorm/meteor - meteor is
+    // last and allEnemies-shaped.
+    view.render(state, SIZE, {
+      ...INITIAL_BATTLE_UI_STATE,
+      mode: "skill",
+      skillCursor: 4,
+    });
+
+    const indicatorText = factory.texts.find((text) =>
+      text.setText.mock.calls.some((call) => call[0] === "Hits everyone"),
+    );
+    expect(indicatorText).toBeDefined();
+
+    const litRects = factory.rects.filter((rect) => {
+      const pos = rect.setPosition.mock.calls.at(-1);
+      return pos !== undefined && (pos[1] as number) > -1000;
+    });
+    expect(litRects).toHaveLength(2);
+  });
+
+  it("draws a back-row label once a back-row enemy exists, parked otherwise", () => {
+    const factory = fakeFactory(["slime", "goblin"]);
+    const view = new BattleSceneView(factory);
+    const withBackRow = stateInBattle([
+      makeEnemy({ id: "front-1", sprite: "slime", row: "front" }),
+      makeEnemy({ id: "back-1", sprite: "goblin", row: "back" }),
+    ]);
+    view.render(withBackRow, SIZE, INITIAL_BATTLE_UI_STATE);
+    const label = factory.texts.find((text) =>
+      text.setText.mock.calls.some((call) => call[0] === "-- back row --"),
+    );
+    expect(label).toBeDefined();
+    const labelPos = label?.setPosition.mock.calls.at(-1);
+    expect(labelPos?.[1]).toBeGreaterThan(-1000);
+
+    const frontOnly = stateInBattle([
+      makeEnemy({ id: "front-1", sprite: "slime", row: "front" }),
+    ]);
+    view.render(frontOnly, SIZE, INITIAL_BATTLE_UI_STATE);
+    const labelPosAfter = label?.setPosition.mock.calls.at(-1);
+    expect(labelPosAfter?.[1]).toBeLessThan(-1000);
+  });
+
+  it("marks a living back-row enemy unreachable while the front row lives", () => {
+    const factory = fakeFactory(["slime", "goblin"]);
+    const view = new BattleSceneView(factory);
+    const state = stateInBattle([
+      makeEnemy({ id: "front-1", sprite: "slime", row: "front" }),
+      makeEnemy({
+        id: "back-1",
+        name: "Goblin",
+        sprite: "goblin",
+        row: "back",
+      }),
+    ]);
+
+    view.render(state, SIZE, INITIAL_BATTLE_UI_STATE);
+
+    const backName = factory.texts.find((text) =>
+      text.setText.mock.calls.some((call) =>
+        (call[0] as string).includes("(unreachable)"),
+      ),
+    );
+    expect(backName).toBeDefined();
   });
 
   it("draws one menu row per action in action mode", () => {
