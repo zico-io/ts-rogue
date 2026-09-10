@@ -136,7 +136,7 @@ body {
   --term-bg: #000;
   --term-fg: var(--parchment);
   --term-cursor: var(--amber);
-  --term-font-family: var(--mono);
+  --term-font-family: var(--font-terminal), var(--mono);
 
   padding: 12px;
   border-radius: 0;
