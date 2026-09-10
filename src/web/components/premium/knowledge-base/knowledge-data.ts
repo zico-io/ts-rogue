@@ -3,11 +3,23 @@ export type KnowledgeSection = {
   body: string;
   steps?: string[];
 };
+/**
+ * The wiki's topic set. Closed on purpose: `TOPIC_DETAILS` in
+ * `knowledge-help-center.tsx` gives every category its icon and blurb, so a new
+ * topic has to be added in both places and a typo cannot fall through to a
+ * generic card.
+ */
+export type KnowledgeCategory =
+  | "Getting started"
+  | "Combat"
+  | "Exploration"
+  | "Progression";
+
 export type KnowledgeArticle = {
   id: string;
   title: string;
   description: string;
-  category: string;
+  category: KnowledgeCategory;
   readingMinutes: number;
   sections: KnowledgeSection[];
 };

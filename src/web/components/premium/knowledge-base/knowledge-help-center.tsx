@@ -25,10 +25,14 @@ import { KnowledgeArticleContent } from "./knowledge-article";
 import {
   KNOWLEDGE_ARTICLES,
   type KnowledgeArticle,
+  type KnowledgeCategory,
   searchKnowledge,
 } from "./knowledge-data";
 
-const TOPIC_DETAILS = {
+const TOPIC_DETAILS: Record<
+  KnowledgeCategory,
+  { icon: typeof BookOpen; description: string }
+> = {
   "Getting started": {
     icon: Rocket,
     description: "Learn the run loop, pick a class, and read the controls.",
@@ -103,8 +107,8 @@ export function KnowledgeHelpCenter({
         </header>
         <div className="mb-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {categories.map((topic) => {
-            const details = TOPIC_DETAILS[topic as keyof typeof TOPIC_DETAILS];
-            const Icon = details?.icon ?? BookOpen;
+            const details = TOPIC_DETAILS[topic];
+            const Icon = details.icon;
             const count = articles.filter(
               (article) => article.category === topic,
             ).length;
@@ -123,8 +127,7 @@ export function KnowledgeHelpCenter({
                 </div>
                 <h3 className="text-xl font-medium">{topic}</h3>
                 <p className="mt-2 flex-1 text-sm leading-relaxed text-muted-foreground">
-                  {details?.description ??
-                    `Browse guides and answers about ${topic.toLowerCase()}.`}
+                  {details.description}
                 </p>
                 <div className="mt-4 flex items-center justify-between border-t border-border pt-3">
                   <span className="text-xs text-muted-foreground">

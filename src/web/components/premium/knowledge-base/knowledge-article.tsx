@@ -88,7 +88,7 @@ export function KnowledgeArticleContent({
           {answered ? (
             <>
               <Check size={14} />
-              Thanks — your feedback is noted for this preview.
+              Thanks. Your feedback is noted for this preview.
             </>
           ) : (
             "Was this article helpful?"
