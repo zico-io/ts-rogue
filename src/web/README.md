@@ -53,13 +53,17 @@ passed on.
 - `server.ts` - Next.js custom server: `next()` + `createServer` + a
   `WebSocketServer` on `/api/terminal`. Every existing Next route still goes
   through `app.getRequestHandler()`.
-- `pty.ts` - one game process per socket. Each gets a private `save.db` in a
-  scratch dir via `TS_ROGUE_SAVE_PATH` (`src/persistence/save.ts`), so
-  concurrent players cannot collide, and both the process and the dir are torn
-  down when either side disconnects. Unit- and integration-tested in
-  `pty.test.ts`, which boots a real server and asserts the game's title screen
-  arrives through the PTY.
-- `app/GameTerminal.tsx` - the client. Connects in `onReady`, never earlier:
+- `session.ts` - `GameSession`: one long-lived game process that browser
+  sockets attach to and detach from. Closing the tab leaves the game running
+  for 10 minutes so a reload lands back in the same run; after that it is sent
+  SIGTERM and autosaves. Integration-tested in `session.test.ts`.
+- `pty-server.ts` - the host that runs inside a player's Vercel Sandbox: one
+  `GameSession`, a health GET, a `?token=` check. `scripts/bundle.ts` bundles
+  it with the game; `scripts/snapshot.ts` turns that into the sandbox image.
+- `lib/sandbox.ts`, `app/api/session/` - find or create the player's sandbox
+  from the cookie token and hand the browser its WebSocket URL.
+- `app/GameTerminal.tsx` - the client. Draws the game's logo as a splash, then
+  connects in `onReady`, never earlier:
   writes before wterm's WASM grid exists are dropped, and by then `autoResize`
   has settled, so the game boots straight into the real size instead of
   starting at 80x24 and redrawing.
@@ -69,11 +73,12 @@ passed on.
 
 ## Deployment
 
-`next build` succeeds and Vercel serves the page, but `node-pty` is a native
-addon that needs a persistent Node process, so **a deployed build has no PTY
-host and no playable game**. `GameTerminal` detects that and says to run
-locally rather than retrying forever. Point it at a real host by setting
-`NEXT_PUBLIC_TERMINAL_WS_URL`.
+The page is a normal Next.js deploy. The game is not: each player gets a
+persistent Vercel Sandbox running `pty-server`, found by the `tsr_token`
+cookie, resumed from its snapshot when they come back and stopped ten minutes
+after they leave. Ship a new game image with `pnpm bundle && pnpm snapshot`
+and set the printed `GAME_SNAPSHOT_ID` on the Vercel project. Design and the
+Kubernetes fallback: `.mex/context/web-play-scaling.md`.
 
 ## Terminal fidelity
 

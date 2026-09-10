@@ -6,6 +6,7 @@
       "agent/**",
       "scripts/**",
       "!src/web/.next/**",
+      "!src/web/dist/**",
       "!src/web/next-env.d.ts",
       "!src/web/tsconfig.json"
     ]

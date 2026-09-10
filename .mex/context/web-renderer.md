@@ -45,22 +45,37 @@ no `PtyBackend` interface - the protocol is the abstraction.
 
 ## Files
 
-- `server.ts` - Next custom server: `next()` + `createServer` + a
-  `WebSocketServer` on `/api/terminal`. Every Next route still runs via
-  `getRequestHandler()`. The eve agent is deployed separately (#218).
-- `pty.ts` - one game process per socket, each with a private `save.db` in a
-  scratch dir (`TS_ROGUE_SAVE_PATH`), torn down with the socket. `gameArgs`
-  validates query params **at the boundary** because they become process
-  arguments: a seed that is not a safe integer is dropped.
-- `app/GameTerminal.tsx` - connects in `onReady`, never earlier. Writes before
-  wterm's WASM grid exists are dropped, and by then `autoResize` has settled,
-  so the game boots into the real size instead of starting at 80x24.
+- `server.ts` - local dev only: Next custom server plus a `WebSocketServer` on
+  `/api/terminal`, one `GameSession` per distinct query string (so a reload
+  reattaches, like production). Runs the game as `tsx src/app.tsx`.
+- `session.ts` - `GameSession`: one long-lived game process that sockets attach
+  to and detach from. Closing the tab does not kill the game; it waits
+  `detachTtlMs` (10 min) for a reattach, then SIGTERMs it so it autosaves.
+  The last attach wins, the previous socket gets close code 4000. On attach it
+  shrinks the PTY by one column and grows it back, because Ink only repaints a
+  blank screen when the width shrinks. `gameArgs` validates query params **at
+  the boundary** because they become process arguments.
+- `pty-server.ts` - the host that runs inside a player's sandbox: one
+  `GameSession`, a `/health` GET, `?token=` check. Bundled by `pnpm bundle`.
+- `lib/sandbox.ts`, `app/api/session/route.ts` - find or create the player's
+  sandbox by cookie token, start pty-server if it is not answering, return the
+  wss URL. `app/api/session/stopped/route.ts` is what pty-server calls on exit
+  so the VM stops now instead of at its timeout.
+- `app/GameTerminal.tsx` - draws the game's own logo as a splash before
+  connecting, connects in `onReady`, reconnects with backoff, and every
+  attempt asks `/api/session` again so a stopped sandbox is simply restarted.
+- `scripts/bundle.ts` - esbuild: `dist/app.js`, `dist/pty-server.js`, node-pty,
+  and `dist/VERSION` (content hash). Runs as part of `pnpm build`.
+  `scripts/snapshot.ts` - uploads node-pty into a sandbox and snapshots it; the
+  game files are uploaded per sandbox by the session route when VERSION differs.
 
 ## Query params mirror CLI flags
 
 `?seed=123`, `?fresh`, `?dev` map to `--seed=123`, `--fresh`, `--dev`, so
 `?seed=1&fresh` in the browser is the same run as
-`pnpm game:dev --seed=1 --fresh`. That equivalence is the point of this design
+`pnpm game:dev --seed=1 --fresh`. They apply to every game start while that
+URL is open, including the automatic restart after a quit, so `?fresh` in the
+address bar keeps skipping the save until it is removed. That equivalence is the point of this design
 and is the fastest way to check a browser bug is not browser-specific.
 
 ## Gotchas
@@ -79,14 +94,24 @@ and is the fastest way to check a browser bug is not browser-specific.
 
 ## Deployment
 
-`next build` succeeds and Vercel serves the page, but `node-pty` is a native
-addon needing a persistent Node process, so a deployed build has **no PTY host
-and no playable game** until a Sandbox backend lands. `GameTerminal` detects
-that and says to run locally. `NEXT_PUBLIC_TERMINAL_WS_URL` points it at a real
-host. Vercel project Root Directory is `src/web`.
+Vercel project `ts-rogue-web` (team gargoyle, Root Directory `src/web`). The
+game does not run in a Function: each player gets a Vercel Sandbox, see
+[[web-play-scaling]]. Ship a new game image with:
+
+```
+pnpm --filter @ts-rogue/web bundle
+pnpm --filter @ts-rogue/web snapshot   # prints GAME_SNAPSHOT_ID
+vercel env add GAME_SNAPSHOT_ID production
+```
+
+Only rebuild the snapshot when node-pty or the Node runtime changes; game
+changes ship with the normal deploy. Without `GAME_SNAPSHOT_ID` the session
+route answers 503 and the splash shows the error. `NEXT_PUBLIC_TERMINAL_WS_URL` still points the client at any fixed
+host for debugging.
 
 ## Verify
 
 - `pnpm web:dev`, open the page, play it.
-- `pnpm check` and `pnpm web:build` pass. `src/web/pty.test.ts` boots a real
-  server and asserts the game's title screen arrives through the PTY.
+- `pnpm check` and `pnpm web:build` pass. `src/web/session.test.ts` boots the
+  real game, detaches, reattaches, takes over from another tab, and checks
+  SIGTERM wrote a save.

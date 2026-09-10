@@ -5,12 +5,15 @@
   "type": "module",
   "description": "Streams the Ink terminal game to the browser: a wterm emulator over a WebSocket-attached PTY",
   "scripts": {
-    "build": "next build",
+    "build": "pnpm bundle && next build",
     "dev": "tsx server.ts",
-    "start": "NODE_ENV=production tsx server.ts"
+    "start": "NODE_ENV=production tsx server.ts",
+    "bundle": "tsx scripts/bundle.ts",
+    "snapshot": "tsx scripts/snapshot.ts"
   },
   "dependencies": {
     "@vercel/analytics": "^2.0.1",
+    "@vercel/sandbox": "^2.8.0",
     "@wterm/dom": "0.5.0",
     "@wterm/react": "0.5.0",
     "next": "^15.5.21",
@@ -23,6 +26,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19.2.3",
     "@types/ws": "^8.5.13",
+    "esbuild": "0.28.1",
     "tsx": "^4"
   }
 }
