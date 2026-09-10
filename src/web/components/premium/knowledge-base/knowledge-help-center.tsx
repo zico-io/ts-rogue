@@ -20,7 +20,6 @@ import {
 import { Button } from "@/components/motion/button/base";
 import { Tabs, TabsList, TabsTrigger } from "@/components/motion/tabs";
 import { EASE_OUT } from "@/lib/ease";
-import { cn } from "@/lib/utils";
 import { KnowledgeArticleContent } from "./knowledge-article";
 import {
   KNOWLEDGE_ARTICLES,
@@ -53,35 +52,27 @@ const TOPIC_DETAILS: Record<
 
 type KnowledgeTopic = "All topics" | KnowledgeCategory;
 
-export type KnowledgeHelpCenterProps = {
-  articles?: readonly KnowledgeArticle[];
-  title?: string;
-  description?: string;
-  className?: string;
-};
 export function KnowledgeHelpCenter({
-  articles = KNOWLEDGE_ARTICLES,
-  title = "How can we help?",
-  description = "Search guides, explore topics, and find answers for your workspace.",
-  className,
-}: KnowledgeHelpCenterProps) {
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<KnowledgeTopic>("All topics");
   const [selected, setSelected] = useState<KnowledgeArticle | null>(null);
   const reduce = useReducedMotion();
   const id = useId();
-  const categories = [...new Set(articles.map((article) => article.category))];
+  const categories = [
+    ...new Set(KNOWLEDGE_ARTICLES.map((article) => article.category)),
+  ];
   const topics: KnowledgeTopic[] = ["All topics", ...categories];
-  const results = searchKnowledge(articles, query).filter(
+  const results = searchKnowledge(KNOWLEDGE_ARTICLES, query).filter(
     (article) => category === "All topics" || article.category === category,
   );
   return (
-    <div
-      className={cn(
-        "w-full bg-background px-5 py-12 text-foreground sm:px-10",
-        className,
-      )}
-    >
+    <div className="w-full bg-background px-5 py-12 text-foreground sm:px-10">
       <div className="mx-auto max-w-5xl">
         <header className="mx-auto mb-10 max-w-2xl text-center">
           <span className="mx-auto mb-5 flex size-12 items-center justify-center rounded-full border border-border">
@@ -111,7 +102,7 @@ export function KnowledgeHelpCenter({
           {categories.map((topic) => {
             const details = TOPIC_DETAILS[topic];
             const Icon = details.icon;
-            const count = articles.filter(
+            const count = KNOWLEDGE_ARTICLES.filter(
               (article) => article.category === topic,
             ).length;
             return (

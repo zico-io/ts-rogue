@@ -11,11 +11,7 @@ export function KnowledgeArticleContent({
   article: KnowledgeArticle;
 }) {
   const id = useId();
-  const [feedback, setFeedback] = useState<{
-    articleId: string;
-    helpful: boolean;
-  } | null>(null);
-  const answered = feedback?.articleId === article.id;
+  const [helpful, setHelpful] = useState<boolean | null>(null);
   return (
     <div className="min-w-0">
       <header className="mb-8">
@@ -79,7 +75,7 @@ export function KnowledgeArticleContent({
           aria-live="polite"
           className="flex items-center gap-2 text-xs text-muted-foreground"
         >
-          {answered ? (
+          {helpful !== null ? (
             <>
               <Check size={14} />
               Thanks. Your feedback is noted for this preview.
@@ -92,10 +88,8 @@ export function KnowledgeArticleContent({
           <Button
             variant="outline"
             className="h-9 text-xs focus-visible:ring-2 focus-visible:ring-ring"
-            aria-pressed={answered && feedback.helpful}
-            onClick={() =>
-              setFeedback({ articleId: article.id, helpful: true })
-            }
+            aria-pressed={helpful === true}
+            onClick={() => setHelpful(true)}
           >
             <ThumbsUp size={14} />
             Yes
@@ -103,10 +97,8 @@ export function KnowledgeArticleContent({
           <Button
             variant="outline"
             className="h-9 text-xs focus-visible:ring-2 focus-visible:ring-ring"
-            aria-pressed={answered && !feedback.helpful}
-            onClick={() =>
-              setFeedback({ articleId: article.id, helpful: false })
-            }
+            aria-pressed={helpful === false}
+            onClick={() => setHelpful(false)}
           >
             <ThumbsDown size={14} />
             Not quite
