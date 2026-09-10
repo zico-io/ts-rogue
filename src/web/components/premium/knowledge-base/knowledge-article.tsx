@@ -7,10 +7,8 @@ import type { KnowledgeArticle } from "./knowledge-data";
 
 export function KnowledgeArticleContent({
   article,
-  compact = false,
 }: {
   article: KnowledgeArticle;
-  compact?: boolean;
 }) {
   const id = useId();
   const [feedback, setFeedback] = useState<{
@@ -24,11 +22,7 @@ export function KnowledgeArticleContent({
         <p className="mb-3 text-xs font-medium text-muted-foreground">
           {article.category}
         </p>
-        <h3
-          className={compact ? "text-2xl font-medium" : "text-4xl font-medium"}
-        >
-          {article.title}
-        </h3>
+        <h3 className="text-2xl font-medium">{article.title}</h3>
         <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
           {article.description}
         </p>

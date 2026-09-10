@@ -51,6 +51,8 @@ const TOPIC_DETAILS: Record<
   },
 };
 
+type KnowledgeTopic = "All topics" | KnowledgeCategory;
+
 export type KnowledgeHelpCenterProps = {
   articles?: readonly KnowledgeArticle[];
   title?: string;
@@ -64,12 +66,12 @@ export function KnowledgeHelpCenter({
   className,
 }: KnowledgeHelpCenterProps) {
   const [query, setQuery] = useState("");
-  const [category, setCategory] = useState("All topics");
+  const [category, setCategory] = useState<KnowledgeTopic>("All topics");
   const [selected, setSelected] = useState<KnowledgeArticle | null>(null);
   const reduce = useReducedMotion();
   const id = useId();
   const categories = [...new Set(articles.map((article) => article.category))];
-  const topics = ["All topics", ...categories];
+  const topics: KnowledgeTopic[] = ["All topics", ...categories];
   const results = searchKnowledge(articles, query).filter(
     (article) => category === "All topics" || article.category === category,
   );
@@ -151,7 +153,10 @@ export function KnowledgeHelpCenter({
           <h3 className="text-2xl font-medium">Explore articles</h3>
           <Tabs
             value={category}
-            onValueChange={setCategory}
+            onValueChange={(value) => {
+              const topic = topics.find((candidate) => candidate === value);
+              if (topic) setCategory(topic);
+            }}
             variant="pill"
             className="max-w-full overflow-x-auto p-1"
           >
@@ -291,7 +296,7 @@ export function KnowledgeHelpCenter({
               <X size={18} />
             </Button>
           </div>
-          {selected && <KnowledgeArticleContent article={selected} compact />}
+          {selected && <KnowledgeArticleContent article={selected} />}
         </AnimatedModal>
       </div>
     </div>
