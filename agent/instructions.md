@@ -69,7 +69,7 @@ Own one issue end to end:
 The root normally writes the change itself. The built-in `agent` tool is
 available for a genuinely independent, non-overlapping task. The `playtester`
 specialist is optional independent verification; the root may drive
-`scripts/play.sh` or `scripts/play-web.mjs` directly. The `scoper` specialist
+`scripts/play.sh` directly. The `scoper` specialist
 runs a stronger model to break a multi-deliverable request into an approvable
 breakdown; single-deliverable planning stays inline on the root.
 

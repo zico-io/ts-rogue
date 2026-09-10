@@ -13,7 +13,7 @@ import {
   type IncidentDisplay,
   IncidentPipeline,
 } from "./lib/incidents";
-import { clearSave, loadGame } from "./persistence/save";
+import { clearSave, loadGame, saveGame } from "./persistence/save";
 import {
   DEFAULT_SETTINGS,
   type GameSettings,
@@ -231,6 +231,27 @@ function App({
   useEffect(() => {
     if (gameOver) failures.run("clear", false, clearSave);
   }, [failures, gameOver]);
+
+  // Autosave, for hosts that end a run from outside (the web PTY server sends
+  // SIGTERM after the player has been away). Only while a run is live: a save
+  // written at the title or after death would resurrect a dead hero, and the
+  // effect above wipes the slot on death so there is nothing to scum back to.
+  useEffect(() => {
+    if (!started || gameOver) return;
+    const save = () =>
+      failures.run("save", false, () => saveGame(store.getState()));
+    const onTerm = () => {
+      save();
+      exit();
+    };
+    process.on("SIGTERM", onTerm);
+    const every = Number(process.env.TS_ROGUE_AUTOSAVE_MS);
+    const timer = every > 0 ? setInterval(save, every) : undefined;
+    return () => {
+      process.off("SIGTERM", onTerm);
+      if (timer) clearInterval(timer);
+    };
+  }, [exit, failures, gameOver, started, store]);
 
   const dispatch = (event: Parameters<GameStore["dispatch"]>[0]) =>
     store.dispatch(event);

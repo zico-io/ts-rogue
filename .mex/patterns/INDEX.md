@@ -10,7 +10,6 @@ Lookup table for all pattern files in this directory. Check here before starting
 
 | Pattern | Use when |
 |---------|----------|
-| [add-content.md](add-content.md) | Adding a monster/item/tile to `src/data` and its browser sprite via the atlas |
+| [add-content.md](add-content.md) | Adding a monster/item/tile to `src/data` |
 | [add-game-event.md](add-game-event.md) | Adding a new player action / state transition (GameEvent + reduce case) |
 | [add-skill.md](add-skill.md) | Adding a combat skill or a skill-tree node (target shape, passive stats) |
-| [debug-renderer-divergence.md](debug-renderer-divergence.md) | A change works in one renderer but breaks the other, or trips import guardrails |

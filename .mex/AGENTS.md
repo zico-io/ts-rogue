@@ -8,18 +8,18 @@ last_updated: 2026-07-28
 
 ## What This Is
 A deterministic TypeScript terminal dungeon crawler (Ink + rot.js) with a second
-PixiJS browser renderer, both driving one engine-owned game state.
+browser terminal that streams that same app over a PTY, driving one
+engine-owned game state.
 
 ## Non-Negotiables
 - The engine (`src/engine`) is pure and UI-independent - never import `src/ui`,
-  `ink`, or `pixi.js` into it, and never mutate `GameState`.
+  or `ink` into it, and never mutate `GameState`.
 - All state transitions go through `reduce` behind `GameStore.dispatch`; a new
   player action is a `GameEvent` + `reduce` case, never renderer-local logic.
 - Determinism: no `Math.random`; random outcomes consume the seeded `Rng`,
   blocked/no-op actions consume none.
-- Respect the renderer split - no `pixi.js` in `src/app.tsx`/`src/ui`; no
-  `ink`/Node builtins/DOM globals in `src/web` (biome fails CI otherwise).
-- Engine changes must keep BOTH `pnpm game` and `pnpm web:dev` working.
+- There is one renderer: the browser runs the same Ink app over a PTY, so
+  `pnpm game` and `pnpm web:dev` show the same screens.
 
 ## Commands
 - Run (terminal): `pnpm game` - with dev console: `pnpm game:dev`

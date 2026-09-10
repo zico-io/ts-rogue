@@ -30,29 +30,31 @@ last_updated: 2026-07-28
 **Decision:** All state transitions flow through [`reduce()`](mex://function:e96e0f8f03a354c7b531617f6be534a2)
 behind `GameStore.dispatch`; both frontends only dispatch `GameEvent`s and read
 `store.getState()`.
-**Reasoning:** Two renderers (Ink terminal, PixiJS browser) must never drift.
-Keeping the only event→state path pure and shared means a new player action is
-implemented once in the engine and picked up by both UIs.
-**Alternatives considered:** A shared abstract rendering layer (rejected - the
-two targets, terminal cells vs WebGL, are too different; a common draw API
-would be a leaky abstraction). Per-renderer state (rejected - guarantees drift).
-**Consequences:** Renderer effects (damage numbers, particles) must be derived
-from state deltas across renders, since the engine has no animation concept.
-CI enforces the mechanical half (`pnpm check` + `pnpm web:build`); the semantic
-half ("does it make sense in Pixi") needs manual review of both UIs.
+**Reasoning:** Keeping the only event→state path pure and shared means a new
+player action is implemented once in the engine, and the UI stays a plain
+function of state.
+**Alternatives considered:** Per-renderer state (rejected - guarantees drift).
+**Consequences:** Anything time-based must be derived from state deltas across
+renders, since the engine has no animation concept.
 
-### PixiJS browser renderer is additive, not a replacement
-**Date:** 2026-07-21
+### The browser runs the real CLI game over a PTY
+**Date:** 2026-09-09
 **Status:** Active
-**Decision:** The browser renderer (`src/web`, ROG-43) boots the same engine
-core the Ink terminal uses; the terminal renderer stays the primary target.
-**Reasoning:** Reuse the deterministic engine unchanged; the browser is a
-second view, not a rewrite.
-**Alternatives considered:** Forking a browser-specific game loop (rejected -
-duplicates engine logic and invites divergence).
-**Consequences:** biome overrides enforce the split: `src/web/**` may not import
-`ink` or Node builtins; `src/app.tsx`/`src/ui/**` may not import `pixi.js` or
-touch DOM globals. See `context/web-renderer.md`.
+**Decision:** `src/web` streams the Ink app (`src/app.tsx`) from a `node-pty`
+PTY over a WebSocket to wterm in the browser. The ~9.4k-line PixiJS renderer
+that previously re-drew every screen in WebGL was deleted.
+**Reasoning:** Two renderers guaranteed drift and taxed every engine change
+with a second implementation, a second art pipeline, a second save backend, and
+CI-enforced import guardrails. Running the actual program removes the drift
+class entirely: the web build and the CLI are the same binary, so `?seed=1` in
+a browser is the same run as `--seed=1` in a terminal.
+**Alternatives considered:** Keeping both renderers (rejected - the drift tax
+was the problem). A `PtyBackend` interface (rejected - the WebSocket protocol
+is already the seam a Sandbox backend slots into).
+**Consequences:** The PTY needs a persistent Node process, so a deployed Vercel
+build serves the page but has no playable game until a Sandbox backend lands.
+The dual-renderer biome overrides, the atlas/art pipeline, the IndexedDB save,
+and the play-web harness are all gone. See `context/web-renderer.md`.
 
 ### Two TypeScript compilers: stable v5 for Next, tsgo for typecheck
 **Date:** 2026-07-19
@@ -69,14 +71,15 @@ build). Stable only (rejected - loses tsgo's typecheck speed).
 `.ts` config with whichever compiler is active. Do not replace `typescript`
 with the preview.
 
-### Single-slot whole-state-JSON save, per-platform storage backend
+### Single-slot whole-state-JSON save
 **Date:** 2026-07-21
 **Status:** Active
-**Decision:** One save slot holding the entire serialized `GameState` as JSON;
-terminal persists it via `node:sqlite` (`save.db`), browser via IndexedDB,
-both sharing `serializer.ts`.
+**Decision:** One save slot holding the entire serialized `GameState` as JSON,
+persisted via `node:sqlite` (`save.db`) through `serializer.ts`.
+`TS_ROGUE_SAVE_PATH` overrides the location so the web server can give each
+session its own file.
 **Reasoning:** Determinism makes the whole state cheap to serialize; one blob
-keeps the save format portable across both platforms without a schema.
+keeps the save format portable without a schema.
 **Alternatives considered:** Relational schema / ORM (rejected - no query needs,
 adds migration burden). Multi-slot saves (rejected - out of scope).
 **Consequences:** Older saves are backfilled with newer required fields

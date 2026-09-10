@@ -1,5 +1,4 @@
 import { DatabaseSync } from "node:sqlite";
-import type { SaveStorage } from "./storage";
 
 const SAVE_SLOT = 1;
 
@@ -41,23 +40,5 @@ export function clearSlot(dbPath: string): void {
     db.prepare("DELETE FROM saves WHERE slot = ?").run(SAVE_SLOT);
   } finally {
     db.close();
-  }
-}
-
-export class SqliteSaveStorage implements SaveStorage {
-  constructor(private readonly dbPath: string) {}
-
-  load(): Promise<string | undefined> {
-    return Promise.resolve(readSlot(this.dbPath));
-  }
-
-  save(json: string): Promise<void> {
-    writeSlot(this.dbPath, json);
-    return Promise.resolve();
-  }
-
-  clear(): Promise<void> {
-    clearSlot(this.dbPath);
-    return Promise.resolve();
   }
 }

@@ -27,7 +27,7 @@ The tmux play harness also requires `tmux`.
 | --- | --- |
 | [`src/engine/`](src/engine/README.md) | Deterministic game state, world, combat, loot, and persistence contract |
 | [`src/ui/`](src/ui/README.md) | Ink scenes, controls, responsive terminal layout, and runtime diagnostics |
-| [`src/web/`](src/web/README.md) | PixiJS browser renderer sharing the engine core |
+| [`src/web/`](src/web/README.md) | Web terminal: streams the Ink game over a PTY to wterm in the browser |
 | [`agent/`](agent/README.md) | Eve project agent, integrations, and sandbox lifecycle |
 | [`PROJECT_PLAN.md`](PROJECT_PLAN.md) | Product scope, architecture decisions, and phase ordering |
 | [`.botfile/memory/`](.botfile/memory/index.md) | Curated, provenance-backed agent memory |
@@ -39,7 +39,7 @@ The tmux play harness also requires `tmux`.
 | Run all checks | `pnpm check` |
 | Run the game | `pnpm game` |
 | Run the game with the developer console | `pnpm game:dev` |
-| Run the browser renderer locally | `pnpm web:dev` |
+| Play the game in a browser | `pnpm web:dev` |
 | Drive a deterministic tmux session | `pnpm play start [seed] [cols] [rows]` |
 | Iterate with the game beside a pi assistant (on Eve's gateway/model) | `pnpm play dev [seed] [cols] [rows]` |
 | Run that same layout in a Vercel Sandbox instead of locally | `pnpm play:sandbox [seed] [cols] [rows]` |

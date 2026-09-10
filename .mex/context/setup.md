@@ -48,7 +48,7 @@ None are required to play. Conditional/optional:
 
 - `pnpm game` - run the terminal game.
 - `pnpm game:dev` - terminal game with the developer console (backtick toggles).
-- `pnpm web:dev` - run the PixiJS browser renderer locally (prints a local URL).
+- `pnpm web:dev` - play the game in a browser (custom server + PTY; prints a local URL).
 - `pnpm web:build` - static Next.js export of the browser renderer.
 - `pnpm check` - full gate: `typecheck` (tsgo) + `test` (vitest) + `lint` (biome).
 - `pnpm test` / `pnpm test:unit` - run the vitest suite.
@@ -64,6 +64,9 @@ before `pnpm game`.
 **Next build silently downgrades `typescript`:** keep both `typescript` (stable
 v5) and `@typescript/native-preview`; typecheck runs `tsgo`, not the stable
 compiler. See `context/decisions.md`.
-**Engine change works in one UI but not the other:** run both `pnpm game` and
-`pnpm web:dev`; `pnpm check` cannot verify a change makes sense in Pixi. See
-`patterns/debug-renderer-divergence.md`.
+**`posix_spawnp failed` from the web server:** `node-pty` must stay pinned to
+`1.2.0-beta.15`; the `1.1.0` release publishes `spawn-helper` without the
+executable bit, so every PTY spawn fails on macOS and Linux.
+**Web server starts but the terminal stays blank:** check `node-pty` actually
+built - it needs `allowBuilds: node-pty: true` in `pnpm-workspace.yaml`, or
+pnpm skips the postinstall and leaves an unusable binding.

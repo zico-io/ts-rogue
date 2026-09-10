@@ -46,7 +46,7 @@ last_updated: 2026-07-28
 
 The engine (`src/engine`) owns deterministic, UI-independent game state and
 rules. It may read static definitions from `src/data` but must never import
-`src/ui`, `ink`, or `pixi.js`.
+`src/ui` or `ink`.
 
 ## State + reducer
 
@@ -125,4 +125,4 @@ Victory awards XP, gold, and seeded loot before returning to the origin scene.
 
 - `pnpm test:unit` (engine + persistence tests are pure-function coverage).
 - No `Math.random`; random outcomes consume `Rng`; blocked actions consume none.
-- Engine imports nothing from `src/ui` / `ink` / `pixi.js`.
+- Engine imports nothing from `src/ui` / `ink`.

@@ -116,7 +116,3 @@ export function bar(value: number, max: number, width: number): string {
   if (value > 0 && filled === 0) filled = 1;
   return "█".repeat(filled) + "░".repeat(width - filled);
 }
-
-export function toPixiColor(hex: string): number {
-  return Number.parseInt(hex.slice(1), 16);
-}
