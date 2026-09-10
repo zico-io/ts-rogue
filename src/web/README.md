@@ -71,6 +71,44 @@ passed on.
 - `lib/harness/`, `app/api/harness/` - eve agent-run observability. Unrelated
   to the game.
 
+## Wiki (`/help`)
+
+The game's help center and wiki, built on the licensed **beUI Pro**
+`knowledge-help-center` block installed through the shadcn registry
+(`components.json` declares `@beui` and `@beui-pro`; the private registry reads
+its bearer token from `$BEUI_PRO_TOKEN` and it is never committed). Re-add or
+update it with:
+
+```bash
+pnpm dlx shadcn@latest add @beui-pro/knowledge-help-center
+```
+
+- `app/help/page.tsx` - the route: a thin nav back to the portal plus
+  `<KnowledgeHelpCenter>`.
+- `app/help/help.css` - the **only** Tailwind entry point in this app. It is
+  imported by `app/help/layout.tsx`, not the root layout, so Tailwind (and its
+  preflight reset) ships in the `/help` route chunk and never touches the game
+  portal, which stays on hand-written `globals.css`. Its theme tokens map
+  shadcn's semantic names onto the game's chamber palette (`#07070d` ground,
+  parchment ink, gold primary, indigo accent) so the wiki reads as the same
+  artifact as the portal.
+- `components/premium/knowledge-base/knowledge-data.ts` - the article content.
+  This is the wiki: 14 articles across Getting started, Combat, Exploration,
+  and Progression, written from `src/engine/README.md`. Add a page by appending
+  a `KnowledgeArticle`; a new `category` shows up as a topic card on its own,
+  and `TOPIC_DETAILS` in `knowledge-help-center.tsx` gives it an icon and a
+  blurb instead of the generic fallback.
+- `components/motion/tabs.tsx` - installed beUI primitive, patched so
+  `TabsTrigger` forwards the rest of its button props. The help center passes
+  `id`, `aria-controls`, `tabIndex`, and `onKeyDown` to build a roving-tabindex
+  tab list; without the forward those were dropped and arrow-key navigation
+  across topics did nothing.
+
+The `@/*` import alias the installed source uses is declared in both
+`tsconfig.json` (as `./src/web/*`, for the repo-wide `tsgo` typecheck) and
+`src/web/tsconfig.json` (as `./*`, because Next resolves paths from the app's
+own tsconfig).
+
 ## Deployment
 
 The page is a normal Next.js deploy. The game is not: each player gets a

@@ -11,7 +11,8 @@
     "verbatimModuleSyntax": true,
     "noEmit": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    "paths": { "@/*": ["./src/web/*"] }
   },
   "include": ["agent", "src", "scripts"],
   "exclude": [

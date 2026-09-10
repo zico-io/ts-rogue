@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { GameTerminal } from "./GameTerminal";
 
 const CONTROLS: ReadonlyArray<{ keys: string; label: string }> = [
@@ -13,6 +14,9 @@ export default function Page() {
       <header className="masthead">
         <h1 className="wordmark">ts-rogue</h1>
         <p className="tagline">A terminal dungeon crawler</p>
+        <Link className="wikiLink" href="/help">
+          Read the wiki
+        </Link>
       </header>
 
       <main className="stage">

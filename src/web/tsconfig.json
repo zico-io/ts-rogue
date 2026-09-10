@@ -9,7 +9,10 @@
     ],
     "allowJs": true,
     "incremental": true,
-    "esModuleInterop": true
+    "esModuleInterop": true,
+    // Same target as the root config's alias, restated relative to this
+    // directory because Next.js resolves paths from the app's own tsconfig.
+    "paths": { "@/*": ["./*"] }
   },
   "include": [
     "next-env.d.ts",
