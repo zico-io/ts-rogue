@@ -68,6 +68,30 @@ export function parseClientMessage(raw: string): ClientMessage | undefined {
 }
 
 /**
+ * A deliberately minimal environment, not `process.env`.
+ *
+ * Inheriting the server's environment did two bad things. It leaked every
+ * server secret (`VERCEL_TOKEN` and friends) into a process driven by whatever
+ * a browser sends, and it passed `CI` through: Ink stops rendering
+ * incrementally when it detects CI and buffers until exit, so an interactive
+ * game that never exits drew a permanently blank terminal with no error.
+ *
+ * The game is attached to a real interactive PTY, so it is told exactly that.
+ * One consequence: `?dev` cannot reach Linear credentials, which is the right
+ * default for a browser-facing process.
+ */
+function gameEnv(savePath: string): Record<string, string> {
+  return {
+    PATH: process.env.PATH ?? "",
+    HOME: process.env.HOME ?? "",
+    LANG: process.env.LANG ?? "en_US.UTF-8",
+    TERM: "xterm-256color",
+    FORCE_COLOR: "3",
+    TS_ROGUE_SAVE_PATH: savePath,
+  };
+}
+
+/**
  * Runs one game process for one socket: a private save file, output streamed to
  * the browser, and both torn down when either side goes away.
  */
@@ -85,12 +109,7 @@ export function attachSession(ws: WebSocket, url: string): void {
         cols: DEFAULT_COLS,
         rows: DEFAULT_ROWS,
         cwd: REPO_ROOT,
-        env: {
-          ...process.env,
-          TS_ROGUE_SAVE_PATH: join(saveDir, "save.db"),
-          FORCE_COLOR: "3",
-          TERM: "xterm-256color",
-        },
+        env: gameEnv(join(saveDir, "save.db")),
       },
     );
   } catch (error) {

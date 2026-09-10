@@ -82,6 +82,13 @@ color, box drawing, wide Unicode. `@wterm/ghostty` (~400 KB) is the upgrade
 path if the game ever needs graphemes, images, or full VT compliance - pass it
 as the `core` prop.
 
+- The game gets a minimal environment, never `process.env`. Inheriting the
+  server's environment leaked server secrets into a browser-driven process and
+  passed `CI` through - Ink stops rendering incrementally when it detects CI
+  and buffers until exit, so an interactive game that never exits drew a
+  permanently blank terminal with no error. A consequence: `?dev` cannot reach
+  Linear credentials.
+
 `node-pty` is pinned to `1.2.0-beta.15`: the `1.1.0` release publishes
 `spawn-helper` without the executable bit, so every spawn fails with
 `posix_spawnp failed` on macOS and Linux.

@@ -70,6 +70,10 @@ and is the fastest way to check a browser bug is not browser-specific.
   `posix_spawnp failed` on macOS and Linux.
 - `node-pty` needs `allowBuilds: node-pty: true` in `pnpm-workspace.yaml`;
   without it pnpm skips the postinstall and the binding is unusable.
+- The game gets a minimal environment, never `process.env`: that leaked server
+  secrets into a browser-driven process, and passing `CI` through made Ink
+  buffer instead of render, so the terminal stayed blank forever. `?dev`
+  therefore cannot reach Linear credentials.
 - Ink's `MinSizeGuard` needs 64x24. Below that the game itself renders
   "Terminal too small", which is correct behaviour, not a bug.
 
