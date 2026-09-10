@@ -9,5 +9,5 @@ build and the CLI are now the same program, so `?seed=1&fresh` in a browser is
 the same run as `pnpm game:dev --seed=1 --fresh`, and a UI change lands in both
 places at once. Each connection gets its own game process and save file.
 
-`pnpm web:dev` now starts a custom server; a deployed build serves the page but
-has no PTY host behind it until a Sandbox backend lands.
+`pnpm web:dev` runs the game locally behind a custom server; a deployed build
+runs each player's game in their own Vercel Sandbox, resumed across reloads.

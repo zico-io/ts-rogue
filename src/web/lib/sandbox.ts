@@ -10,8 +10,7 @@ export const GAME_DIR = "/vercel/sandbox/app";
 const DIST = join(process.cwd(), "dist");
 const GAME_FILES = ["app.js", "pty-server.js", "VERSION"];
 
-const HOUR = 3_600_000;
-const DAY = 24 * HOUR;
+const DAY = 86_400_000;
 
 /**
  * On Vercel the SDK authenticates through OIDC by itself. Anywhere else
@@ -68,7 +67,7 @@ function webOrigin(): string {
   return host ? `https://${host}` : "http://localhost:3000";
 }
 
-export async function healthy(base: string): Promise<boolean> {
+async function healthy(base: string): Promise<boolean> {
   try {
     const res = await fetch(base, { signal: AbortSignal.timeout(2_000) });
     return res.ok;

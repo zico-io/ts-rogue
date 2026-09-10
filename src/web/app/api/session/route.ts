@@ -1,11 +1,8 @@
-import { Sandbox } from "@vercel/sandbox";
 import { cookies } from "next/headers";
 import {
-  credentials,
   ensureGameRunning,
   isToken,
   playerSandbox,
-  sandboxName,
 } from "../../../lib/sandbox";
 
 export const maxDuration = 60;
@@ -42,24 +39,4 @@ export async function POST(request: Request): Promise<Response> {
       { status: 503 },
     );
   }
-}
-
-/** Forget this player: stop their sandbox and drop the cookie. The snapshot expires on its own. */
-export async function DELETE(): Promise<Response> {
-  const jar = await cookies();
-  const token = jar.get(COOKIE)?.value;
-  jar.delete(COOKIE);
-  if (isToken(token)) {
-    try {
-      const sandbox = await Sandbox.get({
-        ...credentials(),
-        name: sandboxName(token),
-        resume: false,
-      });
-      await sandbox.stop();
-    } catch {
-      // Nothing to stop.
-    }
-  }
-  return new Response(null, { status: 204 });
 }

@@ -1,11 +1,9 @@
 :root {
   --parchment: #f2f2da;
   --muted: #a59b9d;
-  --faint: #706a80;
   --indigo: #444f8d;
   --amber: #e3aa3e;
   --gold: #fbc254;
-  --danger: #e74343;
 
   --logo-1: #ee99bf;
   --logo-2: #cd67a8;
@@ -15,9 +13,7 @@
 
   --chamber: #07070d;
 
-  --mono:
-    ui-monospace, "SF Mono", "JetBrains Mono", "Fira Code", Menlo, Consolas,
-    "DejaVu Sans Mono", monospace;
+  --mono: ui-monospace, monospace;
 
   color-scheme: dark;
 }
@@ -151,10 +147,6 @@ body {
   margin: 0;
   color: var(--muted);
   text-align: center;
-}
-
-.offline code {
-  color: var(--gold);
 }
 
 .corner {
