@@ -99,11 +99,13 @@ pnpm dlx shadcn@latest add @beui-pro/knowledge-help-center
   with its icon and blurb - `KnowledgeCategory` is derived from that list, so
   the topic cards pick it up and an article naming a topic that is not there
   is a type error.
-- `components/motion/tabs.tsx` - installed beUI primitive, patched so
-  `TabsTrigger` forwards the rest of its button props. The help center passes
-  `id`, `aria-controls`, `tabIndex`, and `onKeyDown` to build a roving-tabindex
-  tab list; without the forward those were dropped and arrow-key navigation
-  across topics did nothing.
+- `components/motion/tabs.tsx` - installed beUI primitive, patched twice. Both
+  `TabsList` and `TabsTrigger` now forward the rest of their DOM props, which
+  the stock source dropped: `aria-label` on the list went nowhere, leaving the
+  tablist unnamed. And the WAI-ARIA tab keyboard pattern lives here rather than
+  in each usage - `TabsList` handles arrow keys, Home, and End, and
+  `TabsTrigger` sets its own roving `tabIndex`. The help center only supplies
+  the `id` and `aria-controls` wiring that ties the tabs to their panel.
 
 The `@/*` import alias the installed source uses is declared in both
 `tsconfig.json` (as `./src/web/*`, for the repo-wide `tsgo` typecheck) and

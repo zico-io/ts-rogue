@@ -98,16 +98,44 @@ const listClasses: Record<Variant, string> = {
   segment: "inline-flex items-center gap-0 rounded-lg bg-card p-0.5",
 };
 
+// The WAI-ARIA tab pattern, once, here: arrow keys wrap along the list, Home
+// and End jump to its ends, and focus follows selection. Clicking the target
+// trigger keeps activation going through the same path as a pointer, so the
+// list needs no knowledge of the triggers' values.
+const MOVE_KEYS = ["ArrowLeft", "ArrowRight", "Home", "End"];
+
 export function TabsList({
   children,
   className,
-}: {
-  children: ReactNode;
-  className?: string;
-}) {
+  onKeyDown,
+  ...rest
+}: ComponentPropsWithoutRef<"div">) {
   const { variant } = useTabs();
   return (
-    <div role="tablist" className={cn(listClasses[variant], className)}>
+    <div
+      {...rest}
+      role="tablist"
+      className={cn(listClasses[variant], className)}
+      onKeyDown={(event) => {
+        onKeyDown?.(event);
+        if (event.defaultPrevented || !MOVE_KEYS.includes(event.key)) return;
+        const tabs = [
+          ...event.currentTarget.querySelectorAll<HTMLElement>('[role="tab"]'),
+        ];
+        const from = tabs.indexOf(event.target as HTMLElement);
+        if (from < 0) return;
+        event.preventDefault();
+        const to =
+          event.key === "Home"
+            ? 0
+            : event.key === "End"
+              ? tabs.length - 1
+              : (from + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) %
+                tabs.length;
+        tabs[to].click();
+        tabs[to].focus();
+      }}
+    >
       {children}
     </div>
   );
@@ -131,6 +159,7 @@ export function TabsTrigger({
   if (variant === "underline") {
     return (
       <button
+        tabIndex={active ? 0 : -1}
         {...rest}
         type="button"
         role="tab"
@@ -176,6 +205,7 @@ export function TabsTrigger({
         />
       ) : null}
       <button
+        tabIndex={active ? 0 : -1}
         {...rest}
         type="button"
         role="tab"

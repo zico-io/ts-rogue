@@ -130,28 +130,7 @@ export function KnowledgeHelpCenter({
                   value={topic}
                   id={`${id}-topic-${index}`}
                   aria-controls={`${id}-results`}
-                  tabIndex={category === topic ? 0 : -1}
                   className="h-9 px-3 py-0 text-xs focus-visible:ring-2 focus-visible:ring-ring"
-                  onKeyDown={(event) => {
-                    if (
-                      !["ArrowLeft", "ArrowRight", "Home", "End"].includes(
-                        event.key,
-                      )
-                    )
-                      return;
-                    event.preventDefault();
-                    const next =
-                      event.key === "Home"
-                        ? 0
-                        : event.key === "End"
-                          ? topics.length - 1
-                          : (index +
-                              (event.key === "ArrowRight" ? 1 : -1) +
-                              topics.length) %
-                            topics.length;
-                    setCategory(topics[next]);
-                    document.getElementById(`${id}-topic-${next}`)?.focus();
-                  }}
                 >
                   {topic}
                 </TabsTrigger>
