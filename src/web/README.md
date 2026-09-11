@@ -95,11 +95,10 @@ pnpm dlx shadcn@latest add @beui-pro/knowledge-help-center
 - `components/premium/knowledge-base/knowledge-data.ts` - the article content.
   This is the wiki: 14 articles across Getting started, Combat, Exploration,
   and Progression, written from `src/engine/README.md`. Add a page by appending
-  a `KnowledgeArticle`. A new topic means widening the `KnowledgeCategory`
-  union here and adding its icon and blurb to `TOPIC_DETAILS` in
-  `knowledge-help-center.tsx` - that map is typed
-  `Record<KnowledgeCategory, ...>`, so a missing entry is a type error rather
-  than a card that silently renders a generic icon and blurb.
+  a `KnowledgeArticle`. A new topic means appending to `KNOWLEDGE_CATEGORIES`
+  with its icon and blurb - `KnowledgeCategory` is derived from that list, so
+  the topic cards pick it up and an article naming a topic that is not there
+  is a type error.
 - `components/motion/tabs.tsx` - installed beUI primitive, patched so
   `TabsTrigger` forwards the rest of its button props. The help center passes
   `id`, `aria-controls`, `tabIndex`, and `onKeyDown` to build a roving-tabindex

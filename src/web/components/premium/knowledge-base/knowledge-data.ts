@@ -1,19 +1,39 @@
+import { Compass, Rocket, Sparkles, Swords } from "lucide-react";
+
 export type KnowledgeSection = {
   title: string;
   body: string;
   steps?: string[];
 };
 /**
- * The wiki's topic set. Closed on purpose: `TOPIC_DETAILS` in
- * `knowledge-help-center.tsx` gives every category its icon and blurb, so a new
- * topic has to be added in both places and a typo cannot fall through to a
- * generic card.
+ * The wiki's topic set, with the icon and blurb each category's card shows.
+ * One source of truth: adding a topic here is all a new category needs, and
+ * `KnowledgeCategory` is derived so a typo in an article fails to typecheck.
  */
-export type KnowledgeCategory =
-  | "Getting started"
-  | "Combat"
-  | "Exploration"
-  | "Progression";
+export const KNOWLEDGE_CATEGORIES = [
+  {
+    name: "Getting started",
+    icon: Rocket,
+    description: "Learn the run loop, pick a class, and read the controls.",
+  },
+  {
+    name: "Combat",
+    icon: Swords,
+    description: "Turn order, target shapes, status effects, and defeat.",
+  },
+  {
+    name: "Exploration",
+    icon: Compass,
+    description: "The overworld, dungeon floors, and fast travel.",
+  },
+  {
+    name: "Progression",
+    icon: Sparkles,
+    description: "Skill trees, Guild quests, loot, and saving your run.",
+  },
+] as const;
+
+export type KnowledgeCategory = (typeof KNOWLEDGE_CATEGORIES)[number]["name"];
 
 export type KnowledgeArticle = {
   id: string;

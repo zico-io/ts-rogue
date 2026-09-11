@@ -1,16 +1,6 @@
 "use client";
 
-import {
-  ArrowRight,
-  BookOpen,
-  Compass,
-  FileText,
-  Rocket,
-  Search,
-  Sparkles,
-  Swords,
-  X,
-} from "lucide-react";
+import { ArrowRight, BookOpen, FileText, Search, X } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useId, useState } from "react";
 import {
@@ -23,32 +13,11 @@ import { EASE_OUT } from "@/lib/ease";
 import { KnowledgeArticleContent } from "./knowledge-article";
 import {
   KNOWLEDGE_ARTICLES,
+  KNOWLEDGE_CATEGORIES,
   type KnowledgeArticle,
   type KnowledgeCategory,
   searchKnowledge,
 } from "./knowledge-data";
-
-const TOPIC_DETAILS: Record<
-  KnowledgeCategory,
-  { icon: typeof BookOpen; description: string }
-> = {
-  "Getting started": {
-    icon: Rocket,
-    description: "Learn the run loop, pick a class, and read the controls.",
-  },
-  Combat: {
-    icon: Swords,
-    description: "Turn order, target shapes, status effects, and defeat.",
-  },
-  Exploration: {
-    icon: Compass,
-    description: "The overworld, dungeon floors, and fast travel.",
-  },
-  Progression: {
-    icon: Sparkles,
-    description: "Skill trees, Guild quests, loot, and saving your run.",
-  },
-};
 
 type KnowledgeTopic = "All topics" | KnowledgeCategory;
 
@@ -64,10 +33,10 @@ export function KnowledgeHelpCenter({
   const [selected, setSelected] = useState<KnowledgeArticle | null>(null);
   const reduce = useReducedMotion();
   const id = useId();
-  const categories = [
-    ...new Set(KNOWLEDGE_ARTICLES.map((article) => article.category)),
+  const topics: KnowledgeTopic[] = [
+    "All topics",
+    ...KNOWLEDGE_CATEGORIES.map((entry) => entry.name),
   ];
-  const topics: KnowledgeTopic[] = ["All topics", ...categories];
   const results = searchKnowledge(KNOWLEDGE_ARTICLES, query).filter(
     (article) => category === "All topics" || article.category === category,
   );
@@ -99,46 +68,46 @@ export function KnowledgeHelpCenter({
           </div>
         </header>
         <div className="mb-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {categories.map((topic) => {
-            const details = TOPIC_DETAILS[topic];
-            const Icon = details.icon;
-            const count = KNOWLEDGE_ARTICLES.filter(
-              (article) => article.category === topic,
-            ).length;
-            return (
-              <div
-                key={topic}
-                className="flex flex-col rounded-2xl border border-border bg-background p-4 transition-colors hover:border-foreground/25"
-              >
-                <div className="mb-4 flex items-center justify-between gap-3">
-                  <span className="flex size-9 items-center justify-center rounded-full border border-border">
-                    <Icon size={19} />
-                  </span>
-                  <span className="text-xs tabular-nums text-muted-foreground">
-                    {count} {count === 1 ? "article" : "articles"}
-                  </span>
+          {KNOWLEDGE_CATEGORIES.map(
+            ({ name: topic, icon: Icon, description: blurb }) => {
+              const count = KNOWLEDGE_ARTICLES.filter(
+                (article) => article.category === topic,
+              ).length;
+              return (
+                <div
+                  key={topic}
+                  className="flex flex-col rounded-2xl border border-border bg-background p-4 transition-colors hover:border-foreground/25"
+                >
+                  <div className="mb-4 flex items-center justify-between gap-3">
+                    <span className="flex size-9 items-center justify-center rounded-full border border-border">
+                      <Icon size={19} />
+                    </span>
+                    <span className="text-xs tabular-nums text-muted-foreground">
+                      {count} {count === 1 ? "article" : "articles"}
+                    </span>
+                  </div>
+                  <h3 className="text-xl font-medium">{topic}</h3>
+                  <p className="mt-2 flex-1 text-sm leading-relaxed text-muted-foreground">
+                    {blurb}
+                  </p>
+                  <div className="mt-4 flex items-center justify-between border-t border-border pt-3">
+                    <span className="text-xs text-muted-foreground">
+                      Explore guides
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => setCategory(topic)}
+                      aria-label={`Browse ${topic}`}
+                      className="relative size-9 rounded-full after:absolute after:-inset-1 focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <ArrowRight size={15} />
+                    </Button>
+                  </div>
                 </div>
-                <h3 className="text-xl font-medium">{topic}</h3>
-                <p className="mt-2 flex-1 text-sm leading-relaxed text-muted-foreground">
-                  {details.description}
-                </p>
-                <div className="mt-4 flex items-center justify-between border-t border-border pt-3">
-                  <span className="text-xs text-muted-foreground">
-                    Explore guides
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={() => setCategory(topic)}
-                    aria-label={`Browse ${topic}`}
-                    className="relative size-9 rounded-full after:absolute after:-inset-1 focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    <ArrowRight size={15} />
-                  </Button>
-                </div>
-              </div>
-            );
-          })}
+              );
+            },
+          )}
         </div>
         <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
           <h3 className="text-2xl font-medium">Explore articles</h3>
