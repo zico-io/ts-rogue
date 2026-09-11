@@ -5,11 +5,19 @@
       "src/**",
       "agent/**",
       "scripts/**",
+      "!agent/.eve/**",
       "!src/web/.next/**",
       "!src/web/dist/**",
       "!src/web/next-env.d.ts",
       "!src/web/tsconfig.json"
     ]
+  },
+  "css": {
+    "parser": {
+      "cssModules": false,
+      "allowWrongLineComments": false,
+      "tailwindDirectives": true
+    }
   },
   "formatter": {
     "enabled": true,

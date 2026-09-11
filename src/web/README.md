@@ -71,6 +71,47 @@ passed on.
 - `lib/harness/`, `app/api/harness/` - eve agent-run observability. Unrelated
   to the game.
 
+## Wiki (`/help`)
+
+The game's help center and wiki, built on the licensed **beUI Pro**
+`knowledge-help-center` block installed through the shadcn registry
+(`components.json` declares `@beui` and `@beui-pro`; the private registry reads
+its bearer token from `$BEUI_PRO_TOKEN` and it is never committed). Re-add or
+update it with:
+
+```bash
+pnpm dlx shadcn@latest add @beui-pro/knowledge-help-center
+```
+
+- `app/help/page.tsx` - the route: a thin nav back to the portal plus
+  `<KnowledgeHelpCenter>`.
+- `app/help/help.css` - the **only** Tailwind entry point in this app. It is
+  imported by `app/help/layout.tsx`, not the root layout, so Tailwind (and its
+  preflight reset) ships in the `/help` route chunk and never touches the game
+  portal, which stays on hand-written `globals.css`. Its theme tokens map
+  shadcn's semantic names onto the game's chamber palette (`#07070d` ground,
+  parchment ink, gold primary, indigo accent) so the wiki reads as the same
+  artifact as the portal.
+- `components/premium/knowledge-base/knowledge-data.ts` - the article content.
+  This is the wiki: 14 articles across Getting started, Combat, Exploration,
+  and Progression, written from `src/engine/README.md`. Add a page by appending
+  a `KnowledgeArticle`. A new topic means appending to `KNOWLEDGE_CATEGORIES`
+  with its icon and blurb - `KnowledgeCategory` is derived from that list, so
+  the topic cards pick it up and an article naming a topic that is not there
+  is a type error.
+- `components/motion/tabs.tsx` - installed beUI primitive, patched twice. Both
+  `TabsList` and `TabsTrigger` now forward the rest of their DOM props, which
+  the stock source dropped: `aria-label` on the list went nowhere, leaving the
+  tablist unnamed. And the WAI-ARIA tab keyboard pattern lives here rather than
+  in each usage - `TabsList` handles arrow keys, Home, and End, and
+  `TabsTrigger` sets its own roving `tabIndex`. The help center only supplies
+  the `id` and `aria-controls` wiring that ties the tabs to their panel.
+
+The `@/*` import alias the installed source uses is declared in both
+`tsconfig.json` (as `./src/web/*`, for the repo-wide `tsgo` typecheck) and
+`src/web/tsconfig.json` (as `./*`, because Next resolves paths from the app's
+own tsconfig).
+
 ## Deployment
 
 The page is a normal Next.js deploy. The game is not: each player gets a

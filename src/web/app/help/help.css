@@ -1,0 +1,63 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* The wiki inherits the game's chamber palette: dark stone, parchment ink, gold. */
+:root {
+  --radius: 0.625rem;
+
+  --background: #07070d;
+  --foreground: #f2f2da;
+  --card: #0e0e17;
+  --card-foreground: #f2f2da;
+  --popover: #0e0e17;
+  --popover-foreground: #f2f2da;
+  --primary: #fbc254;
+  --primary-foreground: #1a1408;
+  --secondary: #1b1b28;
+  --secondary-foreground: #f2f2da;
+  --muted: #14141f;
+  --muted-foreground: #a59b9d;
+  --accent: #444f8d;
+  --accent-foreground: #f2f2da;
+  --destructive: #e74343;
+  --destructive-foreground: #f2f2da;
+  --border: #26263a;
+  --input: #26263a;
+  --ring: #e3aa3e;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}

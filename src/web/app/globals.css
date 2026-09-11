@@ -95,6 +95,26 @@ body {
   color: var(--muted);
 }
 
+.wikiLink {
+  font-size: clamp(11px, 1.4vw, 13px);
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  /* Quieter than .tagline's --muted so the masthead still reads title-first;
+     the old --faint token this used went away with the wterm rewrite. */
+  color: color-mix(in oklab, var(--muted) 72%, var(--chamber));
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition:
+    color 120ms ease,
+    border-color 120ms ease;
+}
+
+.wikiLink:hover,
+.wikiLink:focus-visible {
+  color: var(--gold);
+  border-bottom-color: var(--gold);
+}
+
 .stage {
   flex: 1 1 auto;
   min-height: 0;
