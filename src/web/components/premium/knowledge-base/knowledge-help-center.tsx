@@ -37,7 +37,7 @@ export function KnowledgeHelpCenter({
     "All topics",
     ...KNOWLEDGE_CATEGORIES.map((entry) => entry.name),
   ];
-  const results = searchKnowledge(KNOWLEDGE_ARTICLES, query).filter(
+  const results = searchKnowledge(query).filter(
     (article) => category === "All topics" || article.category === category,
   );
   return (

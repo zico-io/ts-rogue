@@ -355,12 +355,9 @@ export const KNOWLEDGE_ARTICLES: readonly KnowledgeArticle[] = [
   },
 ];
 
-export function searchKnowledge(
-  articles: readonly KnowledgeArticle[],
-  query: string,
-) {
+export function searchKnowledge(query: string) {
   const terms = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
-  return articles.filter((article) => {
+  return KNOWLEDGE_ARTICLES.filter((article) => {
     const text = [
       article.title,
       article.description,
